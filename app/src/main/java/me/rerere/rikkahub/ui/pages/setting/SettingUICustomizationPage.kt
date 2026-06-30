@@ -210,6 +210,18 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_display_page_reasoning_preview_title),
+                        subtitle = stringResource(R.string.setting_display_page_reasoning_preview_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.reasoningPreviewEnabled,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(reasoningPreviewEnabled = it))
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_ui_show_context_stacks_title),
                         subtitle = stringResource(R.string.setting_ui_show_context_stacks_desc),
                         trailing = {

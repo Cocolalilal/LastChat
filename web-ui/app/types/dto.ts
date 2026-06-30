@@ -11,6 +11,12 @@ export interface ConversationListDto {
   updateAt: number;
   isGenerating: boolean;
   isFork: boolean;
+  isConsolidated: boolean;
+  contextSummary?: string | null;
+  contextSummaryUpToIndex: number;
+  lastPruneTime: number;
+  lastPruneMessageCount: number;
+  lastRefreshTime: number;
 }
 
 export interface PagedResult<T> {
@@ -72,6 +78,20 @@ export interface ConversationDto {
   updateAt: number;
   isGenerating: boolean;
   isFork: boolean;
+  isConsolidated: boolean;
+  contextSummary?: string | null;
+  contextSummaryUpToIndex: number;
+  lastPruneTime: number;
+  lastPruneMessageCount: number;
+  lastRefreshTime: number;
+}
+
+export interface ContextRefreshResponseDto {
+  success: boolean;
+  summary?: string | null;
+  messagesSummarized: number;
+  tokensSaved: number;
+  error?: string | null;
 }
 
 export interface ConversationSnapshotEventDto {

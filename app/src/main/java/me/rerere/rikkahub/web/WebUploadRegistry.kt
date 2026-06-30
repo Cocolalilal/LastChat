@@ -6,8 +6,8 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.uuid.Uuid
 
 data class WebUploadedFileRecord(
@@ -19,12 +19,14 @@ data class WebUploadedFileRecord(
     val size: Long,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 object WebUploadRegistry {
     private const val UPLOAD_DIR = "upload"
 
     private val nextId = AtomicLong(1L)
-    private val recordsById = ConcurrentHashMap<Long, WebUploadedFileRecord>()
-    private val recordsByPath = ConcurrentHashMap<String, WebUploadedFileRecord>()
+    private val lock = Any()
+    private val recordsById = mutableMapOf<Long, WebUploadedFileRecord>()
+    private val recordsByPath = mutableMapOf<String, WebUploadedFileRecord>()
 
     suspend fun saveUpload(
         context: Context,
@@ -52,7 +54,7 @@ object WebUploadRegistry {
 
         val relativePath = "$UPLOAD_DIR/$storedName"
         val record = WebUploadedFileRecord(
-            id = nextId.getAndIncrement(),
+            id = nextId.fetchAndAdd(1L),
             relativePath = relativePath,
             uri = file.toUri().toString(),
             fileName = displayName,
@@ -60,20 +62,31 @@ object WebUploadRegistry {
             size = file.length(),
         )
 
-        recordsById[record.id] = record
-        recordsByPath[record.relativePath] = record
+        locked {
+            recordsById[record.id] = record
+            recordsByPath[record.relativePath] = record
+        }
         record
     }
 
-    fun get(id: Long): WebUploadedFileRecord? = recordsById[id]
+    fun get(id: Long): WebUploadedFileRecord? = locked {
+        recordsById[id]
+    }
 
-    fun getByRelativePath(relativePath: String): WebUploadedFileRecord? = recordsByPath[relativePath]
+    fun getByRelativePath(relativePath: String): WebUploadedFileRecord? = locked {
+        recordsByPath[relativePath]
+    }
 
-    fun listRelativePaths(): Set<String> = recordsByPath.keys.toSet()
+    fun listRelativePaths(): Set<String> = locked {
+        recordsByPath.keys.toSet()
+    }
 
     suspend fun delete(context: Context, id: Long): Boolean = withContext(Dispatchers.IO) {
-        val record = recordsById.remove(id) ?: return@withContext false
-        recordsByPath.remove(record.relativePath)
+        val record = locked {
+            val removed = recordsById.remove(id) ?: return@locked null
+            recordsByPath.remove(removed.relativePath)
+            removed
+        } ?: return@withContext false
 
         val file = context.filesDir.resolve(record.relativePath)
         if (file.exists()) {
@@ -106,4 +119,6 @@ object WebUploadRegistry {
             ?.takeIf { it.matches(Regex("[a-z0-9]{1,10}")) }
             .orEmpty()
     }
+
+    private inline fun <T> locked(block: () -> T): T = synchronized(lock, block)
 }

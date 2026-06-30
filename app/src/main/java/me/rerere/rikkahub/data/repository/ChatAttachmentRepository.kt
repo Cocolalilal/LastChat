@@ -46,12 +46,16 @@ import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
-import java.io.ByteArrayOutputStream
+import okio.Buffer
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.uuid.Uuid
 
 private const val CHAT_UPLOAD_PREFIX = "chat-"
@@ -90,6 +94,7 @@ data class ChatStorageSummary(
     val isSyncing: Boolean = true,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 class ChatAttachmentRepository(
     private val context: Context,
     private val chatAttachmentDao: ChatAttachmentDao,
@@ -627,14 +632,15 @@ class ChatAttachmentRepository(
         val scaledBitmap = scaleBitmapIfNeeded(bitmap, longEdgeLimit)
         val preserveAlpha = scaledBitmap.hasAlpha()
         val outputMime = if (preserveAlpha) "image/png" else "image/jpeg"
-        val outputBytes = ByteArrayOutputStream().use { output ->
+        val outputBuffer = Buffer()
+        outputBuffer.outputStream().use { output ->
             scaledBitmap.compress(
                 if (preserveAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG,
                 if (preserveAlpha) 100 else 90,
                 output,
             )
-            output.toByteArray()
         }
+        val outputBytes = outputBuffer.readByteArray()
         if (scaledBitmap !== bitmap) {
             scaledBitmap.recycle()
         }
@@ -649,7 +655,9 @@ class ChatAttachmentRepository(
                 mime = outputMime,
             )
         )
-        file.writeBytes(outputBytes)
+        file.sink().buffer().use { output ->
+            output.write(outputBytes)
+        }
         // Use inJustDecodeBounds to get dimensions without allocating a full bitmap
         val outputBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(outputBytes, 0, outputBytes.size, outputBounds)
@@ -897,7 +905,7 @@ class ChatAttachmentRepository(
         return runCatching {
             val digest = MessageDigest.getInstance("SHA-256")
             outputFile.parentFile?.mkdirs()
-            outputFile.outputStream().use { output ->
+            outputFile.sink().buffer().outputStream().use { output ->
                 input.use { inputStream ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
@@ -917,7 +925,7 @@ class ChatAttachmentRepository(
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
+        file.source().buffer().inputStream().use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
                 val read = input.read(buffer)
@@ -1031,6 +1039,13 @@ private fun ConversationEntity.toConversation(): Conversation {
         enabledModeIds = runCatching {
             JsonInstant.decodeFromString<List<String>>(enabledModeIds).map(Uuid::parse).toSet()
         }.getOrDefault(emptySet()),
+        enabledLorebookIds = if (enabledLorebookIds.isBlank()) {
+            null
+        } else {
+            runCatching {
+                JsonInstant.decodeFromString<List<String>>(enabledLorebookIds).map(Uuid::parse).toSet()
+            }.getOrNull()
+        },
         contextSummary = contextSummary.takeIf { it.isNotBlank() },
         contextSummaryUpToIndex = contextSummaryUpToIndex,
         lastPruneTime = lastPruneTime,
@@ -1052,6 +1067,9 @@ private fun Conversation.toEntity(): ConversationEntity {
         isPinned = isPinned,
         isConsolidated = isConsolidated,
         enabledModeIds = JsonInstant.encodeToString(enabledModeIds.map { it.toString() }),
+        enabledLorebookIds = enabledLorebookIds
+            ?.let { JsonInstant.encodeToString(it.map { id -> id.toString() }) }
+            .orEmpty(),
         contextSummary = contextSummary ?: "",
         contextSummaryUpToIndex = contextSummaryUpToIndex,
         lastPruneTime = lastPruneTime,

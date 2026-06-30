@@ -2,7 +2,6 @@ package me.rerere.rikkahub.utils
 
 import android.content.Context
 import android.net.Uri
-import android.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.model.ChubCharacterV2
@@ -16,9 +15,12 @@ import me.rerere.rikkahub.data.model.TavernCharacterBook
 import me.rerere.rikkahub.data.model.toLorebook
 import me.rerere.rikkahub.data.model.toSillyTavernWorldInfo
 import me.rerere.rikkahub.data.model.toTavernCharacterBook
-import java.io.BufferedReader
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
-import java.io.InputStreamReader
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Embedded attachment for export - contains base64 encoded file content.
@@ -107,10 +109,20 @@ object LorebookExportImport {
             val bytes = when {
                 attachment.url.startsWith("file://") -> {
                     val file = File(uri.path ?: return null)
-                    if (file.exists()) file.readBytes() else return null
+                    if (file.exists()) {
+                        file.source().buffer().use { source ->
+                            source.readByteArray()
+                        }
+                    } else {
+                        return null
+                    }
                 }
                 attachment.url.startsWith("content://") -> {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.source().buffer().use { source ->
+                            source.readByteArray()
+                        }
+                    } ?: return null
                 }
                 else -> return null
             }
@@ -119,7 +131,7 @@ object LorebookExportImport {
                 type = attachment.type,
                 fileName = attachment.fileName,
                 mime = attachment.mime,
-                content = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                content = base64Encode(bytes)
             )
         } catch (e: Exception) {
             null
@@ -252,11 +264,13 @@ object LorebookExportImport {
      */
     private fun restoreEmbeddedAttachment(context: Context, embedded: EmbeddedAttachment): ModeAttachment? {
         return try {
-            val bytes = Base64.decode(embedded.content, Base64.NO_WRAP)
+            val bytes = base64Decode(embedded.content)
             val extension = embedded.fileName.substringAfterLast('.', "bin")
             val file = File(context.filesDir, "chat_files/${System.currentTimeMillis()}_${embedded.fileName}")
             file.parentFile?.mkdirs()
-            file.writeBytes(bytes)
+            file.sink().buffer().use { output ->
+                output.write(bytes)
+            }
             
             ModeAttachment(
                 url = "file://${file.absolutePath}",
@@ -276,10 +290,12 @@ object LorebookExportImport {
         return try {
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: return ImportResult.Error("Could not open file")
-            
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val content = reader.readText()
-            reader.close()
+
+            val content = inputStream.use { input ->
+                input.source().buffer().use { source ->
+                    source.readUtf8()
+                }
+            }
             
             importFromJson(content, context)
         } catch (e: Exception) {
@@ -301,3 +317,9 @@ object LorebookExportImport {
         }
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)

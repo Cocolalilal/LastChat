@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.share.copyShareGrantFlagsFrom
@@ -15,6 +16,7 @@ import org.koin.android.ext.android.inject
 
 class ShareWithCharacterActivity : ComponentActivity() {
     private val settingsStore by inject<SettingsStore>()
+    private val httpClient by inject<PlatformHttpClient>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,6 +25,7 @@ class ShareWithCharacterActivity : ComponentActivity() {
             val payload = resolveSharePayload(
                 context = this@ShareWithCharacterActivity,
                 settingsStore = settingsStore,
+                httpClient = httpClient,
                 rawSharePayload = intent.toRawSharePayload()
             )
             if (!payload.hasContent()) {

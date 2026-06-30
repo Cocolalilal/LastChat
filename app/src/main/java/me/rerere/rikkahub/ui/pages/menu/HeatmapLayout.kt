@@ -1,9 +1,14 @@
 package me.rerere.rikkahub.ui.pages.menu
 
-import java.time.DayOfWeek
+import me.rerere.common.calendar.CalendarHeatmapCell
+import me.rerere.common.calendar.CalendarHeatmapDay
+import me.rerere.common.calendar.CalendarHeatmapLayout
+import me.rerere.common.calendar.CalendarHeatmapMonthMetadata
+import me.rerere.common.calendar.CalendarHeatmapWeekColumn
+import me.rerere.common.calendar.CalendarMonth
+import me.rerere.common.calendar.buildCalendarHeatmapLayout
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.temporal.TemporalAdjusters
 
 internal data class HeatmapCellBoundary(
     val top: Boolean = false,
@@ -54,102 +59,71 @@ internal fun buildHeatmapLayout(
     windowStart: LocalDate,
     windowEnd: LocalDate
 ): HeatmapLayout {
-    if (windowEnd.isBefore(windowStart)) {
-        return HeatmapLayout(
-            windowStart = windowStart,
-            windowEnd = windowEnd,
-            gridStart = windowStart,
-            gridEnd = windowEnd,
-            weeks = emptyList(),
-            months = emptyList()
-        )
-    }
+    return buildCalendarHeatmapLayout(
+        heatmapData = heatmapData.map { CalendarHeatmapDay(it.date.toKotlinLocalDate(), it.count) },
+        windowStart = windowStart.toKotlinLocalDate(),
+        windowEnd = windowEnd.toKotlinLocalDate()
+    ).toAndroidHeatmapLayout()
+}
 
-    val gridStart = windowStart.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    val gridEnd = windowEnd.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
-    val countsByDate = heatmapData.associate { it.date to it.count }
-
-    val weekColumns = mutableListOf<HeatmapWeekColumn>()
-    var currentWeekStart = gridStart
-    var weekIndex = 0
-    while (!currentWeekStart.isAfter(gridEnd)) {
-        val cells = (0..6).map { dayIndex ->
-            val date = currentWeekStart.plusDays(dayIndex.toLong())
-            val isInWindow = !date.isBefore(windowStart) && !date.isAfter(windowEnd)
-            HeatmapCell(
-                date = date,
-                count = if (isInWindow) countsByDate[date] ?: 0 else 0,
-                weekIndex = weekIndex,
-                dayIndex = dayIndex,
-                isInWindow = isInWindow,
-                month = if (isInWindow) YearMonth.from(date) else null
-            )
-        }
-        weekColumns += HeatmapWeekColumn(
-            index = weekIndex,
-            startDate = currentWeekStart,
-            cells = cells
-        )
-        currentWeekStart = currentWeekStart.plusWeeks(1)
-        weekIndex++
-    }
-
-    val weeksWithBoundaries = weekColumns.mapIndexed { currentWeekIndex, week ->
-        week.copy(
-            cells = week.cells.mapIndexed { dayIndex, cell ->
-                if (!cell.isInWindow || cell.month == null) {
-                    cell
-                } else {
-                    val boundary = HeatmapCellBoundary(
-                        top = dayIndex == 0 || weekColumns[currentWeekIndex].cells[dayIndex - 1].month != cell.month,
-                        right = currentWeekIndex == weekColumns.lastIndex ||
-                            weekColumns[currentWeekIndex + 1].cells[dayIndex].month != cell.month,
-                        bottom = dayIndex == week.cells.lastIndex ||
-                            weekColumns[currentWeekIndex].cells[dayIndex + 1].month != cell.month,
-                        left = currentWeekIndex == 0 ||
-                            weekColumns[currentWeekIndex - 1].cells[dayIndex].month != cell.month
-                    )
-                    cell.copy(boundary = boundary)
-                }
-            }
-        )
-    }
-
-    val cellsByDate = weeksWithBoundaries
-        .flatMap { it.cells }
-        .associateBy { it.date }
-    val months = mutableListOf<HeatmapMonthMetadata>()
-    var month = YearMonth.from(windowStart)
-    val lastMonth = YearMonth.from(windowEnd)
-    while (!month.isAfter(lastMonth)) {
-        val monthStart = maxOf(windowStart, month.atDay(1))
-        val monthEnd = minOf(windowEnd, month.atEndOfMonth())
-        val startCell = cellsByDate.getValue(monthStart)
-        val endCell = cellsByDate.getValue(monthEnd)
-        val totalMessageCount = heatmapData.asSequence()
-            .filter { !it.date.isBefore(monthStart) && !it.date.isAfter(monthEnd) }
-            .sumOf { it.count }
-
-        months += HeatmapMonthMetadata(
-            month = month,
-            startDate = monthStart,
-            endDate = monthEnd,
-            totalMessageCount = totalMessageCount,
-            startWeekIndex = startCell.weekIndex,
-            endWeekIndex = endCell.weekIndex,
-            startRow = startCell.dayIndex,
-            endRow = endCell.dayIndex,
-            weekSpan = endCell.weekIndex - startCell.weekIndex + 1
-        )
-        month = month.plusMonths(1)
-    }
-
+private fun CalendarHeatmapLayout.toAndroidHeatmapLayout(): HeatmapLayout {
     return HeatmapLayout(
-        windowStart = windowStart,
-        windowEnd = windowEnd,
-        gridStart = gridStart,
-        gridEnd = gridEnd,
-        weeks = weeksWithBoundaries,
-        months = months
+        windowStart = windowStart.toJavaLocalDate(),
+        windowEnd = windowEnd.toJavaLocalDate(),
+        gridStart = gridStart.toJavaLocalDate(),
+        gridEnd = gridEnd.toJavaLocalDate(),
+        weeks = weeks.map { it.toAndroidHeatmapWeekColumn() },
+        months = months.map { it.toAndroidHeatmapMonthMetadata() }
     )
+}
+
+private fun CalendarHeatmapWeekColumn.toAndroidHeatmapWeekColumn(): HeatmapWeekColumn {
+    return HeatmapWeekColumn(
+        index = index,
+        startDate = startDate.toJavaLocalDate(),
+        cells = cells.map { it.toAndroidHeatmapCell() }
+    )
+}
+
+private fun CalendarHeatmapCell.toAndroidHeatmapCell(): HeatmapCell {
+    return HeatmapCell(
+        date = date.toJavaLocalDate(),
+        count = count,
+        weekIndex = weekIndex,
+        dayIndex = dayIndex,
+        isInWindow = isInWindow,
+        month = month?.toJavaYearMonth(),
+        boundary = HeatmapCellBoundary(
+            top = boundary.top,
+            right = boundary.right,
+            bottom = boundary.bottom,
+            left = boundary.left
+        )
+    )
+}
+
+private fun CalendarHeatmapMonthMetadata.toAndroidHeatmapMonthMetadata(): HeatmapMonthMetadata {
+    return HeatmapMonthMetadata(
+        month = month.toJavaYearMonth(),
+        startDate = startDate.toJavaLocalDate(),
+        endDate = endDate.toJavaLocalDate(),
+        totalMessageCount = totalMessageCount,
+        startWeekIndex = startWeekIndex,
+        endWeekIndex = endWeekIndex,
+        startRow = startRow,
+        endRow = endRow,
+        weekSpan = weekSpan
+    )
+}
+
+private fun LocalDate.toKotlinLocalDate(): kotlinx.datetime.LocalDate {
+    return kotlinx.datetime.LocalDate(year, monthValue, dayOfMonth)
+}
+
+private fun kotlinx.datetime.LocalDate.toJavaLocalDate(): LocalDate {
+    return LocalDate.of(year, month.ordinal + 1, day)
+}
+
+private fun CalendarMonth.toJavaYearMonth(): YearMonth {
+    return YearMonth.of(year, monthNumber)
 }

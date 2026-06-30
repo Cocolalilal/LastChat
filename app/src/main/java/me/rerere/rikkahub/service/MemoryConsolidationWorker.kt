@@ -102,13 +102,12 @@ class MemoryConsolidationWorker(
                 continue
             }
             
-            // Double check with DAO if we are doing a full scan (heuristic fallback)
+            // On full scan, skip conversations that already have an episode linked by conversationId.
+            // We use the exact conversationId match instead of a time-based heuristic, which
+            // could produce false positives when two conversations have nearby timestamps.
             if (isFullScan) {
-                val existingEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
-                val isProcessed = existingEpisodes.any { 
-                    kotlin.math.abs(it.endTime - conversation.updateAt.toEpochMilli()) < 1000 * 60 
-                }
-                if (isProcessed) {
+                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversation.id.toString())
+                if (existingEpisode != null) {
                     conversationRepository.markAsConsolidated(conversation.id)
                     continue
                 }

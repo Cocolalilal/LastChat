@@ -1,17 +1,18 @@
 package me.rerere.rikkahub.utils
 
-import org.apache.commons.text.StringEscapeUtils
-import java.net.URLDecoder
-import java.net.URLEncoder
+import me.rerere.common.http.urlDecode as portableUrlDecode
+import me.rerere.common.http.urlEncode as portableUrlEncode
+import me.rerere.common.text.escapeHtml as portableEscapeHtml
+import me.rerere.common.text.unescapeHtml as portableUnescapeHtml
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 fun String.urlEncode(): String {
-    return URLEncoder.encode(this, "UTF-8")
+    return portableUrlEncode(spaceAsPlus = true)
 }
 
 fun String.urlDecode(): String {
-    return URLDecoder.decode(this, "UTF-8")
+    return portableUrlDecode(plusAsSpace = true)
 }
 
 @OptIn(ExperimentalEncodingApi::class)
@@ -25,11 +26,11 @@ fun String.base64Decode(): String {
 }
 
 fun String.escapeHtml(): String {
-    return StringEscapeUtils.escapeHtml4(this)
+    return portableEscapeHtml()
 }
 
 fun String.unescapeHtml(): String {
-    return StringEscapeUtils.unescapeHtml4(this)
+    return portableUnescapeHtml()
 }
 
 fun Number.toFixed(digits: Int = 0) = "%.${digits}f".format(this)

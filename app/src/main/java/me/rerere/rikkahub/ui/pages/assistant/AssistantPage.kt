@@ -244,6 +244,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             }
             
             val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+            val canDelete = settings.assistants.size > 1
 
             androidx.compose.runtime.key(useWideSettingsLayout) {
                 if (useWideSettingsLayout) {
@@ -266,32 +267,52 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                 initialValue = emptyList(),
                             )
 
-                            AssistantItemContent(
-                                assistant = assistant,
-                                settings = settings,
-                                memories = memories,
-                                position = position,
-                                haptics = haptics,
-                                onClick = {
-                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                },
-                                onCopy = {
-                                    vm.copyAssistant(assistant)
-                                },
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {
-                                            haptics.perform(HapticPattern.Pop)
-                                            navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Settings,
-                                            contentDescription = stringResource(R.string.settings)
+                            androidx.compose.runtime.key(canDelete) {
+                                PhysicsSwipeToDelete(
+                                    position = position,
+                                    deleteEnabled = canDelete,
+                                    onDelete = {
+                                        vm.removeAssistant(assistant)
+                                        toaster.show(
+                                            message = context.getString(R.string.assistant_deleted, assistant.name),
+                                            action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                label = context.getString(R.string.undo),
+                                                onClick = {
+                                                    vm.undoRemoveAssistant(assistant)
+                                                }
+                                            )
                                         )
-                                    }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { _ ->
+                                    AssistantItemContent(
+                                        assistant = assistant,
+                                        settings = settings,
+                                        memories = memories,
+                                        position = position,
+                                        haptics = haptics,
+                                        onClick = {
+                                            navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                        },
+                                        onCopy = {
+                                            vm.copyAssistant(assistant)
+                                        },
+                                        dragHandle = {
+                                            IconButton(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Pop)
+                                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Settings,
+                                                    contentDescription = stringResource(R.string.settings)
+                                                )
+                                            }
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 } else {
@@ -304,14 +325,12 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         }
                     }
 
-                // State for swipe neighbor tracking. Keep this out of the tablet branch,
-                // where drag and swipe controls are intentionally disabled.
+                // State for swipe neighbor tracking.
                 var draggingIndex by remember { mutableStateOf(-1) }
                 var dragOffset by remember { mutableFloatStateOf(0f) }
                 var isUnlocked by remember { mutableStateOf(false) }
                 var neighborsUnlocked by remember { mutableStateOf(false) }
                 val density = androidx.compose.ui.platform.LocalDensity.current
-                val canDelete = settings.assistants.size > 1
 
                 androidx.compose.runtime.LaunchedEffect(dragOffset, neighborsUnlocked) {
                     if (dragOffset == 0f && neighborsUnlocked) {

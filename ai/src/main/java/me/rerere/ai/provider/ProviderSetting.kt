@@ -1,6 +1,5 @@
 package me.rerere.ai.provider
 
-import androidx.compose.runtime.Composable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -41,8 +40,6 @@ sealed class ProviderSetting {
     abstract val customIconUri: String?
 
     abstract val builtIn: Boolean
-    abstract val description: @Composable() () -> Unit
-    abstract val shortDescription: @Composable() () -> Unit
 
     abstract fun addModel(model: Model): ProviderSetting
     abstract fun editModel(model: Model): ProviderSetting
@@ -58,8 +55,6 @@ sealed class ProviderSetting {
         tags: List<Uuid> = this.tags,
         customIconUri: String? = this.customIconUri,
         builtIn: Boolean = this.builtIn,
-        description: @Composable (() -> Unit) = this.description,
-        shortDescription: @Composable (() -> Unit) = this.shortDescription,
     ): ProviderSetting
 
     @Serializable
@@ -74,8 +69,6 @@ sealed class ProviderSetting {
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
-        @Transient override val description: @Composable (() -> Unit) = {},
-        @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var apiKey: String = "",
         var baseUrl: String = "https://api.openai.com/v1",
         var chatCompletionsPath: String = "/chat/completions",
@@ -84,6 +77,7 @@ sealed class ProviderSetting {
         val streamOptionsMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
         val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
         val reasoningContentReplayMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
+        val promptCacheMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -117,8 +111,6 @@ sealed class ProviderSetting {
             tags: List<Uuid>,
             customIconUri: String?,
             builtIn: Boolean,
-            description: @Composable (() -> Unit),
-            shortDescription: @Composable (() -> Unit),
         ): ProviderSetting {
             return this.copy(
                 id = id,
@@ -127,11 +119,9 @@ sealed class ProviderSetting {
                 models = models,
                 customIconUri = customIconUri,
                 builtIn = builtIn,
-                description = description,
                 proxy = proxy,
                 balanceOption = balanceOption,
                 tags = tags,
-                shortDescription = shortDescription
             )
         }
     }
@@ -148,8 +138,6 @@ sealed class ProviderSetting {
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
-        @Transient override val description: @Composable (() -> Unit) = {},
-        @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var apiKey: String = "",
         var baseUrl: String = "https://generativelanguage.googleapis.com/v1beta", // only for google AI
         var vertexAI: Boolean = false,
@@ -190,8 +178,6 @@ sealed class ProviderSetting {
             tags: List<Uuid>,
             customIconUri: String?,
             builtIn: Boolean,
-            description: @Composable (() -> Unit),
-            shortDescription: @Composable (() -> Unit),
         ): ProviderSetting {
             return this.copy(
                 id = id,
@@ -200,8 +186,6 @@ sealed class ProviderSetting {
                 models = models,
                 customIconUri = customIconUri,
                 builtIn = builtIn,
-                description = description,
-                shortDescription = shortDescription,
                 proxy = proxy,
                 balanceOption = balanceOption,
                 tags = tags
@@ -221,8 +205,6 @@ sealed class ProviderSetting {
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
-        @Transient override val description: @Composable (() -> Unit) = {},
-        @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var apiKey: String = "",
         var baseUrl: String = "https://api.anthropic.com/v1",
     ) : ProviderSetting() {
@@ -258,8 +240,6 @@ sealed class ProviderSetting {
             tags: List<Uuid>,
             customIconUri: String?,
             builtIn: Boolean,
-            description: @Composable (() -> Unit),
-            shortDescription: @Composable (() -> Unit),
         ): ProviderSetting {
             return this.copy(
                 id = id,
@@ -271,12 +251,9 @@ sealed class ProviderSetting {
                 balanceOption = balanceOption,
                 tags = tags,
                 builtIn = builtIn,
-                description = description,
-                shortDescription = shortDescription,
             )
         }
     }
-
     companion object {
         val Types by lazy {
             listOf(
@@ -299,8 +276,6 @@ sealed class ProviderSetting {
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
-        @Transient override val description: @Composable (() -> Unit) = {},
-        @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var baseUrl: String = "http://127.0.0.1:8188",
         var workflowJson: String = "",
         var promptNodeId: String = "",
@@ -340,8 +315,6 @@ sealed class ProviderSetting {
             tags: List<Uuid>,
             customIconUri: String?,
             builtIn: Boolean,
-            description: @Composable (() -> Unit),
-            shortDescription: @Composable (() -> Unit),
         ): ProviderSetting {
             return this.copy(
                 id = id,
@@ -353,8 +326,6 @@ sealed class ProviderSetting {
                 tags = tags,
                 customIconUri = customIconUri,
                 builtIn = builtIn,
-                description = description,
-                shortDescription = shortDescription
             )
         }
     }

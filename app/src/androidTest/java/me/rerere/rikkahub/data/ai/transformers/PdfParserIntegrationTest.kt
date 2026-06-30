@@ -34,11 +34,16 @@ class PdfParserIntegrationTest {
 
         val prompt = buildPdfPrompt(
             fileName = pdfFile.name,
-            pages = pages,
+            pages = pages.map { page ->
+                DocumentTextPage(
+                    pageNumber = page.pageNumber,
+                    text = page.text,
+                )
+            },
             renderPage = { pageIndex ->
                 pdfFile.parentFile!!.resolve("ocr-page-${pageIndex + 1}.png").also { file ->
                     PdfParser.renderPageAsPng(pdfFile, pageIndex, file)
-                }
+                }.absolutePath
             },
             ocrPage = { pageNumber, _ ->
                 OcrExecutionResult(
@@ -66,11 +71,16 @@ class PdfParserIntegrationTest {
 
         val prompt = buildPdfPrompt(
             fileName = pdfFile.name,
-            pages = pages,
+            pages = pages.map { page ->
+                DocumentTextPage(
+                    pageNumber = page.pageNumber,
+                    text = page.text,
+                )
+            },
             renderPage = { pageIndex ->
                 pdfFile.parentFile!!.resolve("mixed-ocr-page-${pageIndex + 1}.png").also { file ->
                     PdfParser.renderPageAsPng(pdfFile, pageIndex, file)
-                }
+                }.absolutePath
             },
             ocrPage = { pageNumber, _ ->
                 OcrExecutionResult(

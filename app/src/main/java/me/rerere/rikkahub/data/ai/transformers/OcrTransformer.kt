@@ -15,7 +15,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.cache.LruCache
-import me.rerere.common.cache.SingleFileCacheStore
+import me.rerere.common.platform.android.cache.SingleFileCacheStore
 import me.rerere.rikkahub.data.ai.buildOcrGenerationParams
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -60,7 +60,7 @@ internal fun isOcrConfigured(settings: Settings): Boolean {
     return model.findProvider(settings.providers) != null
 }
 
-internal fun shouldSilentlyPreloadImageForPython(
+internal fun shouldSilentlyPreloadImageForOcrFallback(
     model: Model,
     settings: Settings,
 ): Boolean {

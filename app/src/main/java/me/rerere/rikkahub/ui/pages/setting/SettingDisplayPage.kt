@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.DropdownMenu
@@ -65,6 +65,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
 import me.rerere.rikkahub.ui.pages.setting.components.PresetThemeButtonGroup
@@ -72,6 +73,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupInputItem
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -129,6 +131,28 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_theme_setting)
                 ) {
+                    var colorMode by rememberColorMode()
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_color_mode),
+                        trailing = {
+                            Select(
+                                options = ColorMode.entries,
+                                selectedOption = colorMode,
+                                onOptionSelected = {
+                                    colorMode = it
+                                },
+                                optionToString = {
+                                    when (it) {
+                                        ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
+                                        ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
+                                        ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
+                                    }
+                                },
+                                modifier = Modifier.wrapContentWidth()
+                            )
+                        }
+                    )
+
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_dynamic_color),
                         subtitle = stringResource(R.string.setting_page_dynamic_color_desc),

@@ -7,7 +7,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * 创建一个防抖函数包装器
@@ -43,6 +44,7 @@ fun <T> useDebounce(
  * @return 包装后的节流函数
  */
 @Composable
+@OptIn(ExperimentalAtomicApi::class)
 fun <T> useThrottle(
     intervalMillis: Long = 300,
     function: (T) -> Unit
@@ -55,12 +57,12 @@ fun <T> useThrottle(
         { param: T ->
             latestParam.value = param
 
-            if (!isThrottling.getAndSet(true)) {
+            if (isThrottling.compareAndSet(false, true)) {
                 function(param)
 
                 scope.launch {
                     delay(intervalMillis)
-                    isThrottling.set(false)
+                    isThrottling.store(false)
 
                     // 如果在节流期间有新的参数，则在节流结束后执行一次
                     latestParam.value?.let { latestValue ->

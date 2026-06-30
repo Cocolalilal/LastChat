@@ -1,5 +1,29 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.ai.provider.Model
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SuggestionChip
+import org.koin.core.parameter.parametersOf
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import org.koin.androidx.compose.koinViewModel
+import androidx.compose.material3.Card
+import androidx.compose.material3.SuggestionChipDefaults
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -9,6 +33,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -22,6 +47,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -73,7 +100,8 @@ import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.ImageUtils
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import me.rerere.common.http.replaceUrlEncodedPathOrNull
+import me.rerere.common.http.urlPartsOrNull
 import java.nio.charset.Charset
 import kotlin.reflect.KClass
 
@@ -186,6 +214,7 @@ fun ProviderConfigure(
                     }
                     onEdit(updated)
                 },
+                enabled = true,
                 stateKey = "provider_name_${provider.id}",
                 label = stringResource(id = R.string.setting_provider_page_name),
                 modifier = Modifier.weight(1f),
@@ -328,13 +357,14 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.baseUrl
         is ProviderSetting.Claude -> this.baseUrl
         is ProviderSetting.ComfyUI -> this.baseUrl
+        else -> ""
     }
     val targetDefaultBaseUrl = when (type) {
         ProviderSetting.OpenAI::class -> ProviderSetting.OpenAI().baseUrl
         ProviderSetting.Google::class -> ProviderSetting.Google().baseUrl
         ProviderSetting.Claude::class -> ProviderSetting.Claude().baseUrl
         ProviderSetting.ComfyUI::class -> ProviderSetting.ComfyUI().baseUrl
-        else -> error("Unsupported provider type: $type")
+        else -> return this
     }
     val convertedBaseUrl = sourceBaseUrl.convertToTargetBaseUrl(targetDefaultBaseUrl)
 
@@ -349,8 +379,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl,
             chatCompletionsPath = if (this is ProviderSetting.OpenAI) this.chatCompletionsPath else ProviderSetting.OpenAI().chatCompletionsPath,
@@ -359,6 +387,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             streamOptionsMode = if (this is ProviderSetting.OpenAI) this.streamOptionsMode else OpenAICompatibilityMode.AUTO,
             imageResponseModalitiesMode = if (this is ProviderSetting.OpenAI) this.imageResponseModalitiesMode else OpenAICompatibilityMode.AUTO,
             reasoningContentReplayMode = if (this is ProviderSetting.OpenAI) this.reasoningContentReplayMode else OpenAICompatibilityMode.AUTO,
+            promptCacheMode = if (this is ProviderSetting.OpenAI) this.promptCacheMode else OpenAICompatibilityMode.AUTO,
         )
 
         ProviderSetting.Google::class -> ProviderSetting.Google(
@@ -371,8 +400,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl,
             vertexAI = if (this is ProviderSetting.Google) this.vertexAI else false,
@@ -392,8 +419,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             apiKey = apiKey,
             baseUrl = convertedBaseUrl
         )
@@ -408,8 +433,6 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             tags = this.tags,
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
-            description = this.description,
-            shortDescription = this.shortDescription,
             baseUrl = if (this is ProviderSetting.ComfyUI) this.baseUrl else convertedBaseUrl,
             workflowJson = if (this is ProviderSetting.ComfyUI) this.workflowJson else "",
             promptNodeId = if (this is ProviderSetting.ComfyUI) this.promptNodeId else "",
@@ -418,7 +441,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             modelInputName = if (this is ProviderSetting.ComfyUI) this.modelInputName else "ckpt_name",
         )
 
-        else -> error("Unsupported provider type: $type")
+        else -> this
     }
 }
 
@@ -443,18 +466,15 @@ private fun KClass<out ProviderSetting>.defaultProviderName(): String {
 }
 
 private fun String.convertToTargetBaseUrl(targetDefaultBaseUrl: String): String {
-    val sourceUrl = this.toHttpUrlOrNull() ?: return this
-    val sourceHost = sourceUrl.host.lowercase()
+    val sourceUrl = this.urlPartsOrNull() ?: return this
+    val sourceHost = sourceUrl.host
     if (sourceHost in OFFICIAL_PROVIDER_HOSTS) {
         return targetDefaultBaseUrl
     }
 
-    val targetUrl = targetDefaultBaseUrl.toHttpUrlOrNull() ?: return this
+    val targetUrl = targetDefaultBaseUrl.urlPartsOrNull() ?: return this
     val convertedPath = sourceUrl.encodedPath.convertToTargetPath(targetUrl.encodedPath)
-    return sourceUrl.newBuilder()
-        .encodedPath(convertedPath)
-        .build()
-        .toString()
+    return this.replaceUrlEncodedPathOrNull(convertedPath) ?: this
 }
 
 private fun String.convertToTargetPath(targetPath: String): String {
@@ -519,8 +539,6 @@ private fun ColumnScope.ProviderConfigureComfyUI(
             }
         }
     }
-
-    provider.description()
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -653,8 +671,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     val latestProvider by rememberUpdatedState(provider)
     val toaster = LocalToaster.current
 
-    provider.description()
-
     DebouncedTextField(
         value = provider.apiKey,
         onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
@@ -693,7 +709,7 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             onCheckedChange = {
                 onEdit(provider.copy(useResponseApi = it))
 
-                if(it && provider.baseUrl.toHttpUrlOrNull()?.host != "api.openai.com") {
+                if(it && provider.baseUrl.urlPartsOrNull()?.host != "api.openai.com") {
                     toaster.show(
                         message = responseAPIWarning,
                         type = ToastType.Warning
@@ -819,7 +835,6 @@ private fun ColumnScope.ProviderConfigureClaude(
     onEdit: (provider: ProviderSetting.Claude) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
-    provider.description()
 
     DebouncedTextField(
         value = provider.apiKey,
@@ -845,7 +860,6 @@ private fun ColumnScope.ProviderConfigureGoogle(
     onEdit: (provider: ProviderSetting.Google) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
-    provider.description()
 
     Row(
         verticalAlignment = Alignment.CenterVertically

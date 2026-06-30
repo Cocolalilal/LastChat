@@ -3,7 +3,6 @@ package me.rerere.rikkahub.data.ai.transformers
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.provider.Modality
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 
 /**
  * Transforms residual unsupported attachments into text references after the
@@ -13,10 +12,10 @@ object UnsupportedFileTransformer : InputMessageTransformer {
     internal fun buildResidualImageFallbackText(
         fileName: String,
         sourceUrl: String,
-        pythonEnabled: Boolean,
+        workspaceEnabled: Boolean,
     ): String {
-        return if (pythonEnabled) {
-            "\n[Image attachment: $fileName - The selected model cannot inspect image pixels directly in this turn because no OCR text was available. If the user explicitly wants tool-based file processing, Python can use the original image. Use list_sandbox_files to inspect preloaded sandbox files or import_attachment with this original URL if needed. URL: $sourceUrl]\n"
+        return if (workspaceEnabled) {
+            "\n[Image attachment: $fileName - The selected model cannot inspect image pixels directly in this turn because no OCR text was available. If the user explicitly wants tool-based file processing, use the bound Linux workspace tools and import/read the original attachment URL as needed. URL: $sourceUrl]\n"
         } else {
             "\n[Image attachment: $fileName - The selected model cannot inspect image pixels directly in this turn, and no OCR text was available. Do not infer image contents from this attachment alone.]\n"
         }
@@ -26,9 +25,7 @@ object UnsupportedFileTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val isPythonEnabled = ctx.assistant.localTools.any { tool ->
-            tool is LocalToolOption.PythonEngine
-        }
+        val isWorkspaceEnabled = ctx.assistant.workspaceId != null
         val modelSupportsImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         return messages.map { msg ->
@@ -43,8 +40,8 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                                 part.mime.startsWith("audio/") ||
                                 part.mime == "application/pdf"
 
-                            if (!isNative && isPythonEnabled) {
-                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - Python can use this file. If eval_python reports a preloaded sandbox filename, open that filename directly in Python. Otherwise use import_attachment with this original URL. URL: ${part.url}]\n")
+                            if (!isNative && isWorkspaceEnabled) {
+                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
                             } else {
                                 part
                             }
@@ -56,7 +53,7 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                                     buildResidualImageFallbackText(
                                         fileName = filename,
                                         sourceUrl = part.url,
-                                        pythonEnabled = isPythonEnabled,
+                                        workspaceEnabled = isWorkspaceEnabled,
                                     )
                                 )
                             } else {

@@ -8,6 +8,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.text.unescapeHtml
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.utils.JsonInstant
@@ -15,7 +18,6 @@ import me.rerere.rikkahub.utils.createChatTextFile
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.search.SearchService
-import org.jsoup.Jsoup
 
 private const val TAG = "ShareIntentResolver"
 private const val MAX_SHARED_WEBPAGE_CHARS = 16_000
@@ -164,13 +166,14 @@ internal fun Intent?.toRawSharePayload(): RawSharePayload {
 internal suspend fun resolveSharePayload(
     context: android.content.Context,
     settingsStore: SettingsStore,
+    httpClient: PlatformHttpClient,
     rawSharePayload: RawSharePayload,
 ): ResolvedSharePayload = withContext(Dispatchers.IO) {
     val copiedAttachments = rawSharePayload.streamUris.mapNotNull { rawUri ->
         context.copyShareAttachment(rawUri, rawSharePayload.mimeType)
     }
     val scrapedWebsiteAttachment = if (copiedAttachments.isEmpty()) {
-        scrapeWebsiteShare(context, settingsStore, rawSharePayload)
+        scrapeWebsiteShare(context, settingsStore, httpClient, rawSharePayload)
     } else {
         null
     }
@@ -230,11 +233,12 @@ private suspend fun android.content.Context.copyShareAttachment(
 private suspend fun scrapeWebsiteShare(
     context: android.content.Context,
     settingsStore: SettingsStore,
+    httpClient: PlatformHttpClient,
     rawSharePayload: RawSharePayload,
 ): Pair<String, ShareAttachment>? {
     val sourceText = buildResolvedShareText(rawSharePayload.text, rawSharePayload.subject)
     val sharedUrl = findSharedUrlMatch(sourceText) ?: return null
-    val scrapedPage = scrapeWebsiteContent(settingsStore, sharedUrl.normalized) ?: return null
+    val scrapedPage = scrapeWebsiteContent(settingsStore, httpClient, sharedUrl.normalized) ?: return null
     val cleanedText = sourceText
         .replace(sharedUrl.raw, "")
         .lineSequence()
@@ -258,6 +262,7 @@ private suspend fun scrapeWebsiteShare(
 
 private suspend fun scrapeWebsiteContent(
     settingsStore: SettingsStore,
+    httpClient: PlatformHttpClient,
     url: String,
 ): ScrapedWebsiteContent? {
     val settings = settingsStore.settingsFlow.value
@@ -290,31 +295,29 @@ private suspend fun scrapeWebsiteContent(
     }
 
     return runCatching {
-        val document = Jsoup.connect(url)
-            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            .timeout(15_000)
-            .get()
-        val description = document.selectFirst(
-            "meta[name=description], meta[property=og:description]"
-        )?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
-        val mainContent = document.selectFirst("main, article, [role=main]") ?: document.body()
-        val blocks = mainContent
-            .select("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote")
-            .eachText()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-        val textContent = if (blocks.isNotEmpty()) {
-            blocks.joinToString("\n\n")
-        } else {
-            mainContent.text()
-        }.trim()
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = url,
+                headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                )
+            )
+        )
+        if (response.statusCode !in 200..299) return@runCatching null
+        val html = response.body.decodeToString()
+        val description = extractHtmlMetaContent(
+            html = html,
+            keys = setOf("description", "og:description"),
+        )
+        val textContent = extractReadableHtmlText(html)
 
         if (textContent.isBlank()) {
             null
         } else {
             ScrapedWebsiteContent(
                 url = url,
-                title = document.title().takeIf { it.isNotBlank() },
+                title = extractHtmlTitle(html),
                 description = description,
                 content = limitSharedWebpageContent(textContent)
             )
@@ -323,6 +326,67 @@ private suspend fun scrapeWebsiteContent(
         android.util.Log.w(TAG, "Fallback scrape failed for shared URL: $url", it)
         null
     }
+}
+
+internal fun extractHtmlTitle(html: String): String? {
+    return Regex("""(?is)<title[^>]*>(.*?)</title>""")
+        .find(html)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.cleanHtmlText()
+        ?.takeIf { it.isNotBlank() }
+}
+
+internal fun extractHtmlMetaContent(html: String, keys: Set<String>): String? {
+    val metaTagRegex = Regex("""(?is)<meta\b[^>]*>""")
+    return metaTagRegex.findAll(html)
+        .map { it.value }
+        .firstNotNullOfOrNull { tag ->
+            val name = tag.htmlAttribute("name")
+                ?: tag.htmlAttribute("property")
+                ?: return@firstNotNullOfOrNull null
+            if (name.lowercase() !in keys) return@firstNotNullOfOrNull null
+            tag.htmlAttribute("content")
+                ?.cleanHtmlText()
+                ?.takeIf { it.isNotBlank() }
+        }
+}
+
+internal fun extractReadableHtmlText(html: String): String {
+    val body = Regex("""(?is)<body\b[^>]*>(.*?)</body>""")
+        .find(html)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: html
+    return body
+        .replace(Regex("""(?is)<(script|style|noscript|svg)\b.*?</\1>"""), " ")
+        .replace(Regex("""(?is)</?(h[1-6]|p|li|pre|blockquote|br|div|section|article|main)\b[^>]*>"""), "\n")
+        .replace(Regex("""(?is)<[^>]+>"""), " ")
+        .cleanHtmlText()
+        .lineSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .joinToString("\n\n")
+}
+
+private fun String.htmlAttribute(name: String): String? {
+    val quoted = Regex("""(?is)\b${Regex.escape(name)}\s*=\s*(['"])(.*?)\1""")
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(2)
+    if (quoted != null) return quoted
+
+    return Regex("""(?is)\b${Regex.escape(name)}\s*=\s*([^\s>]+)""")
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(1)
+}
+
+private fun String.cleanHtmlText(): String {
+    return unescapeHtml()
+        .replace('\u00A0', ' ')
+        .replace(Regex("""[ \t\x0B\f\r]+"""), " ")
+        .trim()
 }
 
 private fun findSharedUrlMatch(text: String): SharedUrlMatch? {

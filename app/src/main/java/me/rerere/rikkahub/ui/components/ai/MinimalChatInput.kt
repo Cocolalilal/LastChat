@@ -14,7 +14,15 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkHorizontally
@@ -31,6 +39,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.spring
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
@@ -72,21 +84,29 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -110,6 +130,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
@@ -124,10 +145,16 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
@@ -145,10 +172,12 @@ import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
+import me.rerere.rikkahub.ui.components.ui.permission.PermissionMicrophone
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.context.LocalSTTState
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -159,10 +188,15 @@ import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.AskUserOption
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestionnaire
+import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.findPendingAskUserToolCall
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
+import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -173,7 +207,10 @@ import org.koin.compose.koinInject
  * Shows a simple input bar with + button, text field, and send button.
  * The + button opens a bottom sheet with file upload, model picker, and other options.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class
+)
 @Composable
 fun MinimalChatInput(
     state: ChatInputState,
@@ -215,16 +252,29 @@ fun MinimalChatInput(
     val assistant = conversationContext.assistant
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val workspaceRepository = koinInject<WorkspaceRepository>()
+    val modelCatalog = koinInject<ModelCatalogService>()
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = remember(settings.skills) {
+        settings.skills
     }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
     val pendingQuestionnaire = remember(conversation.messageNodes) {
         conversation.currentMessages.findPendingAskUserToolCall()
     }
     val isQuestionnaireActive = pendingQuestionnaire != null
+    val pendingToolApproval = remember(conversation.messageNodes, pendingQuestionnaire?.toolCallId) {
+        if (pendingQuestionnaire != null) {
+            null
+        } else {
+            conversation.currentMessages.findPendingToolApproval()
+        }
+    }
+    val isToolApprovalActive = pendingToolApproval != null
     val questionnaire = pendingQuestionnaire?.questionnaire
     val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
     var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
@@ -235,6 +285,7 @@ fun MinimalChatInput(
         mutableStateOf<Map<String, String>>(emptyMap())
     }
     val questionnaireTextState = remember(questionnaireToolCallId) { TextFieldState() }
+    val toolApprovalTextState = remember(pendingToolApproval?.toolCallId) { TextFieldState() }
     val currentQuestion = questionnaire?.questions?.getOrNull(questionnaireIndex)
     val isFinalQuestion = questionnaire != null && questionnaireIndex == questionnaire.questions.lastIndex
 
@@ -249,9 +300,73 @@ fun MinimalChatInput(
     
     // Camera permission - must be in parent, not inside ModalBottomSheet
     val cameraPermission = rememberPermissionState(PermissionCamera)
+    val microphonePermission = rememberPermissionState(PermissionMicrophone)
+    val stt = LocalSTTState.current
+    val sttState by stt.state.collectAsStateWithLifecycle()
+    val hasSelectedSttProvider = settings.sttModelId != null
+    var sttDraft by remember { mutableStateOf("") }
+    var acceptSttWhenIdle by remember { mutableStateOf(false) }
+    var discardSttWhenIdle by remember { mutableStateOf(false) }
+    val sttRecording = sttState.isRecording
+    val sttFinalizing = sttState.status == me.rerere.asr.ASRStatus.Stopping
+
+    LaunchedEffect(sttState.errorMessage) {
+        sttState.errorMessage?.let { error ->
+            toaster.show(error, type = me.rerere.rikkahub.ui.components.ui.ToastType.Error)
+            stt.clearError()
+        }
+    }
+
+    fun startSttRecording() {
+        if (!microphonePermission.allRequiredPermissionsGranted) {
+            microphonePermission.requestPermissions()
+            return
+        }
+        sttDraft = ""
+        acceptSttWhenIdle = false
+        discardSttWhenIdle = false
+        keyboardController?.hide()
+        stt.start { transcript ->
+            sttDraft = transcript
+        }
+    }
+
+    fun stopSttRecording(accept: Boolean) {
+        acceptSttWhenIdle = accept
+        discardSttWhenIdle = !accept
+        stt.stop()
+    }
+
+    LaunchedEffect(sttState.transcript) {
+        if (sttState.transcript.isNotBlank()) {
+            sttDraft = sttState.transcript
+        }
+    }
+
+    LaunchedEffect(sttRecording, sttFinalizing, acceptSttWhenIdle, discardSttWhenIdle) {
+        if (!sttRecording && !sttFinalizing && (acceptSttWhenIdle || discardSttWhenIdle)) {
+            if (acceptSttWhenIdle) {
+                delay(220)
+                val transcript = sttDraft.trim()
+                
+                if (transcript.isNotBlank()) {
+                    val prefix = state.textContent.text.toString()
+                    state.setMessageText(
+                        if (prefix.isBlank()) transcript else "$prefix $transcript"
+                    )
+                    
+                    runCatching { state.focusRequester.requestFocus() }
+                }
+            }
+            sttDraft = ""
+            acceptSttWhenIdle = false
+            discardSttWhenIdle = false
+        }
+    }
     
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    var isExpandedFullScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
 
     LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
@@ -278,6 +393,9 @@ fun MinimalChatInput(
         val question = currentQuestion ?: return@LaunchedEffect
         questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to questionnaireTextState.text.toString())
     }
+    LaunchedEffect(pendingToolApproval?.toolCallId) {
+        toolApprovalTextState.setTextAndPlaceCursorAtEnd("")
+    }
 
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
@@ -289,8 +407,8 @@ fun MinimalChatInput(
             focusManager.clearFocus()
         }
     }
-    LaunchedEffect(isQuestionnaireActive) {
-        if (isQuestionnaireActive) {
+    LaunchedEffect(isQuestionnaireActive, isToolApprovalActive) {
+        if (isQuestionnaireActive || isToolApprovalActive) {
             showPicker = false
         }
     }
@@ -338,6 +456,37 @@ fun MinimalChatInput(
         onToolApproval(toolCallId, true, "", payload)
     }
 
+    fun approvePendingTool(alwaysApproveWorkspace: Boolean) {
+        val pending = pendingToolApproval ?: return
+        keyboardController?.hide()
+        haptics.perform(if (alwaysApproveWorkspace) HapticPattern.Success else HapticPattern.Send)
+        if (alwaysApproveWorkspace && pending.isWorkspaceTool) {
+            val workspaceId = assistant.workspaceId?.toString()
+            if (workspaceId != null) {
+                scope.launch {
+                    workspaceRepository.setToolApproval(workspaceId, pending.toolName, needsApproval = false)
+                    onToolApproval(pending.toolCallId, true, "", null)
+                }
+                return
+            }
+        }
+        onToolApproval(pending.toolCallId, true, "", null)
+    }
+
+    fun denyPendingToolWithInstruction() {
+        val pending = pendingToolApproval ?: return
+        val reason = toolApprovalTextState.text.toString().trim()
+        if (reason.isBlank()) {
+            haptics.perform(HapticPattern.Pop)
+            state.focusRequester.requestFocus()
+            keyboardController?.show()
+            return
+        }
+        keyboardController?.hide()
+        haptics.perform(HapticPattern.Send)
+        onToolApproval(pending.toolCallId, false, reason, null)
+    }
+
     fun advanceQuestionnaire() {
         val activeQuestionnaire = questionnaire ?: return
         if (isFinalQuestion) {
@@ -356,6 +505,10 @@ fun MinimalChatInput(
                 questionnaireCustomAnswers = questionnaireCustomAnswers + (question.id to trimmed)
             }
             advanceQuestionnaire()
+            return
+        }
+        if (isToolApprovalActive) {
+            denyPendingToolWithInstruction()
             return
         }
         keyboardController?.hide()
@@ -417,8 +570,8 @@ fun MinimalChatInput(
                 .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val showSuggestions = !isQuestionnaireActive && chatSuggestions.isNotEmpty()
-            val showScrollToBottom = !isQuestionnaireActive && showScrollToBottomButton
+            val showSuggestions = !isQuestionnaireActive && !isToolApprovalActive && chatSuggestions.isNotEmpty()
+            val showScrollToBottom = !isQuestionnaireActive && !isToolApprovalActive && showScrollToBottomButton
 
             // Suggestions and scroll-to-bottom affordance share a row so they never overlap.
             androidx.compose.animation.AnimatedVisibility(
@@ -499,6 +652,25 @@ fun MinimalChatInput(
                     )
                 }
             }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isToolApprovalActive && pendingToolApproval != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                pendingToolApproval?.let { pending ->
+                    ToolApprovalCard(
+                        approval = pending,
+                        onApprove = { approvePendingTool(alwaysApproveWorkspace = false) },
+                        onAlwaysApproveWorkspace = { approvePendingTool(alwaysApproveWorkspace = true) },
+                        onDenyWithInstruction = {
+                            state.focusRequester.requestFocus()
+                            keyboardController?.show()
+                            haptics.perform(HapticPattern.Pop)
+                        }
+                    )
+                }
+            }
             
             // Content receiver for clipboard image paste (must be outside Surface lambda)
             val receiveContentListener = remember(isQuestionnaireActive) {
@@ -532,13 +704,8 @@ fun MinimalChatInput(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Plus button - 48dp pill button
-                if (!isQuestionnaireActive) {
+                if (!isQuestionnaireActive && !isToolApprovalActive) {
                     Surface(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            showPicker = true
-                            keyboardController?.hide()
-                        },
                         shape = CircleShape,
                         color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
@@ -546,9 +713,30 @@ fun MinimalChatInput(
                             .size(48.dp)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            contentAlignment = Alignment.Center, 
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .combinedClickable(
+                                    onLongClick = {
+                                        if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
+                                            haptics.perform(HapticPattern.Pop)
+                                            startSttRecording()
+                                        }
+                                    },
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        if (sttRecording) {
+                                            stopSttRecording(accept = true)
+                                        } else {
+                                            showPicker = true
+                                            keyboardController?.hide()
+                                        }
+                                    }
+                                )
+                        ) {
                             Icon(
-                                imageVector = Icons.Rounded.Add,
+                                imageVector = if (sttRecording) Icons.Rounded.Stop else Icons.Rounded.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -572,7 +760,7 @@ fun MinimalChatInput(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = !isQuestionnaireActive && state.messageContent.isNotEmpty(),
+                            visible = !isQuestionnaireActive && !isToolApprovalActive && state.messageContent.isNotEmpty(),
                             enter = fadeIn(
                                 animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
                             ) + expandVertically(
@@ -600,7 +788,7 @@ fun MinimalChatInput(
                         }
 
                         // Editing indicator - shown when editing a message
-                        if (!isQuestionnaireActive && state.isEditing()) {
+                        if (!isQuestionnaireActive && !isToolApprovalActive && state.isEditing()) {
                             Surface(
                                 color = if (LocalDarkMode.current) 
                                     MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
@@ -639,8 +827,69 @@ fun MinimalChatInput(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val activeTextState =
-                                if (isQuestionnaireActive) questionnaireTextState else state.textContent
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = (sttRecording || sttFinalizing) && hasSelectedSttProvider,
+                                enter = fadeIn(spring(dampingRatio = 0.6f, stiffness = 300f)),
+                                exit = fadeOut(tween(140)),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .zIndex(10f)
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier.fillMaxSize().clickable(
+                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        if (sttRecording || sttFinalizing) {
+                                            haptics.perform(HapticPattern.Pop)
+                                            stopSttRecording(accept = true)
+                                        }
+                                    }
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize().padding(
+                                            top = 12.dp,
+                                            bottom = 12.dp,
+                                        ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = true,
+                                            enter = slideInHorizontally(
+                                                initialOffsetX = { it / 2 },
+                                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f)
+                                            ),
+                                            exit = slideOutHorizontally(
+                                                targetOffsetX = { it / 2 },
+                                                animationSpec = tween(140)
+                                            )
+                                        ) {
+                                            if (sttFinalizing) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(24.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else {
+                                                STTWaveformLine(
+                                                    amplitudes = sttState.amplitudes,
+                                                    active = sttRecording,
+                                                    modifier = Modifier.fillMaxWidth().height(24.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            val activeTextState = when {
+                                isQuestionnaireActive -> questionnaireTextState
+                                isToolApprovalActive -> toolApprovalTextState
+                                else -> state.textContent
+                            }
+                            val lineCount = androidx.compose.runtime.derivedStateOf {
+                                activeTextState.text.toString().lines().size
+                            }
                             TextField(
                                 state = activeTextState,
                                 modifier = Modifier
@@ -648,7 +897,7 @@ fun MinimalChatInput(
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
                                     .focusRequester(state.focusRequester)
                                     .then(
-                                        if (isQuestionnaireActive) {
+                                        if (isQuestionnaireActive || isToolApprovalActive) {
                                             Modifier
                                         } else {
                                             Modifier.contentReceiver(receiveContentListener)
@@ -656,21 +905,33 @@ fun MinimalChatInput(
                                     )
                                     .onFocusChanged { isFocused = it.isFocused },
                                 placeholder = {
-                                    Text(
-                                        text = if (isQuestionnaireActive) {
-                                            stringResource(R.string.character_questions_custom_answer_placeholder)
-                                        } else {
-                                            stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
-                                        },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),
+                                        enter = fadeIn(tween(220)),
+                                        exit = fadeOut(tween(140))
+                                    ) {
+                                        Text(
+                                            text = if (isQuestionnaireActive) {
+                                                stringResource(R.string.character_questions_custom_answer_placeholder)
+                                            } else if (isToolApprovalActive) {
+                                                stringResource(R.string.tool_approval_input_placeholder)
+                                            } else {
+                                                stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
                                 contentPadding = PaddingValues(
                                     start = 16.dp,
                                     top = 12.dp,
-                                    end = 52.dp,
+                                    end = androidx.compose.animation.core.animateDpAsState(
+                                        targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 42.dp,
+                                        animationSpec = tween(220),
+                                        label = "input_padding"
+                                    ).value,
                                     bottom = 12.dp,
                                 ),
                                 colors = TextFieldDefaults.colors().copy(
@@ -679,6 +940,17 @@ fun MinimalChatInput(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
                                 )
+                            )
+                            
+                            ExpandButtonOverlay(
+                                isVisible = !isExpandedFullScreen && lineCount.value >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
+                                onExpand = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    isExpandedFullScreen = true
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 4.dp, top = 4.dp)
                             )
                             
                             // Action button - bottom-right for multiline, optically centered when collapsed
@@ -690,8 +962,12 @@ fun MinimalChatInput(
                                 val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
                                     isQuestionnaireActive -> "questionnaire_next"
+                                    isToolApprovalActive -> "tool_approval_deny"
                                     state.loading -> "loading"
                                     !state.isEmpty() -> "send"
+                                    hasSelectedSttProvider && sttRecording -> "stt_recording"
+                                    hasSelectedSttProvider && sttFinalizing -> "stt_finalizing"
+                                    hasSelectedSttProvider && settings.displaySetting.sttReplaceModelIcon -> "stt"
                                     else -> "picker"
                                 }
                                 
@@ -699,16 +975,32 @@ fun MinimalChatInput(
                                     targetValue = when (currentAction) {
                                         "loading" -> MaterialTheme.colorScheme.errorContainer
                                         "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
+                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
                                         "send" -> MaterialTheme.colorScheme.primary
+                                        "stt_recording" -> MaterialTheme.colorScheme.primary
                                         else -> Color.Transparent
                                     },
+                                    animationSpec = tween(250),
                                     label = "ActionContainerColor"
                                 )
+
+
                                 
                                 Surface(
                                     onClick = { 
-                                        if (currentAction == "send" || currentAction == "loading" || currentAction.startsWith("questionnaire_")) {
+                                        if (
+                                            currentAction == "send" ||
+                                            currentAction == "loading" ||
+                                            currentAction == "tool_approval_deny" ||
+                                            currentAction.startsWith("questionnaire_")
+                                        ) {
                                             sendMessage()
+                                        } else if (currentAction == "stt") {
+                                            haptics.perform(HapticPattern.Pop)
+                                            startSttRecording()
+                                        } else if (currentAction == "stt_recording") {
+                                            haptics.perform(HapticPattern.Pop)
+                                            stopSttRecording(accept = true)
                                         } else {
                                             showPicker = true
                                         }
@@ -720,7 +1012,40 @@ fun MinimalChatInput(
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         AnimatedContent(
                                             targetState = currentAction,
-                                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                            transitionSpec = {
+                                                val outFadeSpec = tween<Float>(150)
+                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
+                                                val depthScale = 0.6f
+                                                
+                                                if (targetState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else if (initialState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else {
+                                                    fun getRank(state: String): Int = when (state) {
+                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
+                                                        "send", "questionnaire_submit" -> 1
+                                                        "loading", "tool_approval_deny" -> 2
+                                                        else -> 1
+                                                    }
+                                                    val initialRank = getRank(initialState)
+                                                    val targetRank = getRank(targetState)
+                                                    
+                                                    if (targetRank > initialRank) {
+                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else if (targetRank < initialRank) {
+                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else {
+                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
+                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    }
+                                                }
+                                            },
+                                            contentAlignment = Alignment.Center,
                                             label = "ActionContent"
                                         ) { action ->
                                             when (action) {
@@ -756,6 +1081,29 @@ fun MinimalChatInput(
                                                         tint = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                 }
+                                                "tool_approval_deny" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Close,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                "stt", "stt_recording" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Mic,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = if (action == "stt_recording") {
+                                                            MaterialTheme.colorScheme.onPrimary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        }
+                                                    )
+                                                }
+                                                "stt_finalizing" -> {
+                                                    // Handled in the waveform box
+                                                }
                                                 "picker" -> {
                                                     ModelSelector(
                                                         modelId = assistant.chatModelId ?: settings.chatModelId,
@@ -780,6 +1128,259 @@ fun MinimalChatInput(
         }  // Column ends
     }  // Box ends
     
+    if (isExpandedFullScreen) {
+        Dialog(
+            onDismissRequest = { isExpandedFullScreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            val transitionState = remember { MutableTransitionState(false) }
+            LaunchedEffect(Unit) {
+                transitionState.targetState = true
+            }
+            
+            // Share the same activeTextState so the text is preserved
+            val activeTextState = when {
+                isQuestionnaireActive -> questionnaireTextState
+                isToolApprovalActive -> toolApprovalTextState
+                else -> state.textContent
+            }
+            
+            // Request focus when dialog opens
+            val expandedFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(transitionState.currentState) {
+                if (transitionState.currentState) {
+                    expandedFocusRequester.requestFocus()
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = transitionState,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                ) + fadeIn(tween(300)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(200, easing = androidx.compose.animation.core.FastOutLinearInEasing)
+                ) + fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            if (amoledMode) Color.Black else MaterialTheme.colorScheme.background
+                        )
+                        .statusBarsPadding()
+                        .imePadding()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Top bar with minimize button
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            IconButton(
+                                onClick = { 
+                                    haptics.perform(HapticPattern.Pop)
+                                    isExpandedFullScreen = false 
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FullscreenExit,
+                                    contentDescription = "Minimize",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        }
+                        
+                        // Text input field taking up remaining space
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            TextField(
+                                state = activeTextState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(expandedFocusRequester),
+                                placeholder = {
+                                    Text(
+                                        text = if (isQuestionnaireActive) {
+                                            stringResource(R.string.character_questions_custom_answer_placeholder)
+                                        } else if (isToolApprovalActive) {
+                                            stringResource(R.string.tool_approval_input_placeholder)
+                                        } else {
+                                            stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                        }
+                                    )
+                                },
+                                lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 5),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    top = 16.dp,
+                                    end = 16.dp,
+                                    bottom = 80.dp, // Leave space for send button
+                                ),
+                                colors = TextFieldDefaults.colors().copy(
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                )
+                            )
+                            
+                            // Floating send button at the bottom right
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
+                            ) {
+                                val currentAction = when {
+                                    isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
+                                    isQuestionnaireActive -> "questionnaire_next"
+                                    isToolApprovalActive -> "tool_approval_deny"
+                                    state.loading -> "loading"
+                                    !state.isEmpty() -> "send"
+                                    else -> "picker" // Fallback but usually hidden
+                                }
+                                
+                                val containerColor by animateColorAsState(
+                                    targetValue = when (currentAction) {
+                                        "loading" -> MaterialTheme.colorScheme.errorContainer
+                                        "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
+                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
+                                        "send" -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    animationSpec = tween(250),
+                                    label = "ActionContainerColorExpanded"
+                                )
+                                
+                                Surface(
+                                    onClick = { 
+                                        if (
+                                            currentAction == "send" ||
+                                            currentAction == "loading" ||
+                                            currentAction == "tool_approval_deny" ||
+                                            currentAction.startsWith("questionnaire_")
+                                        ) {
+                                            sendMessage()
+                                            isExpandedFullScreen = false
+                                        }
+                                    },
+                                    shape = CircleShape,
+                                    color = containerColor,
+                                    modifier = Modifier.size(56.dp) // Larger button
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        AnimatedContent(
+                                            targetState = currentAction,
+                                            transitionSpec = {
+                                                val outFadeSpec = tween<Float>(150)
+                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
+                                                val depthScale = 0.6f
+                                                
+                                                if (targetState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else if (initialState == "questionnaire_next") {
+                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                } else {
+                                                    fun getRank(state: String): Int = when (state) {
+                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
+                                                        "send", "questionnaire_submit" -> 1
+                                                        "loading", "tool_approval_deny" -> 2
+                                                        else -> 1
+                                                    }
+                                                    val initialRank = getRank(initialState)
+                                                    val targetRank = getRank(targetState)
+                                                    
+                                                    if (targetRank > initialRank) {
+                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else if (targetRank < initialRank) {
+                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
+                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    } else {
+                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
+                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                                    }
+                                                }
+                                            },
+                                            contentAlignment = Alignment.Center,
+                                            label = "ActionContentExpanded"
+                                        ) { action ->
+                                            when (action) {
+                                                "loading" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Stop,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                "send" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_next" -> {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "questionnaire_submit" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                                "tool_approval_deny" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Close,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                                else -> {
+                                                    // Fallback
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Bottom sheet picker with custom MinimalPickerContent
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
@@ -965,6 +1566,220 @@ private fun CharacterQuestionOptionRow(
     }
 }
 
+private data class PendingToolApproval(
+    val toolCallId: String,
+    val toolName: String,
+    val arguments: String,
+) {
+    val isWorkspaceTool: Boolean
+        get() = toolName.startsWith("workspace_")
+}
+
+private fun List<me.rerere.ai.ui.UIMessage>.findPendingToolApproval(): PendingToolApproval? {
+    return firstNotNullOfOrNull { message ->
+        message.getToolCalls().firstOrNull { toolCall ->
+            toolCall.toolName != ASK_USER_TOOL_NAME &&
+                toolCall.approvalState is ToolApprovalState.Pending
+        }?.let { toolCall ->
+            PendingToolApproval(
+                toolCallId = toolCall.toolCallId,
+                toolName = toolCall.toolName,
+                arguments = toolCall.arguments,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolApprovalCard(
+    approval: PendingToolApproval,
+    onApprove: () -> Unit,
+    onAlwaysApproveWorkspace: () -> Unit,
+    onDenyWithInstruction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Terminal,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tool_approval_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = approval.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            val summary = approval.summary()
+            if (summary.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            ToolApprovalActionRow(
+                label = stringResource(R.string.tool_approval_approve),
+                description = stringResource(R.string.tool_approval_approve_desc),
+                icon = Icons.Rounded.Check,
+                selected = true,
+                onClick = onApprove,
+            )
+            if (approval.isWorkspaceTool) {
+                ToolApprovalActionRow(
+                    label = stringResource(R.string.tool_approval_always_workspace),
+                    description = stringResource(R.string.tool_approval_always_workspace_desc),
+                    icon = Icons.Rounded.Save,
+                    selected = false,
+                    onClick = onAlwaysApproveWorkspace,
+                )
+            }
+            ToolApprovalActionRow(
+                label = stringResource(R.string.tool_approval_deny_with_instruction),
+                description = stringResource(R.string.tool_approval_deny_with_instruction_desc),
+                icon = Icons.Rounded.Edit,
+                selected = false,
+                onClick = onDenyWithInstruction,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolApprovalActionRow(
+    label: String,
+    description: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "tool_approval_action_scale"
+    )
+
+    Surface(
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            onClick()
+        },
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.background
+        ),
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingToolApproval.displayName(): String = when (toolName) {
+    "workspace_shell" -> stringResource(R.string.activity_timeline_tool_workspace_shell)
+    "workspace_read_file" -> stringResource(R.string.activity_timeline_tool_workspace_read_file)
+    "workspace_write_file" -> stringResource(R.string.activity_timeline_tool_workspace_write_file)
+    "workspace_edit_file" -> stringResource(R.string.activity_timeline_tool_workspace_edit_file)
+    else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
+}
+
+private fun PendingToolApproval.summary(): String {
+    val args = runCatching { JsonInstantPretty.parseToJsonElement(arguments).jsonObject }.getOrNull()
+    val key = when (toolName) {
+        "workspace_shell" -> "command"
+        "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> "path"
+        else -> null
+    }
+    return key?.let { args?.get(it)?.jsonPrimitiveOrNull?.contentOrNull }
+        ?: arguments.take(240)
+}
+
 @Composable
 private fun MinimalPickerContent(
     state: ChatInputState,
@@ -988,10 +1803,13 @@ private fun MinimalPickerContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = remember(settings.skills) {
+        settings.skills
     }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
     
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -1017,8 +1835,11 @@ private fun MinimalPickerContent(
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
-    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(availableSkillIds)
-    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
+    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
+    val alwaysEnabledSkillIds = availableSkills
+        .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
+        .map { it.id }
+        .toSet()
     val effectiveActiveSkillIds = if (conversation.enabledModeIds.hasManualSkillSelectionOverride() || conversation.enabledModeIds.isNotEmpty()) {
         conversation.enabledModeIds.withoutSkillSelectionOverride()
     } else {
@@ -1117,12 +1938,12 @@ private fun MinimalPickerContent(
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
             onDismiss()
-            val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
+            val isWorkspaceEnabled = assistant.workspaceId != null
             importScope.launch {
                 val importedFiles = withContext(Dispatchers.IO) {
                     context.prepareImportedPickerFiles(
                         selectedUris = selectedUris,
-                        isPythonEnabled = isPythonEnabled,
+                        isWorkspaceEnabled = isWorkspaceEnabled,
                     )
                 }
 
@@ -1295,55 +2116,61 @@ private fun MinimalPickerContent(
             }
         )
         
-        // Skills - use enabledModeIds (legacy field) for per-chat overrides.
-        val activeSkills = availableSkills.filter { skill ->
-            effectiveActiveSkillIds.contains(skill.id)
+        if (settings.skills.isNotEmpty()) {
+            // Skills - use enabledModeIds (legacy field) for per-chat overrides.
+            val activeSkills = availableSkills.filter { skill ->
+                effectiveActiveSkillIds.contains(skill.id)
+            }
+            val activeSkillsCount = activeSkills.size
+            val skillsActive = activeSkillsCount > 0
+            val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
+            MinimalPickerItem(
+                icon = {
+                    Icon(
+                        imageVector = if (singleActiveSkillIcon != null) {
+                            ModeIcons.getIcon(singleActiveSkillIcon)
+                        } else {
+                            Icons.Rounded.Category
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                title = stringResource(R.string.minimal_input_skills),
+                subtitle = if (activeSkillsCount > 0) {
+                    stringResource(R.string.skills_picker_active_count, activeSkillsCount)
+                } else {
+                    stringResource(R.string.minimal_input_skills_desc)
+                },
+                onClick = {
+                    showSkillsPicker = true
+                }
+            )
         }
-        val activeSkillsCount = activeSkills.size
-        val skillsActive = activeSkillsCount > 0
-        val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
-        MinimalPickerItem(
-            icon = {
-                Icon(
-                    imageVector = if (singleActiveSkillIcon != null) {
-                        ModeIcons.getIcon(singleActiveSkillIcon)
-                    } else {
-                        Icons.Rounded.Category
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            title = stringResource(R.string.minimal_input_skills),
-            subtitle = if (activeSkillsCount > 0) {
-                stringResource(R.string.skills_picker_active_count, activeSkillsCount)
-            } else {
-                stringResource(R.string.minimal_input_skills_desc)
-            },
-            onClick = { 
-                showSkillsPicker = true
-            }
-        )
         
-        // Lorebooks - show active count and blue icon when enabled
-        val activeLorebooksCount = assistant.enabledLorebookIds.size
-        val lorebooksActive = activeLorebooksCount > 0
-        MinimalPickerItem(
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.Book,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            title = stringResource(R.string.minimal_input_lorebooks),
-            subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
-            onClick = { 
-                showLorebooksPicker = true
-            }
-        )
+        if (settings.lorebooks.isNotEmpty()) {
+            // Lorebooks - show active count and blue icon when enabled
+            val lorebookIds = settings.lorebooks.map { it.id }.toSet()
+            val activeLorebookIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
+            val activeLorebooksCount = activeLorebookIds.size
+            val lorebooksActive = activeLorebooksCount > 0
+            MinimalPickerItem(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Book,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                title = stringResource(R.string.minimal_input_lorebooks),
+                subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
+                onClick = {
+                    showLorebooksPicker = true
+                }
+            )
+        }
         
         // Summarize button - show whenever there is enough history to summarize
         if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
@@ -1446,7 +2273,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         LorebooksPickerSheet(
             settings = settings,
             assistant = assistant,
-            onUpdateAssistant = onUpdateAssistant,
+            conversation = conversation,
+            onUpdateConversation = onUpdateConversation,
             onNavigateToLorebook = { lorebookId ->
                 showLorebooksPicker = false
                 onNavigateToLorebook(lorebookId)
@@ -1591,6 +2419,50 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun STTWaveformLine(
+    amplitudes: List<Float>,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val count = 21
+    val center = count / 2
+    val historyNeeded = center + 1
+
+    val bars = remember(amplitudes, active) {
+        val source = amplitudes.takeLast(historyNeeded).reversed()
+        List(count) { index ->
+            val distFromCenter = kotlin.math.abs(index - center)
+            if (source.isEmpty()) {
+                if (active) 0.15f + ((distFromCenter % 3) * 0.05f) else 0.08f
+            } else {
+                val rawValue = source.getOrNull(distFromCenter) ?: 0.08f
+                rawValue
+            }
+        }
+    }
+    
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        bars.forEachIndexed { index, value ->
+            val animatedHeight by animateFloatAsState(
+                targetValue = value.coerceIn(0.08f, 1f),
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                label = "stt_waveform_$index",
+            )
+            Box(
+                modifier = Modifier
+                    .size(width = 3.dp, height = (4.dp + 20.dp * animatedHeight))
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.85f else 0.45f)),
+            )
         }
     }
 }
@@ -2063,7 +2935,7 @@ private fun MediaFileInputRow(
             me.rerere.rikkahub.ui.components.ui.DocumentChip(
                 fileName = document.fileName,
                 mimeType = document.mime,
-                modifier = Modifier,
+                modifier = Modifier.size(60.dp),
                 onRemove = {
                     removePart(attachment.id)?.let(onDelete)
                 }
@@ -2255,6 +3127,32 @@ private fun ChatSuggestionsRow(
                 }
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun ExpandButtonOverlay(
+    isVisible: Boolean,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = isVisible,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+        modifier = modifier
+    ) {
+        androidx.compose.material3.IconButton(
+            onClick = onExpand,
+            modifier = Modifier.size(36.dp)
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Rounded.Fullscreen,
+                contentDescription = "Expand",
+                modifier = Modifier.size(20.dp),
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

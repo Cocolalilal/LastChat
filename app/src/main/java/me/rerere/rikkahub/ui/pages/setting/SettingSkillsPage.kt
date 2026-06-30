@@ -322,7 +322,7 @@ fun SkillsPageContent(
     var orderedSkills by remember { mutableStateOf(settings.skills) }
     var isReordering by remember { mutableStateOf(false) }
     var awaitingPersistedOrder by remember { mutableStateOf(false) }
-    val canDelete = orderedSkills.size > 1
+    val canDelete = true
 
     LaunchedEffect(settings.skills, isReordering) {
         if (!isReordering) {

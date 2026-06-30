@@ -1,9 +1,7 @@
 package me.rerere.ai.core
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 
@@ -21,14 +19,4 @@ data class Tool(
 enum class ToolApprovalMode {
     Auto,
     RequiresApproval,
-}
-
-@Serializable
-sealed class InputSchema {
-    @Serializable
-    @SerialName("object")
-    data class Obj(
-        val properties: JsonObject,
-        val required: List<String>? = null,
-    ) : InputSchema()
 }

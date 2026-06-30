@@ -114,7 +114,7 @@
     <string name="setting_chat_storage_category_assistant_media">Assistant media</string>
     <string name="setting_chat_storage_category_lorebook_media">Lorebook media</string>
     <string name="setting_chat_storage_category_generated_media">Generated media</string>
-    <string name="setting_chat_storage_category_python_sandbox">Python sandbox</string>
+    <string name="setting_chat_storage_category_workspaces">Workspaces</string>
     <string name="setting_chat_storage_category_icons_and_fonts">Icons and fonts</string>
     <string name="setting_chat_storage_category_settings_database">Settings and database</string>
     <string name="setting_chat_storage_category_icon_cache">Icon disk cache</string>

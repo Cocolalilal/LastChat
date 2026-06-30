@@ -2,14 +2,14 @@ package me.rerere.rikkahub.web
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import io.ktor.http.ContentType
+import me.rerere.common.http.urlEncode
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
-import java.net.URLConnection
-import java.net.URLEncoder
 
 data class WebMediaContent(
     val inputStream: InputStream,
@@ -30,7 +30,7 @@ fun String.toWebMediaUrl(context: Context): String? {
 
     return buildString {
         append("/api/files/content?uri=")
-        append(URLEncoder.encode(this@toWebMediaUrl, Charsets.UTF_8.name()))
+        append(this@toWebMediaUrl.urlEncode(spaceAsPlus = true))
     }
 }
 
@@ -58,7 +58,7 @@ fun openAllowedWebMedia(context: Context, uri: Uri): WebMediaContent? {
     return when (uri.scheme?.lowercase()) {
         "file" -> {
             val file = runCatching { uri.toFile().canonicalFile }.getOrNull() ?: return null
-            val mimeType = URLConnection.guessContentTypeFromName(file.name)
+            val mimeType = guessWebMediaMimeTypeFromName(file.name)
                 ?.let { ContentType.parse(it) }
                 ?: ContentType.Application.OctetStream
             if (!file.exists()) return null
@@ -98,7 +98,7 @@ fun openAllowedWebMedia(context: Context, uri: Uri): WebMediaContent? {
             val inputStream = context.contentResolver.openInputStream(uri) ?: return null
             val mimeType = context.contentResolver.getType(uri)
                 ?.let { ContentType.parse(it) }
-                ?: URLConnection.guessContentTypeFromName(uri.lastPathSegment.orEmpty())
+                ?: guessWebMediaMimeTypeFromName(uri.lastPathSegment.orEmpty())
                     ?.let { ContentType.parse(it) }
                 ?: ContentType.Application.OctetStream
             WebMediaContent(
@@ -109,6 +109,39 @@ fun openAllowedWebMedia(context: Context, uri: Uri): WebMediaContent? {
         }
 
         else -> null
+    }
+}
+
+internal fun guessWebMediaMimeTypeFromName(name: String): String? {
+    val extension = name
+        .substringBeforeLast('?')
+        .substringBeforeLast('#')
+        .substringAfterLast('.', missingDelimiterValue = "")
+        .lowercase()
+        .takeIf { it.isNotBlank() }
+        ?: return null
+
+    return when (extension) {
+        "avif" -> "image/avif"
+        "bmp" -> "image/bmp"
+        "css" -> "text/css"
+        "gif" -> "image/gif"
+        "htm", "html" -> "text/html"
+        "ico" -> "image/x-icon"
+        "jpeg", "jpg" -> "image/jpeg"
+        "js", "mjs" -> "application/javascript"
+        "json" -> "application/json"
+        "m4a" -> "audio/mp4"
+        "mp3" -> "audio/mpeg"
+        "mp4" -> "video/mp4"
+        "pdf" -> "application/pdf"
+        "png" -> "image/png"
+        "svg" -> "image/svg+xml"
+        "txt" -> "text/plain"
+        "wav" -> "audio/wav"
+        "webm" -> "video/webm"
+        "webp" -> "image/webp"
+        else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
     }
 }
 

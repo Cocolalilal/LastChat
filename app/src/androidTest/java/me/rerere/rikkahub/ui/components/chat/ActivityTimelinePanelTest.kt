@@ -78,10 +78,8 @@ class ActivityTimelinePanelTest {
 
     @Test
     fun chatMessageTurn_completedTimelineOpensCollapsedAndRefocuses() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val reasoningMarker = "reasoning-expansion-marker"
         val longReasoning = "r".repeat(180) + reasoningMarker
-        val searchSourcesLabel = context.getString(R.string.activity_timeline_sources, 1)
 
         val assistantNode = MessageNode.of(
             UIMessage(
@@ -160,23 +158,17 @@ class ActivityTimelinePanelTest {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
-        composeRule.onNodeWithText(searchSourcesLabel).assertDoesNotExist()
-
-        composeRule.onNodeWithTag("timeline_entry_tool_search-call").performClick()
-        composeRule.onNodeWithText(searchSourcesLabel).assertExists()
+        composeRule.onNodeWithText("inline timeline").assertExists()
+        composeRule.onNodeWithText("example.com").assertExists()
 
         composeRule.onNodeWithTag("activity_pill_reasoning").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
-        composeRule.onNodeWithText(searchSourcesLabel).assertDoesNotExist()
-        composeRule.onNodeWithText(reasoningMarker, substring = true).assertDoesNotExist()
-
-        composeRule.onNodeWithTag("timeline_entry_reasoning_0").performClick()
         composeRule.onNodeWithText(reasoningMarker, substring = true).assertExists()
 
-        composeRule.onNodeWithTag("activity_pill_reasoning").performClick()
+        composeRule.onNodeWithTag("activity_timeline_panel").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isEmpty()
         }
@@ -344,7 +336,6 @@ class ActivityTimelinePanelTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("timeline_entry_ocr_0").performClick()
         composeRule.onNodeWithText("scan.pdf").assertExists()
         composeRule.onNodeWithText("1, 3", substring = true).assertExists()
     }
@@ -352,8 +343,6 @@ class ActivityTimelinePanelTest {
     @Test
     fun activityTimelinePanel_rendersSearchAndMemoryDetailsInline() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val searchSourcesLabel = context.getString(R.string.activity_timeline_sources, 1)
-        val memoryEditLabel = context.getString(R.string.chat_message_tool_edit_memory)
         val beforeLabel = context.getString(R.string.activity_timeline_before)
         val afterLabel = context.getString(R.string.activity_timeline_after)
         val revertLabel = context.getString(R.string.activity_timeline_revert)
@@ -420,11 +409,9 @@ class ActivityTimelinePanelTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(searchSourcesLabel).assertDoesNotExist()
-        composeRule.onNodeWithTag("timeline_entry_search-1").performClick()
-        composeRule.onNodeWithText(searchSourcesLabel).assertExists()
+        composeRule.onNodeWithText("inline details").assertExists()
+        composeRule.onNodeWithText("example.com").assertExists()
 
-        composeRule.onNodeWithTag("timeline_entry_memory-1").performClick()
         composeRule.onNodeWithText(beforeLabel).assertExists()
         composeRule.onNodeWithText(afterLabel).assertExists()
         composeRule.onNodeWithText(revertLabel).assertExists()

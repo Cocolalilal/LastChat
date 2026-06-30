@@ -18,21 +18,12 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import me.rerere.common.http.SseEvent
-import me.rerere.common.http.sseFlow
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import java.io.IOException
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformHttpResponse
+import me.rerere.common.platform.PlatformServerEvent
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 private const val TAG = "StreamableHttpClientTra"
 
@@ -47,7 +38,7 @@ class StreamableHttpError(
 
 @OptIn(ExperimentalAtomicApi::class)
 class StreamableHttpClientTransport(
-    private val client: OkHttpClient,
+    private val client: PlatformHttpClient,
     private val url: String,
     private val headers: Map<String, String> = emptyMap(),
 ) : AbstractTransport() {
@@ -101,78 +92,60 @@ class StreamableHttpClientTransport(
             return
         }
 
-        val jsonBody = McpJson.encodeToString(message)
-        val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+        val response = client.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = url,
+                headers = commonHeaders() + mapOf("Accept" to "application/json, text/event-stream"),
+                body = McpJson.encodeToString(message).encodeToByteArray(),
+                mediaType = "application/json",
+            )
+        )
 
-        val request = Request.Builder()
-            .url(url)
-            .post(requestBody)
-            .apply {
-                applyCommonHeaders(this)
-                addHeader("Accept", "application/json, text/event-stream")
-            }
-            .build()
-
-        val response = suspendCancellableCoroutine<Response> { continuation ->
-            val call = client.newCall(request)
-            continuation.invokeOnCancellation { call.cancel() }
-
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    continuation.resumeWithException(e)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    continuation.resume(response)
-                }
-            })
+        response.header(MCP_SESSION_ID_HEADER)?.let {
+            sessionId = it
         }
 
-        response.use { resp ->
-            resp.header(MCP_SESSION_ID_HEADER)?.let {
-                sessionId = it
+        if (response.statusCode == 202) { // HTTP_ACCEPTED
+            if (message is JSONRPCNotification && message.method == "notifications/initialized") {
+                startSseSession(onResumptionToken = onResumptionToken)
             }
+            return
+        }
 
-            if (resp.code == 202) { // HTTP_ACCEPTED
-                if (message is JSONRPCNotification && message.method == "notifications/initialized") {
-                    startSseSession(onResumptionToken = onResumptionToken)
+        if (!response.isSuccessful) {
+            val error = StreamableHttpError(response.statusCode, response.body.decodeToString())
+            _onError(error)
+            throw error
+        }
+
+        val contentType = response.header("Content-Type")
+        when {
+            contentType?.startsWith("application/json") == true -> {
+                val body = response.body.decodeToString()
+                if (body.isNotEmpty()) {
+                    runCatching { McpJson.decodeFromString<JSONRPCMessage>(body) }
+                        .onSuccess { _onMessage(it) }
+                        .onFailure(_onError)
                 }
-                return
             }
 
-            if (!resp.isSuccessful) {
-                val error = StreamableHttpError(resp.code, resp.body?.string())
+            contentType?.startsWith("text/event-stream") == true -> {
+                handleInlineSse(
+                    data = response.body.decodeToString(),
+                    replayMessageId = if (message is JSONRPCRequest) message.id else null,
+                    onResumptionToken = onResumptionToken
+                )
+            }
+
+            else -> {
+                val body = response.body.decodeToString()
+                if (contentType == null && body.isBlank()) return
+
+                val ct = contentType ?: "<none>"
+                val error = StreamableHttpError(-1, "Unexpected content type: $ct")
                 _onError(error)
                 throw error
-            }
-
-            val contentType = resp.header("Content-Type")
-            when {
-                contentType?.startsWith("application/json") == true -> {
-                    val body = resp.body?.string()
-                    if (!body.isNullOrEmpty()) {
-                        runCatching { McpJson.decodeFromString<JSONRPCMessage>(body) }
-                            .onSuccess { _onMessage(it) }
-                            .onFailure(_onError)
-                    }
-                }
-
-                contentType?.startsWith("text/event-stream") == true -> {
-                    handleInlineSse(
-                        resp, onResumptionToken = onResumptionToken,
-                        replayMessageId = if (message is JSONRPCRequest) message.id else null
-                    )
-                }
-
-                else -> {
-                    val body = resp.body?.string() ?: ""
-                    if (contentType == null && body.isBlank()) return
-
-                    val ct = contentType ?: "<none>"
-                    val error = StreamableHttpError(-1, "Unexpected content type: $ct")
-                    _onError(error)
-                    throw error
-                }
             }
         }
     }
@@ -202,38 +175,23 @@ class StreamableHttpClientTransport(
         if (sessionId == null) return
         Log.d(TAG, "terminateSession: Terminating session: $sessionId")
 
-        val request = Request.Builder()
-            .url(url)
-            .delete()
-            .apply { applyCommonHeaders(this) }
-            .build()
+        val response = client.execute(
+            PlatformHttpRequest(
+                method = "DELETE",
+                url = url,
+                headers = commonHeaders(),
+            )
+        )
 
-        val response = suspendCancellableCoroutine<Response> { continuation ->
-            val call = client.newCall(request)
-            continuation.invokeOnCancellation { call.cancel() }
-
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    continuation.resumeWithException(e)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    continuation.resume(response)
-                }
-            })
-        }
-
-        response.use { resp ->
-            // 405 means server doesn't support explicit session termination
-            if (!resp.isSuccessful && resp.code != 405) {
-                val error = StreamableHttpError(
-                    resp.code,
-                    "Failed to terminate session: ${resp.message}"
-                )
-                Log.e(TAG, "Failed to terminate session", error)
-                _onError(error)
-                throw error
-            }
+        // 405 means server doesn't support explicit session termination
+        if (!response.isSuccessful && response.statusCode != 405) {
+            val error = StreamableHttpError(
+                response.statusCode,
+                "Failed to terminate session: ${response.body.decodeToString()}"
+            )
+            Log.e(TAG, "Failed to terminate session", error)
+            _onError(error)
+            throw error
         }
 
         sessionId = null
@@ -250,36 +208,37 @@ class StreamableHttpClientTransport(
 
         Log.d(TAG, "startSseSession: Client attempting to start SSE session at url: $url")
 
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .apply {
-                applyCommonHeaders(this)
-                addHeader("Accept", "text/event-stream")
-                (resumptionToken ?: lastEventId)?.let {
-                    addHeader(MCP_RESUMPTION_TOKEN_HEADER, it)
-                }
+        val requestHeaders = commonHeaders() + buildMap {
+            put("Accept", "text/event-stream")
+            (resumptionToken ?: lastEventId)?.let {
+                put(MCP_RESUMPTION_TOKEN_HEADER, it)
             }
-            .build()
+        }
 
-        sseJob = client.sseFlow(request)
+        sseJob = client.streamEvents(
+            PlatformHttpRequest(
+                method = "GET",
+                url = url,
+                headers = requestHeaders,
+            )
+        )
             .onEach { event ->
                 when (event) {
-                    is SseEvent.Open -> {
+                    is PlatformServerEvent.Open -> {
                         Log.d(TAG, "startSseSession: Client SSE session started successfully.")
                     }
 
-                    is SseEvent.Event -> {
+                    is PlatformServerEvent.Event -> {
                         event.id?.let {
                             lastEventId = it
                             onResumptionToken?.invoke(it)
                         }
                         Log.d(
                             TAG,
-                            "collectSse: Client received SSE event: event=${event.type}, id=${event.id}, payloadSize=${event.data.length}"
+                            "collectSse: Client received SSE event: event=${event.event}, id=${event.id}, payloadSize=${event.data.length}"
                         )
 
-                        when (event.type) {
+                        when (event.event) {
                             null, "message" -> {
                                 if (event.data.isNotEmpty()) {
                                     runCatching { McpJson.decodeFromString<JSONRPCMessage>(event.data) }
@@ -300,16 +259,16 @@ class StreamableHttpClientTransport(
                         }
                     }
 
-                    is SseEvent.Closed -> {
+                    PlatformServerEvent.Closed -> {
                         Log.d(TAG, "startSseSession: SSE connection closed")
                     }
 
-                    is SseEvent.Failure -> {
-                        if (event.response?.code == 405) {
+                    is PlatformServerEvent.Failure -> {
+                        if (event.statusCode == 405) {
                             Log.i(TAG, "startSseSession: Server returned 405 for GET/SSE, stream disabled.")
                             return@onEach
                         }
-                        event.throwable?.let { _onError(it) }
+                        _onError(StreamableHttpError(event.statusCode, event.body ?: event.message))
                     }
                 }
             }
@@ -320,22 +279,30 @@ class StreamableHttpClientTransport(
             .launchIn(scope)
     }
 
-    private fun applyCommonHeaders(builder: Request.Builder) {
-        sessionId?.let { builder.addHeader(MCP_SESSION_ID_HEADER, it) }
-        protocolVersion?.let { builder.addHeader(MCP_PROTOCOL_VERSION_HEADER, it) }
-        headers.forEach { (name, value) ->
-            builder.addHeader(name, value)
-        }
+    private fun commonHeaders() = buildMap {
+        sessionId?.let { put(MCP_SESSION_ID_HEADER, it) }
+        protocolVersion?.let { put(MCP_PROTOCOL_VERSION_HEADER, it) }
+        putAll(headers)
     }
 
+    private val PlatformHttpResponse.isSuccessful: Boolean
+        get() = statusCode in 200..299
+
+    private fun PlatformHttpResponse.header(name: String): String? {
+        headers.forEach { (headerName, values) ->
+            if (headerName.equals(name, ignoreCase = true)) {
+                return values.firstOrNull()
+            }
+        }
+        return null
+    }
 
     private suspend fun handleInlineSse(
-        response: Response,
+        data: String,
         replayMessageId: RequestId?,
         onResumptionToken: ((String) -> Unit)?
     ) {
         Log.d(TAG, "handleInlineSse: Handling inline SSE from POST response")
-        val body = response.body ?: return
 
         val sb = StringBuilder()
         var id: String? = null
@@ -365,18 +332,15 @@ class StreamableHttpClientTransport(
             sb.clear()
         }
 
-        body.source().use { source ->
-            while (!source.exhausted()) {
-                val line = source.readUtf8Line() ?: break
-                if (line.isEmpty()) {
-                    dispatch(sb.toString())
-                    continue
-                }
-                when {
-                    line.startsWith("id:") -> id = line.substringAfter("id:").trim()
-                    line.startsWith("event:") -> eventName = line.substringAfter("event:").trim()
-                    line.startsWith("data:") -> sb.append(line.substringAfter("data:").trim())
-                }
+        data.lineSequence().forEach { line ->
+            if (line.isEmpty()) {
+                dispatch(sb.toString())
+                return@forEach
+            }
+            when {
+                line.startsWith("id:") -> id = line.substringAfter("id:").trim()
+                line.startsWith("event:") -> eventName = line.substringAfter("event:").trim()
+                line.startsWith("data:") -> sb.append(line.substringAfter("data:").trim())
             }
         }
     }

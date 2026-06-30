@@ -10,7 +10,6 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.catch
@@ -24,6 +23,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateCache
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -129,6 +129,11 @@ class SettingsStore(
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
         val SELECTED_TTS_VOICE = stringPreferencesKey("selected_tts_voice")
         val TTS_AUTOPLAY_MODE = stringPreferencesKey("tts_autoplay_mode")
+
+        // STT
+        val STT_MODEL = stringPreferencesKey("stt_model")
+        val STT_THINKING_BUDGET = intPreferencesKey("stt_thinking_budget")
+        val STT_PROMPT = stringPreferencesKey("stt_prompt")
 
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
@@ -246,6 +251,9 @@ class SettingsStore(
                     ttsAutoplayMode = preferences[TTS_AUTOPLAY_MODE]?.let {
                         JsonInstant.decodeFromString<TtsAutoplayMode>(it)
                     } ?: TtsAutoplayMode.OFF,
+                    sttModelId = preferences[STT_MODEL]?.let { Uuid.parse(it) },
+                    sttThinkingBudget = preferences[STT_THINKING_BUDGET] ?: 0,
+                    sttPrompt = preferences[STT_PROMPT] ?: me.rerere.rikkahub.data.ai.prompts.DEFAULT_STT_PROMPT,
                     webServerEnabled = preferences[WEB_SERVER_ENABLED] == true,
                     webServerPort = preferences[WEB_SERVER_PORT] ?: 8080,
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
@@ -278,19 +286,14 @@ class SettingsStore(
             }
         }
         .map {
-            var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
-            // DEFAULT_PROVIDERS.forEach { defaultProvider ->
-            //     if (providers.none { it.id == defaultProvider.id }) {
-            //         providers.add(defaultProvider.copyProvider())
-            //     }
-            // }
+            var providers = it.providers
+                .ifEmpty { DEFAULT_PROVIDERS }
+                .toMutableList()
             providers = providers.map { provider ->
                 val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
                 if (defaultProvider != null) {
                     provider.copyProvider(
                         builtIn = defaultProvider.builtIn,
-                        description = defaultProvider.description,
-                        shortDescription = defaultProvider.shortDescription,
                     )
                 } else provider
             }.toMutableList()
@@ -319,7 +322,9 @@ class SettingsStore(
             // 去重并清理无效引用
             val validMcpServerIds = settings.mcpServers.map { it.id }.toSet()
             settings.copy(
-                providers = settings.providers.distinctBy { it.id }.map { provider ->
+                providers = settings.providers
+                    .distinctBy { it.id }
+                    .map { provider ->
                     when (provider) {
                         is ProviderSetting.OpenAI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
@@ -353,6 +358,7 @@ class SettingsStore(
                         voices = provider.withDefaultVoices(defaultVoiceId).voices.distinctBy { voice -> voice.id }
                     )
                 },
+
                 selectedTTSVoiceId = settings.ttsProviders
                     .flatMap { it.voices }
                     .firstOrNull { it.id == settings.selectedTTSVoiceId }
@@ -392,7 +398,7 @@ class SettingsStore(
             migrated.normalizeFontSettings()
         }
         .onEach {
-            get<PebbleEngine>().templateCache.invalidateAll()
+            get<MessageTemplateCache>().invalidateAll()
         }
         .flowOn(Dispatchers.Default)
 
@@ -554,6 +560,11 @@ class SettingsStore(
             } ?: preferences.remove(SELECTED_TTS_PROVIDER)
             preferences[SELECTED_TTS_VOICE] = normalizedSettings.selectedTTSVoiceId.toString()
             preferences[TTS_AUTOPLAY_MODE] = JsonInstant.encodeToString(normalizedSettings.ttsAutoplayMode)
+            normalizedSettings.sttModelId?.let {
+                preferences[STT_MODEL] = it.toString()
+            } ?: preferences.remove(STT_MODEL)
+            preferences[STT_THINKING_BUDGET] = normalizedSettings.sttThinkingBudget
+            preferences[STT_PROMPT] = normalizedSettings.sttPrompt
             preferences[WEB_SERVER_ENABLED] = normalizedSettings.webServerEnabled
             preferences[WEB_SERVER_PORT] = normalizedSettings.webServerPort
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled

@@ -1,7 +1,13 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-import type { AssistantProfile, DisplaySetting, ReasoningPart, ToolPart, UIMessagePart } from "~/types";
+import type {
+  AssistantProfile,
+  DisplaySetting,
+  ReasoningPart,
+  ToolPart,
+  UIMessagePart,
+} from "~/types";
 import { replacePersonaPlaceholders } from "~/lib/persona-placeholders";
 
 import { ChainOfThought } from "./chain-of-thought";
@@ -69,7 +75,12 @@ interface MessagePartsProps {
   assistant?: AssistantProfile | null;
   displaySetting?: DisplaySetting | null;
   loading?: boolean;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
+  onToolApproval?: (
+    toolCallId: string,
+    approved: boolean,
+    reason: string,
+    answer?: string,
+  ) => void | Promise<void>;
   onClickCitation?: (id: string) => void;
 }
 
@@ -114,79 +125,106 @@ function renderContentPart(
   }
 }
 
-export const MessageParts = React.memo(({
-  parts,
-  assistant,
-  displaySetting,
-  loading = false,
-  onToolApproval,
-  onClickCitation,
-}: MessagePartsProps) => {
-  const { t } = useTranslation("message");
-  const groupedParts = React.useMemo(() => groupMessageParts(parts), [parts]);
+export const MessageParts = React.memo(
+  ({
+    parts,
+    assistant,
+    displaySetting,
+    loading = false,
+    onToolApproval,
+    onClickCitation,
+  }: MessagePartsProps) => {
+    const { t } = useTranslation("message");
+    const groupedParts = React.useMemo(() => groupMessageParts(parts), [parts]);
+    const lastStreamingTextIndex = React.useMemo(() => {
+      for (let index = groupedParts.length - 1; index >= 0; index -= 1) {
+        const block = groupedParts[index];
+        if (
+          block.type === "content" &&
+          block.part.type === "text" &&
+          block.part.text.trim().length > 0
+        ) {
+          return block.index;
+        }
+      }
+      return -1;
+    }, [groupedParts]);
 
-  return (
-    <>
-      {groupedParts.map((block, blockIndex) => {
-        if (block.type === "thinking") {
-          if (block.steps.length === 0) return null;
+    return (
+      <>
+        {groupedParts.map((block, blockIndex) => {
+          if (block.type === "thinking") {
+            if (block.steps.length === 0) return null;
 
-          return (
-            <ChainOfThought
-              key={`thinking-${blockIndex}`}
-              className="my-1"
-              collapseLabel={t("message_parts.collapse_thinking")}
-              showMoreLabel={(hiddenCount) =>
-                t("message_parts.expand_thinking_steps", { count: hiddenCount })
-              }
-              steps={block.steps}
-              renderStep={(step, stepIndex, { isFirst, isLast }) => {
-                if (step.type === "reasoning") {
-                  const stepKey = step.reasoning.createdAt ?? `${blockIndex}-${stepIndex}`;
+            return (
+              <ChainOfThought
+                key={`thinking-${blockIndex}`}
+                className="my-1"
+                collapseLabel={t("message_parts.collapse_thinking")}
+                showMoreLabel={(hiddenCount) =>
+                  t("message_parts.expand_thinking_steps", { count: hiddenCount })
+                }
+                steps={block.steps}
+                renderStep={(step, stepIndex, { isFirst, isLast }) => {
+                  if (step.type === "reasoning") {
+                    const stepKey = step.reasoning.createdAt ?? `${blockIndex}-${stepIndex}`;
+                    return (
+                      <ReasoningStepPart
+                        key={stepKey}
+                        displaySetting={displaySetting}
+                        reasoning={step.reasoning}
+                        isFirst={isFirst}
+                        isLast={isLast}
+                      />
+                    );
+                  }
+
+                  const stepKey = step.tool.toolCallId || `${blockIndex}-${stepIndex}`;
                   return (
-                    <ReasoningStepPart
+                    <ToolStepPart
                       key={stepKey}
                       displaySetting={displaySetting}
-                      reasoning={step.reasoning}
+                      tool={step.tool}
+                      loading={loading && step.tool.output.length === 0}
+                      onToolApproval={onToolApproval}
                       isFirst={isFirst}
                       isLast={isLast}
                     />
                   );
-                }
+                }}
+              />
+            );
+          }
 
-                const stepKey = step.tool.toolCallId || `${blockIndex}-${stepIndex}`;
-                return (
-                  <ToolStepPart
-                    key={stepKey}
-                    displaySetting={displaySetting}
-                    tool={step.tool}
-                    loading={loading && step.tool.output.length === 0}
-                    onToolApproval={onToolApproval}
-                    isFirst={isFirst}
-                    isLast={isLast}
-                  />
-                );
-              }}
-            />
+          return (
+            <React.Fragment key={`content-${block.index}`}>
+              {renderContentPart(
+                block.part,
+                assistant,
+                displaySetting,
+                t,
+                loading && block.part.type === "text" && block.index === lastStreamingTextIndex,
+                onClickCitation,
+              )}
+            </React.Fragment>
           );
-        }
-
-        return (
-          <React.Fragment key={`content-${block.index}`}>
-            {renderContentPart(block.part, assistant, displaySetting, t, loading, onClickCitation)}
-          </React.Fragment>
-        );
-      })}
-    </>
-  );
-});
+        })}
+      </>
+    );
+  },
+);
 
 interface MessagePartProps {
   part: UIMessagePart;
   assistant?: AssistantProfile | null;
   displaySetting?: DisplaySetting | null;
   loading?: boolean;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
+  onToolApproval?: (
+    toolCallId: string,
+    approved: boolean,
+    reason: string,
+    answer?: string,
+  ) => void | Promise<void>;
   onClickCitation?: (id: string) => void;
 }
 

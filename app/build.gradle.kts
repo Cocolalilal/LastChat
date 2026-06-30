@@ -13,7 +13,6 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
     alias(libs.plugins.firebase.crashlytics)
-    alias(libs.plugins.chaquopy)
 }
 
 val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
@@ -80,8 +79,8 @@ android {
         applicationId = "lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 33
-        versionName = "1.4.3"
+        versionCode = 34
+        versionName = "1.4.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -184,6 +183,7 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += "lib/*/libtermux.so"
         }
     }
     androidResources {
@@ -240,40 +240,6 @@ kotlin {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-
-        // Allow local/CI environments to override Python discovery instead of relying
-        // on a machine-specific Windows path.
-        val configuredBuildPython = providers.gradleProperty("chaquopy.buildPython").orNull
-            ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
-            ?: System.getenv("PYTHON")
-            ?: System.getenv("PYTHON3")
-        if (!configuredBuildPython.isNullOrBlank()) {
-            buildPython(configuredBuildPython)
-        }
-
-        pip {
-            // Core data science  
-            install("numpy")
-            install("pandas")
-            
-            // Visualization  
-            install("matplotlib")
-            install("Pillow")
-            
-            // Documents & Office files
-            install("openpyxl")      // Excel files
-            install("python-pptx")   // PowerPoint presentations
-            install("pypdf")         // PDF manipulation
-            install("python-docx")   // Word documents
-            
-            // Utilities
-            install("requests")
-        }
-    }
-}
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -416,14 +382,20 @@ dependencies {
     implementation(libs.modelcontextprotocol.kotlin.sdk)
 
     // modules
+    implementation(project(":shared"))
     implementation(project(":ai"))
     implementation(project(":document"))
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":tts"))
+    implementation(project(":speech"))
     implementation(project(":common"))
+    implementation(project(":workspace"))
+    implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
+    implementation(libs.termux.terminal.view)
+    implementation(libs.termux.terminal.emulator)
 
     // Glance (Widgets)
     implementation(libs.androidx.glance)

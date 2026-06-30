@@ -90,4 +90,5 @@ class ProviderSettingsNormalizationTest {
         assertEquals(listOf(chatModel.id), normalized.favoriteModels)
         assertTrue(normalized.providers.none { it.name == "On-device" })
     }
+
 }

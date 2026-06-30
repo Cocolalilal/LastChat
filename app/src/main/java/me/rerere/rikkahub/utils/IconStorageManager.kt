@@ -8,10 +8,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Manages persistent storage for auto-fetched model/provider icons.
@@ -23,7 +24,7 @@ import java.io.FileOutputStream
  */
 class IconStorageManager private constructor(
     private val context: Context,
-    private val okHttpClient: OkHttpClient
+    private val httpClient: PlatformHttpClient
 ) {
     private val iconsDir = File(context.filesDir, "auto_icons")
     private val downloadMutex = Mutex()
@@ -39,9 +40,9 @@ class IconStorageManager private constructor(
         @Volatile
         private var instance: IconStorageManager? = null
         
-        fun getInstance(context: Context, okHttpClient: OkHttpClient): IconStorageManager {
+        fun getInstance(context: Context, httpClient: PlatformHttpClient): IconStorageManager {
             return instance ?: synchronized(this) {
-                instance ?: IconStorageManager(context.applicationContext, okHttpClient).also {
+                instance ?: IconStorageManager(context.applicationContext, httpClient).also {
                     instance = it
                 }
             }
@@ -124,50 +125,56 @@ class IconStorageManager private constructor(
         
         return try {
             withContext(Dispatchers.IO) {
-                val request = Request.Builder()
-                    .url(url)
-                    .build()
-                
-                val response = okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
+                val response = httpClient.execute(
+                    PlatformHttpRequest(
+                        method = "GET",
+                        url = url,
+                    )
+                )
+                if (response.statusCode !in 200..299) {
                     null
                 } else {
-                    val urlPath = request.url.encodedPath
-                    val contentType = response.header("Content-Type") ?: ""
+                    val urlPath = Uri.parse(url).encodedPath.orEmpty()
+                    val contentType = response.headers.entries
+                        .firstOrNull { (name, _) -> name.equals("Content-Type", ignoreCase = true) }
+                        ?.value
+                        ?.firstOrNull()
+                        .orEmpty()
                     val isSvg = urlPath.endsWith(".svg", ignoreCase = true) ||
                             contentType.contains("image/svg", ignoreCase = true) ||
                             contentType.contains("svg+xml", ignoreCase = true)
                     
                     if (isSvg) {
-                        response.body?.byteStream()?.use { inputStream ->
-                            val file = getIconFile(iconKey)
-                            FileOutputStream(file).use { output ->
-                                inputStream.copyTo(output)
-                            }
-                            Uri.fromFile(file).toString()
+                        val file = getIconFile(iconKey)
+                        file.sink().buffer().use { output ->
+                            output.write(response.body)
                         }
+                        Uri.fromFile(file).toString()
                     } else {
-                        response.body?.byteStream()?.use { inputStream ->
-                            val bitmap = BitmapFactory.decodeStream(inputStream)
-                            if (bitmap != null) {
-                                // Resize if too large (max 256x256 for icons)
-                                val resized = resizeIfNeeded(bitmap, 256)
-                                
-                                val file = getIconFile(iconKey)
-                                FileOutputStream(file).use { output ->
-                                    resized.compress(Bitmap.CompressFormat.PNG, 100, output)
-                                }
-                                
-                                // Recycle bitmaps if we created a new one
-                                if (resized != bitmap) {
-                                    bitmap.recycle()
-                                }
-                                resized.recycle()
-                                
-                                Uri.fromFile(file).toString()
-                            } else {
-                                null
+                        val body = response.body
+                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(body, 0, body.size, options)
+                        options.inJustDecodeBounds = false
+                        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, 256, 256)
+                        val bitmap = BitmapFactory.decodeByteArray(body, 0, body.size, options)
+                        if (bitmap != null) {
+                            // Resize if too large (max 256x256 for icons)
+                            val resized = resizeIfNeeded(bitmap, 256)
+
+                            val file = getIconFile(iconKey)
+                            file.sink().buffer().outputStream().use { output ->
+                                resized.compress(Bitmap.CompressFormat.PNG, 100, output)
                             }
+
+                            // Recycle bitmaps if we created a new one
+                            if (resized != bitmap) {
+                                bitmap.recycle()
+                            }
+                            resized.recycle()
+
+                            Uri.fromFile(file).toString()
+                        } else {
+                            null
                         }
                     }
                 }
@@ -262,5 +269,17 @@ class IconStorageManager private constructor(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+        if (srcHeight > reqHeight || srcWidth > reqWidth) {
+            var halfHeight = srcHeight / 2
+            var halfWidth = srcWidth / 2
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 }

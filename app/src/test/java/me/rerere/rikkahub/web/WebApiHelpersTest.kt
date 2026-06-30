@@ -56,6 +56,45 @@ class WebApiHelpersTest {
     }
 
     @Test
+    fun resolveAiIconAssetPath_acceptsCatalogPathStrings() {
+        assertEquals(
+            "openai.svg",
+            resolveAiIconAssetPath(name = "ignored", icon = "icons/openai.svg"),
+        )
+        assertEquals(
+            "anthropic.svg",
+            resolveAiIconAssetPath(
+                name = "ignored",
+                icon = "https://raw.githubusercontent.com/RikkaApps/LastChat/main/catalog/icons/anthropic.svg",
+            ),
+        )
+    }
+
+    @Test
+    fun resolveAiIconAssetPath_usesKnownNamesAndProviderSlugs() {
+        assertEquals("gemini.svg", resolveAiIconAssetPath(name = "Google Gemini"))
+        assertEquals("openrouter.svg", resolveAiIconAssetPath(name = "Model Router", providerSlug = "openrouter"))
+    }
+
+    @Test
+    fun resolveAiIconAssetPath_fallsBackForUnknownNames() {
+        assertNull(resolveAiIconAssetPath(name = "Mystery Provider"))
+        assertNull(resolveAiIconAssetPath(name = "ignored", icon = "../openai.svg"))
+    }
+
+    @Test
+    fun toLobeHubIconUrl_buildsThemeAwareProviderUrl() {
+        assertEquals(
+            "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/openai.png",
+            "OpenAI".toLobeHubIconUrl("dark"),
+        )
+        assertEquals(
+            "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/light/meta.png",
+            "Meta Llama".toLobeHubIconUrl("light"),
+        )
+    }
+
+    @Test
     fun issueWebAuthToken_rejectsWrongAndBlankPasswords() {
         assertThrows(UnauthorizedException::class.java) {
             issueWebAuthToken(

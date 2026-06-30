@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,7 +20,6 @@ import androidx.compose.material3.Icon
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 
@@ -31,29 +29,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-
-
-
-import androidx.compose.material.icons.rounded.Check
-
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-
-
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantUISettings
 
-
-
-
-
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -253,47 +234,28 @@ private fun TriStateSettingItem(
         title = title,
         subtitle = subtitle,
         trailing = {
-            Column(
-                modifier = Modifier.width(IntrinsicSize.Max),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // On/Off row - sets the natural width
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FilterChip(
-                        selected = value == true,
-                        onClick = { onValueChange(true) },
-                        label = { Text(stringResource(R.string.setting_ui_state_on)) }
-                    )
-                    FilterChip(
-                        selected = value == false,
-                        onClick = { onValueChange(false) },
-                        label = { Text(stringResource(R.string.setting_ui_state_off)) }
-                    )
-                }
-                // Global below, fills to match On/Off width
-                FilterChip(
-                    selected = value == null,
-                    onClick = { onValueChange(null) },
-                    label = {
-                        Text(
+            val options = listOf<Boolean?>(null, true, false)
+            Select(
+                options = options,
+                selectedOption = value,
+                onOptionSelected = onValueChange,
+                optionToString = { option ->
+                    when (option) {
+                        null -> stringResource(
+                            R.string.setting_ui_state_global_value,
                             stringResource(
-                                R.string.setting_ui_state_global_value,
-                                stringResource(
-                                    if (globalValue) {
-                                        R.string.setting_ui_state_on
-                                    } else {
-                                        R.string.setting_ui_state_off
-                                    }
-                                )
+                                if (globalValue) {
+                                    R.string.setting_ui_state_on
+                                } else {
+                                    R.string.setting_ui_state_off
+                                }
                             )
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+                        true -> stringResource(R.string.setting_ui_state_on)
+                        false -> stringResource(R.string.setting_ui_state_off)
+                    }
+                }
+            )
         }
     )
 }

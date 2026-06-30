@@ -61,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -106,7 +108,9 @@ import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
 import androidx.compose.ui.platform.LocalContext
@@ -128,20 +132,66 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 
 private const val TAG = "ChatList"
-private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
-internal const val PendingAssistantTurnKey = "pending_assistant"
+private const val AssistantInitialTurnKey = "assistant_initial"
+private const val AssistantResponseTurnKey = "assistant_response"
 
 internal fun chatListTurnKey(
     group: MessageTurnGroup,
     index: Int,
+    previousGroup: MessageTurnGroup? = null,
     isPendingAssistantTurn: Boolean,
 ): String {
-    return if (isPendingAssistantTurn) {
-        PendingAssistantTurnKey
-    } else {
-        "turn:${group.firstNode.id}:$index"
+    val previousUserId = previousGroup
+        ?.takeIf { it.role == me.rerere.ai.core.MessageRole.USER }
+        ?.lastNode
+        ?.id
+
+    return when {
+        isPendingAssistantTurn && previousUserId != null -> "$AssistantResponseTurnKey:$previousUserId"
+        isPendingAssistantTurn -> "$AssistantInitialTurnKey:$index"
+        group.role == me.rerere.ai.core.MessageRole.ASSISTANT && previousUserId != null -> {
+            "$AssistantResponseTurnKey:$previousUserId"
+        }
+        group.role == me.rerere.ai.core.MessageRole.ASSISTANT && previousGroup == null -> {
+            "$AssistantInitialTurnKey:$index"
+        }
+        else -> "turn:${group.firstNode.id}:$index"
     }
+}
+
+private fun buildChatStreamingFollowSignature(
+    conversation: Conversation,
+    loading: Boolean
+): String {
+    if (!loading) return "idle:${conversation.messageNodes.size}"
+    val latestAssistant = conversation.currentMessages
+        .asReversed()
+        .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+    val textLength = latestAssistant
+        ?.parts
+        ?.filterIsInstance<UIMessagePart.Text>()
+        ?.sumOf { it.text.length }
+        ?: 0
+    val activityLength = latestAssistant
+        ?.parts
+        ?.sumOf { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text.length
+                is UIMessagePart.Reasoning -> part.reasoning.length
+                is UIMessagePart.ToolCall -> part.arguments.length
+                else -> 0
+            }
+        }
+        ?: 0
+    return "${conversation.messageNodes.size}:$textLength:$activityLength"
+}
+
+internal fun isChatListAtStreamingBottom(
+    visibleItems: List<LazyListItemInfo>,
+    canScrollForward: Boolean,
+): Boolean {
+    return visibleItems.isNotEmpty() && !canScrollForward
 }
 
 private fun BidiDirection.toLayoutDirection(): LayoutDirection {
@@ -244,10 +294,21 @@ private fun SharedTransitionScope.ChatListNormal(
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
-    var userScrolledUp by remember { mutableStateOf(false) }
+    var followStreamingBottom by remember { mutableStateOf(true) }
+    var forceBottomAttachPending by remember(conversation.id) { mutableStateOf(false) }
     val conversationUpdated by rememberUpdatedState(conversation)
     val context = LocalContext.current
     val navController = LocalNavController.current
+
+    suspend fun snapToStreamingBottom() {
+        val targetIndex = (state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+        if (targetIndex <= 0) return
+        try {
+            state.scrollToItem(targetIndex)
+        } catch (_: IllegalStateException) {
+            // The lazy list can be between measure passes while a streaming turn morphs.
+        }
+    }
 
     val currentConversationState = rememberUpdatedState(conversation)
     val onCitationClick = remember {
@@ -272,17 +333,35 @@ private fun SharedTransitionScope.ChatListNormal(
             Unit
         }
     }
+    val generationHaptics = rememberPremiumHaptics(
+        enabled = settings.displaySetting.enableMessageGenerationHapticEffect
+    )
 
-    fun List<LazyListItemInfo>.isAtBottom(): Boolean {
-        val lastItem = lastOrNull() ?: return false
-        if (lastItem.key == LoadingIndicatorKey || lastItem.key == ScrollBottomKey) {
-            return true
+    LaunchedEffect(conversation.id, settings.displaySetting.enableMessageGenerationHapticEffect) {
+        var previousLength = 0
+        snapshotFlow {
+            if (!loadingState) {
+                0
+            } else {
+                conversationUpdated.currentMessages
+                    .asReversed()
+                    .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+                    ?.parts
+                    ?.filterIsInstance<UIMessagePart.Text>()
+                    ?.sumOf { it.text.length }
+                    ?: 0
+            }
+        }.collect { length ->
+            if (length == 0) {
+                previousLength = 0
+            } else if (length > previousLength + 24) {
+                generationHaptics.perform(HapticPattern.ScrollEdge)
+                previousLength = length
+                delay(120)
+            } else if (length < previousLength) {
+                previousLength = length
+            }
         }
-        // Check if we can see the bottom spacer or the last real item
-        val hasScrollBottom = any { it.key == ScrollBottomKey }
-        if (hasScrollBottom) return true
-        // Fallback: check if the last visible item is near the end
-        return !state.canScrollForward || (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
     }
 
     // 聊天选择
@@ -295,7 +374,7 @@ private fun SharedTransitionScope.ChatListNormal(
     ) {
         // Empty chat state removed - assistant icon now shown in TopBar
 
-        // Detect user scrolling up to suppress auto-scroll
+        // User scrolls detach live following; reaching the bottom reattaches it.
         LaunchedEffect(state) {
             var previousFirstIndex = state.firstVisibleItemIndex
             var previousFirstOffset = state.firstVisibleItemScrollOffset
@@ -303,15 +382,18 @@ private fun SharedTransitionScope.ChatListNormal(
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
                 if (isScrolling && loadingState) {
-                    // User is actively scrolling during generation
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
                     if (scrolledUp) {
-                        userScrolledUp = true
+                        followStreamingBottom = false
                     }
-                    // If user scrolls back to bottom, resume auto-scroll
-                    if (state.layoutInfo.visibleItemsInfo.isAtBottom()) {
-                        userScrolledUp = false
+                    if (
+                        isChatListAtStreamingBottom(
+                            visibleItems = state.layoutInfo.visibleItemsInfo,
+                            canScrollForward = state.canScrollForward,
+                        )
+                    ) {
+                        followStreamingBottom = true
                     }
                 }
                 previousFirstIndex = firstIndex
@@ -319,22 +401,38 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Reset userScrolledUp when loading stops
+        // New generations start attached unless the user scrolls away.
         LaunchedEffect(loading) {
-            if (!loading) {
-                userScrolledUp = false
+            if (loading) {
+                followStreamingBottom = true
+                forceBottomAttachPending = true
+            } else {
+                forceBottomAttachPending = false
             }
         }
 
-        // Auto-scroll to bottom during generation
         LaunchedEffect(state) {
-            snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                    // Scroll to the very last item in the list (ScrollBottomKey spacer)
-                    val targetIndex = state.layoutInfo.totalItemsCount - 1
-                    if (targetIndex >= 0) {
-                        state.animateScrollToItem(targetIndex)
-                    }
+            snapshotFlow {
+                isChatListAtStreamingBottom(
+                    visibleItems = state.layoutInfo.visibleItemsInfo,
+                    canScrollForward = state.canScrollForward,
+                )
+            }.collect { isAtBottom ->
+                if (loadingState && isAtBottom) {
+                    followStreamingBottom = true
+                }
+            }
+        }
+
+        LaunchedEffect(state) {
+            snapshotFlow {
+                buildChatStreamingFollowSignature(
+                    conversation = conversationUpdated,
+                    loading = loadingState
+                )
+            }.collect {
+                if (loadingState && followStreamingBottom) {
+                    snapToStreamingBottom()
                 }
             }
         }
@@ -352,17 +450,11 @@ private fun SharedTransitionScope.ChatListNormal(
         }
 
         // Group consecutive messages by role into turns
-        // Computed fresh on each recomposition to ensure up-to-date data
-        val turnGroups = conversation.messageNodes.groupIntoTurns()
+        // Memoized to prevent O(N) grouping on every recomposition (e.g. during scroll or UI state changes)
+        val turnGroups = remember(conversation.messageNodes) {
+            conversation.messageNodes.groupIntoTurns()
+        }
 
-        // Index helpers for regen visibility
-        val lastUserIndex = remember(conversation.messageNodes) {
-            conversation.messageNodes.indexOfLast { it.currentMessage.role == me.rerere.ai.core.MessageRole.USER }
-        }
-        val nodeIndexById = remember(conversation.messageNodes) {
-            conversation.messageNodes.mapIndexed { index, node -> node.id to index }.toMap()
-        }
-        
         // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
             turnGroups.isEmpty() || 
@@ -380,6 +472,18 @@ private fun SharedTransitionScope.ChatListNormal(
         } else {
             turnGroups
         }
+
+        LaunchedEffect(loading, displayGroups.size, state) {
+            if (!loading || !forceBottomAttachPending) return@LaunchedEffect
+
+            withFrameNanos { }
+            snapToStreamingBottom()
+            withFrameNanos { }
+            snapToStreamingBottom()
+            followStreamingBottom = true
+            forceBottomAttachPending = false
+        }
+
         val assistant = remember(settings.assistants, conversation.assistantId) {
             settings.getAssistantById(conversation.assistantId)
         }
@@ -419,8 +523,20 @@ private fun SharedTransitionScope.ChatListNormal(
                         chatListTurnKey(
                             group = group,
                             index = index,
+                            previousGroup = displayGroups.getOrNull(index - 1),
                             isPendingAssistantTurn = needsPhantomLoadingTurn && index == displayGroups.lastIndex,
                         )
+                    },
+                    contentType = { _, group ->
+                        // Distinguish tool-bearing assistant turns (heavy composition subtrees)
+                        // from text-only turns so Compose reuses the most appropriate slot.
+                        if (group.role == me.rerere.ai.core.MessageRole.USER) {
+                            "user"
+                        } else if (group.nodes.any { it.role == me.rerere.ai.core.MessageRole.TOOL }) {
+                            "assistant_tools"
+                        } else {
+                            "assistant_text"
+                        }
                     },
                 ) { index, group ->
                     Column {
@@ -490,17 +606,25 @@ private fun SharedTransitionScope.ChatListNormal(
                                 showRegenerate = showRegenerate,
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
                                     {
-                                        if (!userScrolledUp) {
+                                        if (followStreamingBottom && !state.isScrollInProgress) {
                                             scope.launch {
-                                                val targetIndex = state.layoutInfo.totalItemsCount - 1
-                                                if (targetIndex >= 0) {
-                                                    state.animateScrollToItem(targetIndex)
-                                                }
+                                                snapToStreamingBottom()
                                             }
                                         }
                                     }
                                 } else {
                                     null
+                                },
+                                modifier = if (loading && isLastTurn) {
+                                    Modifier.onSizeChanged {
+                                        if (followStreamingBottom && !state.isScrollInProgress) {
+                                            scope.launch {
+                                                snapToStreamingBottom()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier
                                 },
                             )
                         }

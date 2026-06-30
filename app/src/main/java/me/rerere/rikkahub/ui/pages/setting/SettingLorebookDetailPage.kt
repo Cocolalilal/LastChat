@@ -227,7 +227,7 @@ fun SettingLorebookDetailPage(
         }
         return
     }
-    val canDelete = lorebook.entries.size > 1
+    val canDelete = true
     
     fun updateLorebook(updated: Lorebook) {
         vm.updateSettings(settings.copy(

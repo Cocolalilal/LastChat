@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
-import at.bitfire.dav4jvm.okhttp.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.okhttp.DavCollection
 import at.bitfire.dav4jvm.okhttp.Response
 import at.bitfire.dav4jvm.okhttp.exception.NotFoundException
@@ -18,16 +17,13 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.utils.LogUtil
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.RequestBody.Companion.asRequestBody
+import okio.buffer
+import okio.sink
+import okio.source
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -40,12 +36,10 @@ class WebdavSync(
     private val context: Context,
     private val secretKeyManager: SecretKeyManager,
     private val appDatabase: AppDatabase,
+    private val webDavClientFactory: WebDavClientFactory,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
-        val davCollection = DavCollection(
-            httpClient = webDavConfig.requireClient(),
-            location = webDavConfig.url.toHttpUrl(),
-        )
+        val davCollection = webDavClientFactory.collection(webDavConfig, path = "")
 
         withContext(Dispatchers.IO) {
             davCollection.propfind(depth = 1) { response, relation ->
@@ -56,17 +50,17 @@ class WebdavSync(
 
     suspend fun backupToWebDav(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(webDavConfig)
-        val collection = webDavConfig.requireCollection()
+        val collection = webDavClientFactory.collection(webDavConfig)
         collection.ensureCollectionExists()
-        val target = webDavConfig.requireCollection(file.name)
-        target.put(body = file.asRequestBody()) { response ->
+        val target = webDavClientFactory.collection(webDavConfig, file.name)
+        webDavClientFactory.putFile(target, file) { response ->
             LogUtil.i(TAG, "backupToWebDav: $response")
         }
     }
 
     suspend fun listBackupFiles(webDavConfig: WebDavConfig): List<WebDavBackupItem> =
         withContext(Dispatchers.IO) {
-            val collection = webDavConfig.requireCollection()
+            val collection = webDavClientFactory.collection(webDavConfig)
             val files = mutableListOf<WebDavBackupItem>()
             collection.propfind(depth = 1) { response, relation ->
                 LogUtil.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
@@ -94,10 +88,7 @@ class WebdavSync(
         webDavConfig: WebDavConfig,
         item: WebDavBackupItem,
     ): RestoreResult = withContext(Dispatchers.IO) {
-        val collection = DavCollection(
-            httpClient = webDavConfig.requireClient(),
-            location = item.href.toHttpUrl(),
-        )
+        val collection = webDavClientFactory.hrefCollection(webDavConfig, item.href)
         val backupFile = File(context.cacheDir, item.displayName)
         if (backupFile.exists()) {
             backupFile.delete()
@@ -113,7 +104,7 @@ class WebdavSync(
                     "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}",
                 )
                 response.body?.byteStream()?.use { inputStream ->
-                    FileOutputStream(backupFile).use { outputStream ->
+                    backupFile.sink().buffer().outputStream().use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
                 }
@@ -140,10 +131,7 @@ class WebdavSync(
 
     suspend fun deleteWebDavBackupFile(webDavConfig: WebDavConfig, item: WebDavBackupItem) =
         withContext(Dispatchers.IO) {
-            val collection = DavCollection(
-                httpClient = webDavConfig.requireClient(),
-                location = item.href.toHttpUrl(),
-            )
+            val collection = webDavClientFactory.hrefCollection(webDavConfig, item.href)
             collection.delete { response ->
                 LogUtil.i(TAG, "deleteWebDavBackupFile: $response")
             }
@@ -185,7 +173,7 @@ class WebdavSync(
             sharedPrefsStores = BackupArchiveFormat.PORTABLE_SHARED_PREF_STORES,
         )
 
-        ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
+        ZipOutputStream(backupFile.sink().buffer().outputStream()).use { zipOut ->
             val settingsForExport =
                 secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(
@@ -247,7 +235,7 @@ class WebdavSync(
             stagedDbDir.mkdirs()
 
             try {
-                ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
+                ZipInputStream(backupFile.source().buffer().inputStream()).use { zipIn ->
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         val zipEntry = entry ?: continue
@@ -397,10 +385,14 @@ class WebdavSync(
         BackupArchiveFormat.MANAGED_FILE_DIRS.forEach { dirName ->
             val directory = File(context.filesDir, dirName)
             enumerateDirectoryEntries(directory, dirName).forEach { entry ->
-                if (entry.isDirectory) {
-                    addDirectoryToZip(zipOut, entry.entryName)
-                } else {
-                    addFileToZip(zipOut, entry.source, entry.entryName)
+                try {
+                    if (entry.isDirectory) {
+                        addDirectoryToZip(zipOut, entry.entryName)
+                    } else {
+                        addFileToZip(zipOut, entry.source, entry.entryName)
+                    }
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "addManagedFileEntries: Failed to zip entry ${entry.entryName} from source ${entry.source.absolutePath}", e)
                 }
             }
         }
@@ -419,7 +411,7 @@ class WebdavSync(
         }
         val targetFile = File(stagedDbDir, targetName)
         targetFile.parentFile?.mkdirs()
-        FileOutputStream(targetFile).use { outputStream ->
+        targetFile.sink().buffer().outputStream().use { outputStream ->
             zipIn.copyTo(outputStream)
         }
     }
@@ -437,7 +429,7 @@ class WebdavSync(
         }
 
         targetFile.parentFile?.mkdirs()
-        FileOutputStream(targetFile).use { outputStream ->
+        targetFile.sink().buffer().outputStream().use { outputStream ->
             zipIn.copyTo(outputStream)
         }
     }
@@ -548,7 +540,7 @@ class WebdavSync(
 }
 
 private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String) {
-    FileInputStream(file).use { inputStream ->
+    file.source().buffer().inputStream().use { inputStream ->
         val zipEntry = ZipEntry(entryName)
         zipOut.putNextEntry(zipEntry)
         inputStream.copyTo(zipOut)
@@ -570,38 +562,6 @@ private fun addVirtualFileToZip(zipOut: ZipOutputStream, name: String, content: 
     zipOut.write(content.toByteArray())
     zipOut.closeEntry()
     LogUtil.i(TAG, "addVirtualFileToZip: $name (${content.length} bytes)")
-}
-
-private fun WebDavConfig.requireClient(): OkHttpClient {
-    val authHandler = BasicDigestAuthHandler(
-        domain = null,
-        username = this.username,
-        password = this.password.toCharArray(),
-    )
-    return OkHttpClient.Builder()
-        .followRedirects(false)
-        .authenticator(authHandler)
-        .addNetworkInterceptor(authHandler)
-        .writeTimeout(5, TimeUnit.MINUTES)
-        .build()
-}
-
-private fun WebDavConfig.requireCollection(path: String? = null): DavCollection {
-    val location = buildString {
-        append(this@requireCollection.url.trimEnd('/'))
-        append("/")
-        if (this@requireCollection.path.isNotBlank()) {
-            append(this@requireCollection.path.trim('/'))
-            append("/")
-        }
-        if (path != null) {
-            append(path.trim('/'))
-        }
-    }.toHttpUrl()
-    return DavCollection(
-        httpClient = this.requireClient(),
-        location = location,
-    )
 }
 
 private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatchers.IO) {

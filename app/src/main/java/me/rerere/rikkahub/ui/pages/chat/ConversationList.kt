@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -477,7 +478,7 @@ private fun ConversationItem(
     val combinedAlpha = restoredAlpha * pressAlpha
     
     val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)
+        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
     } else {
         Color.Transparent
     }
@@ -534,7 +535,8 @@ private fun ConversationItem(
                 Text(
                     text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (selected) FontWeight.Bold else null
                 )
                 AnimatedVisibility(visible = messageOnlyMatch) {
                     Text(

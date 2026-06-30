@@ -15,7 +15,7 @@ class ContextUtilTest {
 
         val resolved = resolveAppOwnedFileProviderFile(
             authority = "lastchat.rikkafork.cocolal.fileprovider",
-            encodedPath = "/upload/python_sandbox%2Fconversation%2Ffigure.png",
+            encodedPath = "/upload/workspaces%2Fconversation%2Ffigure.png",
             expectedAuthority = "lastchat.rikkafork.cocolal.fileprovider",
             cacheDir = cacheDir,
             filesDir = filesDir,
@@ -23,7 +23,7 @@ class ContextUtilTest {
         )
 
         assertEquals(
-            filesDir.resolve("python_sandbox/conversation/figure.png").canonicalFile,
+            filesDir.resolve("workspaces/conversation/figure.png").canonicalFile,
             resolved,
         )
     }

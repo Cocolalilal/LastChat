@@ -3,7 +3,7 @@ package me.rerere.rikkahub.data.ai.models
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import me.rerere.common.http.urlPartsOrNull
 import kotlin.uuid.Uuid
 
 fun mergeCatalogIntoSettings(
@@ -69,6 +69,7 @@ private fun ProviderSetting.withCatalogProviderDefaults(
             streamOptionsMode = streamOptionsMode.catalogDefault(catalogProvider.streamOptionsMode),
             imageResponseModalitiesMode = imageResponseModalitiesMode.catalogDefault(catalogProvider.imageResponseModalitiesMode),
             reasoningContentReplayMode = reasoningContentReplayMode.catalogDefault(catalogProvider.reasoningContentReplayMode),
+            promptCacheMode = promptCacheMode.catalogDefault(catalogProvider.promptCacheMode),
         )
 
         is ProviderSetting.Google -> copy(customIconUri = resolvedIcon)
@@ -96,6 +97,7 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
             streamOptionsMode = streamOptionsMode,
             imageResponseModalitiesMode = imageResponseModalitiesMode,
             reasoningContentReplayMode = reasoningContentReplayMode,
+            promptCacheMode = promptCacheMode,
         )
 
         CatalogProviderType.GOOGLE -> ProviderSetting.Google(
@@ -143,10 +145,10 @@ private fun ProviderSetting.baseUrlForCatalogMatch(): String {
 }
 
 private fun String.normalizedCatalogUrlKey(): String {
-    val url = trim().trimEnd('/').toHttpUrlOrNull()
+    val url = trim().trimEnd('/').urlPartsOrNull()
     return if (url != null) {
         val path = url.encodedPath.trimEnd('/').takeUnless { it == "/" }.orEmpty()
-        "${url.scheme.lowercase()}://${url.host.lowercase()}$path"
+        "${url.scheme}://${url.host}$path"
     } else {
         trim().lowercase().trimEnd('/')
     }

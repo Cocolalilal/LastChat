@@ -1,10 +1,12 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import me.rerere.common.platform.PlatformLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,10 +26,12 @@ import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.OpenAICompatibilityMode
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -37,26 +41,17 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.configureReferHeaders
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
+import me.rerere.common.http.urlHostOrNull
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.common.platform.PlatformMediaEncoder
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -72,8 +67,9 @@ private data class PromptCachePolicy(
 )
 
 class ChatCompletionsAPI(
-    private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val httpClient: PlatformHttpClient,
+    private val keyRoulette: KeyRoulette,
+    private val mediaEncoder: PlatformMediaEncoder,
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -87,24 +83,27 @@ class ChatCompletionsAPI(
                 providerSetting = providerSetting
             )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        val encodedRequestBody = json.encodeToString(requestBody)
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey)}")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
-
-        val response = proxyClient.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+                body = encodedRequestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            throw Exception("Failed to get response: ${response.statusCode} ${response.body.decodeToString()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息
@@ -145,116 +144,120 @@ class ChatCompletionsAPI(
             providerSetting = providerSetting,
             stream = true,
         )
+        val encodedRequestBody = json.encodeToString(requestBody)
+        val request = PlatformHttpRequest(
+            method = "POST",
+            url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
+            headers = params.customHeaders.toHeaderMap()
+                .withReferHeaders(providerSetting.baseUrl)
+                .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+            body = encodedRequestBody.encodeToByteArray(),
+            mediaType = "application/json",
+            proxy = providerSetting.proxy.toPlatformProxy()
+        )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey)}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
-
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
-
-        // just for debugging response body
-        // println(client.newCall(request).await().body?.string())
-
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
-                    close()
-                    return
-                }
-                Log.d(TAG, "onEvent: $data")
-                data
-                    .trim()
-                    .split("\n")
-                    .filter { it.isNotBlank() }
-                    .map { json.parseToJsonElement(it).jsonObject }
-                    .forEach {
-                        if (it["error"] != null) {
-                            val error = it["error"]!!.parseErrorDetail()
-                            throw error
+        val job = launch {
+            httpClient.streamEvents(request).collect { event ->
+                when (event) {
+                    is PlatformServerEvent.Open -> Unit
+                    PlatformServerEvent.Closed -> close()
+                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    is PlatformServerEvent.Event -> {
+                        if (event.data == "[DONE]") {
+                            close()
+                            return@collect
                         }
-                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
-
-                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
-                        val choiceList = buildList {
-                            if (choices.isNotEmpty()) {
-                                val choice = choices[0].jsonObject
-                                val message =
-                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                    ?: throw Exception("delta/message is null")
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                        ?: "unknown"
-                                add(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = parseMessage(message),
-                                        message = null,
-                                        finishReason = finishReason,
-                                    )
-                                )
+                        PlatformLog.d(TAG, "onEvent: ${event.data}")
+                        try {
+                            parseStreamData(event.data).forEach { chunk ->
+                                trySend(chunk)
                             }
+                        } catch (e: Throwable) {
+                            close(e)
                         }
-                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
-
-                        val messageChunk = MessageChunk(
-                            id = id,
-                            model = model,
-                            choices = choiceList,
-                            usage = usage
-                        )
-                        trySend(messageChunk)
                     }
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception)
                 }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                close()
             }
         }
-
-        val eventSource = EventSources.createFactory(proxyClient).newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            job.cancel()
+        }
+    }.retryWhen { cause, attempt ->
+        if (attempt < 3 && cause.message?.contains("429") == true) {
+            PlatformLog.w(TAG, "streamText: Rate limit (429) hit. Retrying attempt ${attempt + 1}...")
+            kotlinx.coroutines.delay(1000L * (attempt + 1))
+            true
+        } else {
+            false
         }
     }
+
+    private fun parseStreamData(data: String): List<MessageChunk> {
+        return data
+            .trim()
+            .split("\n")
+            .filter { it.isNotBlank() }
+            .map { json.parseToJsonElement(it).jsonObject }
+            .map { jsonObject ->
+                val error = jsonObject["error"]
+                if (error != null) {
+                    throw error.parseErrorDetail()
+                }
+                val id = jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                val model = jsonObject["model"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                val choices = jsonObject["choices"]?.jsonArray ?: JsonArray(emptyList())
+                val choiceList = buildList {
+                    if (choices.isNotEmpty()) {
+                        val choice = choices[0].jsonObject
+                        val message = choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                            ?: throw Exception("delta/message is null")
+                        val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                            ?: "unknown"
+                        add(
+                            UIMessageChoice(
+                                index = 0,
+                                delta = parseMessage(message),
+                                message = null,
+                                finishReason = finishReason,
+                            )
+                        )
+                    }
+                }
+                val usage = parseTokenUsage(jsonObject["usage"] as? JsonObject)
+
+                MessageChunk(
+                    id = id,
+                    model = model,
+                    choices = choiceList,
+                    usage = usage
+                )
+            }
+    }
+
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val bodySnippet = event.body?.takeIf { it.isNotBlank() }?.take(500)
+        val fallback = RuntimeException(
+            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}" +
+                (bodySnippet?.let { " (body: $it)" } ?: "")
+        )
+        val bodyRaw = event.body
+        return try {
+            if (!bodyRaw.isNullOrBlank()) {
+                val bodyElement = Json.parseToJsonElement(bodyRaw)
+                bodyElement.parseErrorDetail()
+            } else {
+                fallback
+            }
+        } catch (e: Throwable) {
+            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
+            fallback
+        }
+    }
+
 
 
     private fun buildChatCompletionRequest(
@@ -263,9 +266,15 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         stream: Boolean = false,
     ): JsonObject {
-        val host = providerSetting.baseUrl.toHttpUrl().host
+        val host = providerSetting.baseUrl.urlHostOrNull().orEmpty()
         return buildJsonObject {
             put("model", params.model.modelId)
+            if (host == "openrouter.ai" && !params.sessionId.isNullOrBlank()) {
+                put("session_id", params.sessionId)
+            }
+            if (providerSetting.shouldIncludePromptCacheKey(host) && !params.sessionId.isNullOrBlank()) {
+                put("prompt_cache_key", params.sessionId)
+            }
             val processedMessages = if (params.model.abilities.contains(ModelAbility.REASONING) && 
                 ReasoningLevel.fromBudgetTokens(params.thinkingBudget) == ReasoningLevel.OFF) {
                 // If reasoning is OFF but it's a reasoning model, inject an empty think tag as an assistant prefill
@@ -458,7 +467,8 @@ class ChatCompletionsAPI(
         uploadableMessages
             .forEachIndexed { index, message ->
                 if (message.role == MessageRole.TOOL) {
-                    message.getToolResults().forEach { result ->
+                    val toolResults = message.getToolResults()
+                    toolResults.forEachIndexed { resultIndex, result ->
                         add(buildJsonObject {
                             put("role", "tool")
                             put("name", result.toolName)
@@ -468,6 +478,11 @@ class ChatCompletionsAPI(
                                 put("content", result.content)
                             } else {
                                 put("content", json.encodeToString(result.content))
+                            }
+                            
+                            val shouldCacheMessage = index in cacheBreakpointIndices
+                            if (shouldCacheMessage && resultIndex == toolResults.lastIndex) {
+                                put("cache_control", buildPromptCacheControl())
                             }
                         })
                     }
@@ -488,7 +503,7 @@ class ChatCompletionsAPI(
                     } else {
                         // 否则，使用parts构建
                         val uploadableParts = message.parts
-                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                            .filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }
                         val cacheableTextPartIndex = if (shouldCacheMessage) {
                             uploadableParts.indexOfLast { part ->
                                 part is UIMessagePart.Text && part.text.isNotBlank()
@@ -511,7 +526,7 @@ class ChatCompletionsAPI(
 
                                     is UIMessagePart.Image -> {
                                         add(buildJsonObject {
-                                            part.encodeBase64().onSuccess {
+                                            mediaEncoder.encodeImage(part.url).onSuccess {
                                                 put("type", "image_url")
                                                 put("image_url", buildJsonObject {
                                                     put("url", it)
@@ -526,13 +541,32 @@ class ChatCompletionsAPI(
                                         })
                                     }
 
+                                    is UIMessagePart.Audio -> {
+                                        add(buildJsonObject {
+                                            mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
+                                                val format = if (part.url.endsWith(".wav") || part.url.startsWith("data:audio/wav")) "wav" else "mp3"
+                                                put("type", "input_audio")
+                                                put("input_audio", buildJsonObject {
+                                                    put("data", base64Data)
+                                                    put("format", format)
+                                                })
+                                            }.onFailure {
+                                                it.printStackTrace()
+                                                println("encode audio failed: ${part.url}")
+
+                                                put("type", "text")
+                                                put("text", "")
+                                            }
+                                        })
+                                    }
+
                                     is UIMessagePart.Reasoning,
                                     is UIMessagePart.ToolCall -> {
                                         // Reasoning and tool calls are serialized as top-level fields.
                                     }
 
                                     else -> {
-                                        Log.w(
+                                        PlatformLog.w(
                                             TAG,
                                             "buildMessages: message part not supported: $part"
                                         )
@@ -542,7 +576,7 @@ class ChatCompletionsAPI(
                             }
                         }
                         if (shouldReplayDeepSeekReasoning && message.role == MessageRole.ASSISTANT &&
-                            message.parts.none { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                            message.parts.none { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }
                         ) {
                             put("content", "")
                         }
@@ -611,24 +645,41 @@ class ChatCompletionsAPI(
         }
     }
 
+    private fun ProviderSetting.OpenAI.shouldIncludePromptCacheKey(host: String): Boolean {
+        if (promptCacheMode == OpenAICompatibilityMode.DISABLED) return false
+        val normalizedHost = host.lowercase()
+        return normalizedHost == "api.openai.com" ||
+            normalizedHost == "api.mistral.ai" ||
+            normalizedHost == "api.deepseek.com" ||
+            normalizedHost == "open.bigmodel.cn" ||
+            normalizedHost == "opencode.ai" ||
+            normalizedHost.endsWith(".opencode.ai")
+    }
+
     private fun ProviderSetting.OpenAI.promptCachePolicy(host: String, modelId: String): PromptCachePolicy {
+        if (promptCacheMode == OpenAICompatibilityMode.ENABLED) {
+            return PromptCachePolicy(
+                explicitBreakpoints = true,
+                topLevelCacheControl = false
+            )
+        }
+        if (promptCacheMode == OpenAICompatibilityMode.DISABLED) {
+            return PromptCachePolicy(
+                explicitBreakpoints = false,
+                topLevelCacheControl = false
+            )
+        }
         val normalizedHost = host.lowercase()
         val normalizedModelId = modelId.lowercase()
-        val isOpenRouterCacheControlModel = normalizedModelId.contains("anthropic") ||
-            normalizedModelId.contains("claude") ||
-            normalizedModelId.contains("gemini") ||
-            normalizedModelId.contains("qwen") ||
-            normalizedModelId.contains("deepseek")
         return when {
-            normalizedHost == "openrouter.ai" && isOpenRouterCacheControlModel -> PromptCachePolicy(
+            normalizedHost == "openrouter.ai" -> PromptCachePolicy(
                 explicitBreakpoints = true,
                 topLevelCacheControl = false,
                 useSingleStableBreakpoint = normalizedModelId.contains("gemini")
             )
 
-            normalizedHost == "opencode.ai" ||
-                normalizedHost.endsWith(".opencode.ai") ||
-                normalizedModelId.startsWith("opencode-go/") -> PromptCachePolicy(
+            normalizedHost == "dashscope.aliyuncs.com" &&
+                (normalizedModelId.contains("qwen") || normalizedModelId.contains("deepseek")) -> PromptCachePolicy(
                 explicitBreakpoints = true,
                 topLevelCacheControl = false
             )
@@ -649,11 +700,12 @@ class ChatCompletionsAPI(
 
         val eligibleIndices = mapIndexedNotNull { index, message ->
             val hasCacheableText = message.parts.any { part ->
-                part is UIMessagePart.Text &&
+                (part is UIMessagePart.Text &&
                     part.text.isNotBlank() &&
-                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT
-            }
-            if (message.role != MessageRole.TOOL && hasCacheableText) index else null
+                    part.text != LEADING_ASSISTANT_COMPATIBILITY_USER_PROMPT) ||
+                part is UIMessagePart.ToolCall
+            } || message.role == MessageRole.TOOL
+            if (hasCacheableText) index else null
         }
         if (eligibleIndices.isEmpty()) return emptySet()
 
@@ -751,27 +803,106 @@ class ChatCompletionsAPI(
         if (jsonObject == null) return null
         val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull
         val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val promptTokensDetails = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull
+        val inputTokensDetails = jsonObject["input_tokens_details"]?.jsonObjectOrNull
+        val cacheCreationTokens = promptTokensDetails?.firstPositiveIntOrNull(
+            "cache_creation_input_tokens",
+            "cache_creation_tokens",
+            "cache_write_tokens"
+        )
+            ?: inputTokensDetails?.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: 0
+        val cacheReadTokens = promptTokensDetails?.firstPositiveIntOrNull(
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_read_tokens",
+            "prompt_cache_hit_tokens"
+        )
+            ?: inputTokensDetails?.firstPositiveIntOrNull(
+                "cached_tokens",
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "cached_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: 0
+        val cacheMissTokens = promptTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: inputTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: jsonObject.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: 0
         val inputTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull
         val effectivePromptTokens = promptTokens
             ?: inputTokens?.let { it + cacheCreationTokens + cacheReadTokens }
+            ?: (cacheReadTokens + cacheMissTokens).takeIf { it > 0 }
             ?: 0
         return TokenUsage(
             promptTokens = effectivePromptTokens,
             completionTokens = completionTokens,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
                 ?: (effectivePromptTokens + completionTokens),
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: cacheReadTokens
+            cachedTokens = cacheReadTokens
         )
     }
 
-    private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-        val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
-        val texts = filter { it is UIMessagePart.Text }.size
-        return gonnaSend == texts && texts == 1
+    private fun JsonObject.firstPositiveIntOrNull(vararg keys: String): Int? {
+        for (key in keys) {
+            val value = this[key]?.jsonPrimitive?.intOrNull
+            if (value != null && value > 0) return value
+        }
+        return null
     }
+
+private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
+    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }.size
+    val texts = filter { it is UIMessagePart.Text }.size
+    return gonnaSend == texts && texts == 1
+}
+
+private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+    return filter { it.name.isNotBlank() }.associate { it.name to it.value }
+}
+
+private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, String> {
+    return this + mapOf(
+        "Authorization" to "Bearer $apiKey",
+        "Content-Type" to "application/json"
+    )
+}
+
+private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
+    return when (baseUrl.urlHostOrNull()) {
+        "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
+        "openrouter.ai" -> this + mapOf(
+            "X-Title" to "LastChat",
+            "HTTP-Referer" to "https://github.com/Cocolalilal/LastChat"
+        )
+        else -> this
+    }
+}
+
+private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+    return when (this) {
+        ProviderProxy.None -> null
+        is ProviderProxy.Http -> PlatformHttpProxy(
+            host = address,
+            port = port,
+            username = username,
+            password = password
+        )
+    }
+}
 }

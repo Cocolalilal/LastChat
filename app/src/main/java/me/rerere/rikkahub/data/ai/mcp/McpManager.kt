@@ -24,11 +24,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.ai.mcp.transport.SseClientTransport
-import me.rerere.rikkahub.data.ai.mcp.transport.StreamableHttpClientTransport
 import me.rerere.rikkahub.utils.checkDifferent
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
@@ -37,15 +33,8 @@ private const val TAG = "McpManager"
 class McpManager(
     private val settingsStore: SettingsStore,
     private val appScope: AppScope,
+    private val transportFactory: McpTransportFactory,
 ) {
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.MINUTES)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .followSslRedirects(true)
-        .followRedirects(true)
-        .build()
-
     private val clients: MutableMap<McpServerConfig, Client> = mutableMapOf()
     val syncingStatus = MutableStateFlow<Map<Uuid, McpStatus>>(mapOf())
 
@@ -120,23 +109,8 @@ class McpManager(
         return McpJson.encodeToJsonElement(result.content)
     }
 
-    private fun getTransport(config: McpServerConfig): AbstractTransport = when (config) {
-        is McpServerConfig.SseTransportServer -> {
-            SseClientTransport(
-                urlString = config.url,
-                client = okHttpClient,
-                headers = config.commonOptions.headers,
-            )
-        }
-
-        is McpServerConfig.StreamableHTTPServer -> {
-            StreamableHttpClientTransport(
-                url = config.url,
-                client = okHttpClient,
-                headers = config.commonOptions.headers.toMap(),
-            )
-        }
-    }
+    private fun getTransport(config: McpServerConfig): AbstractTransport =
+        transportFactory.create(config)
 
     suspend fun addClient(config: McpServerConfig) = withContext(Dispatchers.IO) {
         removeClient(config) // Remove first
@@ -156,7 +130,10 @@ class McpManager(
             Log.i(TAG, "addClient: connected ${config.commonOptions.name}")
         }.onFailure {
             it.printStackTrace()
-            setStatus(config = config, status = McpStatus.Error(it.message ?: it.javaClass.name))
+            setStatus(
+                config = config,
+                status = McpStatus.Error(it.message ?: it::class.qualifiedName ?: it::class.simpleName ?: "Throwable")
+            )
         }
     }
 

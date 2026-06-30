@@ -39,12 +39,12 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.common.http.urlEncode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
-import java.net.URLEncoder
 
 // Requests
 
@@ -170,6 +170,12 @@ data class ConversationListDto(
     val updateAt: Long,
     val isGenerating: Boolean = false,
     val isFork: Boolean = false,
+    val isConsolidated: Boolean = false,
+    val contextSummary: String? = null,
+    val contextSummaryUpToIndex: Int = -1,
+    val lastPruneTime: Long = 0L,
+    val lastPruneMessageCount: Int = 0,
+    val lastRefreshTime: Long = 0L,
 )
 
 @Serializable
@@ -207,6 +213,12 @@ data class ConversationDto(
     val updateAt: Long,
     val isGenerating: Boolean = false,
     val isFork: Boolean = false,
+    val isConsolidated: Boolean = false,
+    val contextSummary: String? = null,
+    val contextSummaryUpToIndex: Int = -1,
+    val lastPruneTime: Long = 0L,
+    val lastPruneMessageCount: Int = 0,
+    val lastRefreshTime: Long = 0L,
 )
 
 @Serializable
@@ -254,6 +266,15 @@ data class WebAuthTokenResponse(
 data class CreateConversationResponse(
     val id: String,
     val assistantId: String,
+)
+
+@Serializable
+data class ContextRefreshResponse(
+    val success: Boolean,
+    val summary: String? = null,
+    val messagesSummarized: Int = 0,
+    val tokensSaved: Int = 0,
+    val error: String? = null,
 )
 
 @Serializable
@@ -407,6 +428,11 @@ data class WebAssistantDto(
     val tags: List<String> = emptyList(),
     val quickMessages: List<WebQuickMessageDto> = emptyList(),
     val presetMessages: List<MessageDto> = emptyList(),
+    val enableMemory: Boolean = false,
+    val enableMemoryConsolidation: Boolean = false,
+    val enableHistorySummarization: Boolean = false,
+    val autoRegenerateSummary: Boolean = false,
+    val maxHistoryMessages: Int? = null,
 )
 
 @Serializable
@@ -622,7 +648,13 @@ fun Conversation.toListDto(isGenerating: Boolean = false) = ConversationListDto(
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating,
-      isFork = isFork,
+    isFork = isFork,
+    isConsolidated = isConsolidated,
+    contextSummary = contextSummary,
+    contextSummaryUpToIndex = contextSummaryUpToIndex,
+    lastPruneTime = lastPruneTime,
+    lastPruneMessageCount = lastPruneMessageCount,
+    lastRefreshTime = lastRefreshTime,
 )
 
 fun Conversation.toDto(
@@ -641,7 +673,13 @@ fun Conversation.toDto(
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating,
-      isFork = isFork,
+    isFork = isFork,
+    isConsolidated = isConsolidated,
+    contextSummary = contextSummary,
+    contextSummaryUpToIndex = contextSummaryUpToIndex,
+    lastPruneTime = lastPruneTime,
+    lastPruneMessageCount = lastPruneMessageCount,
+    lastRefreshTime = lastRefreshTime,
 )
 
 fun MessageNode.toDto(
@@ -801,6 +839,11 @@ internal fun Assistant.toWebAssistantDto(context: Context): WebAssistantDto {
         tags = tags.map(Uuid::toString),
         quickMessages = quickMessages.map(QuickMessage::toWebQuickMessageDto),
         presetMessages = presetMessages.map { it.toDto(context) },
+        enableMemory = enableMemory,
+        enableMemoryConsolidation = enableMemoryConsolidation,
+        enableHistorySummarization = enableHistorySummarization,
+        autoRegenerateSummary = autoRegenerateSummary,
+        maxHistoryMessages = maxHistoryMessages,
     )
 }
 
@@ -1270,14 +1313,14 @@ private fun String.toWebAssetUrl(
     if (uri != null && uri.isAllowedWebMediaUri(context)) {
         return buildString {
             append("/api/files/content?uri=")
-            append(URLEncoder.encode(this@toWebAssetUrl, Charsets.UTF_8.name()))
+            append(this@toWebAssetUrl.urlEncode(spaceAsPlus = true))
             if (!mimeOverride.isNullOrBlank()) {
                 append("&mime=")
-                append(URLEncoder.encode(mimeOverride, Charsets.UTF_8.name()))
+                append(mimeOverride.urlEncode(spaceAsPlus = true))
             }
             if (!fileName.isNullOrBlank()) {
                 append("&name=")
-                append(URLEncoder.encode(fileName, Charsets.UTF_8.name()))
+                append(fileName.urlEncode(spaceAsPlus = true))
             }
         }
     }

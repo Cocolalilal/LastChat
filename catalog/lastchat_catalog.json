@@ -1,11 +1,14 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-05-24",
+  "updated_at": "2026-06-25",
   "search_providers": [
     {
       "id": "bing",
       "name": "Bing",
-      "aliases": ["bing-local", "bing search"],
+      "aliases": [
+        "bing-local",
+        "bing search"
+      ],
       "description": "Local Bing web search.",
       "icon": "icons/bing.svg",
       "preset": true
@@ -13,7 +16,9 @@
     {
       "id": "perplexity",
       "name": "Perplexity",
-      "aliases": ["perplexity search"],
+      "aliases": [
+        "perplexity search"
+      ],
       "description": "Perplexity search API.",
       "icon": "icons/perplexity.svg",
       "preset": true
@@ -21,7 +26,9 @@
     {
       "id": "ollama",
       "name": "Ollama",
-      "aliases": ["ollama search"],
+      "aliases": [
+        "ollama search"
+      ],
       "description": "Ollama web search.",
       "icon": "icons/ollama.svg",
       "preset": true
@@ -29,7 +36,9 @@
     {
       "id": "brave",
       "name": "Brave",
-      "aliases": ["brave search"],
+      "aliases": [
+        "brave search"
+      ],
       "description": "Brave Search API.",
       "icon": "icons/brave.svg",
       "preset": true
@@ -37,7 +46,10 @@
     {
       "id": "grok",
       "name": "Grok",
-      "aliases": ["xai", "grok search"],
+      "aliases": [
+        "xai",
+        "grok search"
+      ],
       "description": "xAI Grok search.",
       "icon": "icons/grok.svg",
       "preset": true
@@ -45,7 +57,10 @@
     {
       "id": "nanogpt",
       "name": "NanoGPT",
-      "aliases": ["nano-gpt", "nano gpt"],
+      "aliases": [
+        "nano-gpt",
+        "nano gpt"
+      ],
       "description": "NanoGPT web search and scrape API.",
       "icon": "icons/nanogpt.svg",
       "preset": true
@@ -53,7 +68,9 @@
     {
       "id": "tavily",
       "name": "Tavily",
-      "aliases": ["tavily search"],
+      "aliases": [
+        "tavily search"
+      ],
       "description": "Tavily search API.",
       "icon": "icons/tavily.svg",
       "preset": true
@@ -61,7 +78,9 @@
     {
       "id": "exa",
       "name": "Exa",
-      "aliases": ["exa search"],
+      "aliases": [
+        "exa search"
+      ],
       "description": "Exa neural search API.",
       "icon": "icons/exa.svg",
       "preset": true
@@ -69,7 +88,9 @@
     {
       "id": "jina",
       "name": "Jina",
-      "aliases": ["jina search"],
+      "aliases": [
+        "jina search"
+      ],
       "description": "Jina search and reader APIs.",
       "icon": "icons/jina.svg",
       "preset": true
@@ -77,7 +98,9 @@
     {
       "id": "firecrawl",
       "name": "Firecrawl",
-      "aliases": ["firecrawl search"],
+      "aliases": [
+        "firecrawl search"
+      ],
       "description": "Firecrawl search and scrape API.",
       "icon": "icons/firecrawl.svg",
       "preset": true
@@ -85,7 +108,10 @@
     {
       "id": "searxng",
       "name": "SearXNG",
-      "aliases": ["searx", "searx ng"],
+      "aliases": [
+        "searx",
+        "searx ng"
+      ],
       "description": "Self-hosted metasearch service.",
       "icon": "icons/searxng.svg",
       "preset": true
@@ -93,7 +119,9 @@
     {
       "id": "linkup",
       "name": "LinkUp",
-      "aliases": ["linkup search"],
+      "aliases": [
+        "linkup search"
+      ],
       "description": "Linkup search and scrape API.",
       "icon": "icons/linkup.svg",
       "preset": true
@@ -101,7 +129,11 @@
     {
       "id": "zhipu",
       "name": "Zhipu",
-      "aliases": ["智谱", "zhipu ai", "glm"],
+      "aliases": [
+        "\u667a\u8c31",
+        "zhipu ai",
+        "glm"
+      ],
       "description": "Zhipu search API.",
       "icon": "icons/zhipu.svg",
       "preset": true
@@ -109,7 +141,10 @@
     {
       "id": "metaso",
       "name": "Metaso",
-      "aliases": ["秘塔", "metaso ai"],
+      "aliases": [
+        "\u79d8\u5854",
+        "metaso ai"
+      ],
       "description": "Metaso AI search API.",
       "icon": "icons/metaso.svg",
       "preset": true
@@ -117,7 +152,10 @@
     {
       "id": "bocha",
       "name": "Bocha",
-      "aliases": ["博查", "bocha ai"],
+      "aliases": [
+        "\u535a\u67e5",
+        "bocha ai"
+      ],
       "description": "Bocha AI search API.",
       "icon": "icons/bocha.svg",
       "preset": true
@@ -127,7 +165,9 @@
     {
       "id": "openai",
       "name": "OpenAI",
-      "aliases": ["openai tts"],
+      "aliases": [
+        "openai tts"
+      ],
       "description": "OpenAI text-to-speech.",
       "icon": "icons/openai.svg",
       "preset": true
@@ -135,7 +175,11 @@
     {
       "id": "gemini",
       "name": "Gemini",
-      "aliases": ["google", "google tts", "gemini tts"],
+      "aliases": [
+        "google",
+        "google tts",
+        "gemini tts"
+      ],
       "description": "Gemini text-to-speech.",
       "icon": "icons/gemini.svg",
       "preset": true
@@ -143,7 +187,10 @@
     {
       "id": "elevenlabs",
       "name": "ElevenLabs",
-      "aliases": ["eleven labs", "elevenlabs tts"],
+      "aliases": [
+        "eleven labs",
+        "elevenlabs tts"
+      ],
       "description": "ElevenLabs text-to-speech.",
       "icon": "icons/elevenlabs.svg",
       "preset": true
@@ -151,7 +198,9 @@
     {
       "id": "minimax",
       "name": "MiniMax",
-      "aliases": ["minimax tts"],
+      "aliases": [
+        "minimax tts"
+      ],
       "description": "MiniMax text-to-speech.",
       "icon": "icons/minimax.svg",
       "preset": true
@@ -159,7 +208,10 @@
     {
       "id": "qwen",
       "name": "Qwen",
-      "aliases": ["qwen tts", "dashscope"],
+      "aliases": [
+        "qwen tts",
+        "dashscope"
+      ],
       "description": "Qwen text-to-speech.",
       "icon": "icons/qwen.svg",
       "preset": true
@@ -984,15 +1036,6 @@
       "api_key_url": "https://studio.ai21.com/account/api-key"
     },
     {
-      "id": "c1d92a0e-c1d4-45aa-9b24-78fdbe4a3198",
-      "name": "Amazon Bedrock",
-      "description": "Amazon Bedrock is a fully managed service that offers a choice of high-performing foundation models.",
-      "type": "openai",
-      "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com/v1",
-      "icon": "icons/amazon.svg",
-      "preset": true
-    },
-    {
       "id": "e3f92a0e-c1d4-45aa-9b24-78fdbe4a3199",
       "name": "Arcee AI",
       "description": "Arcee AI provides access to specialized domain-specific and agentic models.",
@@ -1038,6 +1081,193 @@
       "base_url": "https://api.poolside.ai/v1",
       "icon": "icons/poolside.svg",
       "preset": true
+    },
+    {
+      "id": "ebd55a67-2fa4-4366-b0ad-4035473a8338",
+      "name": "Regolo AI",
+      "description": "Regolo AI API provider.",
+      "type": "openai",
+      "base_url": "https://api.regolo.ai/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/regolo.svg",
+      "preset": true,
+      "signup_url": "https://regolo.ai",
+      "api_key_url": "https://regolo.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "ccd5bbd9-6411-4333-8dbd-2ed3e65c1475",
+      "name": "Vercel AI Gateway",
+      "description": "Vercel AI Gateway API provider.",
+      "type": "openai",
+      "base_url": "https://ai-gateway.vercel.sh/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/vercel.svg",
+      "preset": true,
+      "signup_url": "https://vercel.com",
+      "api_key_url": "https://vercel.com",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "584e2459-7933-4acb-8f8a-3a9e48764708",
+      "name": "OpenCode",
+      "description": "OpenCode API provider.",
+      "type": "openai",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/opencode.svg",
+      "preset": true,
+      "signup_url": "https://opencode.ai",
+      "api_key_url": "https://opencode.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "fb7b6165-8893-4cfc-82e0-26c6fd01d566",
+      "name": "Command Code",
+      "description": "Command Code API provider.",
+      "type": "openai",
+      "base_url": "https://api.commandcode.ai/alpha/generate",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/command-symbol.svg",
+      "preset": true,
+      "signup_url": "https://commandcode.ai",
+      "api_key_url": "https://commandcode.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "3ca10648-755e-4a56-b90c-e6daec71d811",
+      "name": "Lepton AI",
+      "description": "Lepton AI API provider. Ensure you substitute the correct placeholders in the URL.",
+      "type": "openai",
+      "base_url": "https://api.lepton.ai/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/leptonai.svg",
+      "preset": true,
+      "signup_url": "https://lepton.ai",
+      "api_key_url": "https://lepton.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "ee5bbdb4-8530-4d64-b6dd-b7280690a399",
+      "name": "Anyscale Endpoints",
+      "description": "Anyscale Endpoints API provider.",
+      "type": "openai",
+      "base_url": "https://api.endpoints.anyscale.com/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/anyscale.svg",
+      "preset": true,
+      "signup_url": "https://anyscale.com",
+      "api_key_url": "https://anyscale.com",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "890e3c2d-3f93-4031-8c8d-e9b8906474b4",
+      "name": "Inference.net",
+      "description": "Inference.net API provider.",
+      "type": "openai",
+      "base_url": "https://api.inference.net/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/inference.svg",
+      "preset": true,
+      "signup_url": "https://inference.net",
+      "api_key_url": "https://inference.net",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "a9223377-d1d4-4dcb-8cba-087994505d37",
+      "name": "Featherless AI",
+      "description": "Featherless AI API provider.",
+      "type": "openai",
+      "base_url": "https://api.featherless.ai/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/featherless.svg",
+      "preset": true,
+      "signup_url": "https://featherless.ai",
+      "api_key_url": "https://featherless.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "86990ca4-05b9-46bd-aaf6-f475db646039",
+      "name": "Helicone",
+      "description": "Helicone API provider.",
+      "type": "openai",
+      "base_url": "https://gateway.helicone.ai/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/helicone.svg",
+      "preset": true,
+      "signup_url": "https://helicone.ai",
+      "api_key_url": "https://helicone.ai",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "16d739cd-b73c-4d20-a680-2c36d74b509c",
+      "name": "CometAPI",
+      "description": "CometAPI API provider.",
+      "type": "openai",
+      "base_url": "https://api.cometapi.com/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/cometapi.svg",
+      "preset": true,
+      "signup_url": "https://cometapi.com",
+      "api_key_url": "https://cometapi.com",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "e49da2ca-f2ff-4a83-be8f-d636e64dde98",
+      "name": "Nscale",
+      "description": "Nscale API provider.",
+      "type": "openai",
+      "base_url": "https://api.nscale.com/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/nscale.svg",
+      "preset": true,
+      "signup_url": "https://nscale.com",
+      "api_key_url": "https://nscale.com",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
     }
   ],
   "model_families": [
@@ -1062,6 +1292,66 @@
         "REASONING"
       ],
       "provider_slug": "openai",
+      "versions": []
+    },
+    {
+      "id": "whisper",
+      "aliases": [
+        "whisper"
+      ],
+      "match_patterns": [
+        "whisper",
+        "distil-whisper"
+      ],
+      "icon": "icons/openai.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
+      "versions": []
+    },
+    {
+      "id": "sensevoice",
+      "aliases": [
+        "sensevoice",
+        "funaudiollm"
+      ],
+      "match_patterns": [
+        "sensevoice",
+        "FunAudioLLM"
+      ],
+      "icon": "icons/siliconflow.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
+      "versions": []
+    },
+    {
+      "id": "paraformer",
+      "aliases": [
+        "paraformer"
+      ],
+      "match_patterns": [
+        "paraformer"
+      ],
+      "icon": "icons/dashscope.svg",
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [],
       "versions": []
     },
     {
@@ -1149,6 +1439,33 @@
           "type": "EMBEDDING",
           "input_modalities": [
             "TEXT"
+          ],
+          "output_modalities": [
+            "TEXT"
+          ],
+          "abilities": []
+        },
+        {
+          "id": "gpt-audio",
+          "match_patterns": [
+            "gpt-4o-audio"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL"
+          ]
+        },
+        {
+          "id": "gpt-transcribe",
+          "match_patterns": [
+            "gpt-.*-transcribe"
+          ],
+          "type": "STT",
+          "input_modalities": [
+            "AUDIO"
           ],
           "output_modalities": [
             "TEXT"
@@ -1405,6 +1722,20 @@
           ]
         },
         {
+          "id": "qwen3.5",
+          "match_patterns": [
+            "qwen3\\.5"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ]
+        },
+        {
           "id": "qwen2.5-coder",
           "match_patterns": [
             "qwen2\\.5-coder"
@@ -1444,6 +1775,18 @@
             "coder",
             "math",
             "vl|omni|vision"
+          ]
+        },
+        {
+          "id": "qwen-audio",
+          "match_patterns": [
+            "qwen.*audio"
+          ],
+          "input_modalities": [
+            "TEXT"
+          ],
+          "abilities": [
+            "TOOL"
           ]
         }
       ]
@@ -1649,6 +1992,9 @@
           "abilities": [
             "TOOL",
             "REASONING"
+          ],
+          "input_modalities": [
+            "TEXT"
           ]
         },
         {
@@ -1802,12 +2148,22 @@
           "exclude_patterns": [
             "4\\.5",
             "5",
+            "voice",
             "v|vision",
             "4\\.6",
             "4\\.7",
             "zero",
             "z1",
             "rumination"
+          ]
+        },
+        {
+          "id": "glm-4-voice",
+          "match_patterns": [
+            "glm[-_]?4.*voice"
+          ],
+          "input_modalities": [
+            "TEXT"
           ]
         },
         {
@@ -2791,7 +3147,7 @@
       "id": "ai360",
       "aliases": [
         "ai360",
-        "360æ™ºè„‘",
+        "360\u00e6\u2122\u00ba\u00e8\u201e\u2018",
         "360"
       ],
       "match_patterns": [
@@ -4159,6 +4515,152 @@
       "output_modalities": [
         "TEXT"
       ]
+    },
+    {
+      "id": "whisper-1",
+      "canonical_model_id": "whisper-1",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
+      ]
+    },
+    {
+      "id": "whisper-large-v3",
+      "canonical_model_id": "whisper-large-v3",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64",
+        "c7e2b7da-a579-4a94-9b24-9b24bfa1e9ad",
+        "8e9f2910-c114-411a-b302-18cb92193b2a",
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      ]
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "canonical_model_id": "whisper-large-v3-turbo",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64",
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      ]
+    },
+    {
+      "id": "distil-whisper-large-v3-en",
+      "canonical_model_id": "distil-whisper-large-v3-en",
+      "provider_ids": [
+        "f9fe0a18-2b30-46e1-9c57-5562654e8d64"
+      ]
+    },
+    {
+      "id": "gpt-4o-transcribe",
+      "canonical_model_id": "gpt-4o-transcribe",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "gpt-4o-mini-transcribe",
+      "canonical_model_id": "gpt-4o-mini-transcribe",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "FunAudioLLM/SenseVoiceSmall",
+      "canonical_model_id": "FunAudioLLM/SenseVoiceSmall",
+      "provider_ids": [
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    },
+    {
+      "id": "paraformer-realtime-v2",
+      "canonical_model_id": "paraformer-realtime-v2",
+      "provider_ids": [
+        "5e729975-9794-4013-af7e-63a548cf3356",
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      ]
+    }
+  ],
+  "stt_providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "icon": "icons/openai.svg"
+    },
+    {
+      "id": "openai_realtime",
+      "name": "OpenAI Realtime",
+      "icon": "icons/openai.svg"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "icon": "icons/openrouter.svg"
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "icon": "icons/groq.svg"
+    },
+    {
+      "id": "regolo",
+      "name": "Regolo AI",
+      "icon": "icons/regolo.svg"
+    },
+    {
+      "id": "xai",
+      "name": "xAI",
+      "icon": "icons/xai.svg"
+    },
+    {
+      "id": "deepinfra",
+      "name": "DeepInfra",
+      "icon": "icons/deepinfra.svg"
+    },
+    {
+      "id": "together",
+      "name": "Together AI",
+      "icon": "icons/together.svg"
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks AI",
+      "icon": "icons/fireworks.svg"
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "icon": "icons/siliconflow.svg"
+    },
+    {
+      "id": "aihubmix",
+      "name": "AiHubMix",
+      "icon": "icons/aihubmix.svg"
+    },
+    {
+      "id": "novita",
+      "name": "Novita AI",
+      "icon": "icons/novita.svg"
+    },
+    {
+      "id": "dashscope",
+      "name": "DashScope",
+      "icon": "icons/dashscope.svg"
+    },
+    {
+      "id": "volcengine",
+      "name": "Volcengine",
+      "icon": "icons/volcengine.svg"
+    },
+    {
+      "id": "mimo",
+      "name": "MiMo",
+      "icon": "icons/mimo.svg"
+    },
+    {
+      "id": "step",
+      "name": "Step",
+      "icon": "icons/step.svg"
     }
   ]
 }

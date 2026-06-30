@@ -23,7 +23,7 @@ private data class PendingDocumentImport(
 
 internal suspend fun Context.prepareImportedPickerFiles(
     selectedUris: List<Uri>,
-    isPythonEnabled: Boolean,
+    isWorkspaceEnabled: Boolean,
 ): ImportedPickerFiles {
     val imageUris = mutableListOf<Uri>()
     val documentsToImport = mutableListOf<PendingDocumentImport>()
@@ -37,7 +37,7 @@ internal suspend fun Context.prepareImportedPickerFiles(
                 mimeType.startsWith("text/") ||
                 mimeType == PDF_MIME_TYPE
 
-        if (!isPythonEnabled && !isNativelySupported) {
+        if (!isWorkspaceEnabled && !isNativelySupported) {
             unsupportedFileNames.add(fileName)
             return@forEach
         }

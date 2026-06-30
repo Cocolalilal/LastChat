@@ -2,11 +2,7 @@ package me.rerere.rikkahub.data.ai.models
 
 import android.content.Context
 import android.util.Log
-import java.io.File
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,19 +23,20 @@ import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.registry.ModelIdNormalizer
+import me.rerere.common.platform.PlatformFileStore
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.utils.JsonInstant
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import me.rerere.common.http.await
 
 private const val TAG = "ModelCatalogService"
 private const val MODEL_CATALOG_DIR_NAME = "model_catalog"
 private const val MODEL_CATALOG_FILE_NAME = "lastchat_catalog.json"
+private const val MODEL_CATALOG_FILE_PATH = "$MODEL_CATALOG_DIR_NAME/$MODEL_CATALOG_FILE_NAME"
 private const val MODEL_CATALOG_ASSET_NAME = "lastchat_catalog.json"
 private const val MODEL_CATALOG_URL =
-    "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/lastchat_catalog.json"
+    "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/lastchat_catalog.json"
 private const val CATALOG_RAW_BASE_URL =
-    "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/"
+    "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/"
 
 enum class ModelCatalogSource {
     BUNDLED,
@@ -63,7 +60,9 @@ data class LastChatCatalog(
     @SerialName("search_providers")
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
     @SerialName("tts_providers")
-    val ttsProviders: List<CatalogServiceProvider> = emptyList(),
+    val ttsProviders: List<CatalogTTSProvider> = emptyList(),
+    @SerialName("stt_providers")
+    val sttProviders: List<CatalogServiceProvider> = emptyList(),
     @SerialName("model_groups")
     val legacyModelGroups: List<CatalogModelFamily> = emptyList(),
 ) {
@@ -82,6 +81,42 @@ data class CatalogServiceProvider(
     @SerialName("built_in")
     val builtIn: Boolean = false,
 )
+
+@Serializable
+data class CatalogTTSProvider(
+    val id: String,
+    val name: String,
+    val aliases: List<String> = emptyList(),
+    val description: String = "",
+    val icon: String? = null,
+    val preset: Boolean = true,
+    @SerialName("built_in")
+    val builtIn: Boolean = false,
+    val type: CatalogTTSProviderType = CatalogTTSProviderType.OPENAI,
+    @SerialName("base_url")
+    val baseUrl: String = "",
+    @SerialName("default_model")
+    val defaultModel: String = "",
+    @SerialName("default_voice")
+    val defaultVoice: String = "",
+    @SerialName("signup_url")
+    val signupUrl: String? = null,
+    @SerialName("api_key_url")
+    val apiKeyUrl: String? = null,
+)
+
+@Serializable
+enum class CatalogTTSProviderType {
+    @SerialName("openai") OPENAI,
+    @SerialName("gemini") GEMINI,
+    @SerialName("system") SYSTEM,
+    @SerialName("minimax") MINIMAX,
+    @SerialName("elevenlabs") ELEVENLABS,
+    @SerialName("qwen") QWEN,
+    @SerialName("fishaudio") FISHAUDIO,
+    @SerialName("cartesia") CARTESIA,
+    @SerialName("playht") PLAYHT,
+}
 
 @Serializable
 data class CatalogProvider(
@@ -126,6 +161,8 @@ data class CatalogProvider(
     val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
     @SerialName("reasoning_content_replay_mode")
     val reasoningContentReplayMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
+    @SerialName("prompt_cache_mode")
+    val promptCacheMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
 )
 
 @Serializable
@@ -341,7 +378,8 @@ data class ModelCatalogSnapshot(
     val globalRules: List<CatalogModelRule> = emptyList(),
     val modelOverrides: List<CatalogModelOverride> = emptyList(),
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
-    val ttsProviders: List<CatalogServiceProvider> = emptyList(),
+    val ttsProviders: List<CatalogTTSProvider> = emptyList(),
+    val sttProviders: List<CatalogServiceProvider> = emptyList(),
 ) {
     val catalog: LastChatCatalog
         get() = LastChatCatalog(
@@ -351,6 +389,7 @@ data class ModelCatalogSnapshot(
             modelOverrides = modelOverrides,
             searchProviders = searchProviders,
             ttsProviders = ttsProviders,
+            sttProviders = sttProviders,
         )
 }
 
@@ -453,6 +492,7 @@ object ModelCatalogParser {
             modelOverrides = effectiveOverrides,
             searchProviders = catalog.searchProviders,
             ttsProviders = catalog.ttsProviders,
+            sttProviders = catalog.sttProviders,
         )
     }
 }
@@ -760,7 +800,8 @@ private class ModelCatalogEntryBuilder(
 
 class ModelCatalogService(
     private val context: Context,
-    private val client: OkHttpClient,
+    private val httpClient: PlatformHttpClient,
+    private val fileStore: PlatformFileStore,
 ) {
     @Volatile
     private var snapshot: ModelCatalogSnapshot? = null
@@ -830,16 +871,15 @@ class ModelCatalogService(
         return readBundledCatalog()
     }
 
-    private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? = withContext(Dispatchers.IO) {
-        val file = downloadedCatalogFile()
-        if (!file.exists()) return@withContext null
+    private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? {
+        val rawJson = fileStore.readBytes(MODEL_CATALOG_FILE_PATH)?.decodeToString() ?: return null
 
-        runCatching {
-            val snapshot = ModelCatalogParser.parse(file.readText())
+        return runCatching {
+            val snapshot = ModelCatalogParser.parse(rawJson)
             LoadedCatalog(
                 snapshot = snapshot,
                 source = ModelCatalogSource.DOWNLOADED,
-                lastSuccessfulRefreshAt = file.lastModified().takeIf { it > 0L },
+                lastSuccessfulRefreshAt = fileStore.lastModified(MODEL_CATALOG_FILE_PATH),
             )
         }.onFailure {
             Log.w(TAG, "Downloaded LastChat catalog is invalid; falling back to bundled snapshot", it)
@@ -860,49 +900,21 @@ class ModelCatalogService(
     }
 
     private suspend fun downloadCatalogJson(): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(MODEL_CATALOG_URL)
-            .get()
-            .build()
-        val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw IOException("Failed to download LastChat catalog: ${response.code}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = MODEL_CATALOG_URL,
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            throw IOException("Failed to download LastChat catalog: ${response.statusCode}")
         }
-        response.body?.string()?.takeIf { it.isNotBlank() }
+        response.body.decodeToString().takeIf { it.isNotBlank() }
             ?: throw IOException("Downloaded LastChat catalog was empty")
     }
 
-    private suspend fun writeDownloadedCatalog(rawJson: String) = withContext(Dispatchers.IO) {
-        val directory = downloadedCatalogDirectory()
-        if (!directory.exists()) {
-            directory.mkdirs()
-        }
-
-        val target = downloadedCatalogFile()
-        val temp = File(directory, "$MODEL_CATALOG_FILE_NAME.tmp")
-        temp.writeText(rawJson)
-        try {
-            Files.move(
-                temp.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(
-                temp.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        }
-    }
-
-    private fun downloadedCatalogDirectory(): File {
-        return File(context.filesDir, MODEL_CATALOG_DIR_NAME)
-    }
-
-    private fun downloadedCatalogFile(): File {
-        return File(downloadedCatalogDirectory(), MODEL_CATALOG_FILE_NAME)
+    private suspend fun writeDownloadedCatalog(rawJson: String) {
+        fileStore.writeBytes(MODEL_CATALOG_FILE_PATH, rawJson.encodeToByteArray())
     }
 }
 
@@ -922,12 +934,32 @@ fun ModelCatalogSnapshot.searchProviderIconUri(providerIdOrName: String): String
 
 fun ModelCatalogSnapshot.ttsProviderIconUri(providerIdOrName: String): String? {
     return ttsProviders
+        .firstOrNull { provider -> provider.matchesCatalogTTSProvider(providerIdOrName) }
+        ?.icon
+        ?.toCatalogIconUrl()
+}
+
+fun ModelCatalogSnapshot.ttsProviderById(providerId: String): CatalogTTSProvider? {
+    return ttsProviders.firstOrNull { it.id == providerId }
+}
+
+fun ModelCatalogSnapshot.sttProviderIconUri(providerIdOrName: String): String? {
+    return sttProviders
         .firstOrNull { provider -> provider.matchesCatalogServiceProvider(providerIdOrName) }
         ?.icon
         ?.toCatalogIconUrl()
 }
 
 private fun CatalogServiceProvider.matchesCatalogServiceProvider(value: String): Boolean {
+    val normalizedValue = value.normalizeCatalogToken()
+    if (normalizedValue.isBlank()) return false
+    return sequenceOf(id, name)
+        .plus(aliases)
+        .map { it.normalizeCatalogToken() }
+        .any { it == normalizedValue }
+}
+
+private fun CatalogTTSProvider.matchesCatalogTTSProvider(value: String): Boolean {
     val normalizedValue = value.normalizeCatalogToken()
     if (normalizedValue.isBlank()) return false
     return sequenceOf(id, name)
@@ -948,6 +980,7 @@ private fun defaultOutputModalities(type: ModelType): List<Modality> {
     return when (type) {
         ModelType.CHAT, ModelType.EMBEDDING -> listOf(Modality.TEXT)
         ModelType.IMAGE -> listOf(Modality.IMAGE)
+        ModelType.STT -> listOf(Modality.TEXT)
     }
 }
 

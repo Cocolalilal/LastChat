@@ -51,11 +51,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
+    implementation(project(":common"))
     implementation(project(":ai"))
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.material3)
-    api(libs.jsoup)
+    testImplementation(libs.junit)
 }

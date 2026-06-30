@@ -209,6 +209,7 @@ class ModelMetadataResolver(
             ModelType.CHAT -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.IMAGE -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
+            ModelType.STT -> listOf(Modality.AUDIO)
         }
     }
 
@@ -236,6 +237,7 @@ class ModelMetadataResolver(
             }.distinct()
 
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
+            ModelType.STT -> listOf(Modality.TEXT)
         }
     }
 
@@ -266,6 +268,7 @@ private fun String?.toModelTypeOrNull(): ModelType? {
         "embedding" -> ModelType.EMBEDDING
         "image_generation", "image" -> ModelType.IMAGE
         "chat" -> ModelType.CHAT
+        "stt" -> ModelType.STT
         else -> null
     }
 }

@@ -39,7 +39,7 @@ class NoVisionImageRoutingTest {
     }
 
     @Test
-    fun `shouldSilentlyPreloadImageForPython only when model lacks vision and OCR is configured`() {
+    fun `shouldSilentlyPreloadImageForOcrFallback only when model lacks vision and OCR is configured`() {
         val ocrModel = Model(id = Uuid.random())
         val configuredSettings = Settings.dummy().copy(
             providers = listOf(ProviderSetting.OpenAI(models = listOf(ocrModel))),
@@ -48,10 +48,10 @@ class NoVisionImageRoutingTest {
         val noVisionModel = Model(inputModalities = listOf(Modality.TEXT))
         val visionModel = Model(inputModalities = listOf(Modality.TEXT, Modality.IMAGE))
 
-        assertTrue(shouldSilentlyPreloadImageForPython(noVisionModel, configuredSettings))
-        assertFalse(shouldSilentlyPreloadImageForPython(visionModel, configuredSettings))
+        assertTrue(shouldSilentlyPreloadImageForOcrFallback(noVisionModel, configuredSettings))
+        assertFalse(shouldSilentlyPreloadImageForOcrFallback(visionModel, configuredSettings))
         assertFalse(
-            shouldSilentlyPreloadImageForPython(
+            shouldSilentlyPreloadImageForOcrFallback(
                 noVisionModel,
                 configuredSettings.copy(ocrModelId = Uuid.random())
             )
@@ -59,22 +59,22 @@ class NoVisionImageRoutingTest {
     }
 
     @Test
-    fun `buildResidualImageFallbackText only mentions python when enabled`() {
-        val pythonEnabled = UnsupportedFileTransformer.buildResidualImageFallbackText(
+    fun `buildResidualImageFallbackText only mentions workspace tools when enabled`() {
+        val workspaceEnabled = UnsupportedFileTransformer.buildResidualImageFallbackText(
             fileName = "photo.png",
             sourceUrl = "file:///tmp/photo.png",
-            pythonEnabled = true,
+            workspaceEnabled = true,
         )
-        val pythonDisabled = UnsupportedFileTransformer.buildResidualImageFallbackText(
+        val workspaceDisabled = UnsupportedFileTransformer.buildResidualImageFallbackText(
             fileName = "photo.png",
             sourceUrl = "file:///tmp/photo.png",
-            pythonEnabled = false,
+            workspaceEnabled = false,
         )
 
-        assertTrue(pythonEnabled.contains("Python can use the original image"))
-        assertTrue(pythonEnabled.contains("list_sandbox_files"))
-        assertFalse(pythonDisabled.contains("Python can use the original image"))
-        assertTrue(pythonDisabled.contains("Do not infer image contents"))
+        assertTrue(workspaceEnabled.contains("bound Linux workspace tools"))
+        assertTrue(workspaceEnabled.contains("URL: file:///tmp/photo.png"))
+        assertFalse(workspaceDisabled.contains("bound Linux workspace tools"))
+        assertTrue(workspaceDisabled.contains("Do not infer image contents"))
     }
 
 }

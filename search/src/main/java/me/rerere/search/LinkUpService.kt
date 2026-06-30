@@ -1,11 +1,5 @@
 package me.rerere.search
 
-import android.util.Log
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -15,28 +9,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val TAG = "LinkUpService"
 
 object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
     override val name: String = "LinkUp"
-
-    @Composable
-    override fun Description() {
-        val urlHandler = LocalUriHandler.current
-        TextButton(
-            onClick = {
-                urlHandler.openUri("https://www.linkup.so/")
-            }
-        ) {
-            Text(stringResource(R.string.click_to_get_api_key))
-        }
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(
@@ -74,18 +55,22 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                 put("includeImages", JsonPrimitive("false"))
             }
 
-            val request = Request.Builder()
-                .url("https://api.linkup.so/v1/search")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .build()
+            println("$TAG search: $query")
 
-            Log.i(TAG, "search: $query")
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string().let {
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://api.linkup.so/v1/search",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Content-Type" to "application/json"
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = response.body.decodeToString().let {
                     json.decodeFromString<LinkUpSearchResponse>(it)
                 }
 
@@ -102,7 +87,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}: ${response.body?.string()}")
+                error("response failed #${response.statusCode}: ${response.body.decodeToString()}")
             }
         }
     }
@@ -121,16 +106,20 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                 put("extractImages", JsonPrimitive(false))
             }
 
-            val request = Request.Builder()
-                .url("https://api.linkup.so/v1/fetch")
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string().let {
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://api.linkup.so/v1/fetch",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Content-Type" to "application/json"
+                    ),
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = response.body.decodeToString().let {
                     json.decodeFromString<LinkUpFetchResponse>(it)
                 }
 
@@ -145,7 +134,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}: ${response.body?.string()}")
+                error("response failed #${response.statusCode}: ${response.body.decodeToString()}")
             }
         }
     }

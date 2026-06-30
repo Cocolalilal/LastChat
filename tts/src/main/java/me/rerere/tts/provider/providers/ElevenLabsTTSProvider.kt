@@ -1,30 +1,27 @@
 package me.rerere.tts.provider.providers
 
-import android.content.Context
-import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
+import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 private const val TAG = "ElevenLabsTTSProvider"
 
-class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
-    private val httpClient = OkHttpClient.Builder()
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
-
+class ElevenLabsTTSProvider(
+    private val httpClient: PlatformHttpClient,
+) : TTSProvider<TTSProviderSetting.ElevenLabs> {
     override fun generateSpeech(
-        context: Context,
         providerSetting: TTSProviderSetting.ElevenLabs,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
@@ -33,25 +30,29 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
             put("model_id", providerSetting.modelId)
         }
 
-        Log.i(TAG, "generateSpeech: voiceId=${providerSetting.voiceId}, model=${providerSetting.modelId}")
+        PlatformLog.i(TAG, "generateSpeech: voiceId=${providerSetting.voiceId}, model=${providerSetting.modelId}")
 
-        val httpRequest = Request.Builder()
-            .url("https://api.elevenlabs.io/v1/text-to-speech/${providerSetting.voiceId}")
-            .addHeader("xi-api-key", providerSetting.apiKey)
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Accept", "audio/mpeg")
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "https://api.elevenlabs.io/v1/text-to-speech/${providerSetting.voiceId}",
+                headers = mapOf(
+                    "xi-api-key" to providerSetting.apiKey,
+                    "Content-Type" to "application/json",
+                    "Accept" to "audio/mpeg",
+                ),
+                body = requestBody.toString().encodeToByteArray(),
+                mediaType = "application/json",
+            )
+        )
 
-        val response = httpClient.newCall(httpRequest).execute()
-
-        if (!response.isSuccessful) {
-            val errorBody = response.body.string()
-            Log.e(TAG, "TTS request failed: ${response.code} $errorBody")
+        if (response.statusCode !in 200..299) {
+            val errorBody = response.body.decodeToString()
+            PlatformLog.e(TAG, "TTS request failed: ${response.statusCode} $errorBody")
             throw Exception("ElevenLabs TTS failed: $errorBody")
         }
 
-        val audioData = response.body.bytes()
+        val audioData = response.body
 
         emit(
             AudioChunk(
@@ -65,5 +66,43 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
                 )
             )
         )
+    }
+
+    override suspend fun listModels(
+        providerSetting: TTSProviderSetting.ElevenLabs
+    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+        if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
+        runCatching {
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "https://api.elevenlabs.io/v1/models",
+                    headers = mapOf(
+                        "xi-api-key" to providerSetting.apiKey,
+                    ),
+                )
+            )
+            if (response.statusCode !in 200..299) {
+                PlatformLog.e(
+                    TAG,
+                    "listModels failed: ${response.statusCode} ${response.body.decodeToString()}"
+                )
+                return@withContext emptyList()
+            }
+            val arr = JSONArray(response.body.decodeToString())
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val id = item.optString("model_id", "")
+                    val name = item.optString("name", id)
+                    if (id.isNotBlank()) {
+                        add(TTSModelInfo(id = id, displayName = name))
+                    }
+                }
+            }
+        }.getOrElse { e ->
+            PlatformLog.e(TAG, "listModels error: ${e.message}")
+            emptyList()
+        }
     }
 }

@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.web
 
 import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.core.net.toUri
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
@@ -21,6 +24,7 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
@@ -31,16 +35,15 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.readAvailable
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.Writer
-import java.net.URLConnection
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.Base64
 import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -54,6 +57,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -66,6 +70,7 @@ import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.utils.JsonInstant
 
 private const val MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024
@@ -161,12 +166,21 @@ fun Application.configureWebApi(
                 if (name.isBlank()) {
                     throw BadRequestException("Missing name")
                 }
+                val icon = call.request.queryParameters["icon"]?.trim()?.takeIf { it.isNotBlank() }
+                val providerSlug = call.request.queryParameters["providerSlug"]?.trim()?.takeIf { it.isNotBlank() }
+                val theme = call.request.queryParameters["theme"]?.trim()?.takeIf { it.isNotBlank() }
 
-                val assetPath = resolveAiIconAssetPath(name)
+                val assetPath = resolveAiIconAssetPath(name = name, icon = icon, providerSlug = providerSlug)
                 if (assetPath != null) {
                     runCatching {
                         val bytes = withContext(Dispatchers.IO) {
-                            context.assets.open("icons/$assetPath").use { it.readBytes() }
+                            if (assetPath.endsWith(".svg", ignoreCase = true)) {
+                                val text = context.assets.open("icons/$assetPath").bufferedReader().use { it.readText() }
+                                val color = if (theme.equals("dark", ignoreCase = true)) "#FFFFFF" else "#000000"
+                                text.replace("currentColor", color).toByteArray()
+                            } else {
+                                context.assets.open("icons/$assetPath").use { it.readBytes() }
+                            }
                         }
                         call.response.header(HttpHeaders.CacheControl, "public, max-age=86400")
                         call.respondBytes(bytes, contentType = guessAssetContentType(assetPath))
@@ -175,9 +189,27 @@ fun Application.configureWebApi(
                     }
                 }
 
+                // Normalize providerSlug for correct LobeHub CDN lookups.
+                // E.g., "NVIDIA NIM" → "nvidia", "Regolo AI" → "regolo"
+                val effectiveSlug = providerSlug
+                    ?.let { getProviderSlugFromName(it) ?: it.lowercase(Locale.ROOT).takeIf { s -> s.isNotBlank() } }
+                    ?: getProviderSlugFromName(name)
+
+                val remoteIconUrl = icon
+                    ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                    ?: effectiveSlug?.toLobeHubIconUrl(theme)
+                    ?: assetPath?.let {
+                        "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/$it"
+                    }
+                if (remoteIconUrl != null) {
+                    call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
+                    call.respondRedirect(remoteIconUrl, permanent = false)
+                    return@get
+                }
+
                 call.response.header(HttpHeaders.CacheControl, "public, max-age=3600")
                 call.respondText(
-                    text = buildFallbackSvg(name),
+                    text = buildFallbackSvg(name, theme),
                     contentType = ContentType.Image.SVG,
                 )
             }
@@ -404,6 +436,48 @@ private fun Route.webRoutes(
 
             chatService.generateTitle(conversationId, conversation, force = true)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        post("/{id}/consolidate") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversationId)
+            } ?: throw NotFoundException("Conversation not found")
+
+            withContext(Dispatchers.IO) {
+                conversationRepo.markAsNotConsolidated(conversationId)
+            }
+            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                .setInputData(
+                    workDataOf(
+                        "FORCE_CONVERSATION_ID" to conversationId.toString()
+                    )
+                )
+                .build()
+            WorkManager.getInstance(context).enqueue(request)
+            call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        post("/{id}/context-refresh") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            val result = chatService.summarizeAndRefresh(conversationId)
+            val error = result.errorResId?.let { resId ->
+                if (result.errorArgs.isEmpty()) {
+                    context.getString(resId)
+                } else {
+                    context.getString(resId, *result.errorArgs.toTypedArray())
+                }
+            }
+            call.respond(
+                if (result.success) HttpStatusCode.OK else HttpStatusCode.BadRequest,
+                ContextRefreshResponse(
+                    success = result.success,
+                    summary = result.summary.takeIf { it.isNotBlank() },
+                    messagesSummarized = result.messagesSummarized,
+                    tokensSaved = result.tokensSaved,
+                    error = error,
+                )
+            )
         }
 
         post("/{id}/title") {
@@ -901,7 +975,7 @@ private fun Route.webRoutes(
             }
 
             val mime = WebUploadRegistry.getByRelativePath(relativePath)?.mime
-                ?: URLConnection.guessContentTypeFromName(file.name)
+                ?: guessWebMediaMimeTypeFromName(file.name)
                 ?: "application/octet-stream"
             call.response.header(HttpHeaders.ContentType, mime)
             call.respondOutputStream(contentType = ContentType.parse(mime)) {
@@ -1042,7 +1116,13 @@ private fun ConversationDto.singleNodeDiffOrNull(current: ConversationDto): Node
         isPinned != current.isPinned ||
         enabledSkillIds != current.enabledSkillIds ||
         truncateIndex != current.truncateIndex ||
-        chatSuggestions != current.chatSuggestions
+        chatSuggestions != current.chatSuggestions ||
+        isConsolidated != current.isConsolidated ||
+        contextSummary != current.contextSummary ||
+        contextSummaryUpToIndex != current.contextSummaryUpToIndex ||
+        lastPruneTime != current.lastPruneTime ||
+        lastPruneMessageCount != current.lastPruneMessageCount ||
+        lastRefreshTime != current.lastRefreshTime
     ) {
         return null
     }
@@ -1096,7 +1176,7 @@ private fun guessAssetContentType(path: String): ContentType {
 
 private suspend fun readPartBytes(part: PartData.FileItem, maxBytes: Int): ByteArray {
     val input = part.provider()
-    val output = ByteArrayOutputStream()
+    val output = Buffer()
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var totalBytes = 0
 
@@ -1110,7 +1190,7 @@ private suspend fun readPartBytes(part: PartData.FileItem, maxBytes: Int): ByteA
         output.write(buffer, 0, read)
     }
 
-    return output.toByteArray()
+    return output.readByteArray()
 }
 
 private fun List<Conversation>.sortedForWeb(): List<Conversation> {
@@ -1221,7 +1301,7 @@ internal fun validateWebAccessToken(settings: Settings, token: String?): HttpSta
     }
 
     val payload = runCatching {
-        String(Base64.getUrlDecoder().decode(parts[0]), Charsets.UTF_8)
+        String(base64UrlDecode(parts[0]), Charsets.UTF_8)
     }.getOrNull() ?: return HttpStatusCode.Unauthorized
 
     val payloadParts = payload.split(':')
@@ -1246,7 +1326,7 @@ internal fun validateWebAccessToken(settings: Settings, token: String?): HttpSta
 
     val expectedSignature = hmacSha256(settings.webServerAccessPassword, parts[0])
     val actualSignature = runCatching {
-        Base64.getUrlDecoder().decode(parts[1])
+        base64UrlDecode(parts[1])
     }.getOrNull() ?: return HttpStatusCode.Unauthorized
 
     return if (MessageDigest.isEqual(expectedSignature, actualSignature)) {
@@ -1263,8 +1343,14 @@ private fun hmacSha256(secret: String, value: String): ByteArray {
     return mac.doFinal(value.toByteArray(Charsets.UTF_8))
 }
 
+@OptIn(ExperimentalEncodingApi::class)
 private fun base64UrlEncode(bytes: ByteArray): String {
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).encode(bytes)
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64UrlDecode(value: String): ByteArray {
+    return Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(value)
 }
 
 private fun extractBearerToken(authorizationHeader: String?): String? {
@@ -1283,23 +1369,47 @@ private fun secureEquals(left: String, right: String): Boolean {
     return MessageDigest.isEqual(left.toByteArray(Charsets.UTF_8), right.toByteArray(Charsets.UTF_8))
 }
 
-private fun resolveAiIconAssetPath(name: String): String? {
-    val lowerName = name.lowercase(Locale.ROOT)
-    return when {
+internal fun resolveAiIconAssetPath(
+    name: String,
+    icon: String? = null,
+    providerSlug: String? = null,
+): String? {
+    icon?.extractCatalogIconFileName()?.let { return it }
+    val lowerName = listOfNotNull(name, providerSlug)
+        .joinToString(" ")
+        .lowercase(Locale.ROOT)
+
+    // First try explicit name pattern matching
+    val explicitMatch = when {
+        "ai21" in lowerName -> "ai21.svg"
+        "anthropic" in lowerName || "claude" in lowerName -> "claude.svg"
+        "baai" in lowerName -> "baai.svg"
+        "baichuan" in lowerName -> "baichuan.svg"
+        "baidu" in lowerName || "ernie" in lowerName -> "baidu.svg"
         "bing" in lowerName -> "bing.svg"
         "bocha" in lowerName -> "bocha.svg"
         "brave" in lowerName -> "brave.svg"
+        "cerebras" in lowerName -> "cerebras.svg"
+        "cohere" in lowerName || "command" in lowerName -> "cohere.svg"
+        "deepseek" in lowerName -> "deepseek.svg"
         "elevenlabs" in lowerName || "eleven labs" in lowerName -> "elevenlabs.svg"
         "exa" in lowerName -> "exa.svg"
         "firecrawl" in lowerName -> "firecrawl.svg"
+        "fireworks" in lowerName -> "fireworks.svg"
         "gemini" in lowerName || "google" in lowerName -> "gemini.svg"
+        "github" in lowerName -> "github.svg"
+        "groq" in lowerName -> "groq.svg"
         "grok" in lowerName || "xai" in lowerName -> "grok.svg"
+        "huggingface" in lowerName || "hugging face" in lowerName -> "huggingface.svg"
         "jina" in lowerName -> "jina.svg"
         "linkup" in lowerName -> "linkup.svg"
+        "meta" in lowerName || "llama" in lowerName -> "meta.svg"
         "metaso" in lowerName -> "metaso.svg"
+        "mistral" in lowerName -> "mistral.svg"
         "minimax" in lowerName -> "minimax.svg"
         "nano-gpt" in lowerName || "nanogpt" in lowerName -> "nanogpt.svg"
         "ollama" in lowerName -> "ollama.svg"
+        "openrouter" in lowerName -> "openrouter.svg"
         "openai" in lowerName -> "openai.svg"
         "perplexity" in lowerName -> "perplexity.svg"
         "qwen" in lowerName || "dashscope" in lowerName -> "qwen.svg"
@@ -1308,9 +1418,117 @@ private fun resolveAiIconAssetPath(name: String): String? {
         "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
         else -> null
     }
+    if (explicitMatch != null) return explicitMatch
+
+    // Generic fallback: try first word of the name as an SVG filename.
+    // This handles providers like "NVIDIA NIM" → "nvidia.svg", "Regolo AI" → "regolo.svg"
+    return lowerName.split(Regex("""[\s,;_/\\]+"""))
+        .firstOrNull { it.length > 1 && it.all { c -> c.isLetterOrDigit() || c == '-' } }
+        ?.let { token ->
+            val sanitized = token.replace(Regex("[^a-z0-9-]"), "").trim('-')
+            if (sanitized.length > 1) "$sanitized.svg" else null
+        }
 }
 
-private fun buildFallbackSvg(name: String): String {
+internal fun String.extractCatalogIconFileName(): String? {
+    val normalized = trim()
+    if (normalized.isBlank()) return null
+    val lower = normalized.lowercase(Locale.ROOT)
+    val markers = listOf(
+        "/catalog/icons/",
+        "catalog/icons/",
+        "/icons/",
+        "icons/",
+        "file:///android_asset/icons/",
+    )
+    markers.forEach { marker ->
+        val index = lower.indexOf(marker)
+        if (index >= 0) {
+            return normalized.substring(index + marker.length)
+                .substringAfterLast('/')
+                .takeIf { it.isSafeIconAssetName() }
+        }
+    }
+    if (!normalized.contains('/') && !normalized.contains('\\') && normalized.isSafeIconAssetName()) {
+        return normalized
+    }
+    return null
+}
+
+internal fun String.isSafeIconAssetName(): Boolean {
+    if (isBlank() || contains("..") || contains('/') || contains('\\')) return false
+    val extension = substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return extension in setOf("svg", "png", "webp")
+}
+
+internal fun getProviderSlugFromName(name: String): String? {
+    val lowerName = name.lowercase(Locale.ROOT)
+    return when {
+        lowerName.contains("openai") -> "openai"
+        lowerName.contains("anthropic") || lowerName.contains("claude") -> "anthropic"
+        lowerName.contains("google") || lowerName.contains("gemini") -> "google"
+        lowerName.contains("deepseek") -> "deepseek"
+        lowerName.contains("mistral") -> "mistral"
+        lowerName.contains("meta") || lowerName.contains("llama") -> "meta"
+        lowerName.contains("cohere") -> "cohere"
+        lowerName.contains("perplexity") -> "perplexity"
+        lowerName.contains("groq") -> "groq"
+        lowerName.contains("openrouter") -> "openrouter"
+        lowerName.contains("together") -> "together"
+        lowerName.contains("fireworks") -> "fireworks"
+        lowerName.contains("nvidia") -> "nvidia"
+        lowerName.contains("qwen") || lowerName.contains("alibaba") -> "qwen"
+        lowerName.contains("zhipu") || lowerName.contains("glm") -> "zhipu"
+        lowerName.contains("moonshot") || lowerName.contains("kimi") -> "moonshot"
+        lowerName.contains("minimax") -> "minimax"
+        lowerName.contains("xai") || lowerName.contains("grok") -> "xai"
+        lowerName.contains("bytedance") || lowerName.contains("doubao") -> "bytedance"
+        lowerName.contains("siliconflow") || lowerName.contains("silicon") -> "siliconflow"
+        lowerName.contains("cerebras") -> "cerebras"
+        lowerName.contains("cloudflare") -> "cloudflare"
+        lowerName.contains("hunyuan") || lowerName.contains("tencent") -> "hunyuan"
+        lowerName.contains("regolo") -> "regolo"
+        lowerName.contains("ai21") -> "ai21"
+        lowerName.contains("baai") -> "baai"
+        lowerName.contains("baichuan") -> "baichuan"
+        lowerName.contains("baidu") || lowerName.contains("ernie") -> "baidu"
+        lowerName.contains("bing") -> "bing"
+        lowerName.contains("bocha") -> "bocha"
+        lowerName.contains("brave") -> "brave"
+        lowerName.contains("elevenlabs") || lowerName.contains("eleven labs") -> "elevenlabs"
+        lowerName.contains("exa") -> "exa"
+        lowerName.contains("firecrawl") -> "firecrawl"
+        lowerName.contains("github") -> "github"
+        lowerName.contains("huggingface") || lowerName.contains("hugging face") -> "huggingface"
+        lowerName.contains("jina") -> "jina"
+        lowerName.contains("linkup") -> "linkup"
+        lowerName.contains("metaso") -> "metaso"
+        lowerName.contains("nanogpt") || lowerName.contains("nano-gpt") -> "nanogpt"
+        lowerName.contains("ollama") -> "ollama"
+        lowerName.contains("searxng") || lowerName.contains("searx") -> "searxng"
+        lowerName.contains("tavily") -> "tavily"
+        else -> null
+    }
+}
+
+internal fun String.toLobeHubIconUrl(theme: String?): String {
+    val normalized = lowercase(Locale.ROOT)
+        .trim()
+        .removePrefix("lobehub://")
+        .replace(" ", "-")
+        .replace("_", "-")
+    val slug = when (normalized.replace("-", "")) {
+        "metallama" -> "meta"
+        "mistralai" -> "mistral"
+        "01ai" -> "yi"
+        "moonshotai" -> "moonshot"
+        else -> normalized
+    }
+    val resolvedTheme = if (theme.equals("dark", ignoreCase = true)) "dark" else "light"
+    return "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$resolvedTheme/$slug.png"
+}
+
+private fun buildFallbackSvg(name: String, theme: String? = null): String {
     val text = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "A"
     val escapedText = text
         .replace("&", "&amp;")
@@ -1319,10 +1537,14 @@ private fun buildFallbackSvg(name: String): String {
         .replace("\"", "&quot;")
         .replace("'", "&apos;")
 
+    val isDark = theme.equals("dark", ignoreCase = true)
+    val bgColor = if (isDark) "#2D3035" else "#E9EAEE"
+    val fgColor = if (isDark) "#B0B3B8" else "#4E5969"
+
     return """
         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-          <rect x="0" y="0" width="64" height="64" rx="32" fill="#E9EAEE"/>
-          <text x="32" y="36" font-family="system-ui, sans-serif" font-size="24" font-weight="600" text-anchor="middle" fill="#4E5969">$escapedText</text>
+          <rect x="0" y="0" width="64" height="64" rx="32" fill="$bgColor"/>
+          <text x="32" y="36" font-family="system-ui, sans-serif" font-size="24" font-weight="600" text-anchor="middle" fill="$fgColor">$escapedText</text>
         </svg>
     """.trimIndent()
 }

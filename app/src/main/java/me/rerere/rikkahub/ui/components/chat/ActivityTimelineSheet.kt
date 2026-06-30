@@ -1,22 +1,22 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -66,6 +67,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,11 +77,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
@@ -97,19 +99,26 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserQuestion
 import me.rerere.rikkahub.ui.components.message.SANDBOX_FILE_TOOLS
+import me.rerere.rikkahub.ui.components.message.WORKSPACE_TOOLS
 import me.rerere.rikkahub.ui.components.message.buildPythonToolSummary
 import me.rerere.rikkahub.ui.components.message.buildSandboxFileToolSummary
+import me.rerere.rikkahub.ui.components.message.buildWorkspaceToolSummary
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.modifier.fadeEdges
+import me.rerere.rikkahub.utils.writeClipboardText
 import org.koin.compose.koinInject
 
 private const val TIMELINE_PANEL_ANIMATION_MS = 220
-private const val TIMELINE_ENTRY_ANIMATION_MS = 180
 private const val TIMELINE_MAX_HEIGHT_DP = 360
 private const val TIMELINE_GESTURE_IDLE_TIMEOUT_MS = 120L
+private const val TIMELINE_FOLLOW_BOTTOM_KEY = "timeline_follow_bottom"
 
 internal enum class TimelineScrollHandoffMode {
     LockedToPanel,
@@ -213,11 +222,23 @@ internal fun timelineScrollEdgeFor(
     }
 }
 
+internal fun isTimelineAtFollowBottom(
+    visibleItems: List<LazyListItemInfo>,
+    canScrollForward: Boolean,
+    viewportEndOffset: Int,
+): Boolean {
+    if (visibleItems.any { it.key == TIMELINE_FOLLOW_BOTTOM_KEY }) {
+        return true
+    }
+    val lastItem = visibleItems.lastOrNull() ?: return false
+    return !canScrollForward ||
+        lastItem.offset + lastItem.size <= viewportEndOffset + lastItem.size * 0.15f + 24f
+}
+
 /**
  * Activity timeline bottom sheet.
  *
  * Shows a chronological list of all activities during the generation.
- * Each item can be expanded to show full content.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -257,10 +278,12 @@ internal fun ActivityTimelinePanel(
     memoryActions: TimelineMemoryActions? = null,
     scrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.LockedToPanel,
     listState: LazyListState = rememberLazyListState(),
+    onTimelineClick: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
     var autoFollowCurrentEntry by remember { mutableStateOf(false) }
+    val bottomFollowRequester = remember { BringIntoViewRequester() }
     var handoffState by remember(scrollHandoffMode) { mutableStateOf(TimelineScrollHandoffState()) }
     var gestureEndJob by remember { mutableStateOf<Job?>(null) }
     val timelineScrollLock = remember(scrollHandoffMode, listState) {
@@ -399,13 +422,20 @@ internal fun ActivityTimelinePanel(
         )
     }
 
-    var expandedEntryIds by remember { mutableStateOf(setOf<String>()) }
     var editTarget by remember { mutableStateOf<MemoryEditTarget?>(null) }
     var deleteTarget by remember { mutableStateOf<MemoryDeleteTarget?>(null) }
     var deletedMemoryIds by remember { mutableStateOf(setOf<Int>()) }
+    val context = LocalContext.current
+    val toaster = runCatching { LocalToaster.current }.getOrNull()
     val entryIds = remember(entries) { entries.map { it.id } }
-    val currentEntryId = remember(entries) {
-        findCurrentEntryIndex(entries)?.let { entries[it].id }
+    val currentEntryIndex = remember(entries) {
+        findCurrentEntryIndex(entries)
+    }
+    val currentEntryId = remember(entries, currentEntryIndex) {
+        currentEntryIndex?.let { entries[it].id }
+    }
+    val currentEntryFollowSignature = remember(entries, currentEntryIndex) {
+        currentEntryIndex?.let { buildEntryFollowSignature(entries[it]) }.orEmpty()
     }
 
     LaunchedEffect(entryIds) {
@@ -417,17 +447,45 @@ internal fun ActivityTimelinePanel(
         } else {
             emptySet()
         }
-        expandedEntryIds = expandedEntryIds.intersect(entryIds.toSet())
     }
 
     LaunchedEffect(initialOpenRequest) {
         val initialFocus = buildInitialTimelineFocus(entries, initialOpenRequest)
-        expandedEntryIds = initialFocus.expandedEntryIds
         autoFollowCurrentEntry = initialOpenRequest?.openMode == TimelineOpenMode.FocusCurrent
 
         val scrollIndex = initialFocus.scrollIndex
         if (scrollIndex != null) {
             listState.scrollToItem(scrollIndex)
+        }
+    }
+
+    LaunchedEffect(listState, currentEntryId) {
+        snapshotFlow {
+            isTimelineAtFollowBottom(
+                visibleItems = listState.layoutInfo.visibleItemsInfo,
+                canScrollForward = listState.canScrollForward,
+                viewportEndOffset = listState.layoutInfo.viewportEndOffset,
+            )
+        }
+            .collect { isAtBottom ->
+                if (isAtBottom && currentEntryId != null) {
+                    autoFollowCurrentEntry = true
+                }
+            }
+    }
+
+    LaunchedEffect(autoFollowCurrentEntry, currentEntryId, currentEntryFollowSignature) {
+        val followIndex = currentEntryIndex ?: return@LaunchedEffect
+        if (!autoFollowCurrentEntry) return@LaunchedEffect
+
+        if (followIndex == entries.lastIndex) {
+            try {
+                bottomFollowRequester.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // Animated visibility can briefly detach the follow anchor during live updates.
+            }
+        } else {
+            listState.scrollToItem(followIndex)
         }
     }
 
@@ -437,6 +495,11 @@ internal fun ActivityTimelinePanel(
         modifier = modifier
             .fillMaxWidth()
             .testTag("activity_timeline_panel")
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onTimelineClick
+            )
             .animateContentSize(
                 animationSpec = tween(
                     durationMillis = TIMELINE_PANEL_ANIMATION_MS,
@@ -450,22 +513,6 @@ internal fun ActivityTimelinePanel(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.activity_timeline_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = pluralStringResource(R.plurals.activity_timeline_steps, entries.size, entries.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
             if (entries.isEmpty()) {
                 Text(
                     text = stringResource(R.string.activity_timeline_empty),
@@ -478,9 +525,11 @@ internal fun ActivityTimelinePanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = TIMELINE_MAX_HEIGHT_DP.dp)
+                        .fadeEdges(fadeTop = true, fadeBottom = true)
                         .testTag("activity_timeline_list")
                         .nestedScroll(timelineScrollLock),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 10.dp)
                 ) {
                     itemsIndexed(
                         items = entries,
@@ -488,16 +537,7 @@ internal fun ActivityTimelinePanel(
                     ) { index, entry ->
                         TimelineEntryItem(
                             entry = entry,
-                            expanded = expandedEntryIds.contains(entry.id),
-                            onToggleExpanded = {
-                                haptics.perform(HapticPattern.Pop)
-                                expandedEntryIds = if (expandedEntryIds.contains(entry.id)) {
-                                    expandedEntryIds - entry.id
-                                } else {
-                                    expandedEntryIds + entry.id
-                                }
-                            },
-                            isLast = index == entries.lastIndex,
+                            showDivider = index > 0,
                             isLocallyDeleted = entry is TimelineEntry.MemoryAction &&
                                 entry.memoryId != null &&
                                 deletedMemoryIds.contains(entry.memoryId),
@@ -524,7 +564,47 @@ internal fun ActivityTimelinePanel(
                             canRestore = assistantId != null,
                             followLiveContent = autoFollowCurrentEntry &&
                                 currentEntryId != null &&
-                                currentEntryId == entry.id
+                                currentEntryId == entry.id,
+                            onClickEntry = onTimelineClick,
+                            onCopyEntry = {
+                                val text = buildTimelineCopyText(entry)
+                                if (text.isBlank()) {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val message = context.getString(R.string.no_text_content_to_copy)
+                                    toaster?.show(message)
+                                        ?: Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                } else {
+                                    context.writeClipboardText(text)
+                                    haptics.perform(HapticPattern.Success)
+                                    val message = context.getString(R.string.chat_page_export_copied)
+                                    toaster?.show(message = message, type = ToastType.Success)
+                                        ?: Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
+                    if (entries.size > 1) {
+                        item(key = "footer") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = pluralStringResource(R.plurals.activity_timeline_steps, entries.size, entries.size),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    item(key = TIMELINE_FOLLOW_BOTTOM_KEY) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .bringIntoViewRequester(bottomFollowRequester)
                         )
                     }
                 }
@@ -575,7 +655,7 @@ internal fun ActivityTimelinePanel(
             title = { Text(stringResource(R.string.activity_timeline_delete_memory_title)) },
             text = {
                 Text(
-                    text = target.content?.take(140)
+                    text = target.content
                         ?: stringResource(R.string.activity_timeline_delete_memory_message)
                 )
             },
@@ -604,12 +684,11 @@ internal fun ActivityTimelinePanel(
 /**
  * A single entry in the timeline.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineEntryItem(
     entry: TimelineEntry,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
-    isLast: Boolean,
+    showDivider: Boolean,
     isLocallyDeleted: Boolean,
     onEditMemory: (Int, String) -> Unit,
     onDeleteMemory: (Int, String?) -> Unit,
@@ -617,9 +696,11 @@ private fun TimelineEntryItem(
     onRevertMemory: (Int, String) -> Unit,
     canRestore: Boolean,
     followLiveContent: Boolean,
+    onClickEntry: () -> Unit,
+    onCopyEntry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hasExpandableContent = when (entry) {
+    val hasContent = when (entry) {
         is TimelineEntry.Reasoning -> entry.content.isNotBlank()
         is TimelineEntry.ToolCall -> entry.argumentsText.isNotBlank() ||
             entry.resultText != null ||
@@ -636,249 +717,253 @@ private fun TimelineEntryItem(
     } else {
         getTimelineAccentColor(entry)
     }
-    val containerColor = when {
-        isMemoryDeleted -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-        entry is TimelineEntry.MemoryAction -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else -> MaterialTheme.colorScheme.surfaceContainerLow
-    }
 
+    val viewRequester = remember { BringIntoViewRequester() }
     val followSignature = remember(entry) { buildEntryFollowSignature(entry) }
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val isSingleEntry = !showDivider
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+            .testTag("timeline_entry_${entry.id}")
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClickEntry,
+                onLongClick = onCopyEntry
+            ),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .width(18.dp)
-                .fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 14.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(accentColor)
+        val durationLabel = if (entry is TimelineEntry.Reasoning) {
+            formatTimelineDuration(entry.durationMs)?.let { " · $it" } ?: ""
+        } else ""
+
+        if (!isSingleEntry) {
+            TimelineDivider(
+                label = getTimelineLabel(entry) + durationLabel,
+                icon = getTimelineIcon(entry),
+                color = accentColor,
+                modifier = Modifier.padding(vertical = 4.dp)
             )
-            if (!isLast) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .weight(1f)
-                        .background(accentColor.copy(alpha = 0.25f))
-                )
-            }
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Surface(
-            shape = AppShapes.CardMedium,
-            color = containerColor,
-            modifier = Modifier
-                .testTag("timeline_entry_${entry.id}")
-                .fillMaxWidth()
-                .clip(AppShapes.CardMedium)
-                .clickable(enabled = hasExpandableContent) { onToggleExpanded() }
-                .animateContentSize(
-                    animationSpec = tween(
-                        durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
-                        easing = LinearOutSlowInEasing
-                    )
-                )
-        ) {
+        if (hasContent) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = accentColor.copy(alpha = 0.15f),
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = getTimelineIcon(entry),
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = accentColor
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Text(
-                        text = getTimelineLabel(entry),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (entry is TimelineEntry.Reasoning) {
-                        formatTimelineDuration(entry.durationMs)?.let { duration ->
-                            Text(
-                                text = duration,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                    }
-
-                    if (hasExpandableContent) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            contentDescription = if (expanded) {
-                                stringResource(R.string.activity_timeline_collapse)
-                            } else {
-                                stringResource(R.string.activity_timeline_expand)
-                            },
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                if (hasExpandableContent) {
-                    androidx.compose.animation.AnimatedContent(
-                        targetState = expanded,
-                        transitionSpec = {
-                            fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = TIMELINE_ENTRY_ANIMATION_MS,
-                                    easing = LinearOutSlowInEasing
-                                )
-                            )
-                                .togetherWith(
-                                    fadeOut(
-                                        animationSpec = tween(
-                                            durationMillis = TIMELINE_ENTRY_ANIMATION_MS / 2,
-                                            easing = FastOutLinearInEasing
-                                        )
-                                    )
-                                )
-                        },
-                        label = "timeline_expand"
-                    ) { isExpanded ->
-                        if (isExpanded) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TimelineExpandedContent(
-                                    entry = entry,
-                                    isDeleted = isMemoryDeleted,
-                                    onEditMemory = onEditMemory,
-                                    onDeleteMemory = onDeleteMemory,
-                                    onRestoreMemory = onRestoreMemory,
-                                    onRevertMemory = onRevertMemory,
-                                    canRestore = canRestore
-                                )
-                                Spacer(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .bringIntoViewRequester(bringIntoViewRequester)
-                                )
-                            }
-                        } else {
-                            TimelinePreview(entry = entry)
-                        }
-                    }
-                } else {
-                    TimelinePreview(entry = entry)
-                }
+                TimelineExpandedContent(
+                    entry = entry,
+                    isDeleted = isMemoryDeleted,
+                    onEditMemory = onEditMemory,
+                    onDeleteMemory = onDeleteMemory,
+                    onRestoreMemory = onRestoreMemory,
+                    onRevertMemory = onRevertMemory,
+                    canRestore = canRestore,
+                    followLiveContent = followLiveContent
+                )
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .bringIntoViewRequester(viewRequester)
+                )
             }
         }
     }
-
-    LaunchedEffect(expanded, followLiveContent, followSignature) {
-        if (expanded && followLiveContent) {
-            bringIntoViewRequester.bringIntoView()
+    LaunchedEffect(followLiveContent, followSignature) {
+        if (followLiveContent) {
+            try {
+                viewRequester.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The row may be leaving composition while live content is still updating.
+            }
         }
     }
 }
 
-@Composable
-private fun TimelinePreview(entry: TimelineEntry) {
-    val previewText = when (entry) {
-        is TimelineEntry.Reasoning -> entry.content.take(160)
-        is TimelineEntry.ToolCall -> {
-            if (entry.toolName == "search_web") {
-                val query = (entry.argumentsJson as? JsonObject)
-                    ?.get("query")
-                    ?.jsonPrimitiveOrNull
-                    ?.contentOrNull
-                val answer = (entry.resultJson as? JsonObject)
-                    ?.get("answer")
-                    ?.jsonPrimitiveOrNull
-                    ?.contentOrNull
-                (answer ?: query).orEmpty().take(160)
-            } else if (entry.toolName == "search_memory") {
-                val summary = (entry.resultJson as? JsonObject)
-                    ?.get("summary")
-                    ?.jsonPrimitiveOrNull
-                    ?.contentOrNull
-                val query = (entry.argumentsJson as? JsonObject)
-                    ?.get("query")
-                    ?.jsonPrimitiveOrNull
-                    ?.contentOrNull
-                (summary ?: query).orEmpty().take(160)
-            } else if (parseAskUserTimelineState(entry) != null) {
-                buildAskUserPreviewText(entry).take(160)
-            } else if (entry.toolName == "manage_skills") {
-                getSkillSummaryPreview(getSkillChangeSummary(entry)).take(160)
-            } else if (entry.toolName == "eval_python") {
-                buildPythonToolSummary(
-                    arguments = entry.argumentsJson,
-                    content = entry.resultJson
-                )?.previewText?.take(160).orEmpty()
-            } else if (entry.toolName in SANDBOX_FILE_TOOLS) {
-                val fileSummary = buildSandboxFileToolSummary(
-                    toolName = entry.toolName,
-                    arguments = entry.argumentsJson,
-                    content = entry.resultJson
-                )
-                when {
-                    fileSummary?.fileCount != null -> stringResource(
-                        R.string.activity_timeline_file_count_value,
-                        fileSummary.fileCount
-                    )
-                    !fileSummary?.previewText.isNullOrBlank() -> fileSummary?.previewText.orEmpty().take(160)
-                    else -> entry.argumentsText.take(160)
-                }
-            } else {
-                val args = entry.argumentsText
-                val result = entry.resultText
-                if (args.isNotBlank() && args != "{}") args.take(160)
-                else result?.take(160).orEmpty()
+internal fun buildTimelineCopyText(entry: TimelineEntry): String {
+    return when (entry) {
+        is TimelineEntry.Reasoning -> entry.content
+        is TimelineEntry.Reply -> entry.content
+        is TimelineEntry.Ocr -> buildList {
+            entry.fileName?.takeIf { it.isNotBlank() }?.let { add("File: $it") }
+            add("Source: ${entry.source}")
+            if (entry.pageNumbers.isNotEmpty()) {
+                add("Pages: ${entry.pageNumbers.joinToString(", ")}")
             }
-        }
-        is TimelineEntry.MemoryAction -> entry.content?.take(160) ?: entry.previousContent?.take(160).orEmpty()
-        is TimelineEntry.Ocr -> buildOcrPreviewText(entry).take(160)
-        is TimelineEntry.Reply -> entry.content.take(160)
-    }
+        }.joinToString("\n")
+        is TimelineEntry.MemoryAction -> buildList {
+            add("Memory ${entry.operation.name.lowercase()}")
+            entry.memoryId?.let { add("ID: $it") }
+            entry.previousContent?.takeIf { it.isNotBlank() }?.let { add("Before:\n$it") }
+            entry.content?.takeIf { it.isNotBlank() }?.let { add("Content:\n$it") }
+        }.joinToString("\n\n")
+        is TimelineEntry.ToolCall -> buildToolCopyText(entry)
+    }.trim()
+}
 
-    if (previewText.isNotBlank()) {
-        Text(
-            text = previewText,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+private fun buildToolCopyText(entry: TimelineEntry.ToolCall): String {
+    val header = entry.displayName.ifBlank { entry.toolName }
+    return when (entry.toolName) {
+        "search_web" -> buildSearchCopyText(entry, header)
+        "search_memory" -> buildMemoryRecallCopyText(entry, header)
+        "eval_python" -> buildPythonCopyText(entry, header)
+        in SANDBOX_FILE_TOOLS -> buildSandboxFileCopyText(entry, header)
+        in WORKSPACE_TOOLS -> buildWorkspaceCopyText(entry, header)
+        "manage_skills" -> buildSkillCopyText(entry, header)
+        else -> buildGenericToolCopyText(entry, header)
+    }.trim()
+}
+
+private fun buildSearchCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    val items = (resultObj?.get("items") as? JsonArray) ?: JsonArray(emptyList())
+    return buildList {
+        add(header)
+        argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Query: $it") }
+        resultObj?.get("answer")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Answer:\n$it") }
+        items.forEachIndexed { index, item ->
+            val obj = item as? JsonObject ?: return@forEachIndexed
+            val title = obj["title"]?.jsonPrimitiveOrNull?.contentOrNull
+            val url = obj["url"]?.jsonPrimitiveOrNull?.contentOrNull
+            val text = obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
+            add(
+                buildList {
+                    add("Source ${index + 1}:")
+                    title?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    url?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    text?.takeIf { it.isNotBlank() }?.let { add(it) }
+                }.joinToString("\n")
+            )
+        }
+    }.joinToString("\n\n")
+}
+
+private fun buildMemoryRecallCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    return buildList {
+        add(header)
+        argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Query: $it") }
+        resultObj?.get("summary")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add("Summary:\n$it") }
+        resultObj?.let { add(JsonInstantPretty.encodeToString(it)) }
+    }.distinct().joinToString("\n\n")
+}
+
+private fun buildPythonCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val summary = buildPythonToolSummary(entry.argumentsJson, entry.resultJson)
+        ?: return buildGenericToolCopyText(entry, header)
+    return buildList {
+        add(header)
+        summary.code.takeIf { it.isNotBlank() }?.let { add("Code:\n$it") }
+        summary.stdout?.takeIf { it.isNotBlank() }?.let { add("Stdout:\n$it") }
+        summary.stderr?.takeIf { it.isNotBlank() }?.let { add("Stderr:\n$it") }
+        summary.result?.takeIf { it.isNotBlank() && it != "null" }?.let { add("Result:\n$it") }
+        summary.error?.takeIf { it.isNotBlank() }?.let { add("Error:\n$it") }
+    }.joinToString("\n\n")
+}
+
+private fun buildSandboxFileCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val summary = buildSandboxFileToolSummary(entry.toolName, entry.argumentsJson, entry.resultJson)
+        ?: return buildGenericToolCopyText(entry, header)
+    return buildList {
+        add(header)
+        summary.path?.takeIf { it.isNotBlank() }?.let { add("Path: $it") }
+        summary.uri?.takeIf { it.isNotBlank() }?.let { add("URI: $it") }
+        summary.fileCount?.let { add("Files: $it") }
+        summary.success?.let { add("Success: $it") }
+        summary.error?.takeIf { it.isNotBlank() }?.let { add("Error: $it") }
+    }.joinToString("\n")
+}
+
+private fun buildWorkspaceCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val summary = buildWorkspaceToolSummary(entry.toolName, entry.argumentsJson, entry.resultJson)
+        ?: return buildGenericToolCopyText(entry, header)
+    return buildList {
+        add(header)
+        summary.command?.takeIf { it.isNotBlank() }?.let { add("Command: $it") }
+        summary.path?.takeIf { it.isNotBlank() }?.let { add("Path: $it") }
+        summary.cwd?.takeIf { it.isNotBlank() }?.let { add("CWD: $it") }
+        summary.exitCode?.let { add("Exit code: $it") }
+        summary.stdout?.takeIf { it.isNotBlank() }?.let { add("Stdout:\n$it") }
+        summary.stderr?.takeIf { it.isNotBlank() }?.let { add("Stderr:\n$it") }
+        summary.text?.takeIf { it.isNotBlank() }?.let { add("Text:\n$it") }
+        summary.error?.takeIf { it.isNotBlank() }?.let { add("Error:\n$it") }
+    }.joinToString("\n\n")
+}
+
+private fun buildSkillCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val summary = getSkillChangeSummary(entry)
+    return buildList {
+        add(header)
+        if (summary.activated.isNotEmpty()) add("Activated: ${summary.activated.joinToString(", ")}")
+        if (summary.disabled.isNotEmpty()) add("Disabled: ${summary.disabled.joinToString(", ")}")
+    }.joinToString("\n")
+}
+
+private fun buildGenericToolCopyText(entry: TimelineEntry.ToolCall, header: String): String {
+    val argumentsPretty = entry.argumentsJson?.let { JsonInstantPretty.encodeToString(it) }
+        ?: entry.argumentsText
+    val resultPretty = entry.resultJson?.let { JsonInstantPretty.encodeToString(it) }
+        ?: entry.resultText
+    return buildList {
+        add(header)
+        argumentsPretty.takeIf { it.isNotBlank() && it != "{}" }?.let { add("Arguments:\n$it") }
+        resultPretty?.takeIf { it.isNotBlank() && it != "null" }?.let { add("Result:\n$it") }
+    }.joinToString("\n\n")
+}
+
+@Composable
+private fun TimelineDivider(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(color.copy(alpha = 0.2f))
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = color
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(color.copy(alpha = 0.2f))
         )
     }
 }
@@ -891,6 +976,7 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
         "scrape_web" -> ScrapeTimelineDetails(entry)
         "eval_python" -> PythonTimelineDetails(entry)
         in SANDBOX_FILE_TOOLS -> SandboxFileTimelineDetails(entry)
+        in WORKSPACE_TOOLS -> WorkspaceTimelineDetails(entry)
         "ask_user" -> AskUserTimelineDetails(entry)
         "manage_skills" -> SkillManagementTimelineDetails(entry)
         else -> GenericToolDetails(entry)
@@ -984,9 +1070,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
                                 Text(
                                     text = it,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (!itemSummary.isNullOrBlank()) {
@@ -1000,9 +1084,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
                                 Text(
                                     text = matchedText,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             confidence?.takeIf { it.isNotBlank() }?.let {
@@ -1078,19 +1160,21 @@ private fun TimelineExpandedContent(
     onDeleteMemory: (Int, String?) -> Unit,
     onRestoreMemory: (String) -> Unit,
     onRevertMemory: (Int, String) -> Unit,
-    canRestore: Boolean
+    canRestore: Boolean,
+    followLiveContent: Boolean = false
 ) {
     when (entry) {
         is TimelineEntry.Reasoning -> {
-            Text(
-                text = entry.content,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            MarkdownBlock(
+                content = entry.content,
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                paragraphSpacing = 8.dp,
+                streamingTextReveal = followLiveContent
             )
         }
 
         is TimelineEntry.ToolCall -> {
-            ToolCallDetails(entry = entry)
+            ToolCallCompactDetails(entry = entry)
         }
 
         is TimelineEntry.MemoryAction -> {
@@ -1110,13 +1194,316 @@ private fun TimelineExpandedContent(
         }
 
         is TimelineEntry.Reply -> {
+            MarkdownBlock(
+                content = entry.content,
+                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                paragraphSpacing = 8.dp,
+                streamingTextReveal = followLiveContent
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolCallCompactDetails(entry: TimelineEntry.ToolCall) {
+    when (entry.toolName) {
+        "search_web" -> SearchTimelineCompactDetails(entry)
+        "search_memory" -> MemoryRecallTimelineCompactDetails(entry)
+        "scrape_web" -> ScrapeTimelineCompactDetails(entry)
+        "eval_python" -> PythonTimelineCompactDetails(entry)
+        in SANDBOX_FILE_TOOLS -> SandboxFileTimelineCompactDetails(entry)
+        in WORKSPACE_TOOLS -> WorkspaceTimelineCompactDetails(entry)
+        "ask_user" -> AskUserTimelineCompactDetails(entry)
+        "manage_skills" -> SkillManagementTimelineCompactDetails(entry)
+        else -> GenericToolCompactDetails(entry)
+    }
+}
+
+@Composable
+private fun SearchTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    val query = argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
+    val answer = resultObj?.get("answer")?.jsonPrimitiveOrNull?.contentOrNull
+    val items = (resultObj?.get("items") as? JsonArray) ?: JsonArray(emptyList())
+    val context = LocalContext.current
+    val sourceLinks = items.mapNotNull { item ->
+        val obj = item as? JsonObject ?: return@mapNotNull null
+        val url = obj["url"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        val host = runCatching { Uri.parse(url).host }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        host to url
+    }.distinctBy { it.first }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        query?.takeIf { it.isNotBlank() }?.let {
             Text(
-                text = entry.content,
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        answer?.takeIf { it.isNotBlank() && it != query }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (sourceLinks.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                sourceLinks.forEach { (host, url) ->
+                    TimelineTagChip(
+                        text = host,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }
+                            }
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryRecallTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    val query = argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
+    val summary = resultObj?.get("summary")?.jsonPrimitiveOrNull?.contentOrNull
+    val results = (resultObj?.get("results") as? JsonArray) ?: JsonArray(emptyList())
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        query?.takeIf { it.isNotBlank() }?.let {
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_query),
+                value = it
+            )
+        }
+        summary?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (results.isNotEmpty()) {
+            TimelineTagChip(
+                text = stringResource(R.string.activity_timeline_memory_findings, results.size),
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScrapeTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val argsObj = entry.argumentsJson as? JsonObject
+    val resultObj = entry.resultJson as? JsonObject
+    val url = argsObj?.get("url")?.jsonPrimitiveOrNull?.contentOrNull
+    val content = resultObj?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        url?.takeIf { it.isNotBlank() }?.let {
+            TimelineTagChip(
+                text = runCatching { Uri.parse(it).host }.getOrNull()?.takeIf { host -> host.isNotBlank() } ?: it,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+        content?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
+}
+
+@Composable
+private fun PythonTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val summary = buildPythonToolSummary(
+        arguments = entry.argumentsJson,
+        content = entry.resultJson
+    ) ?: return GenericToolCompactDetails(entry)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        summary.code.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        (summary.error ?: summary.result?.takeIf { it != "null" } ?: summary.stdout ?: summary.stderr)
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (!summary.error.isNullOrBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+    }
+}
+
+@Composable
+private fun SandboxFileTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val summary = buildSandboxFileToolSummary(
+        toolName = entry.toolName,
+        arguments = entry.argumentsJson,
+        content = entry.resultJson
+    ) ?: return GenericToolCompactDetails(entry)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            summary.path?.takeIf { it.isNotBlank() }?.let {
+                TimelineTagChip(
+                    text = it.substringAfterLast("/").substringAfterLast("\\"),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            summary.fileCount?.let {
+                TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_file_count_value, it),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            summary.success?.let {
+                TimelineTagChip(
+                    text = stringResource(if (it) R.string.activity_timeline_status_success else R.string.activity_timeline_status_failed),
+                    containerColor = if (it) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    contentColor = if (it) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+        summary.error?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val summary = buildWorkspaceToolSummary(
+        toolName = entry.toolName,
+        arguments = entry.argumentsJson,
+        content = entry.resultJson
+    ) ?: return GenericToolCompactDetails(entry)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        (summary.command ?: summary.path ?: summary.name)?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            summary.exitCode?.let {
+                TimelineTagChip(
+                    text = "exit $it",
+                    containerColor = if (it == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    contentColor = if (it == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            if (summary.timedOut == true) {
+                TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_workspace_timed_out),
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            if (summary.truncated == true) {
+                TimelineTagChip(
+                    text = stringResource(R.string.activity_timeline_workspace_truncated),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        (summary.error ?: summary.stderr ?: summary.stdout ?: summary.text)?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (!summary.error.isNullOrBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
+}
+
+@Composable
+private fun AskUserTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    Text(
+        text = buildAskUserPreviewText(entry),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun SkillManagementTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
+    val summary = getSkillChangeSummary(entry)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        summary.activated.forEach {
+            TimelineTagChip(
+                text = it,
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+        }
+        summary.disabled.forEach {
+            TimelineTagChip(
+                text = it,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (summary.activated.isEmpty() && summary.disabled.isEmpty()) {
+            Text(
+                text = stringResource(R.string.activity_timeline_no_skill_changes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenericToolCompactDetails(entry: TimelineEntry.ToolCall) {
+    GenericToolDetails(entry)
 }
 
 @Composable
@@ -1180,9 +1567,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
                             Text(
                                 text = title,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         if (!host.isNullOrBlank()) {
@@ -1196,9 +1581,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
                             Text(
                                 text = snippet,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1234,7 +1617,7 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
-                text = content.take(800),
+                text = content,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(10.dp)
@@ -1380,9 +1763,7 @@ private fun AskUserQuestionTimelineCard(
                                     Text(
                                         text = description,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -1563,6 +1944,156 @@ private fun SandboxFileTimelineDetails(entry: TimelineEntry.ToolCall) {
 }
 
 @Composable
+private fun WorkspaceTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val summary = buildWorkspaceToolSummary(
+        toolName = entry.toolName,
+        arguments = entry.argumentsJson,
+        content = entry.resultJson
+    ) ?: return GenericToolDetails(entry)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        summary.command?.takeIf { it.isNotBlank() }?.let { command ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_command),
+                value = command,
+                monospace = true
+            )
+        }
+        summary.path?.takeIf { it.isNotBlank() }?.let { path ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_file_path),
+                value = path,
+                monospace = true
+            )
+        }
+        summary.cwd?.takeIf { it.isNotBlank() }?.let { cwd ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_cwd),
+                value = cwd,
+                monospace = true
+            )
+        }
+        summary.timeout?.takeIf { it.isNotBlank() }?.let { timeout ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_timeout),
+                value = timeout
+            )
+        }
+        summary.exitCode?.let { exitCode ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_exit_code),
+                value = exitCode.toString(),
+                valueColor = if (exitCode == 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+        }
+        summary.timedOut?.let { timedOut ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_timed_out),
+                value = if (timedOut) {
+                    stringResource(R.string.activity_timeline_value_yes)
+                } else {
+                    stringResource(R.string.activity_timeline_value_no)
+                },
+                valueColor = if (timedOut) MaterialTheme.colorScheme.error else null
+            )
+        }
+        summary.truncated?.let { truncated ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_truncated),
+                value = if (truncated) {
+                    stringResource(R.string.activity_timeline_value_yes)
+                } else {
+                    stringResource(R.string.activity_timeline_value_no)
+                }
+            )
+        }
+        summary.name?.takeIf { it.isNotBlank() }?.let { name ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_file_name),
+                value = name,
+                monospace = true
+            )
+        }
+        summary.isDirectory?.let { isDirectory ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_entry_type),
+                value = stringResource(
+                    if (isDirectory) {
+                        R.string.activity_timeline_workspace_directory
+                    } else {
+                        R.string.activity_timeline_workspace_file
+                    }
+                )
+            )
+        }
+        summary.sizeBytes?.let { sizeBytes ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_size),
+                value = stringResource(R.string.activity_timeline_workspace_size_bytes, sizeBytes)
+            )
+        }
+        summary.updatedAt?.let { updatedAt ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_workspace_updated),
+                value = updatedAt.toString()
+            )
+        }
+        summary.text?.takeIf { it.isNotBlank() }?.let { text ->
+            TimelineDetailBlock(
+                label = stringResource(R.string.activity_timeline_content),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+        summary.stdout?.takeIf { it.isNotBlank() }?.let { stdout ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_python_stdout),
+                value = stdout,
+                monospace = true
+            )
+        }
+        summary.stderr?.takeIf { it.isNotBlank() }?.let { stderr ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_python_stderr),
+                value = stderr,
+                valueColor = MaterialTheme.colorScheme.error,
+                monospace = true
+            )
+        }
+        summary.error?.takeIf { it.isNotBlank() }?.let { error ->
+            TimelineFieldRow(
+                label = stringResource(R.string.activity_timeline_error),
+                value = error,
+                valueColor = MaterialTheme.colorScheme.error,
+                monospace = true
+            )
+        }
+        if (
+            summary.command != null &&
+            summary.exitCode == 0 &&
+            summary.stdout.isNullOrBlank() &&
+            summary.stderr.isNullOrBlank()
+        ) {
+            Text(
+                text = stringResource(R.string.activity_timeline_no_output),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
     val summary = getSkillChangeSummary(entry)
 
@@ -1650,7 +2181,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
-                text = resultPretty.take(1200),
+                text = resultPretty,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(8.dp)

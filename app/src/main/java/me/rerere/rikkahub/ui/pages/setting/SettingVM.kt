@@ -21,13 +21,13 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.IconStorageManager
-import okhttp3.OkHttpClient
+import me.rerere.common.platform.PlatformHttpClient
 
 class SettingVM(
     private val settingsStore: SettingsStore,
     private val mcpManager: McpManager,
     private val context: Context,
-    private val okHttpClient: OkHttpClient,
+    private val platformHttpClient: PlatformHttpClient,
     private val appStorageRepository: AppStorageRepository,
     private val modelCatalogService: ModelCatalogService,
     private val modelMetadataResolver: ModelMetadataResolver,
@@ -65,7 +65,7 @@ class SettingVM(
      * Clean up icons that are no longer used by any model/provider.
      */
     private fun cleanupUnusedIcons(settings: Settings) {
-        val iconManager = IconStorageManager.getInstance(context, okHttpClient)
+        val iconManager = IconStorageManager.getInstance(context, platformHttpClient)
         
         // Collect all icon keys that are still in use
         val usedKeys = mutableSetOf<String>()

@@ -42,16 +42,21 @@ import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.WebServerService
+import me.rerere.rikkahub.data.search.AndroidBingSearchClient
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.rikkahub.di.SEARCH_PLATFORM_HTTP_CLIENT
+import me.rerere.rikkahub.utils.acceptLanguageHeader
+import me.rerere.search.SearchService
+import org.koin.core.qualifier.named
 
 private const val TAG = "LastChatApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
+const val LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID = "local_model_download"
 
 class LastChatApp : Application() {
     companion object {
@@ -68,12 +73,11 @@ class LastChatApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
+        val searchHttpClient = get<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT))
+        SearchService.installPlatformHttpClient(searchHttpClient)
+        SearchService.installBingSearchClient(AndroidBingSearchClient(searchHttpClient))
+        SearchService.installAcceptLanguageProvider { acceptLanguageHeader() }
         this.createNotificationChannel()
-
-        // Initialize Python runtime (Chaquopy)
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
 
         // set cursor window size
         DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)
@@ -221,9 +225,18 @@ class LastChatApp : Application() {
             .setName(getString(R.string.notification_channel_spontaneous))
             .setVibrationEnabled(true)
             .build()
+        val localModelDownloadChannel = NotificationChannelCompat
+            .Builder(
+                LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName(getString(R.string.notification_channel_local_model_downloads))
+            .setVibrationEnabled(false)
+            .build()
         notificationManager.createNotificationChannel(chatCompletedChannel)
         notificationManager.createNotificationChannel(webServerChannel)
         notificationManager.createNotificationChannel(spontaneousChannel)
+        notificationManager.createNotificationChannel(localModelDownloadChannel)
     }
 
     override fun onTerminate() {

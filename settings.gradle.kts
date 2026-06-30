@@ -31,10 +31,13 @@ dependencyResolutionManagement {
 
 rootProject.name = "lastchat"
 include(":app")
+include(":shared")
 include(":highlight")
 include(":ai")
 include(":search")
 include(":tts")
+include(":speech")
 include(":common")
 include(":app:baselineprofile")
 include(":document")
+include(":workspace")

@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
@@ -61,6 +62,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_STT_PROMPT
 import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -115,6 +117,7 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_conversation)) {
                     DefaultChatModelSetting(settings = settings, vm = vm)
                     DefaultTtsVoiceSetting(settings = settings, vm = vm)
+                    DefaultSTTModelSetting(settings = settings, vm = vm)
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
                     DefaultSubagentModelSetting(settings = settings, vm = vm)
@@ -163,6 +166,130 @@ private fun DefaultTtsVoiceSetting(
             }
         }
     )
+}
+
+@Composable
+private fun DefaultSTTModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    var showModal by remember { mutableStateOf(false) }
+    var promptPending by remember { mutableStateOf(false) }
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_page_stt_service), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_stt_settings_title))
+        },
+        icon = {
+            Icon(Icons.Rounded.Mic, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.sttModelId,
+                    type = ModelType.STT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                sttModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
+        }
+    )
+
+    if (showModal) {
+        ModalBottomSheet(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HelperReasoningSettings(
+                    reasoningTokens = settings.sttThinkingBudget,
+                    onUpdateReasoningTokens = {
+                        vm.updateSettings(
+                            settings.copy(
+                                sttThinkingBudget = it
+                            )
+                        )
+                    }
+                )
+
+                FormItem(
+                    label = {
+                        Text(stringResource(R.string.setting_model_page_prompt))
+                    },
+                    tail = { AutoSaveIndicator(visible = promptPending) }
+                ) {
+                    DebouncedTextField(
+                        value = settings.sttPrompt,
+                        onValueChange = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    sttPrompt = it
+                                )
+                            )
+                        },
+                        stateKey = "stt_prompt",
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 10,
+                        onPendingChange = { promptPending = it },
+                    )
+                    TextButton(
+                        onClick = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    sttPrompt = DEFAULT_STT_PROMPT
+                                )
+                            )
+                        }
+                    ) {
+                        Text(stringResource(R.string.setting_model_page_reset_to_default))
+                    }
+                }
+                
+                FormItem(
+                    label = { Text(stringResource(R.string.setting_stt_replace_model_icon)) },
+                    description = { Text(stringResource(R.string.setting_stt_replace_model_icon_desc)) },
+                    tail = {
+                        androidx.compose.material3.Switch(
+                            checked = settings.displaySetting.sttReplaceModelIcon,
+                            onCheckedChange = { newValue ->
+                                vm.updateSettings(
+                                    settings.copy(
+                                        displaySetting = settings.displaySetting.copy(
+                                            sttReplaceModelIcon = newValue
+                                        )
+                                    )
+                                )
+                            }
+                        )
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable

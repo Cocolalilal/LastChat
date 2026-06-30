@@ -8,6 +8,7 @@ import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
+
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.onboarding.OnboardingVM
@@ -34,13 +35,14 @@ val viewModelModule = module {
             settingsStore = get(),
             mcpManager = get(),
             context = get(),
-            okHttpClient = get(),
+            platformHttpClient = get(),
             appStorageRepository = get(),
             modelCatalogService = get(),
             modelMetadataResolver = get(),
             memoryRepository = get(),
         )
     }
+
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
@@ -78,6 +80,13 @@ val viewModelModule = module {
             generationHandler = get(),
             memoryRepository = get(),
             templateTransformer = get(),
+        )
+    }
+    viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
+    viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
+        me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(
+            id = params.get(),
+            repository = get(),
         )
     }
 }

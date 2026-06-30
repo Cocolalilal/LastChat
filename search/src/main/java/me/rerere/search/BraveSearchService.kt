@@ -1,10 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -13,27 +8,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.http.urlEncode
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val TAG = "BraveSearchService"
 
 object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
     override val name: String = "Brave"
-
-    @Composable
-    override fun Description() {
-        val urlHandler = LocalUriHandler.current
-        TextButton(
-            onClick = {
-                urlHandler.openUri("https://api.search.brave.com/")
-            }
-        ) {
-            Text(stringResource(R.string.click_to_get_api_key))
-        }
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(
@@ -56,18 +40,21 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             val url = "https://api.search.brave.com/res/v1/web/search" +
-                    "?q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
+                    "?q=${query.urlEncode()}" +
                     "&count=${commonOptions.resultSize}"
 
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("Accept", "application/json")
-                .addHeader("X-Subscription-Token", serviceOptions.apiKey)
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string()
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = url,
+                    headers = mapOf(
+                        "Accept" to "application/json",
+                        "X-Subscription-Token" to serviceOptions.apiKey
+                    )
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = response.body.decodeToString()
                 val searchResponse = json.decodeFromString<BraveSearchResponse>(responseBody)
 
                 val items = searchResponse.web?.results?.map { result ->
@@ -85,7 +72,7 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
                     )
                 )
             } else {
-                error("Brave search failed with code ${response.code}: ${response.message}")
+                error("Brave search failed with code ${response.statusCode}")
             }
         }
     }

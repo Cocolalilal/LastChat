@@ -9,8 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.FontAxis
 import me.rerere.rikkahub.data.datastore.FontFeature
+import okio.buffer
+import okio.sink
 import java.io.File
-import java.io.FileOutputStream
 
 private const val TAG = "FontFileManager"
 
@@ -37,7 +38,7 @@ class FontFileManager(private val context: Context) {
             val destFile = File(fontsDir, fileName)
             
             context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(destFile).use { output ->
+                destFile.sink().buffer().outputStream().use { output ->
                     input.copyTo(output)
                 }
             } ?: run {
@@ -164,7 +165,9 @@ class FontFileManager(private val context: Context) {
             val fileName = "${System.currentTimeMillis()}_$sanitizedName"
             val destFile = File(fontsDir, fileName)
             
-            destFile.writeBytes(bytes)
+            destFile.sink().buffer().use { output ->
+                output.write(bytes)
+            }
             
             // Verify the font is valid
             val typeface = Typeface.createFromFile(destFile)

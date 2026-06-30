@@ -80,10 +80,14 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
@@ -106,6 +110,7 @@ import me.rerere.rikkahub.utils.plus
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
+import me.rerere.search.R as SearchR
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -216,6 +221,46 @@ val SEARCH_SERVICE_PRESETS = listOf(
         hasScraping = false
     ),
 )
+
+@Composable
+private fun SearchServiceDescription(service: SearchServiceOptions) {
+    val uriHandler = LocalUriHandler.current
+
+    @Composable
+    fun apiKeyButton(url: String) {
+        TextButton(onClick = { uriHandler.openUri(url) }) {
+            Text(stringResource(SearchR.string.click_to_get_api_key))
+        }
+    }
+
+    when (service) {
+        is SearchServiceOptions.BingLocalOptions -> Text(stringResource(SearchR.string.bing_desc))
+        is SearchServiceOptions.SearXNGOptions -> {
+            Text(stringResource(SearchR.string.searxng_desc_1))
+            Text(stringResource(SearchR.string.searxng_desc_2))
+        }
+        is SearchServiceOptions.MetasoOptions -> {
+            Text(buildAnnotatedString {
+                append("秘塔搜索: ")
+                withLink(LinkAnnotation.Url("https://metaso.cn/")) {
+                    append("https://metaso.cn/")
+                }
+            })
+        }
+        is SearchServiceOptions.BochaOptions -> apiKeyButton("https://open.bochaai.com/")
+        is SearchServiceOptions.BraveOptions -> apiKeyButton("https://api.search.brave.com/")
+        is SearchServiceOptions.ExaOptions -> apiKeyButton("https://dashboard.exa.ai/api-keys")
+        is SearchServiceOptions.FirecrawlOptions -> apiKeyButton("https://docs.firecrawl.dev/features/search")
+        is SearchServiceOptions.GrokOptions -> apiKeyButton("https://console.x.ai/")
+        is SearchServiceOptions.JinaOptions -> apiKeyButton("https://jina.ai/")
+        is SearchServiceOptions.LinkUpOptions -> apiKeyButton("https://www.linkup.so/")
+        is SearchServiceOptions.NanoGPTOptions -> apiKeyButton("https://nano-gpt.com/api")
+        is SearchServiceOptions.OllamaOptions -> apiKeyButton("https://ollama.com/settings/keys")
+        is SearchServiceOptions.PerplexityOptions -> apiKeyButton("https://www.perplexity.ai/settings/api")
+        is SearchServiceOptions.TavilyOptions -> apiKeyButton("https://app.tavily.com/home")
+        is SearchServiceOptions.ZhipuOptions -> apiKeyButton("https://bigmodel.cn/usercenter/proj-mgmt/apikeys")
+    }
+}
 
 
 @Composable
@@ -612,7 +657,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         
                         // Service description
                         ProvideTextStyle(MaterialTheme.typography.labelMedium) {
-                            SearchService.getService(currentService).Description()
+                            SearchServiceDescription(currentService)
                         }
                     }
                 }
@@ -916,7 +961,7 @@ private fun SearchServiceEditorSheet(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     ProvideTextStyle(MaterialTheme.typography.labelMedium) {
-                        SearchService.getService(currentService).Description()
+                        SearchServiceDescription(currentService)
                     }
                 }
             }

@@ -1,8 +1,5 @@
 import * as React from "react";
-import {
-  AnimatePresence,
-  motion,
-} from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { useNavigate, useParams } from "react-router";
 
@@ -36,10 +33,7 @@ import {
   useChatReducedMotion,
 } from "~/lib/chat-motion";
 import { convertConversationToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
-import {
-  groupSelectedNodesIntoTurns,
-  type SelectedNodeMessage,
-} from "~/lib/message-turns";
+import { groupSelectedNodesIntoTurns, type SelectedNodeMessage } from "~/lib/message-turns";
 import { CHAT_COLUMN_CLASSNAME, CHAT_PAGE_PADDING_CLASSNAME } from "~/lib/chat-layout";
 import {
   buildEditedParts,
@@ -65,6 +59,7 @@ import {
   type ConversationNodeUpdateEventDto,
   type ConversationErrorEventDto,
   type ConversationSnapshotEventDto,
+  type ContextRefreshResponseDto,
   type ProviderModel,
   type Settings,
   type UIMessagePart,
@@ -286,33 +281,34 @@ function useDraftInputController({
     [draftKey, removeDraftPart],
   );
 
-  const submitCurrentDraft = React.useCallback(async (options?: {
-    beforeSend?: (conversationId: string) => Promise<void>;
-  }) => {
-    if (!draftKey) return;
+  const submitCurrentDraft = React.useCallback(
+    async (options?: { beforeSend?: (conversationId: string) => Promise<void> }) => {
+      if (!draftKey) return;
 
-    const parts = getSubmitParts(draftKey);
-    if (parts.length === 0) return;
+      const parts = getSubmitParts(draftKey);
+      if (parts.length === 0) return;
 
-    if (activeId) {
-      await options?.beforeSend?.(activeId);
-      await api.post<{ status: string }>(`conversations/${activeId}/messages`, { parts });
+      if (activeId) {
+        await options?.beforeSend?.(activeId);
+        await api.post<{ status: string }>(`conversations/${activeId}/messages`, { parts });
+        clearDraft(draftKey);
+        return activeId;
+      }
+
+      const response = await api.post<{ id: string; assistantId: string }>("conversations", {});
+      const conversationId = response.id;
+      setHomeDraftId(createHomeDraftId());
+
+      await options?.beforeSend?.(conversationId);
+      await api.post<{ status: string }>(`conversations/${conversationId}/messages`, { parts });
       clearDraft(draftKey);
-      return activeId;
-    }
 
-    const response = await api.post<{ id: string; assistantId: string }>("conversations", {});
-    const conversationId = response.id;
-    setHomeDraftId(createHomeDraftId());
-
-    await options?.beforeSend?.(conversationId);
-    await api.post<{ status: string }>(`conversations/${conversationId}/messages`, { parts });
-    clearDraft(draftKey);
-
-    navigate(`/c/${conversationId}`);
-    refreshList();
-    return conversationId;
-  }, [activeId, clearDraft, draftKey, getSubmitParts, navigate, refreshList, setHomeDraftId]);
+      navigate(`/c/${conversationId}`);
+      refreshList();
+      return conversationId;
+    },
+    [activeId, clearDraft, draftKey, getSubmitParts, navigate, refreshList, setHomeDraftId],
+  );
 
   const handleSubmit = React.useCallback(async () => {
     await submitCurrentDraft();
@@ -353,119 +349,128 @@ function useDraftInputController({
   };
 }
 
-const ConversationTimeline = React.memo(({
-  activeId,
-  isHomeRoute,
-  detailLoading,
-  detailError,
-  selectedNodeMessages,
-  isGenerating,
-  settings,
-  conversationAssistantId,
-  displaySetting,
-  contentClassName,
-  onEdit,
-  onDelete,
-  onFork,
-  onRegenerate,
-  onSelectBranch,
-  onToolApproval,
-}: {
-  activeId: string | null;
-  isHomeRoute: boolean;
-  detailLoading: boolean;
-  detailError: string | null;
-  selectedNodeMessages: SelectedNodeMessage[];
-  isGenerating: boolean;
-  settings: Settings | null;
-  conversationAssistantId: string | null;
-  displaySetting: Settings["displaySetting"] | null;
-  contentClassName?: string;
-  onEdit: (message: MessageDto) => void | Promise<void>;
-  onDelete: (messageId: string) => Promise<void>;
-  onFork: (messageId: string) => Promise<void>;
-  onRegenerate: (messageId: string) => Promise<void>;
-  onSelectBranch: (nodeId: string, selectIndex: number) => Promise<void>;
-  onToolApproval: (toolCallId: string, approved: boolean, reason: string, answer?: string) => Promise<void>;
-}) => {
-  const { t } = useTranslation("page");
-  const reducedMotion = useChatReducedMotion();
-  const assistant = React.useMemo(() => {
-    if (!settings || !conversationAssistantId) return null;
-    return settings.assistants.find((item) => item.id === conversationAssistantId) ?? null;
-  }, [conversationAssistantId, settings]);
-  const modelById = React.useMemo(() => {
-    const map = new Map<string, ProviderModel>();
-    if (!settings) return map;
+const ConversationTimeline = React.memo(
+  ({
+    activeId,
+    isHomeRoute,
+    detailLoading,
+    detailError,
+    selectedNodeMessages,
+    isGenerating,
+    settings,
+    conversationAssistantId,
+    displaySetting,
+    contentClassName,
+    onEdit,
+    onDelete,
+    onFork,
+    onRegenerate,
+    onSelectBranch,
+    onToolApproval,
+  }: {
+    activeId: string | null;
+    isHomeRoute: boolean;
+    detailLoading: boolean;
+    detailError: string | null;
+    selectedNodeMessages: SelectedNodeMessage[];
+    isGenerating: boolean;
+    settings: Settings | null;
+    conversationAssistantId: string | null;
+    displaySetting: Settings["displaySetting"] | null;
+    contentClassName?: string;
+    onEdit: (message: MessageDto) => void | Promise<void>;
+    onDelete: (messageId: string) => Promise<void>;
+    onFork: (messageId: string) => Promise<void>;
+    onRegenerate: (messageId: string) => Promise<void>;
+    onSelectBranch: (nodeId: string, selectIndex: number) => Promise<void>;
+    onToolApproval: (
+      toolCallId: string,
+      approved: boolean,
+      reason: string,
+      answer?: string,
+    ) => Promise<void>;
+  }) => {
+    const { t } = useTranslation("page");
+    const reducedMotion = useChatReducedMotion();
+    const assistant = React.useMemo(() => {
+      if (!settings || !conversationAssistantId) return null;
+      return settings.assistants.find((item) => item.id === conversationAssistantId) ?? null;
+    }, [conversationAssistantId, settings]);
+    const modelById = React.useMemo(() => {
+      const map = new Map<string, ProviderModel>();
+      if (!settings) return map;
 
-    for (const provider of settings.providers) {
-      for (const model of provider.models) {
-        if (!map.has(model.id)) {
-          map.set(model.id, model);
+      for (const provider of settings.providers) {
+        for (const model of provider.models) {
+          if (!map.has(model.id)) {
+            map.set(model.id, model);
+          }
         }
       }
-    }
 
-    return map;
-  }, [settings]);
-  const displayTurns = React.useMemo(
-    () => groupSelectedNodesIntoTurns(selectedNodeMessages),
-    [selectedNodeMessages],
-  );
-  const canQuickJump =
-    Boolean(activeId) && !detailLoading && !detailError && displayTurns.length > 1;
-  const showTrailingTypingIndicator =
-    Boolean(activeId) &&
-    !detailLoading &&
-    !detailError &&
-    isGenerating &&
-    (displayTurns.length === 0 || displayTurns[displayTurns.length - 1]?.kind !== "assistant");
-  const [newlyAppendedTurnIds, setNewlyAppendedTurnIds] = React.useState<Set<string>>(new Set());
-  const hasSeededTurnIdsRef = React.useRef(false);
-  const seenTurnIdsRef = React.useRef<Set<string>>(new Set());
+      return map;
+    }, [settings]);
+    const displayTurns = React.useMemo(
+      () => groupSelectedNodesIntoTurns(selectedNodeMessages),
+      [selectedNodeMessages],
+    );
+    const canQuickJump =
+      Boolean(activeId) && !detailLoading && !detailError && displayTurns.length > 1;
+    const showTrailingTypingIndicator =
+      Boolean(activeId) &&
+      !detailLoading &&
+      !detailError &&
+      isGenerating &&
+      (displayTurns.length === 0 || displayTurns[displayTurns.length - 1]?.kind !== "assistant");
+    const [newlyAppendedTurnIds, setNewlyAppendedTurnIds] = React.useState<Set<string>>(new Set());
+    const hasSeededTurnIdsRef = React.useRef(false);
+    const seenTurnIdsRef = React.useRef<Set<string>>(new Set());
 
-  React.useEffect(() => {
-    hasSeededTurnIdsRef.current = false;
-    seenTurnIdsRef.current = new Set();
-    setNewlyAppendedTurnIds(new Set());
-  }, [activeId]);
+    React.useEffect(() => {
+      hasSeededTurnIdsRef.current = false;
+      seenTurnIdsRef.current = new Set();
+      setNewlyAppendedTurnIds(new Set());
+    }, [activeId]);
 
-  React.useEffect(() => {
-    const nextIds = displayTurns.map((turn) => turn.id);
-    if (!hasSeededTurnIdsRef.current) {
+    React.useEffect(() => {
+      const nextIds = displayTurns.map((turn) => turn.id);
+      if (!hasSeededTurnIdsRef.current) {
+        seenTurnIdsRef.current = new Set(nextIds);
+        hasSeededTurnIdsRef.current = true;
+        return;
+      }
+
+      const appendedIds = nextIds.filter((id) => !seenTurnIdsRef.current.has(id));
       seenTurnIdsRef.current = new Set(nextIds);
-      hasSeededTurnIdsRef.current = true;
-      return;
-    }
+      if (appendedIds.length === 0) return;
 
-    const appendedIds = nextIds.filter((id) => !seenTurnIdsRef.current.has(id));
-    seenTurnIdsRef.current = new Set(nextIds);
-    if (appendedIds.length === 0) return;
+      setNewlyAppendedTurnIds(new Set(appendedIds));
+      const timeoutId = window.setTimeout(
+        () => {
+          setNewlyAppendedTurnIds((prev) => {
+            const next = new Set(prev);
+            appendedIds.forEach((id) => next.delete(id));
+            return next;
+          });
+        },
+        reducedMotion ? 20 : 700,
+      );
 
-    setNewlyAppendedTurnIds(new Set(appendedIds));
-    const timeoutId = window.setTimeout(() => {
-      setNewlyAppendedTurnIds((prev) => {
-        const next = new Set(prev);
-        appendedIds.forEach((id) => next.delete(id));
-        return next;
-      });
-    }, reducedMotion ? 20 : 700);
+      return () => window.clearTimeout(timeoutId);
+    }, [displayTurns, reducedMotion]);
+    const getTurnPreview = React.useCallback(
+      (turn: ReturnType<typeof groupSelectedNodesIntoTurns>[number]) =>
+        getQuickJumpPreview(
+          turn.kind === "assistant"
+            ? { ...turn.displayMessage, parts: turn.allParts, annotations: turn.annotations }
+            : turn.message,
+          t,
+        ),
+      [t],
+    );
 
-    return () => window.clearTimeout(timeoutId);
-  }, [displayTurns, reducedMotion]);
-  const getTurnPreview = React.useCallback(
-    (turn: ReturnType<typeof groupSelectedNodesIntoTurns>[number]) =>
-      getQuickJumpPreview(
-        turn.kind === "assistant"
-          ? { ...turn.displayMessage, parts: turn.allParts, annotations: turn.annotations }
-          : turn.message,
-        t,
-      ),
-    [t],
-  );
-
-  return (
-    <Conversation className="flex-1 min-h-0">
+    return (
+      <Conversation className="flex-1 min-h-0">
         <ConversationContent
           className={cn(
             CHAT_COLUMN_CLASSNAME,
@@ -474,129 +479,138 @@ const ConversationTimeline = React.memo(({
             contentClassName,
           )}
         >
-        {!activeId && !isHomeRoute && (
-          <ConversationEmptyState
-            icon={<MessageSquare className="size-10" />}
-            title={t("conversations.empty_state.select_title")}
-            description={t("conversations.empty_state.select_description")}
-          />
-        )}
-        {activeId && detailLoading && (
-          <ConversationEmptyState
-            title={t("conversations.empty_state.loading_title")}
-            description={t("conversations.empty_state.loading_description")}
-          />
-        )}
-        {activeId && detailError && (
-          <ConversationEmptyState
-            title={t("conversations.empty_state.error_title")}
-            description={detailError}
-          />
-        )}
-        {!detailLoading && !detailError && activeId && displayTurns.length === 0 && !isHomeRoute && (
-          <ConversationEmptyState
-            icon={<MessageSquare className="size-10" />}
-            title={t("conversations.empty_state.no_message_title")}
-            description={t("conversations.empty_state.no_message_description")}
-          />
-        )}
-        {!detailLoading &&
-          !detailError &&
-          (activeId || isHomeRoute) &&
-          displayTurns.map((turn, index) => {
-            const message = turn.kind === "assistant" ? turn.displayMessage : turn.message;
-            const model = message.modelId ? (modelById.get(message.modelId) ?? null) : null;
-            const turnLoading =
-              isGenerating && index === displayTurns.length - 1 && turn.kind === "assistant";
-            const shouldAnimateOnMount = newlyAppendedTurnIds.has(turn.id);
+          {!activeId && !isHomeRoute && (
+            <ConversationEmptyState
+              icon={<MessageSquare className="size-10" />}
+              title={t("conversations.empty_state.select_title")}
+              description={t("conversations.empty_state.select_description")}
+            />
+          )}
+          {activeId && detailLoading && (
+            <ConversationEmptyState
+              title={t("conversations.empty_state.loading_title")}
+              description={t("conversations.empty_state.loading_description")}
+            />
+          )}
+          {activeId && detailError && (
+            <ConversationEmptyState
+              title={t("conversations.empty_state.error_title")}
+              description={detailError}
+            />
+          )}
+          {!detailLoading &&
+            !detailError &&
+            activeId &&
+            displayTurns.length === 0 &&
+            !isHomeRoute && (
+              <ConversationEmptyState
+                icon={<MessageSquare className="size-10" />}
+                title={t("conversations.empty_state.no_message_title")}
+                description={t("conversations.empty_state.no_message_description")}
+              />
+            )}
+          {!detailLoading &&
+            !detailError &&
+            (activeId || isHomeRoute) &&
+            displayTurns.map((turn, index) => {
+              const message = turn.kind === "assistant" ? turn.displayMessage : turn.message;
+              const model = message.modelId ? (modelById.get(message.modelId) ?? null) : null;
+              const turnLoading =
+                isGenerating && index === displayTurns.length - 1 && turn.kind === "assistant";
+              const shouldAnimateOnMount = newlyAppendedTurnIds.has(turn.id);
 
-            return (
+              return (
+                <motion.div
+                  key={turn.id}
+                  layout={turnLoading ? false : "position"}
+                  id={getConversationMessageAnchorId(turn.anchorMessageId)}
+                  className="scroll-mt-24"
+                  variants={getChatLiftVariants(reducedMotion, 12)}
+                  initial={shouldAnimateOnMount ? "initial" : false}
+                  animate="animate"
+                  exit="exit"
+                  transition={getChatLayoutTransition(reducedMotion)}
+                >
+                  {turn.kind === "assistant" ? (
+                    <AssistantTurnMessage
+                      turn={turn}
+                      loading={turnLoading}
+                      displaySetting={displaySetting}
+                      assistant={assistant}
+                      model={model}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onFork={onFork}
+                      onRegenerate={onRegenerate}
+                      onSelectBranch={onSelectBranch}
+                      onToolApproval={onToolApproval}
+                    />
+                  ) : (
+                    <ChatMessage
+                      node={turn.node}
+                      message={turn.message}
+                      loading={false}
+                      isLastMessage={index === displayTurns.length - 1}
+                      displaySetting={displaySetting}
+                      assistant={assistant}
+                      model={model}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onFork={onFork}
+                      onRegenerate={onRegenerate}
+                      onSelectBranch={onSelectBranch}
+                      onToolApproval={onToolApproval}
+                    />
+                  )}
+                </motion.div>
+              );
+            })}
+          <AnimatePresence initial={false}>
+            {showTrailingTypingIndicator ? (
               <motion.div
-                key={turn.id}
-                layout={turnLoading ? false : "position"}
-                id={getConversationMessageAnchorId(turn.anchorMessageId)}
-                className="scroll-mt-24"
-                variants={getChatLiftVariants(reducedMotion, 12)}
-                initial={shouldAnimateOnMount ? "initial" : false}
-                animate="animate"
-                exit="exit"
-                transition={getChatLayoutTransition(reducedMotion)}
+                key="trailing-typing-indicator"
+                layout="position"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.985 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  scale: 1,
+                  transition: reducedMotion
+                    ? { duration: 0.01 }
+                    : {
+                        opacity: { duration: 0.16, ease: "easeOut" },
+                        y: getChatLayoutTransition(false),
+                        scale: getChatLayoutTransition(false),
+                      },
+                }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: 8, transition: { duration: 0.12 } }
+                }
+                className="flex items-start py-2"
               >
-                {turn.kind === "assistant" ? (
-                  <AssistantTurnMessage
-                    turn={turn}
-                    loading={turnLoading}
-                    displaySetting={displaySetting}
-                    assistant={assistant}
-                    model={model}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    onFork={onFork}
-                    onRegenerate={onRegenerate}
-                    onSelectBranch={onSelectBranch}
-                    onToolApproval={onToolApproval}
-                  />
-                ) : (
-                  <ChatMessage
-                    node={turn.node}
-                    message={turn.message}
-                    loading={false}
-                    isLastMessage={index === displayTurns.length - 1}
-                    displaySetting={displaySetting}
-                    assistant={assistant}
-                    model={model}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    onFork={onFork}
-                    onRegenerate={onRegenerate}
-                    onSelectBranch={onSelectBranch}
-                    onToolApproval={onToolApproval}
-                  />
-                )}
+                <TypingIndicator className="py-2" />
               </motion.div>
-            );
-          })}
-        <AnimatePresence initial={false}>
-          {showTrailingTypingIndicator ? (
-            <motion.div
-              key="trailing-typing-indicator"
-              layout="position"
-              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.985 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                transition: reducedMotion
-                  ? { duration: 0.01 }
-                  : {
-                      opacity: { duration: 0.16, ease: "easeOut" },
-                      y: getChatLayoutTransition(false),
-                      scale: getChatLayoutTransition(false),
-                    },
-              }}
-              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, transition: { duration: 0.12 } }}
-              className="flex items-start py-2"
-            >
-              <TypingIndicator className="py-2" />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </ConversationContent>
+            ) : null}
+          </AnimatePresence>
+        </ConversationContent>
 
-      {canQuickJump ? (
-        <ConversationQuickJump
-          items={displayTurns.map((turn) => ({
-            id: turn.anchorMessageId,
-            role: turn.kind === "assistant" ? turn.displayMessage.role : turn.message.role,
-            preview: getTurnPreview(turn),
-          }))}
-        />
-      ) : null}
+        {canQuickJump ? (
+          <ConversationQuickJump
+            items={displayTurns.map((turn) => ({
+              id: turn.anchorMessageId,
+              role: turn.kind === "assistant" ? turn.displayMessage.role : turn.message.role,
+              preview: getTurnPreview(turn),
+            }))}
+          />
+        ) : null}
 
-      <ConversationScrollButton />
-    </Conversation>
-  );
-});
+        <ConversationScrollButton />
+      </Conversation>
+    );
+  },
+);
 
 export function meta() {
   return [
@@ -630,7 +644,7 @@ function ConversationsPageInner() {
   const effectiveCurrentAssistantId = switchingAssistantId ?? currentAssistantId;
   const isAssistantSwitching =
     switchingAssistantId !== null && switchingAssistantId !== currentAssistantId;
-  const effectiveRouteId = isAssistantSwitching ? null : routeId ?? null;
+  const effectiveRouteId = isAssistantSwitching ? null : (routeId ?? null);
   const isHomeRoute = !effectiveRouteId;
   const {
     conversations,
@@ -651,8 +665,13 @@ function ConversationsPageInner() {
   const [homeDraftId, setHomeDraftId] = React.useState(() => createHomeDraftId());
   const [editingSession, setEditingSession] = React.useState<EditingSession | null>(null);
 
-  const { detail, detailLoading, detailError, selectedNodeMessages: actualSelectedNodeMessages, resetDetail } =
-    useConversationDetail(activeId, updateConversationSummary);
+  const {
+    detail,
+    detailLoading,
+    detailError,
+    selectedNodeMessages: actualSelectedNodeMessages,
+    resetDetail,
+  } = useConversationDetail(activeId, updateConversationSummary);
 
   React.useEffect(() => {
     if (switchingAssistantId !== null && switchingAssistantId === currentAssistantId) {
@@ -934,6 +953,34 @@ function ConversationsPageInner() {
     [refreshList],
   );
 
+  const handleConsolidateConversation = React.useCallback(
+    async (conversationId: string) => {
+      await api.post<{ status: string }>(`conversations/${conversationId}/consolidate`);
+      refreshList();
+    },
+    [refreshList],
+  );
+
+  const handleRefreshConversationContext = React.useCallback(
+    async (conversationId: string) => {
+      const result = await api.post<ContextRefreshResponseDto>(
+        `conversations/${conversationId}/context-refresh`,
+      );
+      if (!result.success) {
+        throw new Error(result.error ?? t("conversation_sidebar.context_refresh_failed"));
+      }
+      toast.success(
+        result.messagesSummarized > 0
+          ? t("conversation_sidebar.context_refresh_success_count", {
+              count: result.messagesSummarized,
+            })
+          : t("conversation_sidebar.context_refresh_success"),
+      );
+      refreshList();
+    },
+    [refreshList, t],
+  );
+
   const handleDeleteConversation = React.useCallback(
     async (conversationId: string) => {
       await api.delete<Record<string, never>>(`conversations/${conversationId}`, {
@@ -1082,6 +1129,8 @@ function ConversationsPageInner() {
         onMoveToAssistant={handleMoveConversation}
         onUpdateTitle={handleUpdateConversationTitle}
         onDelete={handleDeleteConversation}
+        onConsolidate={handleConsolidateConversation}
+        onRefreshContext={handleRefreshConversationContext}
         onCreateConversation={handleCreateConversation}
         webAuthEnabled={settings?.webServerJwtEnabled === true}
       />
@@ -1112,7 +1161,9 @@ function ConversationsPageInner() {
               className="flex min-h-0 flex-col"
             >
               {panel ? (
-                <React.Suspense fallback={<WorkbenchHostFallback className="border-l border-border/60" />}>
+                <React.Suspense
+                  fallback={<WorkbenchHostFallback className="border-l border-border/60" />}
+                >
                   <LazyWorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
                 </React.Suspense>
               ) : null}

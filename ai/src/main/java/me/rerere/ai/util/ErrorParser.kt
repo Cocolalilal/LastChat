@@ -22,7 +22,8 @@ fun JsonElement.parseErrorDetail(): HttpException {
 
             if (foundField != null) {
                 // 递归解析找到的字段值
-                this[foundField]!!.parseErrorDetail()
+                this[foundField]?.parseErrorDetail()
+                    ?: HttpException(Json.encodeToString(JsonElement.serializer(), this))
             } else {
                 // 如果没有找到任何错误字段，序列化整个对象
                 HttpException(Json.encodeToString(JsonElement.serializer(), this))

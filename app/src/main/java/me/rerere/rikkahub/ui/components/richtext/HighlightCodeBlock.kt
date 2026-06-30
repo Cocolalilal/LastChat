@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import android.content.ClipData
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -56,10 +57,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ClipEntry
@@ -94,6 +91,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -104,7 +102,6 @@ import me.rerere.rikkahub.utils.base64Encode
 import kotlin.time.Clock
 
 private const val COLLAPSED_PEEK_MAX_HEIGHT = 108
-private const val FADE_HEIGHT = 48f
 internal const val CODE_BLOCK_BODY_TAG = "code_block_body"
 internal const val CODE_BLOCK_FOOTER_TAG = "code_block_footer"
 
@@ -170,11 +167,12 @@ fun HighlightCodeBlock(
 ) {
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
+    val normalizedLanguage = remember(language) { normalizeCodeBlockLanguage(language) }
     val horizontalScrollState = rememberScrollState()
     val verticalScrollState = rememberScrollState()
     val clipboardManager = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val navController = if (language.lowercase() == "html") LocalNavController.current else null
+    val navController = if (normalizedLanguage == "html") LocalNavController.current else null
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
@@ -242,8 +240,21 @@ fun HighlightCodeBlock(
         }
     }
 
+    var pulseTrigger by remember { mutableIntStateOf(0) }
+    val pulseAlpha by animateFloatAsState(
+        targetValue = if (pulseTrigger > 0) 0.88f else 1f,
+        animationSpec = tween(durationMillis = 110, easing = LinearOutSlowInEasing),
+        finishedListener = {
+            if (it == 0.88f) pulseTrigger = 0
+        },
+        label = "code_block_pulse_alpha"
+    )
+
     LaunchedEffect(code, completeCodeBlock, expandState, previewAutoFollowPaused) {
         val codeGrew = code.length > previousCodeLength
+        if (codeGrew && !completeCodeBlock) {
+            pulseTrigger = 1
+        }
         previousCodeLength = code.length
         if (!codeGrew || completeCodeBlock) {
             return@LaunchedEffect
@@ -279,8 +290,8 @@ fun HighlightCodeBlock(
         }
     }
 
-    val languageLabel = remember(language) {
-        getLanguageDisplayName(language).lowercase()
+    val languageLabel = remember(normalizedLanguage) {
+        getLanguageDisplayName(normalizedLanguage).lowercase()
     }
 
     fun toggle() {
@@ -305,14 +316,21 @@ fun HighlightCodeBlock(
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),
     ) {
+        val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
         Column(
             modifier = Modifier
                 .clipToBounds()
-                .animateContentSize(
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = LinearOutSlowInEasing
-                    )
+                .then(
+                    if (chatAnimationsEnabled) {
+                        Modifier.animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing
+                            )
+                        )
+                    } else {
+                        Modifier
+                    }
                 ),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
@@ -324,10 +342,10 @@ fun HighlightCodeBlock(
             ) {
                 CodeBlockHeader(
                     languageLabel = languageLabel,
-                    showPreview = language.lowercase() == "html",
+                    showPreview = normalizedLanguage == "html",
                     actionTextColor = actionTextColor,
                     onSave = {
-                        val extension = getFileExtension(language)
+                        val extension = getFileExtension(normalizedLanguage)
                         createDocumentLauncher.launch(
                             "code_${Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())}.$extension"
                         )
@@ -347,12 +365,13 @@ fun HighlightCodeBlock(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer { alpha = pulseAlpha }
                     .background(bodyColor)
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 CodeBlockText(
                     code = code,
-                    language = language,
+                    language = normalizedLanguage,
                     expandState = expandState,
                     autoWrap = autoWrap,
                     horizontalScrollState = horizontalScrollState,
@@ -466,10 +485,10 @@ private fun CodeBlockHeaderActions(
 }
 
 @Composable
-private fun CodeBlockActionButton(
+internal fun CodeBlockActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
-    contentDescription: String,
+    contentDescription: String?,
     tint: Color,
     hapticsEnabled: Boolean,
 ) {
@@ -532,13 +551,13 @@ private fun CodeBlockText(
             when {
                 maxHeight != null && expandState == CodeBlockState.Preview -> {
                     it
-                        .codePeekMask(fadeTop = true, fadeBottom = true)
+                        .fadeEdges(fadeTop = true, fadeBottom = true)
                         .heightIn(max = maxHeight.dp)
                         .verticalScroll(verticalScrollState)
                 }
                 maxHeight != null -> {
                     it
-                        .codePeekMask(fadeTop = false, fadeBottom = true)
+                        .fadeEdges(fadeTop = false, fadeBottom = true)
                         .heightIn(max = maxHeight.dp)
                 }
                 else -> it
@@ -569,7 +588,7 @@ private fun CodeBlockText(
 }
 
 @Composable
-private fun CodeBlockFooter(
+internal fun CodeBlockFooter(
     expanded: Boolean,
     footerText: String,
     footerAction: CodeBlockFooterAction,
@@ -620,31 +639,40 @@ private fun CodeBlockFooter(
     }
 }
 
-private fun Modifier.codePeekMask(
-    fadeTop: Boolean,
-    fadeBottom: Boolean,
-): Modifier = graphicsLayer { alpha = 0.99f }.drawWithCache {
-    val fadeFraction = (FADE_HEIGHT / size.height).coerceIn(0f, 0.45f)
-    val colorStops = buildList {
-        add(0f to if (fadeTop) Color.Transparent else Color.Black)
-        if (fadeTop) add(fadeFraction to Color.Black)
-        if (fadeBottom) add((1f - fadeFraction).coerceIn(0f, 1f) to Color.Black)
-        add(1f to if (fadeBottom) Color.Transparent else Color.Black)
-    }.toTypedArray()
+internal fun normalizeCodeBlockLanguage(language: String): String {
+    val token = language
+        .lineSequence()
+        .firstOrNull()
+        ?.trim()
+        ?.substringBefore(' ')
+        ?.substringBefore('\t')
+        ?.trim('.', '{', '}', ',', ';', ':', '"', '\'')
+        ?: ""
+    val normalized = token
+        .removePrefix("language-")
+        .removePrefix("lang-")
+        .lowercase()
 
-    val brush = Brush.verticalGradient(
-        colorStops = colorStops,
-        startY = 0f,
-        endY = size.height
-    )
-
-    onDrawWithContent {
-        drawContent()
-        drawRect(
-            brush = brush,
-            size = Size(size.width, size.height),
-            blendMode = BlendMode.DstIn
-        )
+    return when (normalized) {
+        "", "plain", "text", "txt", "none" -> "plaintext"
+        "kt", "kts" -> "kotlin"
+        "js", "mjs", "cjs" -> "javascript"
+        "ts" -> "typescript"
+        "py", "py3" -> "python"
+        "rb" -> "ruby"
+        "rs" -> "rust"
+        "golang" -> "go"
+        "sh", "shell", "zsh" -> "bash"
+        "ps", "pwsh" -> "powershell"
+        "c++" -> "cpp"
+        "c#", "cs" -> "csharp"
+        "objective-c", "objc" -> "objectivec"
+        "md" -> "markdown"
+        "yml" -> "yaml"
+        "jsonl" -> "json"
+        "dockerfile" -> "docker"
+        "plantuml" -> "plant-uml"
+        else -> normalized
     }
 }
 
@@ -656,6 +684,7 @@ private fun getLanguageDisplayName(language: String): String {
         "javascript", "js" -> "JavaScript"
         "typescript", "ts" -> "TypeScript"
         "cpp", "c++" -> "C++"
+        "csharp", "c#" -> "C#"
         "c" -> "C"
         "html" -> "HTML"
         "css" -> "CSS"
@@ -680,7 +709,9 @@ private fun getLanguageDisplayName(language: String): String {
         "clojure", "clj" -> "Clojure"
         "elixir", "ex" -> "Elixir"
         "erlang", "erl" -> "Erlang"
-        "dockerfile" -> "Dockerfile"
+        "docker", "dockerfile" -> "Dockerfile"
+        "powershell" -> "PowerShell"
+        "plant-uml" -> "PlantUML"
         "toml" -> "TOML"
         "ini" -> "INI"
         "graphql", "gql" -> "GraphQL"
@@ -697,6 +728,7 @@ private fun getFileExtension(language: String): String {
         "javascript" -> "js"
         "typescript" -> "ts"
         "cpp", "c++" -> "cpp"
+        "csharp", "c#" -> "cs"
         "c" -> "c"
         "html" -> "html"
         "css" -> "css"
@@ -706,6 +738,8 @@ private fun getFileExtension(language: String): String {
         "markdown", "md" -> "md"
         "sql" -> "sql"
         "sh", "bash" -> "sh"
+        "powershell" -> "ps1"
+        "docker", "dockerfile" -> "Dockerfile"
         else -> "txt"
     }
 }
@@ -720,10 +754,11 @@ fun rememberHighlightCodeVisualTransformation(
     val highlighter = LocalHighlighter.current
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
+    val normalizedLanguage = remember(language) { normalizeCodeBlockLanguage(language) }
     
-    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, language, darkMode) {
+    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, normalizedLanguage, darkMode) {
         try {
-            val tokens = highlighter.highlight(code, language)
+            val tokens = highlighter.highlight(code, normalizedLanguage)
             value = buildAnnotatedString {
                 tokens.forEach { token ->
                     buildHighlightText(token, colorPalette)

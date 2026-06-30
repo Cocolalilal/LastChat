@@ -34,7 +34,8 @@ import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.resolveOwnedFile
 import me.rerere.rikkahub.web.WebUploadRegistry
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 private const val TAG = "AppStorageRepo"
 
@@ -42,7 +43,7 @@ private const val CATEGORY_CHAT = "chat_attachments"
 private const val CATEGORY_ASSISTANT_MEDIA = "assistant_media"
 private const val CATEGORY_LOREBOOK_MEDIA = "lorebook_media"
 private const val CATEGORY_GENERATED_MEDIA = "generated_media"
-private const val CATEGORY_PYTHON_SANDBOX = "python_sandbox"
+private const val CATEGORY_WORKSPACES = "workspaces"
 private const val CATEGORY_ICONS_AND_FONTS = "icons_and_fonts"
 private const val CATEGORY_DATABASES = "databases"
 private const val CATEGORY_ICON_CACHE = "icon_cache"
@@ -65,6 +66,7 @@ private data class AppStorageAuditState(
     val isScanning: Boolean = true,
 )
 
+@OptIn(ExperimentalAtomicApi::class)
 class AppStorageRepository(
     private val context: Context,
     private val settingsStore: SettingsStore,
@@ -432,7 +434,7 @@ class AppStorageRepository(
             safeDirectoryBytes(context.getOwnedDirectory(OwnedFileDirectory.LOREBOOK_ATTACHMENT))
         val generatedMediaBytes = safeDirectoryBytes(context.filesDir.resolve("images")) +
             safeDirectoryBytes(context.filesDir.resolve("chat_files"))
-        val pythonSandboxBytes = safeDirectoryBytes(context.filesDir.resolve("python_sandbox"))
+        val workspacesBytes = safeDirectoryBytes(context.filesDir.resolve("workspaces"))
         val iconsAndFontsBytes = safeDirectoryBytes(context.filesDir.resolve("auto_icons")) +
             safeDirectoryBytes(context.filesDir.resolve("custom_icons")) +
             safeDirectoryBytes(context.filesDir.resolve("custom_fonts"))
@@ -458,7 +460,7 @@ class AppStorageRepository(
             StorageCategoryUsage(CATEGORY_ASSISTANT_MEDIA, "Assistant media", assistantMediaBytes),
             StorageCategoryUsage(CATEGORY_LOREBOOK_MEDIA, "Lorebook media", lorebookMediaBytes),
             StorageCategoryUsage(CATEGORY_GENERATED_MEDIA, "Generated media", generatedMediaBytes),
-            StorageCategoryUsage(CATEGORY_PYTHON_SANDBOX, "Python sandbox", pythonSandboxBytes),
+            StorageCategoryUsage(CATEGORY_WORKSPACES, "Workspaces", workspacesBytes),
             StorageCategoryUsage(CATEGORY_ICONS_AND_FONTS, "Icons and fonts", iconsAndFontsBytes),
             StorageCategoryUsage(CATEGORY_DATABASES, "Settings and database", databaseBytes),
             StorageCategoryUsage(CATEGORY_ICON_CACHE, "Icon disk cache", iconCacheBytes, clearable = true),
@@ -472,8 +474,8 @@ class AppStorageRepository(
 
     private fun queryPackageStats(): AppPackageStorageStats {
         return runCatching {
-            val storageManager = context.getSystemService(StorageManager::class.java)
-            val statsManager = context.getSystemService(StorageStatsManager::class.java)
+            val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+            val statsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
             if (storageManager == null || statsManager == null) {
                 return@runCatching AppPackageStorageStats()
             }

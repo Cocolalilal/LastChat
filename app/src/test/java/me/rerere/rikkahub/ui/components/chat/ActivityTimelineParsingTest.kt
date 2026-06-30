@@ -151,6 +151,52 @@ class ActivityTimelineParsingTest {
     }
 
     @Test
+    fun deriveActivityState_categorizesWorkspaceToolsSeparately() {
+        val liveState = deriveActivityState(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = """{"command":"python3 --version"}"""
+                )
+            ),
+            loading = true
+        )
+
+        val toolState = liveState as ActivityState.ToolUse
+        assertEquals(ActivityType.WORKSPACE, categorizeToolName(toolState.toolName))
+        assertEquals("Running workspace command", toolState.displayName)
+
+        val result = buildJsonObject {
+            put("exitCode", 0)
+            put("stdout", "Python 3.12.0")
+            put("stderr", "")
+            put("timedOut", false)
+        }
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = """{"command":"python3 --version"}"""
+                ),
+                UIMessagePart.ToolResult(
+                    toolCallId = "workspace-1",
+                    toolName = "workspace_shell",
+                    arguments = buildJsonObject { put("command", "python3 --version") },
+                    content = result
+                )
+            )
+        )
+
+        val entry = entries.single() as TimelineEntry.ToolCall
+        assertFalse(entry.isLoading)
+        assertEquals("Running workspace command", entry.displayName)
+        assertEquals(result, entry.resultJson)
+        assertEquals(ActivityType.WORKSPACE, categorizeToolName(entry.toolName))
+    }
+
+    @Test
     fun messageTurnGroup_keepsMatchingToolResultWhenVersionTagIsMissing() {
         val group = MessageTurnGroup(
             nodes = listOf(
@@ -250,6 +296,29 @@ class ActivityTimelineParsingTest {
         assertFalse(pythonEntry.isLoading)
         assertEquals(pythonResult, pythonEntry.resultJson)
         assertEquals(pythonArguments, pythonEntry.argumentsJson)
+    }
+
+    @Test
+    fun buildTimelineEntries_recoversFirstObjectFromConcatenatedArguments() {
+        val entries = buildTimelineEntries(
+            parts = listOf(
+                UIMessagePart.ToolCall(
+                    toolCallId = "search-1",
+                    toolName = "search_web",
+                    arguments = """
+                        {"query":"coding agents planning vs no planning performance comparison"}
+                        {"query":"Plan-and-Execute agent performance benchmark"}
+                    """.trimIndent()
+                )
+            )
+        )
+
+        val entry = entries.single() as TimelineEntry.ToolCall
+        val args = entry.argumentsJson as JsonObject
+        assertEquals(
+            JsonPrimitive("coding agents planning vs no planning performance comparison"),
+            args["query"]
+        )
     }
 
     @Test
@@ -373,6 +442,55 @@ class ActivityTimelineParsingTest {
 
         assertEquals(listOf("Search", "search-fallback"), summary.activated)
         assertEquals(listOf("Code"), summary.disabled)
+    }
+
+    @Test
+    fun buildTimelineCopyText_includesSearchQueryAnswerAndSources() {
+        val text = buildTimelineCopyText(
+            TimelineEntry.ToolCall(
+                id = "search-1",
+                toolName = "search_web",
+                displayName = "Searching web",
+                argumentsText = """{"query":"compose shared bounds"}""",
+                resultText = null,
+                argumentsJson = buildJsonObject {
+                    put("query", "compose shared bounds")
+                },
+                resultJson = buildJsonObject {
+                    put("answer", "Use shared bounds for coordinated size changes.")
+                    put("items", buildJsonArray {
+                        add(buildJsonObject {
+                            put("title", "Android Developers")
+                            put("url", "https://developer.android.com/develop/ui/compose/animation/shared-elements")
+                            put("text", "Shared element transition docs")
+                        })
+                    })
+                }
+            )
+        )
+
+        assertTrue(text.contains("compose shared bounds"))
+        assertTrue(text.contains("Use shared bounds"))
+        assertTrue(text.contains("https://developer.android.com"))
+    }
+
+    @Test
+    fun buildTimelineCopyText_includesMemoryBeforeAndAfter() {
+        val text = buildTimelineCopyText(
+            TimelineEntry.MemoryAction(
+                id = "memory-1",
+                toolName = "edit_memory",
+                operation = MemoryOperation.EDIT,
+                memoryId = 7,
+                content = "After memory",
+                previousContent = "Before memory",
+                memoryType = 0,
+                timestamp = 1L
+            )
+        )
+
+        assertTrue(text.contains("Before memory"))
+        assertTrue(text.contains("After memory"))
     }
 
     @Test

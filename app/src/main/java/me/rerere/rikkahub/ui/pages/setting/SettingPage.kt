@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -44,17 +43,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.DesktopWindows
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,34 +62,24 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
-import me.rerere.rikkahub.data.model.AppStorageSnapshot
-import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.components.ui.Select
-import me.rerere.rikkahub.ui.hooks.rememberColorMode
-import me.rerere.rikkahub.ui.theme.ColorMode
-import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.koinInject
 
 @Composable
 fun SettingPage(
     vm: SettingVM = koinViewModel(),
-    appStorageRepository: AppStorageRepository = koinInject(),
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val storageSnapshot by appStorageRepository.observeSnapshot()
-        .collectAsStateWithLifecycle(initialValue = AppStorageSnapshot())
     val lazyListState = rememberLazyListState()
     val mainSettingItemPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp)
     
@@ -143,44 +131,15 @@ fun SettingPage(
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_general_settings)
                 ) {
-                    var colorMode by rememberColorMode()
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_color_mode),
-                        icon = { Icon(Icons.Rounded.InvertColors, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        trailing = {
-                            Select(
-                                options = ColorMode.entries,
-                                selectedOption = colorMode,
-                                onOptionSelected = {
-                                    colorMode = it
-                                    navController.navigate(Screen.Setting) {
-                                        launchSingleTop = true
-                                        popUpTo(Screen.Setting) { inclusive = true }
-                                    }
-                                },
-                                optionToString = {
-                                    when (it) {
-                                        ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
-                                        ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
-                                        ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
-                                    }
-                                },
-                                modifier = Modifier.wrapContentWidth()
-                            )
-                        }
-                    )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_display_setting),
-                        subtitle = stringResource(R.string.setting_page_display_setting_desc),
-                        icon = { Icon(Icons.Rounded.DesktopWindows, null, modifier = Modifier.size(20.dp)) },
+                        icon = { Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingDisplay) }
                     )
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_assistant),
-                        subtitle = stringResource(R.string.setting_page_assistant_desc),
                         icon = { Icon(Icons.Rounded.Group, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Assistant) }
@@ -188,7 +147,6 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_prompt_injections),
-                        subtitle = stringResource(R.string.setting_page_prompt_injections_desc),
                         icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingPromptInjections) }
@@ -203,7 +161,6 @@ fun SettingPage(
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_default_model),
-                        subtitle = stringResource(R.string.setting_page_default_model_desc),
                         icon = { Icon(Icons.Rounded.AccountTree, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingModels) }
@@ -211,7 +168,6 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_providers),
-                        subtitle = stringResource(R.string.setting_page_providers_desc),
                         icon = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingProvider) }
@@ -219,7 +175,6 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),
-                        subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingMcp) }
@@ -227,7 +182,6 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_web_server),
-                        subtitle = stringResource(R.string.setting_page_web_server_desc),
                         icon = { Icon(Icons.Rounded.Language, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingWeb) }
@@ -235,10 +189,16 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_android_integration),
-                        subtitle = stringResource(R.string.setting_android_integration_desc),
                         icon = { Icon(Icons.Rounded.PhoneAndroid, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAndroidIntegration) }
+                    )
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.extensions_page_workspace),
+                        icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.Workspaces) }
                     )
                 }
             }
@@ -250,22 +210,12 @@ fun SettingPage(
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_data_backup),
-                        subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.Backup()) }
                     )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        subtitle = if (storageSnapshot.isScanning) {
-                            stringResource(R.string.setting_storage_scanning)
-                        } else {
-                            stringResource(
-                                R.string.setting_storage_summary,
-                                storageSnapshot.totalBytes.fileSizeToString(),
-                                storageSnapshot.chatBytes.fileSizeToString()
-                            )
-                        },
                         icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingChatStorage) }
@@ -280,7 +230,6 @@ fun SettingPage(
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_about),
-                        subtitle = stringResource(R.string.setting_page_about_desc),
                         icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingAbout) }
@@ -291,6 +240,14 @@ fun SettingPage(
                         title = stringResource(R.string.buy_me_a_coffee),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         contentPadding = mainSettingItemPadding,
+                        trailing = {
+                            Icon(
+                                Icons.Rounded.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         onClick = { 
                             context.openUrl("https://buymeacoffee.com/cocolalilal")
                         }
@@ -336,11 +293,6 @@ private fun ProviderConfigWarningCard(navController: NavHostController) {
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
                 )
             }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
         }
     }
 }
@@ -449,11 +401,6 @@ private fun UpdateAvailableBanner(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
                         }
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
                     }
                 }
                 

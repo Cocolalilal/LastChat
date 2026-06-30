@@ -1,11 +1,5 @@
 package me.rerere.search
 
-import android.util.Log
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -16,29 +10,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 private const val PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/search"
 private const val TAG = "PerplexitySearchService"
 
 object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOptions> {
     override val name: String = "Perplexity"
-
-    @Composable
-    override fun Description() {
-        val uriHandler = LocalUriHandler.current
-        TextButton(
-            onClick = {
-                uriHandler.openUri("https://www.perplexity.ai/settings/api")
-            }
-        ) {
-            Text(stringResource(R.string.click_to_get_api_key))
-        }
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(
@@ -76,20 +57,21 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
                 }
             }
 
-            Log.i(TAG, "search: $body")
+            println("$TAG search: $body")
 
-            val request = Request.Builder()
-                .url(PERPLEXITY_ENDPOINT)
-                .post(body.toString().toRequestBody())
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val responseBody = response.body.string().let {
-                    json.decodeFromString<PerplexityResponse>(it)
-                }
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = PERPLEXITY_ENDPOINT,
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Content-Type" to "application/json"
+                    ),
+                    body = body.toString().encodeToByteArray()
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val responseBody = json.decodeFromString<PerplexityResponse>(response.body.decodeToString())
 
                 val items = responseBody.results
                     .filter { !it.title.isNullOrBlank() && !it.url.isNullOrBlank() }
@@ -109,7 +91,7 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
                     )
                 )
             } else {
-                error("response failed #${response.code}: ${response.body?.string()}")
+                error("response failed #${response.statusCode}: ${response.body.decodeToString()}")
             }
         }
     }

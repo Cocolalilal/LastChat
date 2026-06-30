@@ -12,6 +12,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_STT_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
@@ -83,6 +84,9 @@ data class Settings(
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val selectedTTSVoiceId: Uuid = DEFAULT_SYSTEM_TTS_VOICE_ID,
     val ttsAutoplayMode: TtsAutoplayMode = TtsAutoplayMode.OFF,
+    val sttModelId: Uuid? = null,
+    val sttThinkingBudget: Int = 0,
+    val sttPrompt: String = DEFAULT_STT_PROMPT,
     val webServerEnabled: Boolean = false,
     val webServerPort: Int = 8080,
     val webServerJwtEnabled: Boolean = false,
@@ -230,6 +234,7 @@ data class DisplaySetting(
     val showAssistantBubbles: Boolean = true,
     val showTokenUsage: Boolean = false,
     val autoCloseThinking: Boolean = true,
+    val reasoningPreviewEnabled: Boolean = false,
     val showUpdates: Boolean = false,
     val checkForUpdates: Boolean = true,
     val showMessageJumper: Boolean = false,
@@ -243,13 +248,14 @@ data class DisplaySetting(
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = true,
     val rpStyleRules: List<RpStyleRule> = emptyList(),
-    val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
+        val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
     val showContextStacks: Boolean = false,
     val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.GREETING,
     val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS,
     val newChatShowAvatar: Boolean = true,
     val chatToolbarAtBottom: Boolean = false,
+    val sttReplaceModelIcon: Boolean = false,
 )
 
 internal fun DisplaySetting.normalizeFontSettings(): DisplaySetting {
@@ -505,8 +511,6 @@ internal fun Settings.ensureBuiltInProviders(): Settings {
             provider.copyProvider(
                 id = defaultProvider.id,
                 builtIn = defaultProvider.builtIn,
-                description = defaultProvider.description,
-                shortDescription = defaultProvider.shortDescription,
             )
         } ?: provider
     }
@@ -609,6 +613,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         avatar = Avatar.Resource(R.drawable.default_generical_pfp),
         temperature = 0.6f,
         uiSettings = me.rerere.rikkahub.data.model.AssistantUISettings(newChatShowAvatar = false),
+        enableTimeAwareness = true,
         systemPrompt = """
             You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
 
@@ -616,7 +621,6 @@ internal val DEFAULT_ASSISTANTS = listOf(
             - You are currently chatting to {{user}}
             - You are running on {{model_name}}
             - Date: {{cur_date}}
-            - Time: {{cur_time}}
 
             **Additional info:
             - The UI supports LaTeX rendering

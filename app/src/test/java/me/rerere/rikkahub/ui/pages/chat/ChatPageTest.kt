@@ -27,7 +27,41 @@ class ChatPageTest {
     }
 
     @Test
-    fun presetAssistantMessageKeepsStableTurnKeyInsteadOfPendingPlaceholderKey() {
+    fun assistantResponseTurnKeepsSameKeyFromPendingPlaceholderToRealReply() {
+        val userNode = MessageNode.of(UIMessage.user("Hello"))
+        val userGroup = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+            nodes = listOf(userNode),
+            role = me.rerere.ai.core.MessageRole.USER,
+        )
+        val pendingGroup = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+            nodes = listOf(MessageNode.of(UIMessage.assistant(""))),
+            role = me.rerere.ai.core.MessageRole.ASSISTANT,
+        )
+        val assistantNode = MessageNode.of(UIMessage.assistant("Thinking"))
+        val assistantGroup = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+            nodes = listOf(assistantNode),
+            role = me.rerere.ai.core.MessageRole.ASSISTANT,
+        )
+
+        val pendingKey = chatListTurnKey(
+            group = pendingGroup,
+            index = 1,
+            previousGroup = userGroup,
+            isPendingAssistantTurn = true,
+        )
+        val realReplyKey = chatListTurnKey(
+            group = assistantGroup,
+            index = 1,
+            previousGroup = userGroup,
+            isPendingAssistantTurn = false,
+        )
+
+        assertEquals("assistant_response:${userNode.id}", pendingKey)
+        assertEquals(pendingKey, realReplyKey)
+    }
+
+    @Test
+    fun presetAssistantMessageKeepsStableInitialTurnKey() {
         val node = MessageNode.of(UIMessage.assistant("Hey there"))
         val group = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
             nodes = listOf(node),
@@ -35,18 +69,20 @@ class ChatPageTest {
         )
 
         assertEquals(
-            "turn:${node.id}:0",
+            "assistant_initial:0",
             chatListTurnKey(
                 group = group,
                 index = 0,
+                previousGroup = null,
                 isPendingAssistantTurn = false,
             )
         )
         assertEquals(
-            PendingAssistantTurnKey,
+            "assistant_initial:0",
             chatListTurnKey(
                 group = group,
                 index = 0,
+                previousGroup = null,
                 isPendingAssistantTurn = true,
             )
         )

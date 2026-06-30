@@ -1,9 +1,9 @@
 package me.rerere.tts.controller
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -17,11 +17,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import me.rerere.common.platform.PlatformLog
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
-import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.android.TTSManager
 
 private const val TAG = "TtsController"
 
@@ -48,9 +49,9 @@ class TtsController(
     private var isPaused = false
 
     // 队列与缓存（基于稳定 ID）
-    private val queue: java.util.concurrent.ConcurrentLinkedQueue<TtsChunk> = java.util.concurrent.ConcurrentLinkedQueue()
+    private val queue = ArrayDeque<TtsChunk>()
     private val allChunks: MutableList<TtsChunk> = mutableListOf()
-    private val cache = java.util.concurrent.ConcurrentHashMap<TtsCacheKey, kotlinx.coroutines.Deferred<TTSResponse>>()
+    private val cache = mutableMapOf<TtsCacheKey, Deferred<TTSResponse>>()
     private var lastPrefetchedIndex: Int = -1
 
     // 行为参数
@@ -225,7 +226,7 @@ class TtsController(
     /** 跳过下一段（不打断当前正在播放） */
     fun skipNext() {
         if (queue.isNotEmpty()) {
-            queue.poll()
+            queue.removeFirstOrNull()
             _totalChunks.update { queue.size }
         }
     }
@@ -272,7 +273,7 @@ class TtsController(
                         continue
                     }
 
-                    val chunk = queue.poll() ?: break
+                    val chunk = queue.removeFirstOrNull() ?: break
 
                     // 更新状态（1-based）
                     _currentChunk.update { processedCount + 1 }
@@ -303,7 +304,7 @@ class TtsController(
                             } catch (e: Exception) {
                                 if (e is CancellationException) throw e
                                 lastError = e
-                                Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
+                                PlatformLog.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}: ${e.logSummary()}")
                                 
                                 if (attempt < maxRetries) {
                                     // Exponential backoff: 500ms, 1s, 2s, 4s, 8s
@@ -315,14 +316,14 @@ class TtsController(
                         // If still no response after max retries, wait longer and try again
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
-                            Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
+                            PlatformLog.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
                             delay(5000L) // Wait 5 seconds before retrying the whole loop
                             
                             // After too many overall attempts, give up on this chunk
                             if (totalAttempts >= 15) {
                                 val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
+                                PlatformLog.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: ${lastError?.logSummary() ?: errorMsg}")
                                 _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
                                 break
                             }
@@ -344,9 +345,9 @@ class TtsController(
                             break
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
-                            Log.w(TAG, "Playback attempt $attempt failed", e)
+                            PlatformLog.w(TAG, "Playback attempt $attempt failed: ${e.logSummary()}")
                             if (attempt == 3) {
-                                Log.e(TAG, "All playback retries failed", e)
+                                PlatformLog.e(TAG, "All playback retries failed: ${e.logSummary()}")
                                 _error.update { e.message ?: "Audio playback error" }
                             } else {
                                 delay(500)
@@ -375,17 +376,13 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            getOrCreateCachedSynthesis(chunk, provider)
         }
         lastPrefetchedIndex = endExclusive - 1
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-        }
+        val deferred = getOrCreateCachedSynthesis(chunk, provider)
         return try {
             deferred.await()
         } finally {
@@ -405,7 +402,7 @@ class TtsController(
                         continue
                     }
 
-                    val chunk = queue.poll() ?: break
+                    val chunk = queue.removeFirstOrNull() ?: break
 
                     _currentChunk.update { processedCount + 1 }
                     _totalChunks.update { queue.size + 1 }
@@ -434,7 +431,7 @@ class TtsController(
                             } catch (e: Exception) {
                                 if (e is CancellationException) throw e
                                 lastError = e
-                                Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
+                                PlatformLog.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}: ${e.logSummary()}")
                                 
                                 if (attempt < maxRetries) {
                                     delay((500L * (1 shl (attempt - 1))).coerceAtMost(8000L))
@@ -444,13 +441,13 @@ class TtsController(
                         
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
-                            Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
+                            PlatformLog.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
                             delay(5000L)
                             
                             if (totalAttempts >= 15) {
                                 val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
+                                PlatformLog.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: ${lastError?.logSummary() ?: errorMsg}")
                                 _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
                                 break
                             }
@@ -471,9 +468,9 @@ class TtsController(
                             break
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
-                            Log.w(TAG, "Playback attempt $attempt failed", e)
+                            PlatformLog.w(TAG, "Playback attempt $attempt failed: ${e.logSummary()}")
                             if (attempt == 3) {
-                                Log.e(TAG, "All playback retries failed", e)
+                                PlatformLog.e(TAG, "All playback retries failed: ${e.logSummary()}")
                                 _error.update { e.message ?: "Audio playback error" }
                             } else {
                                 delay(500)
@@ -500,11 +497,18 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(TtsCacheKey(chunk.text, provider)) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            getOrCreateCachedSynthesis(chunk, provider)
         }
         lastPrefetchedIndex = endExclusive - 1
+    }
+
+    private fun getOrCreateCachedSynthesis(
+        chunk: TtsChunk,
+        provider: TTSProviderSetting,
+    ): Deferred<TTSResponse> {
+        return cache.getOrPut(TtsCacheKey(chunk.text, provider)) {
+            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
+        }
     }
     // endregion
 }
@@ -513,3 +517,9 @@ private data class TtsCacheKey(
     val text: String,
     val provider: TTSProviderSetting,
 )
+
+private fun Throwable.logSummary(): String {
+    val type = this::class.simpleName ?: "Throwable"
+    val message = this.message
+    return if (message.isNullOrBlank()) type else "$type: $message"
+}

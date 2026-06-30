@@ -1,0 +1,423 @@
+<svg fill="currentColor" fill-rule="evenodd" height="56" viewBox="0 0 24 24" width="56" xmlns="http://www.w3.org/2000/svg" style="flex: 0 0 auto; line-height: 1;">
+	    
+	    <symbol  viewBox="0 0 108.472 20">
+	        <title >NVIDIA Home</title>
+	        <desc>NVIDIA Home</desc>
+	        <path 
+		d="M1072.628,253.918v-.3h.192c.105,0,.248.008.248.136s-.073.163-.2.163h-.243m0,.211h.129l.3.524h.327l-.33-.545a.3.3,0,0,0,.311-.323c0-.285-.2-.377-.53-.377h-.482v1.245h.276v-.524m1.4-.1a1.2,1.2,0,1,0-1.2,1.157,1.14,1.14,0,0,0,1.2-1.157m-.347,0a.854.854,0,0,1-.855.891v0a.889.889,0,1,1,.855-.887Z"
+		transform="translate(-965.557 -237.878)" />
+	        <path 
+		d="M463.9,151.934v13.127h3.707V151.934Zm-29.164-.018v13.145h3.74v-10.2l2.918.01a2.674,2.674,0,0,1,2.086.724c.586.625.826,1.632.826,3.476v5.995h3.624V157.8c0-5.183-3.3-5.882-6.536-5.882Zm35.134.018v13.127h6.013c3.2,0,4.249-.533,5.38-1.727a7.352,7.352,0,0,0,1.316-4.692,7.789,7.789,0,0,0-1.2-4.516c-1.373-1.833-3.352-2.191-6.306-2.191Zm3.677,2.858h1.594c2.312,0,3.808,1.039,3.808,3.733s-1.5,3.734-3.808,3.734h-1.594Zm-14.992-2.858-3.094,10.4-2.965-10.4h-4l4.234,13.127h5.343l4.267-13.127Zm25.749,13.127h3.708V151.935h-3.709ZM494.7,151.939l-5.177,13.117h3.656l.819-2.318h6.126l.775,2.318h3.969l-5.216-13.118Zm2.407,2.393,2.246,6.145h-4.562Z"
+		transform="translate(-399.551 -148.155)" />
+	        <path  data-name="Eye Mark"
+		d="M129.832,124.085v-1.807c.175-.013.353-.022.533-.028,4.941-.155,8.183,4.246,8.183,4.246s-3.5,4.863-7.255,4.863a4.553,4.553,0,0,1-1.461-.234v-5.478c1.924.232,2.31,1.082,3.467,3.01l2.572-2.169a6.81,6.81,0,0,0-5.042-2.462,9.328,9.328,0,0,0-1,.059m0-5.968v2.7c.177-.014.355-.025.533-.032,6.871-.232,11.348,5.635,11.348,5.635s-5.142,6.253-10.5,6.253a7.906,7.906,0,0,1-1.383-.122v1.668a9.1,9.1,0,0,0,1.151.075c4.985,0,8.59-2.546,12.081-5.559.578.463,2.948,1.591,3.435,2.085-3.319,2.778-11.055,5.018-15.44,5.018-.423,0-.829-.026-1.228-.064v2.344h18.947v-20Zm0,13.009v1.424c-4.611-.822-5.89-5.615-5.89-5.615a9.967,9.967,0,0,1,5.89-2.85v1.563h-.007a4.424,4.424,0,0,0-3.437,1.571s.845,3.035,3.444,3.908m-8.189-4.4a11.419,11.419,0,0,1,8.189-4.449v-1.463c-6.043.485-11.277,5.6-11.277,5.6s2.964,8.569,11.277,9.354v-1.555C123.731,133.451,121.643,126.728,121.643,126.728Z"
+		transform="translate(-118.555 -118.117)"  />
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Menu</title>
+	        <desc>Menu icon</desc>
+	        <defs>
+	<style>
+.n24-icon-menu-bg {
+	opacity: 0;
+}
+
+.n24-icon-menu-stroke {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g  >
+	<path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" /></g>
+	            <line  x1="4.5" y1="7.5"
+		x2="19.5" y2="7.5" />
+	            <line  x1="4.5" y1="12"
+		x2="19.5" y2="12" />
+	            <line  x1="4.5" y1="16.5"
+		x2="19.5" y2="16.5" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Menu</title>
+	        <desc>Menu icon</desc>
+	        <defs>
+	<style>
+.n32-icon-menu-cls-1, .n32-icon-menu-cls-3, .n32-icon-menu-cls-4 {
+	fill: none;
+}
+
+.n32-icon-menu-cls-1, .n32-icon-menu-cls-4 {
+	stroke: #666;
+	stroke-width: 2px;
+}
+
+.n32-icon-menu-cls-1 {
+	stroke-miterlimit: 10;
+}
+
+.n32-icon-menu-cls-2 {
+	opacity: 0;
+}
+</style></defs>
+	        <line  data-name="Line 3b"
+		 x1="16" y1="23" x2="24" y2="23" />
+	        <line  data-name="Line 3a"
+		 x1="8" y1="23" x2="16" y2="23" />
+	        <line  data-name="Line 2b"
+		 x1="16" y1="16" x2="24" y2="16" />
+	        <line  data-name="Line 2a"
+		 x1="8" y1="16" x2="16" y2="16" />
+	        <line  data-name="Line 1b"
+		 x1="16" y1="9" x2="24" y2="9" />
+	        <line  data-name="Line 1a"
+		 x1="8" y1="9" x2="16" y2="9" />
+	        <g  >
+	            <rect  width="32" height="32" />
+	            <rect  x="1" y="1" width="30"
+		height="30" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Close</title>
+	        <desc>Close icon</desc>
+	        <defs>
+	<style>
+.n24-icon-close-small-cls-1 {
+	opacity: 0;
+}
+
+.n24-icon-close-small-cls-2 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g >
+	                <g >
+	                    <path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" />
+	                </g>
+	            </g>
+	            <line  x1="7.50005"
+		y1="7.50002" x2="16.50005" y2="16.50002" />
+	            <line  x1="7.50005"
+		y1="16.50002" x2="16.50005" y2="7.50002" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Close</title>
+	        <desc>Close icon</desc>
+	        <defs>
+	<style>
+.n24-icon-close-cls-1 {
+	opacity: 0;
+}
+
+.n24-icon-close-cls-2 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g >
+	                <g >
+	                    <path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" />
+	                </g>
+	            </g>
+	            <line  x1="4.5" y1="4.5"
+		x2="19.5" y2="19.5" />
+	            <line  x1="4.5" y1="19.5"
+		x2="19.5" y2="4.5" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Close</title>
+	        <desc>Close icon</desc>
+	        <defs>
+	<style>
+.close-icon {
+	fill: #666;
+	fill-rule: evenodd;
+}
+</style></defs>
+	        <path  data-name="Close icon path"
+		
+		d="M25,8.82,23.18,7,16,14.18,8.82,7,7,8.82,14.18,16,7,23.18,8.82,25,16,17.82,23.18,25,25,23.18,17.82,16Z" />
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Caret down icon</title>
+	        <desc>Accordion is closed, click to open.</desc>
+	        <defs>
+	<style>
+.n24-icon-caret-down-cls-1 {
+	opacity: 0;
+}
+
+.n24-icon-caret-down-cls-2 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g >
+	                <g >
+	                    <path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" />
+	                </g>
+	            </g>
+	            <polyline 
+		points="4.5 8.25 12 15.75 19.5 8.25" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Caret down icon</title>
+	        <desc>Accordion is closed, click to open.</desc>
+	        <path  data-name="Line 1"
+		d="M1,0,8,7,1,14" transform="translate(22.5 11.5) rotate(90)"
+		  stroke-width="2" />
+	        <g   
+		stroke-width="2" opacity="0">
+	            <rect width="32" height="32"  />
+	            <rect x="1" y="1" width="30" height="30"  />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Caret up icon</title>
+	        <desc>Accordion is open, click to close.</desc>
+	        <path  data-name="Line 1"
+		d="M1,0,8,7,1,14" transform="translate(8.5 20.5) rotate(-90)"
+		  stroke-width="2" />
+	        <g   
+		stroke-width="2" opacity="0">
+	            <rect width="32" height="32"  />
+	            <rect x="1" y="1" width="30" height="30"  />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Caret right icon</title>
+	        <desc>Click to expand</desc>
+	        <defs>
+	<style>
+.n24-icon-caret-right-small-cls-1 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+
+.n24-icon-caret-right-small-cls-2 {
+	opacity: 0;
+}
+</style></defs>
+	        <g >
+	            <g >
+	                <path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" />
+	            </g>
+	            <polyline 
+		points="9.75 16.5 14.25 12 9.75 7.5" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Caret right icon</title>
+	        <desc>Click to expand</desc>
+	        <defs>
+	<style>
+.n24-icon-caret-right-bg {
+	opacity: 0;
+}
+
+.n24-icon-caret-right-stroke {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g 
+		>
+	<path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" /></g>
+	            <polyline 
+		points="8.25 19.5 15.75 12 8.25 4.5" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Caret right icon</title>
+	        <desc>Click to expand menu.</desc>
+	        <g   
+		stroke-width="2" opacity="0">
+	            <rect width="32" height="32"  />
+	            <rect x="1" y="1" width="30" height="30"  />
+	        </g>
+	        <path  d="M1,0,8,7,1,14"
+		transform="translate(11.5 9)"  
+		stroke-width="2" />
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Caret left icon</title>
+	        <desc>Click to collapse menu.</desc>
+	        <defs>
+	<style>
+.n24-caret-left-small-cls-1 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+
+.n24-caret-left-small-cls-2 {
+	opacity: 0;
+}
+</style></defs>
+	        <g >
+	            <polyline 
+		points="14.25 7.5 9.75 12 14.25 16.5" />
+	            <g >
+	                <path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" />
+	            </g>
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <title>Caret left icon</title>
+	        <desc>Click to collapse menu.</desc>
+	        <defs>
+	<style>
+.n24-icon-caret-left-bg {
+	opacity: 0;
+}
+
+.n24-icon-caret-left-stroke {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g  >
+	<path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" /></g>
+	            <polyline 
+		points="15.75 4.5 8.25 12 15.75 19.5" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 32 32">
+	        <title>Caret left icon</title>
+	        <desc>Click to collapse menu.</desc>
+	        <path  data-name="line 1"
+		d="M1,0,8,7,1,14" transform="translate(20.5 23) rotate(180)"
+		  stroke-width="2" />
+	        <g   
+		stroke-width="2" opacity="0">
+	            <rect width="32" height="32"  />
+	            <rect x="1" y="1" width="30" height="30"  />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	    	<title >Shopping Cart</title>
+	        <desc>Click to see cart items</desc>
+	        <defs>
+	<style>
+.n24-icon-cart-bg {
+	opacity: 0;
+}
+
+.n24-icon-cart-stroke {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g  >
+	<path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" /></g>
+	            <polyline 
+		points="1.5 3.75 4.894 3.75 7.707 14.25 16.5 14.25" />
+	            <circle  cx="8.25"
+		cy="18.75001" r="1.5" />
+	            <circle  cx="15.75"
+		cy="18.75001" r="1.5" />
+	            <polyline 
+		points="5.295 5.25 18.714 5.25 17.142 11.25 6.903 11.25" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	    	<title >Search icon</title>
+	        <desc>Click to search</desc>
+	        <defs>
+	<style>
+.n24-icon-search-bg {
+	opacity: 0;
+}
+
+.n24-icon-search-fill {
+	fill: #666;
+}
+
+.n24-icon-search-stroke {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+</style></defs>
+	        <g >
+	            <g  >
+	<path d="M22.5,1.5v21H1.5V1.5h21M24,0H0V24H24V0Z" /></g>
+	            <path 
+		d="M9.9,4.05A5.85,5.85,0,1,1,4.05,9.9,5.8566,5.8566,0,0,1,9.9,4.05m0-1.5A7.35,7.35,0,1,0,17.25,9.9,7.35,7.35,0,0,0,9.9,2.55Z" />
+	            <line  x1="15" y1="15"
+		x2="19.875" y2="19.875" />
+	        </g>
+	    </symbol>
+	    
+	    <symbol  viewBox="0 0 24 24">
+	        <defs>
+	<style>
+.n24-user-circle-cls-1 {
+	fill: none;
+	stroke: #666;
+	stroke-miterlimit: 10;
+	stroke-width: 1.5px;
+}
+
+.n24-bounds {
+	fill: none;
+}
+</style></defs>
+	        <rect  
+		width="24" height="24" />
+	        <g >
+	            <circle  
+		cx="12" cy="12" r="9.75" />
+	            <polyline  
+		points="17.55 20.01 16.34 15.48 7.66 15.48 6.45 20.01" />
+	            <circle  
+		cx="12" cy="9.91" r="3.48" />
+	        </g>
+	    </symbol>
+	    
+	</svg>

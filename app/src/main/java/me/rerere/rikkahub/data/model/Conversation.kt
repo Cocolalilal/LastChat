@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.InstantSerializer
+import me.rerere.rikkahub.utils.InstantSerializer
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -35,6 +35,7 @@ data class Conversation(
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
     val enabledModeIds: Set<Uuid> = emptySet(), // Per-chat enabled modes
+    val enabledLorebookIds: Set<Uuid>? = null, // Null inherits assistant defaults; non-null is a per-chat override
     @Serializable(with = InstantSerializer::class)
     val createAt: Instant = Instant.now(),
     @Serializable(with = InstantSerializer::class)
@@ -184,6 +185,16 @@ data class MessageNode(
     }
 
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
+    
+    @kotlinx.serialization.Transient
+    val cachedVersionSelectionIndices: List<Int> by lazy {
+        if (messages.isEmpty()) return@lazy emptyList()
+        val latestIndexByTag = linkedMapOf<String?, Int>()
+        messages.forEachIndexed { index, message ->
+            latestIndexByTag[message.versionTag] = index
+        }
+        latestIndexByTag.values.toList()
+    }
 
     companion object {
         fun of(
@@ -211,13 +222,7 @@ fun UIMessage.toMessageNode(): MessageNode {
  * The selector should treat those as one version and point at the latest snapshot for that tag.
  */
 fun MessageNode.versionSelectionIndices(): List<Int> {
-    if (messages.isEmpty()) return emptyList()
-
-    val latestIndexByTag = linkedMapOf<String?, Int>()
-    messages.forEachIndexed { index, message ->
-        latestIndexByTag[message.versionTag] = index
-    }
-    return latestIndexByTag.values.toList()
+    return this.cachedVersionSelectionIndices
 }
 
 fun MessageNode.versionSelectionPosition(selectedIndex: Int = selectIndex): Int {

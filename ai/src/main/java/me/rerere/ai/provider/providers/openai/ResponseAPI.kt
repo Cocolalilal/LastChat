@@ -1,9 +1,12 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import me.rerere.common.platform.PlatformLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -21,8 +24,10 @@ import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
@@ -31,29 +36,24 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.extractReasoningSummaryTitle
-import me.rerere.ai.util.configureClientWithProxy
-import me.rerere.ai.util.configureReferHeaders
-import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
-import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
+import me.rerere.common.http.urlHostOrNull
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.common.platform.PlatformMediaEncoder
 import kotlin.time.Clock
 
 private const val TAG = "ResponseAPI"
 
-class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
+class ResponseAPI(
+    private val httpClient: PlatformHttpClient,
+    private val mediaEncoder: PlatformMediaEncoder,
+) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -63,25 +63,30 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = false,
+            providerSetting = providerSetting,
         )
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/responses")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        val encodedRequestBody = json.encodeToString(requestBody)
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
-        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/responses",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withAuthAndJson(providerSetting.apiKey),
+                body = encodedRequestBody.encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy()
+            )
+        )
+        val bodyStr = response.body.decodeToString()
+        if (response.statusCode !in 200..299) {
+            throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
         }
 
-        val bodyStr = response.body?.string() ?: ""
-        Log.i(TAG, "generateText: $bodyStr")
+        PlatformLog.i(TAG, "generateText: $bodyStr")
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val output = parseResponseOutput(bodyJson)
 
@@ -97,70 +102,55 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = true,
+            providerSetting = providerSetting,
         )
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/responses")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        val encodedRequestBody = json.encodeToString(requestBody)
+        val request = PlatformHttpRequest(
+            method = "POST",
+            url = "${providerSetting.baseUrl}/responses",
+            headers = params.customHeaders.toHeaderMap()
+                .withReferHeaders(providerSetting.baseUrl)
+                .withAuthAndJson(providerSetting.apiKey),
+            body = encodedRequestBody.encodeToByteArray(),
+            mediaType = "application/json",
+            proxy = providerSetting.proxy.toPlatformProxy()
+        )
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
-                val json = json.parseToJsonElement(data).jsonObject
-                val chunk = parseResponseDelta(json)
-                if (chunk != null) {
-                    trySend(chunk)
-                }
-                if (type == "response.completed") {
-                    close()
-                }
-            }
-
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+        val job = launch {
+            httpClient.streamEvents(request).collect { event ->
+                when (event) {
+                    is PlatformServerEvent.Open -> Unit
+                    PlatformServerEvent.Closed -> close()
+                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    is PlatformServerEvent.Event -> {
+                        PlatformLog.d(TAG, "onEvent: ${event.id}/${event.event} ${event.data}")
+                        if (event.data.isNotBlank()) {
+                            val eventJson = json.parseToJsonElement(event.data).jsonObject
+                            val chunk = parseResponseDelta(eventJson)
+                            if (chunk != null) {
+                                trySend(chunk)
+                            }
+                        }
+                        if (event.event == "response.completed") {
+                            close()
+                        }
                     }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                } finally {
-                    close(exception)
                 }
-            }
-
-            override fun onClosed(eventSource: EventSource) {
-                close()
             }
         }
 
-        val eventSource =
-            EventSources.createFactory(client.configureClientWithProxy(providerSetting.proxy))
-                .newEventSource(request, listener)
-
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            job.cancel()
+        }
+    }.retryWhen { cause, attempt ->
+        if (attempt < 3 && cause.message?.contains("429") == true) {
+            PlatformLog.w(TAG, "streamText: Rate limit (429) hit. Retrying attempt ${attempt + 1}...")
+            kotlinx.coroutines.delay(1000L * (attempt + 1))
+            true
+        } else {
+            false
         }
     }
 
@@ -169,9 +159,28 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         params: TextGenerationParams,
         stream: Boolean
     ): JsonObject {
+        return buildRequestBody(
+            messages = messages,
+            params = params,
+            stream = stream,
+            providerSetting = null,
+        )
+    }
+
+    private fun buildRequestBody(
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean,
+        providerSetting: ProviderSetting.OpenAI?,
+    ): JsonObject {
         return buildJsonObject {
             put("model", params.model.modelId)
             put("stream", stream)
+            if (providerSetting?.baseUrl?.contains("api.openai.com", ignoreCase = true) == true &&
+                !params.sessionId.isNullOrBlank()
+            ) {
+                put("prompt_cache_key", params.sessionId)
+            }
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
@@ -288,7 +297,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
                 is UIMessagePart.Image -> {
                     add(buildJsonObject {
-                        part.encodeBase64().onSuccess {
+                        mediaEncoder.encodeImage(part.url).onSuccess {
                             put(
                                 "type",
                                 if (message.role == MessageRole.USER) "input_image" else "output_image"
@@ -300,6 +309,25 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
                             put("type", "input_text")
                             put("text", "Error: Failed to encode image to base64")
+                        }
+                    })
+                }
+
+                is UIMessagePart.Audio -> {
+                    add(buildJsonObject {
+                        mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
+                            val format = if (part.url.endsWith(".wav") || part.url.startsWith("data:audio/wav")) "wav" else "mp3"
+                            put("type", "input_audio")
+                            put("input_audio", buildJsonObject {
+                                put("data", base64Data)
+                                put("format", format)
+                            })
+                        }.onFailure {
+                            it.printStackTrace()
+                            println("encode audio failed: ${part.url}")
+
+                            put("type", "input_text")
+                            put("text", "Error: Failed to encode audio to base64")
                         }
                     })
                 }
@@ -546,18 +574,87 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         if (jsonObject == null) return null
         val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheReadTokens = jsonObject["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cacheCreationTokens = jsonObject["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val effectivePromptTokens = promptTokens + cacheReadTokens + cacheCreationTokens
+        val inputTokensDetails = jsonObject["input_tokens_details"]?.jsonObjectOrNull
+        val promptTokensDetails = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull
+        val cacheReadTokens = inputTokensDetails?.firstPositiveIntOrNull(
+            "cached_tokens",
+            "cache_read_input_tokens",
+            "cache_read_tokens",
+            "prompt_cache_hit_tokens"
+        )
+            ?: promptTokensDetails?.firstPositiveIntOrNull(
+                "cached_tokens",
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+                "cached_tokens",
+                "prompt_cache_hit_tokens"
+            )
+            ?: 0
+        val cacheCreationTokens = inputTokensDetails?.firstPositiveIntOrNull(
+            "cache_creation_input_tokens",
+            "cache_creation_tokens",
+            "cache_write_tokens"
+        )
+            ?: promptTokensDetails?.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: jsonObject.firstPositiveIntOrNull(
+                "cache_creation_input_tokens",
+                "cache_creation_tokens",
+                "cache_write_tokens"
+            )
+            ?: 0
+        val cacheMissTokens = inputTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: promptTokensDetails?.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: jsonObject.firstPositiveIntOrNull("prompt_cache_miss_tokens")
+            ?: 0
+        val effectivePromptTokens = if (promptTokens > 0) {
+            promptTokens + cacheReadTokens + cacheCreationTokens
+        } else {
+            cacheReadTokens + cacheMissTokens + cacheCreationTokens
+        }
         return TokenUsage(
             promptTokens = effectivePromptTokens,
             completionTokens = completionTokens,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull
                 ?: (effectivePromptTokens + completionTokens),
-            cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: cacheReadTokens
+            cachedTokens = cacheReadTokens
         )
+    }
+
+    private fun JsonObject.firstPositiveIntOrNull(vararg keys: String): Int? {
+        for (key in keys) {
+            val value = this[key]?.jsonPrimitive?.intOrNull
+            if (value != null && value > 0) return value
+        }
+        return null
+    }
+
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val bodySnippet = event.body?.takeIf { it.isNotBlank() }?.take(500)
+        val fallback = RuntimeException(
+            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}" +
+                (bodySnippet?.let { " (body: $it)" } ?: "")
+        )
+        val bodyRaw = event.body
+        return try {
+            if (!bodyRaw.isNullOrBlank()) {
+                val bodyElement = Json.parseToJsonElement(bodyRaw)
+                bodyElement.parseErrorDetail()
+            } else {
+                fallback
+            }
+        } catch (e: Throwable) {
+            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
+            fallback
+        }
     }
 }
 
@@ -567,14 +664,48 @@ private fun isModelAllowTemperature(model: Model): Boolean {
 
 private fun logWarning(message: String) {
     runCatching {
-        Log.w(TAG, message)
+        PlatformLog.w(TAG, message)
     }.onFailure {
         println(message)
     }
 }
 
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Audio }.size
     val texts = filter { it is UIMessagePart.Text }.size
     return gonnaSend == texts && texts == 1
+}
+
+private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
+    return filter { it.name.isNotBlank() }.associate { it.name to it.value }
+}
+
+private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, String> {
+    return this + mapOf(
+        "Authorization" to "Bearer $apiKey",
+        "Content-Type" to "application/json"
+    )
+}
+
+private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
+    return when (baseUrl.urlHostOrNull()) {
+        "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
+        "openrouter.ai" -> this + mapOf(
+            "X-Title" to "LastChat",
+            "HTTP-Referer" to "https://github.com/Cocolalilal/LastChat"
+        )
+        else -> this
+    }
+}
+
+private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
+    return when (this) {
+        ProviderProxy.None -> null
+        is ProviderProxy.Http -> PlatformHttpProxy(
+            host = address,
+            port = port,
+            username = username,
+            password = password
+        )
+    }
 }

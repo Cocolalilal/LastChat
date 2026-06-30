@@ -20,10 +20,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
-import java.io.ByteArrayOutputStream
+import okio.Buffer
+import okio.buffer
+import okio.sink
+import org.koin.core.context.GlobalContext
 import java.io.File
 import java.io.InputStream
 import kotlin.io.encoding.Base64
@@ -86,8 +91,8 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
     when {
         image.startsWith("data:image") -> {
             val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
-            val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
-            exportImage(this@saveMessageImage.getActivity()!!, bitmap)
+            val bitmap = decodeBitmapWithBounds(byteArray, 2048, 2048)
+            bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
         }
 
         image.startsWith("file:") -> {
@@ -121,7 +126,7 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
                     @Suppress("DEPRECATION")
                     val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
                     val destFile = java.io.File(imagesDir, fileName)
-                    java.io.FileOutputStream(destFile).use { outputStream ->
+                    destFile.sink().buffer().outputStream().use { outputStream ->
                         inputStream.copyTo(outputStream)
                     }
                     // Notify media scanner
@@ -136,17 +141,21 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
 
         image.startsWith("http") -> {
             kotlin.runCatching { // Use runCatching to handle potential network exceptions
-                val url = java.net.URL(image)
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.connect()
+                val client = GlobalContext.get().get<PlatformHttpClient>()
+                val response = client.execute(
+                    PlatformHttpRequest(
+                        method = "GET",
+                        url = image,
+                    )
+                )
 
-                if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
-                    val bitmap = BitmapFactory.decodeStream(connection.inputStream)
-                    exportImage(this@saveMessageImage.getActivity()!!, bitmap)
+                if (response.statusCode == 200) {
+                    val bitmap = decodeBitmapWithBounds(response.body, 2048, 2048)
+                    bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
                 } else {
                     Log.e(
                         TAG,
-                        "saveMessageImage: Failed to download image from $image, response code: ${connection.responseCode}"
+                        "saveMessageImage: Failed to download image from $image, response code: ${response.statusCode}"
                     )
                     null // Return null on failure
                 }
@@ -175,7 +184,7 @@ fun Context.createChatFilesByContents(uris: List<Uri>): List<Uri> {
         val newUri = file.toUri()
         runCatching {
             openUriInputStream(uri)?.use { inputStream ->
-                file.outputStream().use { outputStream ->
+                file.sink().buffer().outputStream().use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
             } ?: error("Unable to open input stream for $uri")
@@ -201,7 +210,7 @@ fun Context.createChatFilesByByteArrays(byteArrays: List<ByteArray>): List<Uri> 
             file.createNewFile()
         }
         val newUri = file.toUri()
-        file.outputStream().use { outputStream ->
+        file.sink().buffer().outputStream().use { outputStream ->
             outputStream.write(byteArray)
         }
         newUris.add(newUri)
@@ -221,7 +230,9 @@ fun Context.createChatTextFile(fileName: String, content: String): Uri {
     val baseName = fileName.substringBeforeLast('.', fileName)
     val safeBaseName = sanitizeUploadBaseName(baseName)
     val targetFile = dir.resolve("${safeBaseName}-${Uuid.random()}.$extension")
-    targetFile.writeText(content)
+    targetFile.sink().buffer().use { output ->
+        output.writeUtf8(content)
+    }
     return targetFile.toUri()
 }
 
@@ -285,16 +296,18 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
                         if (part.url.startsWith("data:image")) {
                             // base64 image
                             val sourceByteArray = Base64.decode(part.url.substringAfter("base64,").toByteArray())
-                            val bitmap = BitmapFactory.decodeByteArray(sourceByteArray, 0, sourceByteArray.size)
-                            val byteArray = bitmap.compress()
-                            val urls = createChatFilesByByteArrays(listOf(byteArray))
-                            Log.i(
-                                TAG,
-                                "convertBase64ImagePartToLocalFile: convert base64 img to ${urls.joinToString(", ")}"
-                            )
-                            part.copy(
-                                url = urls.first().toString(),
-                            )
+                            val bitmap = decodeBitmapWithBounds(sourceByteArray, 2048, 2048)
+                            val byteArray = bitmap?.compress()
+                            if (byteArray == null) part else {
+                                val urls = createChatFilesByByteArrays(listOf(byteArray))
+                                Log.i(
+                                    TAG,
+                                    "convertBase64ImagePartToLocalFile: convert base64 img to ${urls.joinToString(", ")}"
+                                )
+                                part.copy(
+                                    url = urls.first().toString(),
+                                )
+                            }
                         } else {
                             part
                         }
@@ -306,9 +319,12 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
         )
     }
 
-fun Bitmap.compress(): ByteArray = ByteArrayOutputStream().use {
-    compress(Bitmap.CompressFormat.PNG, 100, it)
-    it.toByteArray()
+fun Bitmap.compress(): ByteArray {
+    val buffer = Buffer()
+    buffer.outputStream().use {
+        compress(Bitmap.CompressFormat.PNG, 100, it)
+    }
+    return buffer.readByteArray()
 }
 
 suspend fun Context.deleteChatFiles(uris: List<Uri>) = withContext(Dispatchers.IO) {
@@ -356,7 +372,9 @@ fun Context.createImageFileFromBase64(base64Data: String, filePath: String): Fil
     val byteArray = Base64.decode(data.toByteArray())
     val file = File(filePath)
     file.parentFile?.mkdirs()
-    file.writeBytes(byteArray)
+    file.sink().buffer().use { output ->
+        output.write(byteArray)
+    }
     return file
 }
 
@@ -401,4 +419,24 @@ private fun sanitizeUploadBaseName(rawName: String?): String {
         ?.trim('-', '.', '_')
         ?.take(48)
     return cleaned?.takeIf { it.isNotBlank() } ?: "upload"
+}
+
+private fun decodeBitmapWithBounds(data: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(data, 0, data.size, options)
+    options.inJustDecodeBounds = false
+    options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxWidth, maxHeight)
+    return BitmapFactory.decodeByteArray(data, 0, data.size, options)
+}
+
+private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+    var inSampleSize = 1
+    if (srcHeight > reqHeight || srcWidth > reqWidth) {
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+            inSampleSize *= 2
+        }
+    }
+    return inSampleSize
 }

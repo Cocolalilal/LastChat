@@ -43,6 +43,7 @@ jsoup = "1.21.2"
 zxing = "3.5.4"
 quickie-bundled = "1.11.0"
 sonner = "0.4.0"
+termux = "0.118.0"
 leakcanary = "2.14"
 workmanager = "2.11.0"
 reorderable = "3.0.0"
@@ -60,7 +61,6 @@ baselineprofile = "1.4.1"
 profileinstaller = "1.4.1"
 ktor = "3.3.2"
 glance = "1.1.1"
-chaquopy = "15.0.1"
 security-crypto = "1.1.0-alpha06"
 jmdns = "3.6.3"
 
@@ -166,9 +166,14 @@ ktor-server-status-pages = { module = "io.ktor:ktor-server-status-pages", versio
 jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 androidx-glance = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
+xz = { module = "org.tukaani:xz", version = "1.12" }
+termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version.ref = "termux" }
+termux-terminal-emulator = { module = "com.termux.termux-app:terminal-emulator", version.ref = "termux" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
@@ -177,4 +182,3 @@ google-services = { id = "com.google.gms.google-services", version.ref = "google
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebase-crashlytics" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineprofile" }
-chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
+import kotlinx.coroutines.CancellationException
 
 val LocalHighlighter = compositionLocalOf<Highlighter> { error("No Highlighter provided") }
 
@@ -52,17 +53,30 @@ fun HighlightText(
     val updatedLanguage by rememberUpdatedState(language)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedCode to updatedLanguage }.collect {
-            tokens = if (updatedCode.length <= MAX_CODE_LENGTH) {
-                highlighter.highlight(updatedCode, updatedLanguage)
+            val (codeSnapshot, languageSnapshot) = it
+            tokens = if (codeSnapshot.length <= MAX_CODE_LENGTH) {
+                try {
+                    highlighter.highlight(codeSnapshot, languageSnapshot)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    listOf(HighlightToken.Plain(content = codeSnapshot))
+                }
             } else {
                 listOf(
-                    HighlightToken.Plain(content = updatedCode)
+                    HighlightToken.Plain(content = codeSnapshot)
                 )
             }
-            annotatedString = buildAnnotatedString {
-                tokens.fastForEach { token ->
-                    buildHighlightText(token, colors)
+            annotatedString = try {
+                buildAnnotatedString {
+                    tokens.fastForEach { token ->
+                        buildHighlightText(token, colors)
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                AnnotatedString(codeSnapshot)
             }
         }
     }

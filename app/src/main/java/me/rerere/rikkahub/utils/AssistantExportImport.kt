@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -24,11 +23,13 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
+import okio.Buffer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.Inflater
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -77,7 +78,7 @@ object AssistantExportImport : KoinComponent {
             try {
                 val bytes = readUriBytes(context, url)
                 if (bytes != null) {
-                    avatarContent = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    avatarContent = base64Encode(bytes)
                     avatarMime = "image/*" // Simplified, can detect if needed
                 }
             } catch (e: Exception) {
@@ -169,7 +170,7 @@ object AssistantExportImport : KoinComponent {
             val file = File(context.filesDir, "avatars/$fileName") 
             file.parentFile?.mkdirs()
             try {
-                val bytes = Base64.decode(export.avatarContent, Base64.NO_WRAP)
+                val bytes = base64Decode(export.avatarContent)
                 file.writeBytes(bytes)
                 assistant = assistant.copy(avatar = Avatar.Image(url = Uri.fromFile(file).toString()))
             } catch (e: Exception) {
@@ -194,7 +195,7 @@ object AssistantExportImport : KoinComponent {
                             val fileName = "lb_${lorebook.id}_${System.currentTimeMillis()}_${att.fileName}"
                             val file = File(context.filesDir, "lorebook_attachments/$fileName")
                             file.parentFile?.mkdirs()
-                            file.writeBytes(Base64.decode(att.content, Base64.NO_WRAP))
+                            file.writeBytes(base64Decode(att.content))
                             ModeAttachment(
                                 url = Uri.fromFile(file).toString(),
                                 type = att.type,
@@ -327,7 +328,7 @@ object AssistantExportImport : KoinComponent {
              type = me.rerere.rikkahub.data.model.ModeAttachmentType.valueOf(typeName),
              fileName = fileName,
              mime = mime,
-             content = Base64.encodeToString(bytes, Base64.NO_WRAP)
+             content = base64Encode(bytes)
          )
     }
     
@@ -371,7 +372,7 @@ object AssistantExportImport : KoinComponent {
         val cardJson = exportToCharacterCardV2(assistant, context)
         
         // Base64 encode the JSON (as per spec)
-        val base64Data = Base64.encodeToString(cardJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val base64Data = base64Encode(cardJson.toByteArray(Charsets.UTF_8))
         
         // Embed the data into the PNG
         return embedTextChunkInPng(avatarBytes, "chara", base64Data)
@@ -408,11 +409,10 @@ object AssistantExportImport : KoinComponent {
         canvas.drawText(initial.toString(), size / 2f, yPos, textPaint)
         
         // Compress to PNG
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        val bytes = bitmap.toPngBytes()
         bitmap.recycle()
         
-        return stream.toByteArray()
+        return bytes
     }
     
     /**
@@ -428,11 +428,10 @@ object AssistantExportImport : KoinComponent {
                 drawable.setBounds(0, 0, size, size)
                 drawable.draw(canvas)
                 
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                val bytes = bitmap.toPngBytes()
                 bitmap.recycle()
                 
-                return stream.toByteArray()
+                return bytes
             }
         } catch (e: Exception) {
             // Resource not found or other error
@@ -469,11 +468,18 @@ object AssistantExportImport : KoinComponent {
         val yPos = (size / 2f) + (textBounds.height() / 2f)
         canvas.drawText(emoji, size / 2f, yPos, textPaint)
         
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        val bytes = bitmap.toPngBytes()
         bitmap.recycle()
         
-        return stream.toByteArray()
+        return bytes
+    }
+
+    private fun Bitmap.toPngBytes(): ByteArray {
+        val buffer = Buffer()
+        buffer.outputStream().use { output ->
+            compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        return buffer.readByteArray()
     }
     
     /**
@@ -585,7 +591,7 @@ object AssistantExportImport : KoinComponent {
                 // Look for 'chara' (Tavern) or 'ccv3' (V3 spec)
                 val characterData = chunks["chara"] ?: chunks["ccv3"]
                 if (characterData != null) {
-                     jsonContent = String(Base64.decode(characterData, Base64.NO_WRAP))
+                     jsonContent = String(base64Decode(characterData))
                      avatarBytes = contentBytes // The whole PNG is the avatar
                 } else {
                     return ImportResult.Error("No character data found in PNG")
@@ -728,15 +734,15 @@ object AssistantExportImport : KoinComponent {
                                 val compressedData = data.copyOfRange(separator + 2, data.size)
                                 val inflater = Inflater()
                                 inflater.setInput(compressedData)
-                                val outputStream = ByteArrayOutputStream()
+                                val outputBuffer = Buffer()
                                 val buffer = ByteArray(1024)
                                 while (!inflater.finished()) {
                                     val count = inflater.inflate(buffer)
                                     if (count == 0 && inflater.needsInput()) break
-                                    outputStream.write(buffer, 0, count)
+                                    outputBuffer.write(buffer, 0, count)
                                 }
                                 inflater.end()
-                                result[keyword] = outputStream.toString(Charsets.ISO_8859_1.name())
+                                result[keyword] = outputBuffer.readString(Charsets.ISO_8859_1)
                             } catch (e: Exception) {
                                 // Skip malformed zTXt chunks
                             }
@@ -766,15 +772,15 @@ object AssistantExportImport : KoinComponent {
                                 try {
                                     val inflater = Inflater()
                                     inflater.setInput(textData)
-                                    val outputStream = ByteArrayOutputStream()
+                                    val outputBuffer = Buffer()
                                     val buffer = ByteArray(1024)
                                     while (!inflater.finished()) {
                                         val count = inflater.inflate(buffer)
                                         if (count == 0 && inflater.needsInput()) break
-                                        outputStream.write(buffer, 0, count)
+                                        outputBuffer.write(buffer, 0, count)
                                     }
                                     inflater.end()
-                                    outputStream.toString(Charsets.UTF_8.name())
+                                    outputBuffer.readString(Charsets.UTF_8)
                                 } catch (e: Exception) {
                                     null
                                 }
@@ -925,3 +931,9 @@ object AssistantExportImport : KoinComponent {
         )
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)

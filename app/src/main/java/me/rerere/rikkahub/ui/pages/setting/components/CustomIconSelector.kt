@@ -44,7 +44,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,13 +55,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -70,6 +68,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import org.koin.compose.koinInject
 
 private const val LOBEHUB_PNG_META_URL = "https://unpkg.com/@lobehub/icons-static-png@latest/?meta"
 
@@ -204,11 +203,8 @@ private fun LobeHubIconPickerSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
-    val okHttpClient = remember {
-        org.koin.java.KoinJavaComponent.get<OkHttpClient>(OkHttpClient::class.java)
-    }
+    val httpClient = koinInject<PlatformHttpClient>()
     var searchQuery by remember { mutableStateOf("") }
     var fetchAttempt by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
@@ -219,7 +215,7 @@ private fun LobeHubIconPickerSheet(
         isLoading = true
         loadError = null
         runCatching {
-            fetchLobeHubIcons(okHttpClient)
+            fetchLobeHubIcons(httpClient)
         }.onSuccess { icons ->
             allIcons = icons
         }.onFailure { error ->
@@ -387,40 +383,40 @@ private fun LobeHubIconOption(
     }
 }
 
-private suspend fun fetchLobeHubIcons(okHttpClient: OkHttpClient): List<LobeHubIconChoice> {
+private suspend fun fetchLobeHubIcons(httpClient: PlatformHttpClient): List<LobeHubIconChoice> {
     return withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(LOBEHUB_PNG_META_URL)
-            .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                error("LobeHub icons failed: HTTP ${response.code}")
-            }
-
-            val body = response.body.string()
-            val root = JsonInstant.parseToJsonElement(body) as? JsonObject
-                ?: error("LobeHub icons response was not an object")
-            val files = root["files"] as? JsonArray
-                ?: error("LobeHub icons response did not include files")
-
-            files
-                .mapNotNull { element ->
-                    val file = element as? JsonObject ?: return@mapNotNull null
-                    file["path"]
-                        ?.jsonPrimitiveOrNull
-                        ?.contentOrNull
-                }
-                .mapNotNull { path -> path.toLightPngSlugOrNull() }
-                .filterNot { slug -> slug.endsWith("-text") }
-                .distinct()
-                .sorted()
-                .map { slug ->
-                    LobeHubIconChoice(
-                        slug = slug,
-                        label = slug.toIconLabel(),
-                    )
-                }
+        val response = httpClient.execute(
+            PlatformHttpRequest(
+                method = "GET",
+                url = LOBEHUB_PNG_META_URL,
+            )
+        )
+        if (response.statusCode !in 200..299) {
+            error("LobeHub icons failed: HTTP ${response.statusCode}")
         }
+
+        val root = JsonInstant.parseToJsonElement(response.body.decodeToString()) as? JsonObject
+            ?: error("LobeHub icons response was not an object")
+        val files = root["files"] as? JsonArray
+            ?: error("LobeHub icons response did not include files")
+
+        files
+            .mapNotNull { element ->
+                val file = element as? JsonObject ?: return@mapNotNull null
+                file["path"]
+                    ?.jsonPrimitiveOrNull
+                    ?.contentOrNull
+            }
+            .mapNotNull { path -> path.toLightPngSlugOrNull() }
+            .filterNot { slug -> slug.endsWith("-text") }
+            .distinct()
+            .sorted()
+            .map { slug ->
+                LobeHubIconChoice(
+                    slug = slug,
+                    label = slug.toIconLabel(),
+                )
+            }
     }
 }
 

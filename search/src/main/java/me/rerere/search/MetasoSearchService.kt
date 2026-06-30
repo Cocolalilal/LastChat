@@ -1,10 +1,5 @@
 package me.rerere.search
 
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -15,25 +10,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.search.SearchResult.SearchResultItem
-import me.rerere.search.SearchService.Companion.httpClient
 import me.rerere.search.SearchService.Companion.json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import me.rerere.search.SearchService.Companion.platformHttpClient
 
 object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
     override val name: String = "Metaso"
-
-    @Composable
-    override fun Description() {
-        Text(buildAnnotatedString {
-            append("秘塔搜索: ")
-            withLink(LinkAnnotation.Url("https://metaso.cn/")) {
-                append("https://metaso.cn/")
-            }
-        })
-    }
 
     override val parameters: InputSchema?
         get() = InputSchema.Obj(
@@ -63,17 +46,21 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
                 put("includeSummary", JsonPrimitive(false))
             }
 
-            val request = Request.Builder()
-                .url("https://metaso.cn/api/v1/search")
-                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("Authorization", "Bearer ${serviceOptions.apiKey}")
-                .addHeader("Accept", "application/json")
-                .addHeader("Content-Type", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).await()
-            if (response.isSuccessful) {
-                val bodyRaw = response.body?.string() ?: error("Failed to get response body")
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "https://metaso.cn/api/v1/search",
+                    headers = mapOf(
+                        "Authorization" to "Bearer ${serviceOptions.apiKey}",
+                        "Accept" to "application/json",
+                        "Content-Type" to "application/json"
+                    ),
+                    body = requestBody.toString().encodeToByteArray(),
+                    mediaType = "application/json"
+                )
+            )
+            if (response.statusCode in 200..299) {
+                val bodyRaw = response.body.decodeToString()
                 val searchResponse = runCatching {
                     json.decodeFromString<MetasoSearchResponse>(bodyRaw)
                 }.onFailure {
@@ -94,9 +81,9 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
                     )
                 )
             } else {
-                val errorBody = response.body?.string()
-                println("Metaso search failed with code ${response.code}: $errorBody")
-                error("Search request failed with code ${response.code}: $errorBody")
+                val errorBody = response.body.decodeToString()
+                println("Metaso search failed with code ${response.statusCode}: $errorBody")
+                error("Search request failed with code ${response.statusCode}: $errorBody")
             }
         }
     }

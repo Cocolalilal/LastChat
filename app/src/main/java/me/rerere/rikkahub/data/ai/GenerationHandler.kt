@@ -233,9 +233,9 @@ internal fun buildUsedModes(
     assistantDefaultSkillIds: Set<Uuid>,
     conversationSkillIds: Set<Uuid>,
     turnScopedSkillIds: Set<Uuid>,
+    alwaysEnabledSkillIds: Set<Uuid> = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet(),
 ): List<me.rerere.ai.ui.UsedMode> {
     val allSkillIds = availableSkills.map { it.id }.toSet()
-    val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
         assistantDefaultSkillIds = assistantDefaultSkillIds,
         conversationSkillIds = conversationSkillIds,
@@ -429,6 +429,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
+    private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
         settings: Settings,
@@ -442,6 +443,7 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
     ): Flow<GenerationChunk> = channelFlow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -449,10 +451,14 @@ class GenerationHandler(
 
         var messages: List<UIMessage> = messages
         val allSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() }
+            .map { it.id }
+            .toSet()
+        val assistantDefaultSkillIds = settings.skills
             .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
             .map { it.id }
             .toSet()
-        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+            .let { assistant.enabledSkillIds.intersect(it) }
         val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
@@ -536,6 +542,8 @@ class GenerationHandler(
                 stream = assistant.streamOutput,
                 conversationEnabledModeIds = conversationSkillIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
+                conversationEnabledLorebookIds = enabledLorebookIds,
+                activeConversationId = activeConversationId,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -579,7 +587,7 @@ class GenerationHandler(
                         metadata = toolCall.metadata
                     )
                 }.onFailure {
-                    it.printStackTrace()
+                    Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", it)
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
@@ -587,10 +595,7 @@ class GenerationHandler(
                         content = buildJsonObject {
                             put(
                                 "error",
-                                JsonPrimitive(buildString {
-                                    append("[${it.javaClass.name}] ${it.message}")
-                                    append("\n${it.stackTraceToString()}")
-                                })
+                                JsonPrimitive(formatToolExecutionError(it))
                             )
                         },
                         arguments = runCatching {
@@ -648,6 +653,7 @@ class GenerationHandler(
         truncateIndex: Int,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
+        conversationEnabledLorebookIds: Set<Uuid>? = null,
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -732,11 +738,22 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistant.id)
+            skill.instructions.isNotBlank()
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
-        val alwaysEnabledSkillIds = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
-        val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(allSkillIds)
+        val assistantAvailableSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
+        val alwaysEnabledSkillIds = availableSkills
+            .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
+            .map { it.id }
+            .toSet()
+        val assistantDefaultSkillIds = settings.skills
+            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .map { it.id }
+            .toSet()
+            .let { assistant.enabledSkillIds.intersect(it) }
         val activeSkillIds = resolveActiveSkillIds(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationEnabledModeIds,
@@ -750,11 +767,13 @@ class GenerationHandler(
             assistantDefaultSkillIds = assistantDefaultSkillIds,
             conversationSkillIds = conversationEnabledModeIds,
             turnScopedSkillIds = turnScopedEnabledModeIds,
+            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
         )
 
         // Check if any lorebook entries use RAG activation
+        val activeLorebookIds = conversationEnabledLorebookIds ?: assistant.enabledLorebookIds
         val lorebooksForAssistant = settings.lorebooks
-            .filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
+            .filter { it.enabled && activeLorebookIds.contains(it.id) }
         val hasRagEntries = lorebooksForAssistant.any { lorebook ->
             lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
         }
@@ -914,12 +933,11 @@ class GenerationHandler(
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
-                val today = java.time.LocalDate.now()
                 val recentConversations = conversationRepo.getRecentConversations(
                     assistantId = assistant.id,
                     limit = 3,
                 ).filter { 
-                    java.time.LocalDateTime.ofInstant(it.updateAt, java.time.ZoneId.systemDefault()).toLocalDate() == today 
+                    runtimeInfo.isToday(it.updateAt)
                 }
                 recentConversations.map { conversation ->
                     AssistantMemory(
@@ -1086,10 +1104,11 @@ class GenerationHandler(
         )
 
         val builtMessages = buildList {
-            val finalSystemPrompt = buildList {
-                if (baseSystemPrompt.isNotBlank()) {
-                    add(baseSystemPrompt)
-                }
+            if (baseSystemPrompt.isNotBlank()) {
+                add(UIMessage.system(baseSystemPrompt))
+            }
+            
+            val dynamicContext = buildList {
                 if (selectedMemories.isNotEmpty()) {
                     add(buildMemoryPrompt(model, selectedMemories))
                 }
@@ -1097,20 +1116,36 @@ class GenerationHandler(
                     add(timeAwarenessPrompt)
                 }
             }.joinToString(separator = "\n")
-            if (finalSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(finalSystemPrompt))
+
+            if (orderedSelectedMessages.isNotEmpty()) {
+                val lastMessage = orderedSelectedMessages.last()
+                val history = orderedSelectedMessages.dropLast(1)
+                
+                addAll(history)
+                
+                var finalParts = lastMessage.parts
+                
+                if (allContextAttachments.isNotEmpty()) {
+                    finalParts = allContextAttachments + finalParts
+                }
+                
+                if (dynamicContext.isNotBlank()) {
+                    finalParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + finalParts
+                }
+                
+                add(lastMessage.copy(parts = finalParts))
+            } else {
+                if (dynamicContext.isNotBlank()) {
+                    add(UIMessage.system(dynamicContext))
+                }
+                
+                if (allContextAttachments.isNotEmpty()) {
+                    add(UIMessage(
+                        role = me.rerere.ai.core.MessageRole.USER,
+                        parts = allContextAttachments
+                    ))
+                }
             }
-            
-            // Add skill and lorebook attachments as a user message if there are any
-            if (allContextAttachments.isNotEmpty()) {
-                add(UIMessage(
-                    role = me.rerere.ai.core.MessageRole.USER,
-                    parts = allContextAttachments
-                ))
-            }
-            
-            // Restore chat history order
-            addAll(orderedSelectedMessages)
         }
         // Build UsedMemory list for UI display
         val usedMemories = selectedMemories.mapIndexed { index, memory ->
@@ -1201,6 +1236,8 @@ class GenerationHandler(
         stream: Boolean,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
+        conversationEnabledLorebookIds: Set<Uuid>? = null,
+        activeConversationId: Uuid? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1212,6 +1249,7 @@ class GenerationHandler(
             truncateIndex = truncateIndex,
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
+            conversationEnabledLorebookIds = conversationEnabledLorebookIds,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
@@ -1256,6 +1294,7 @@ class GenerationHandler(
             tools = tools,
             builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
+            sessionId = activeConversationId?.toString(),
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)
@@ -1532,22 +1571,9 @@ class GenerationHandler(
 
             if (episodicMemories.isNotEmpty()) {
                 append("### Episodic Memories\n")
-                
-                val now = java.time.LocalDate.now()
-                val yesterday = now.minusDays(1)
-                val lastWeek = now.minusWeeks(1)
-                
+
                 val groupedEpisodes = episodicMemories.groupBy { memory ->
-                    val date = java.time.Instant.ofEpochMilli(memory.timestamp)
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDate()
-                    
-                    when {
-                        date.isEqual(now) -> "Today"
-                        date.isEqual(yesterday) -> "Yesterday"
-                        date.isAfter(lastWeek) -> "This Week"
-                        else -> "Older"
-                    }
+                    runtimeInfo.episodicMemoryGroup(memory.timestamp)
                 }
                 
                 // Order: Today -> Yesterday -> This Week -> Older
@@ -1670,6 +1696,13 @@ class GenerationHandler(
             error("Invalid tool arguments")
         }
     }
+
+}
+
+internal fun formatToolExecutionError(throwable: Throwable): String {
+    return throwable.message
+        ?.takeIf { it.isNotBlank() }
+        ?: (throwable::class.simpleName ?: "Tool execution failed")
 }
 
 internal fun List<UIMessage>.upsertOcrPlaceholder(

@@ -13,15 +13,14 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import me.rerere.common.http.await
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
-import okhttp3.OkHttpClient
-import okhttp3.Request
 
 private const val GITHUB_API_URL = "https://api.github.com/repos/Cocolalilal/LastChat/releases/latest"
 
-class UpdateChecker(private val client: OkHttpClient) {
+class UpdateChecker(private val client: PlatformHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
@@ -29,19 +28,18 @@ class UpdateChecker(private val client: OkHttpClient) {
         emit(
             UiState.Success(
                 data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(GITHUB_API_URL)
-                            .get()
-                            .addHeader("Accept", "application/vnd.github+json")
-                            .addHeader(
-                                "User-Agent",
-                                "LastChat ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+                    val response = client.execute(
+                        PlatformHttpRequest(
+                            method = "GET",
+                            url = GITHUB_API_URL,
+                            headers = mapOf(
+                                "Accept" to "application/vnd.github+json",
+                                "User-Agent" to "LastChat ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
                             )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        val release = json.decodeFromString<GitHubRelease>(response.body.string())
+                        )
+                    )
+                    if (response.statusCode in 200..299) {
+                        val release = json.decodeFromString<GitHubRelease>(response.body.decodeToString())
                         
                         // Convert GitHub release to UpdateInfo
                         val arch = getDeviceArchitecture()
@@ -71,7 +69,7 @@ class UpdateChecker(private val client: OkHttpClient) {
                             downloads = sortedDownloads
                         )
                     } else {
-                        throw Exception("Failed to fetch update info: ${response.code}")
+                        throw Exception("Failed to fetch update info: ${response.statusCode}")
                     }
                 } catch (e: Exception) {
                     throw Exception("Failed to fetch update info", e)

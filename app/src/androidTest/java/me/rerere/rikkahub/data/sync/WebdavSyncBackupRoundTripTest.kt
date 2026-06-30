@@ -268,6 +268,7 @@ class WebdavSyncBackupRoundTripTest {
             context = isolatedContext,
             secretKeyManager = secretKeyManager,
             appDatabase = appDatabase,
+            webDavClientFactory = unsupportedWebDavClientFactory,
         )
         return TestEnvironment(
             context = isolatedContext,
@@ -456,6 +457,12 @@ class WebdavSyncBackupRoundTripTest {
                 AppDatabase.MIGRATION_14_16,
                 AppDatabase.MIGRATION_22_23,
                 AppDatabase.MIGRATION_23_24,
+                AppDatabase.MIGRATION_24_25,
+                AppDatabase.MIGRATION_25_26,
+                AppDatabase.MIGRATION_26_27,
+                AppDatabase.MIGRATION_27_28,
+                AppDatabase.MIGRATION_28_29,
+                AppDatabase.MIGRATION_29_30,
             )
             .build()
     }
@@ -503,7 +510,7 @@ class WebdavSyncBackupRoundTripTest {
         fun pythonOutputFile(env: TestEnvironment): File {
             return File(
                 env.context.filesDir,
-                "python_sandbox/${pythonConversationId}/report.txt",
+                "workspaces/${pythonConversationId}/report.txt",
             )
         }
     }
@@ -525,6 +532,12 @@ class WebdavSyncBackupRoundTripTest {
                     AppDatabase.MIGRATION_14_16,
                     AppDatabase.MIGRATION_22_23,
                     AppDatabase.MIGRATION_23_24,
+                    AppDatabase.MIGRATION_24_25,
+                    AppDatabase.MIGRATION_25_26,
+                    AppDatabase.MIGRATION_26_27,
+                    AppDatabase.MIGRATION_27_28,
+                    AppDatabase.MIGRATION_28_29,
+                    AppDatabase.MIGRATION_29_30,
                 )
                 .build()
             return appDatabase
@@ -535,6 +548,30 @@ class WebdavSyncBackupRoundTripTest {
             runCatching { secureStore.clearAll() }
             appScope.cancel()
             context.cleanup()
+        }
+    }
+
+    private val unsupportedWebDavClientFactory = object : WebDavClientFactory {
+        override fun collection(
+            config: WebDavConfig,
+            path: String?,
+        ): at.bitfire.dav4jvm.okhttp.DavCollection {
+            error("WebDAV network operations are not used by local backup round-trip tests")
+        }
+
+        override fun hrefCollection(
+            config: WebDavConfig,
+            href: String,
+        ): at.bitfire.dav4jvm.okhttp.DavCollection {
+            error("WebDAV network operations are not used by local backup round-trip tests")
+        }
+
+        override fun putFile(
+            collection: at.bitfire.dav4jvm.okhttp.DavCollection,
+            file: File,
+            onResponse: (String) -> Unit,
+        ) {
+            error("WebDAV network operations are not used by local backup round-trip tests")
         }
     }
 

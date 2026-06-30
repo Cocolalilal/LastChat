@@ -142,6 +142,7 @@ import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
@@ -176,6 +177,7 @@ import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import me.rerere.rikkahub.data.model.Tag as DataTag
@@ -194,6 +196,7 @@ fun SettingProviderPage(
     val useWideLayout = LocalSettingsWideLayout.current
     val pager = rememberPagerState(initialPage = initialTab.ordinal) { ProvidersTab.entries.size }
     val currentTab = ProvidersTab.entries[pager.currentPage]
+    
     var showSearchCommonOptions by remember { mutableStateOf(false) }
     var showTtsFilterSettings by remember { mutableStateOf(false) }
     val providerPresets = remember(catalogSnapshot) {
@@ -234,6 +237,7 @@ fun SettingProviderPage(
     
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val httpClient = koinInject<PlatformHttpClient>()
     fun addProvider(provider: ProviderSetting) {
         val providerToAdd = provider.withUniqueId(settings.providers)
         vm.updateSettings(
@@ -249,8 +253,7 @@ fun SettingProviderPage(
                     getProviderSlugFromName(providerName) != null
             if (!hasLocalIcon) {
                 scope.launch {
-                    val okHttpClient = org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java)
-                    val slug = searchLobeHubIcon(okHttpClient, providerName)
+                    val slug = searchLobeHubIcon(httpClient, providerName)
                     if (slug != null) {
                         val latestSettings = vm.settings.value
                         val updatedProviders = latestSettings.providers.map { p ->
@@ -308,10 +311,9 @@ fun SettingProviderPage(
                         ) {
                             Icon(
                                 Icons.Rounded.Settings,
-                                contentDescription = if (currentTab == ProvidersTab.Search) {
-                                    stringResource(R.string.setting_page_search_common_options)
-                                } else {
-                                    stringResource(R.string.setting_tts_settings_title)
+                                contentDescription = when (currentTab) {
+                                    ProvidersTab.Search -> stringResource(R.string.setting_page_search_common_options)
+                                    else -> stringResource(R.string.setting_tts_settings_title)
                                 }
                             )
                         }
@@ -492,7 +494,7 @@ fun SettingProviderPage(
             }
         }
             AnimatedVisibility(
-                visible = !useWideLayout && currentTab != ProvidersTab.Models,
+                visible = !useWideLayout && (currentTab == ProvidersTab.Search || currentTab == ProvidersTab.Tts),
                 enter = slideInHorizontally(
                     animationSpec = tween(120),
                     initialOffsetX = { it }
@@ -518,10 +520,9 @@ fun SettingProviderPage(
                     ) {
                         Icon(
                             Icons.Rounded.Settings,
-                            contentDescription = if (currentTab == ProvidersTab.Search) {
-                                stringResource(R.string.setting_page_search_common_options)
-                            } else {
-                                stringResource(R.string.setting_tts_settings_title)
+                            contentDescription = when (currentTab) {
+                                ProvidersTab.Search -> stringResource(R.string.setting_page_search_common_options)
+                                else -> stringResource(R.string.setting_tts_settings_title)
                             }
                         )
                     }

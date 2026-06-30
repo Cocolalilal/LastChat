@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
+import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.share.resolveSharePayload
@@ -28,6 +29,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 class AskLastChatShareActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val settingsStore by inject<SettingsStore>()
+    private val httpClient by inject<PlatformHttpClient>()
     private val viewModel: TextSelectionVM by viewModel()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +40,7 @@ class AskLastChatShareActivity : ComponentActivity() {
             val payload = resolveSharePayload(
                 context = this@AskLastChatShareActivity,
                 settingsStore = settingsStore,
+                httpClient = httpClient,
                 rawSharePayload = intent.toRawSharePayload()
             )
             if (!payload.hasContent()) {

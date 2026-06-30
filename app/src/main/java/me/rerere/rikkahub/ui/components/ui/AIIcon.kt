@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.components.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
@@ -13,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -29,17 +32,18 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toCssHex
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import me.rerere.common.http.urlPartsOrNull
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
-import okhttp3.Request
-import okhttp3.OkHttpClient
+import org.koin.compose.koinInject
 
 private const val LOBEHUB_ICON_URI_PREFIX = "lobehub://"
 
@@ -69,7 +73,8 @@ fun ProviderIcon(
     } else {
         contentColor.copy(alpha = 0.38f)
     }
-    
+
+
     AutoAIIconWithUrl(
         name = provider.name,
         customIconUri = provider.customIconUri,
@@ -262,7 +267,7 @@ private fun ProviderFaviconFallback(
     padding: Dp
 ) {
     val faviconUrl = remember(baseUrl) {
-        baseUrl?.toHttpUrlOrNull()?.host?.let { host ->
+        baseUrl?.urlPartsOrNull()?.host?.let { host ->
             "https://favicone.com/$host"
         }
     }
@@ -648,9 +653,9 @@ private fun RemoteIcon(
     fallback: @Composable (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val okHttpClient = remember { org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java) }
-    val iconManager = remember(context) { 
-        me.rerere.rikkahub.utils.IconStorageManager.getInstance(context, okHttpClient)
+    val platformHttpClient = koinInject<PlatformHttpClient>()
+    val iconManager = remember(context, platformHttpClient) {
+        me.rerere.rikkahub.utils.IconStorageManager.getInstance(context, platformHttpClient)
     }
     val darkMode = LocalDarkMode.current
     
@@ -802,55 +807,54 @@ fun SiliconFlowPowerByIcon(modifier: Modifier = Modifier) {
  * Search the LobeHub icons API for a matching monochrome slug.
  * Returns the matching slug if found, null otherwise.
  */
-suspend fun searchLobeHubIcon(okHttpClient: OkHttpClient, providerName: String): String? {
+suspend fun searchLobeHubIcon(httpClient: PlatformHttpClient, providerName: String): String? {
     return withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder()
-                .url("https://unpkg.com/@lobehub/icons-static-png@latest/?meta")
-                .build()
-            
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
-                
-                val body = response.body?.string() ?: return@runCatching null
-                val root = JsonInstant.parseToJsonElement(body) as? JsonObject
-                    ?: return@runCatching null
-                val files = root["files"] as? JsonArray
-                    ?: return@runCatching null
-                
-                val slugs = files
-                    .mapNotNull { element ->
-                        val file = element as? JsonObject ?: return@mapNotNull null
-                        file["path"]
-                            ?.let { it.jsonPrimitiveOrNull }
-                            ?.contentOrNull
-                    }
-                    .mapNotNull { path -> 
-                        if (path.startsWith("/light/") && path.endsWith(".png")) {
-                            path.substringAfterLast('/').removeSuffix(".png").takeIf { it.isNotBlank() }
-                        } else null
-                    }
-                    .distinct()
-                
-                val normalizedName = providerName.lowercase().replace(Regex("[^a-z0-9]"), "")
-                if (normalizedName.isBlank()) return@runCatching null
-                
-                // Filter for monochrome options (those without "-color" suffix and not ending in "-text")
-                val monoSlugs = slugs.filter { !it.endsWith("-color") && !it.endsWith("-text") }
-                
-                // 1. Exact match of normalized name and slug (with hyphens/underscores removed)
-                val exactMatch = monoSlugs.find { slug ->
-                    slug.replace("-", "").replace("_", "") == normalizedName
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "https://unpkg.com/@lobehub/icons-static-png@latest/?meta",
+                )
+            )
+            if (response.statusCode !in 200..299) return@runCatching null
+
+            val root = JsonInstant.parseToJsonElement(response.body.decodeToString()) as? JsonObject
+                ?: return@runCatching null
+            val files = root["files"] as? JsonArray
+                ?: return@runCatching null
+
+            val slugs = files
+                .mapNotNull { element ->
+                    val file = element as? JsonObject ?: return@mapNotNull null
+                    file["path"]
+                        ?.let { it.jsonPrimitiveOrNull }
+                        ?.contentOrNull
                 }
-                if (exactMatch != null) return@runCatching exactMatch
-                
-                // 2. Fuzzy match where provider name contains slug or vice versa
-                val fuzzyMatch = monoSlugs.find { slug ->
-                    val cleanSlug = slug.replace("-", "").replace("_", "")
-                    normalizedName.contains(cleanSlug) || cleanSlug.contains(normalizedName)
+                .mapNotNull { path ->
+                    if (path.startsWith("/light/") && path.endsWith(".png")) {
+                        path.substringAfterLast('/').removeSuffix(".png").takeIf { it.isNotBlank() }
+                    } else null
                 }
-                fuzzyMatch
+                .distinct()
+
+            val normalizedName = providerName.lowercase().replace(Regex("[^a-z0-9]"), "")
+            if (normalizedName.isBlank()) return@runCatching null
+
+            // Filter for monochrome options (those without "-color" suffix and not ending in "-text")
+            val monoSlugs = slugs.filter { !it.endsWith("-color") && !it.endsWith("-text") }
+
+            // 1. Exact match of normalized name and slug (with hyphens/underscores removed)
+            val exactMatch = monoSlugs.find { slug ->
+                slug.replace("-", "").replace("_", "") == normalizedName
             }
+            if (exactMatch != null) return@runCatching exactMatch
+
+            // 2. Fuzzy match where provider name contains slug or vice versa
+            val fuzzyMatch = monoSlugs.find { slug ->
+                val cleanSlug = slug.replace("-", "").replace("_", "")
+                normalizedName.contains(cleanSlug) || cleanSlug.contains(normalizedName)
+            }
+            fuzzyMatch
         }.getOrNull()
     }
 }

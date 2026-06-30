@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.SpontaneousMessageMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -258,16 +259,21 @@ class SpontaneousWorker(
                 ?.toText()
                 .orEmpty()
             if (lastUserMessage.isNotBlank()) {
+                val searchLimit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
                 memoryRepository.retrieveRelevantMemories(
                     assistantId = assistantId,
                     query = lastUserMessage,
-                    limit = 5,
+                    limit = searchLimit,
                 )
             } else {
-                memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
+                val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
+                memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
+                    .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
             }
         } else {
-            memoryRepository.getMemoriesOfAssistant(assistantId).take(5)
+            val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
+            memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
+                .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
         }
 
         val episodicMemories = if (conversation == null && retrievedMemories.size < 5) {

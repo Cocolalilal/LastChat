@@ -7,6 +7,8 @@ import androidx.core.net.toFile
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okio.buffer
+import okio.sink
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -31,7 +33,7 @@ suspend fun Context.importOwnedFile(
     val targetDir = getOwnedDirectory(directory)
     val targetFile = targetDir.resolve(buildOwnedFileName(originalName, mimeType))
     inputStream.use { input ->
-        targetFile.outputStream().use { output ->
+        targetFile.sink().buffer().outputStream().use { output ->
             input.copyTo(output)
         }
     }

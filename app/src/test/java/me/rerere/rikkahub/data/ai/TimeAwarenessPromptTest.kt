@@ -25,7 +25,7 @@ class TimeAwarenessPromptTest {
             enabled = false,
             fullMessages = emptyList(),
             retainedMessages = emptyList(),
-            now = ZonedDateTime.of(2026, 3, 6, 12, 0, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 0)
         )
 
         assertNull(block)
@@ -37,7 +37,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = listOf(messageAt("2026-03-06T12:00:00")),
             retainedMessages = listOf(messageAt("2026-03-06T12:00:00")),
-            now = ZonedDateTime.of(2026, 3, 6, 12, 1, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 1)
         )
 
         assertNotNull(block)
@@ -59,7 +59,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 12, 12, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 12)
         )
 
         assertNotNull(block)
@@ -77,7 +77,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 12, 0, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 0)
         )
 
         assertNotNull(block)
@@ -95,7 +95,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 12, 0, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 0)
         )
 
         assertNotNull(block)
@@ -113,7 +113,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 12, 0, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 0)
         )
 
         assertNotNull(block)
@@ -131,7 +131,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 13, 10, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 13, 10)
         )
 
         assertNotNull(block)
@@ -152,7 +152,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 12, 41, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 12, 41)
         )
 
         assertNotNull(block)
@@ -171,7 +171,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 1, 1, 0, 30, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 1, 1, 0, 30)
         )
 
         assertNotNull(block)
@@ -182,31 +182,31 @@ class TimeAwarenessPromptTest {
 
     @Test
     fun dateBasedGapUsesDaysWeeksMonthsAndYears() {
-        val now = ZonedDateTime.of(2026, 3, 6, 12, 0, 0, 0, zoneId)
+        val now = runtimeAt(2026, 3, 6, 12, 0)
 
         val fiveDays = buildTimeAwarenessBlock(
             enabled = true,
             fullMessages = listOf(messageAt("2026-03-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
             retainedMessages = listOf(messageAt("2026-03-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
-            now = now
+            runtimeInfo = now
         )
         val twoWeeks = buildTimeAwarenessBlock(
             enabled = true,
             fullMessages = listOf(messageAt("2026-02-20T12:00:00"), messageAt("2026-03-06T12:00:00")),
             retainedMessages = listOf(messageAt("2026-02-20T12:00:00"), messageAt("2026-03-06T12:00:00")),
-            now = now
+            runtimeInfo = now
         )
         val threeMonths = buildTimeAwarenessBlock(
             enabled = true,
             fullMessages = listOf(messageAt("2025-12-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
             retainedMessages = listOf(messageAt("2025-12-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
-            now = now
+            runtimeInfo = now
         )
         val oneYear = buildTimeAwarenessBlock(
             enabled = true,
             fullMessages = listOf(messageAt("2025-03-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
             retainedMessages = listOf(messageAt("2025-03-01T12:00:00"), messageAt("2026-03-06T12:00:00")),
-            now = now
+            runtimeInfo = now
         )
 
         assertTrue(fiveDays!!.contains("About 5 days have passed since the last message."))
@@ -230,7 +230,7 @@ class TimeAwarenessPromptTest {
             enabled = true,
             fullMessages = messages,
             retainedMessages = messages,
-            now = ZonedDateTime.of(2026, 3, 6, 13, 30, 0, 0, zoneId)
+            runtimeInfo = runtimeAt(2026, 3, 6, 13, 30)
         )
 
         assertNotNull(block)
@@ -253,6 +253,18 @@ class TimeAwarenessPromptTest {
         )
 
         assertFalse(assistant.enableTimeAwareness)
+    }
+
+    private fun runtimeAt(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+    ): TimeAwarenessRuntimeInfo {
+        return AndroidTimeAwarenessRuntimeInfo.from(
+            ZonedDateTime.of(year, month, day, hour, minute, 0, 0, zoneId)
+        )
     }
 
     private fun messageAt(timestamp: String): UIMessage = UIMessage(

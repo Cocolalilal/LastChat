@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.datastore
 
+import me.rerere.asr.ASRProviderSetting
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.tts.provider.TTSProviderSetting
 import kotlin.uuid.Uuid
@@ -20,6 +21,7 @@ class SecretKeyManager(
         private const val PROVIDER_APIKEY_PREFIX = "provider_apikey_"
         private const val PROVIDER_PRIVATEKEY_PREFIX = "provider_privatekey_"
         private const val TTS_PROVIDER_APIKEY_PREFIX = "tts_provider_apikey_"
+        private const val STT_PROVIDER_APIKEY_PREFIX = "stt_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
     }
 
@@ -94,6 +96,22 @@ class SecretKeyManager(
         secureStore.removeSecret("$TTS_PROVIDER_APIKEY_PREFIX$providerId")
     }
 
+    // ========== STT API Key Management ==========
+
+    fun getSttApiKey(providerId: Uuid, plaintextFallback: String): String {
+        val key = "$STT_PROVIDER_APIKEY_PREFIX$providerId"
+        return secureStore.getSecret(key) ?: plaintextFallback
+    }
+
+    fun setSttApiKey(providerId: Uuid, apiKey: String) {
+        val key = "$STT_PROVIDER_APIKEY_PREFIX$providerId"
+        if (apiKey.isNotBlank()) {
+            secureStore.putSecret(key, apiKey)
+        } else {
+            secureStore.removeSecret(key)
+        }
+    }
+
     // ========== WebDAV Password Management ==========
 
     fun getWebDavPassword(plaintextFallback: String): String {
@@ -146,7 +164,7 @@ class SecretKeyManager(
             settings.copy(
                 providers = migratedProviders,
                 webDavConfig = migratedWebDav,
-                ttsProviders = migratedTtsProviders
+                ttsProviders = migratedTtsProviders,
             )
         } else {
             settings
@@ -198,6 +216,9 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> oldTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> oldTtsProvider.apiKey
                 is TTSProviderSetting.Qwen -> oldTtsProvider.apiKey
+                is TTSProviderSetting.Cartesia -> oldTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> oldTtsProvider.apiKey
+                is TTSProviderSetting.PlayHT -> oldTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             val newKey = when (newTtsProvider) {
@@ -206,6 +227,9 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> newTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
                 is TTSProviderSetting.Qwen -> newTtsProvider.apiKey
+                is TTSProviderSetting.Cartesia -> newTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> newTtsProvider.apiKey
+                is TTSProviderSetting.PlayHT -> newTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
             
@@ -233,6 +257,7 @@ class SecretKeyManager(
                     provider.copy(apiKey = "") // Clear plaintext
                 } else provider
             }
+
             is ProviderSetting.Google -> {
                 var updated = provider
                 if (provider.apiKey.isNotBlank()) {
@@ -293,7 +318,76 @@ class SecretKeyManager(
                 } else provider
             }
 
+            is TTSProviderSetting.Cartesia -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.FishAudio -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is TTSProviderSetting.PlayHT -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
             is TTSProviderSetting.SystemTTS -> provider
+        }
+    }
+
+    private fun migrateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
+        return when (provider) {
+            is ASRProviderSetting.OpenAICompatible -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.OpenAIRealtime -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.DashScope -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.Volcengine -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.MiMo -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.Step -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setSttApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
+
+            is ASRProviderSetting.SystemSTT -> provider
         }
     }
 
@@ -319,7 +413,7 @@ class SecretKeyManager(
         return settings.copy(
             providers = providersWithSecrets,
             webDavConfig = webDavWithPassword,
-            ttsProviders = ttsProvidersWithSecrets
+            ttsProviders = ttsProvidersWithSecrets,
         )
     }
 
@@ -331,6 +425,7 @@ class SecretKeyManager(
             is ProviderSetting.OpenAI -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
+
             is ProviderSetting.Google -> {
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
@@ -367,7 +462,31 @@ class SecretKeyManager(
                 provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             }
 
+            is TTSProviderSetting.Cartesia -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.FishAudio -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
+            is TTSProviderSetting.PlayHT -> {
+                provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            }
+
             is TTSProviderSetting.SystemTTS -> provider
+        }
+    }
+
+    private fun populateSttProviderSecrets(provider: ASRProviderSetting): ASRProviderSetting {
+        return when (provider) {
+            is ASRProviderSetting.OpenAICompatible -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.OpenAIRealtime -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.DashScope -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.Volcengine -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.MiMo -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.Step -> provider.copy(apiKey = getSttApiKey(provider.id, provider.apiKey))
+            is ASRProviderSetting.SystemSTT -> provider
         }
     }
 
@@ -378,5 +497,16 @@ class SecretKeyManager(
     fun importSecretsFromBackup(settings: Settings): Settings {
         // Same as migration - store secrets and clear plaintext
         return migrateSecretsFromSettings(settings)
+    }
+}
+private fun ASRProviderSetting.apiKeyOrBlank(): String {
+    return when (this) {
+        is ASRProviderSetting.OpenAICompatible -> apiKey
+        is ASRProviderSetting.OpenAIRealtime -> apiKey
+        is ASRProviderSetting.DashScope -> apiKey
+        is ASRProviderSetting.Volcengine -> apiKey
+        is ASRProviderSetting.MiMo -> apiKey
+        is ASRProviderSetting.Step -> apiKey
+        is ASRProviderSetting.SystemSTT -> ""
     }
 }

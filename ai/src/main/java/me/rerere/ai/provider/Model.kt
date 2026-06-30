@@ -1,6 +1,5 @@
 package me.rerere.ai.provider
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 
@@ -18,51 +17,11 @@ data class Model(
     val abilities: List<ModelAbility> = emptyList(),
     val tools: Set<BuiltInTools> = emptySet(),
     val providerOverwrite: ProviderSetting? = null,
-    val iconUrl: String? = null, // Remote icon URL
-    val providerSlug: String? = null, // Provider slug for LobeHub CDN icons (e.g., "anthropic")
-    val customIconUri: String? = null, // User-selected custom icon URI
-    val imageGenerationMethod: ImageGenerationMethod? = null, // Only for IMAGE type models
+    val iconUrl: String? = null,
+    val providerSlug: String? = null,
+    val customIconUri: String? = null,
+    val imageGenerationMethod: ImageGenerationMethod? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
+    val sttOptions: SttOptions? = null,
 )
-
-@Serializable
-enum class ModelType {
-    CHAT,
-    IMAGE,
-    EMBEDDING,
-}
-
-@Serializable
-enum class Modality {
-    TEXT,
-    IMAGE,
-}
-
-@Serializable
-enum class ImageGenerationMethod {
-    @SerialName("diffusion")
-    DIFFUSION,      // Traditional diffusion models like DALL-E, Stable Diffusion
-    @SerialName("multimodal")
-    MULTIMODAL,     // Chat models with image output (GPT-4o, Gemini 2.0 Flash)
-}
-
-@Serializable
-enum class ModelAbility {
-    TOOL,
-    REASONING,
-}
-
-// 模型(提供商)提供的内置工具选项
-@Serializable
-sealed class BuiltInTools {
-    // https://ai.google.dev/gemini-api/docs/google-search?hl=zh-cn
-    @Serializable
-    @SerialName("search")
-    data object Search : BuiltInTools()
-
-    // https://ai.google.dev/gemini-api/docs/url-context?hl=zh-cn
-    @Serializable
-    @SerialName("url_context")
-    data object UrlContext : BuiltInTools()
-}
 

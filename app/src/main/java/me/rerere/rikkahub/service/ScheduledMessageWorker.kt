@@ -73,10 +73,11 @@ class ScheduledMessageWorker(
             // RAG Retrieval
             val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
             val memories = if (lastUserMessage.isNotBlank()) {
+                val searchLimit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
                 memoryRepository.retrieveRelevantMemories(
                     assistantId = assistant.id.toString(),
                     query = lastUserMessage,
-                    limit = 5
+                    limit = searchLimit
                 )
             } else {
                 emptyList()

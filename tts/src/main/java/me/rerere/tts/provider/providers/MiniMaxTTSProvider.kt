@@ -1,25 +1,20 @@
 package me.rerere.tts.provider.providers
 
-import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import me.rerere.common.http.SseEvent
-import me.rerere.common.http.sseFlow
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformLog
+import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 private const val TAG = "MiniMaxTTSProvider"
 
@@ -35,18 +30,15 @@ private data class MiniMaxResponse(
     val data: MiniMaxResponseData
 )
 
-class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
-    private val httpClient = OkHttpClient.Builder()
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
-
+class MiniMaxTTSProvider(
+    private val httpClient: PlatformHttpClient,
+) : TTSProvider<TTSProviderSetting.MiniMax> {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
     override fun generateSpeech(
-        context: Context,
         providerSetting: TTSProviderSetting.MiniMax,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
@@ -65,26 +57,30 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             })
         }
 
-        Log.i(
+        PlatformLog.i(
             TAG,
             "generateSpeech: model=${providerSetting.model}, " +
                 "voice=${providerSetting.voiceId}, emotion=${providerSetting.emotion}, " +
                 "textLength=${request.text.length}"
         )
 
-        val httpRequest = Request.Builder()
-            .url("${providerSetting.baseUrl}/t2a_v2")
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .build()
-
         var hasEmittedAudio = false
 
-        httpClient.sseFlow(httpRequest).collect {
+        httpClient.streamEvents(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/t2a_v2",
+                headers = mapOf(
+                    "Authorization" to "Bearer ${providerSetting.apiKey}",
+                    "Content-Type" to "application/json",
+                ),
+                body = json.encodeToString(requestBody).encodeToByteArray(),
+                mediaType = "application/json",
+            )
+        ).collect {
             when (it) {
-                is SseEvent.Open -> Log.i(TAG, "SSE connection opened")
-                is SseEvent.Event -> {
+                is PlatformServerEvent.Open -> PlatformLog.i(TAG, "SSE connection opened")
+                is PlatformServerEvent.Event -> {
                     try {
                         val data = json.decodeFromString<MiniMaxResponse>(it.data)
 
@@ -108,12 +104,12 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                         )
                         hasEmittedAudio = true
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to process audio chunk", e)
+                        PlatformLog.e(TAG, "Failed to process audio chunk: ${e.message}")
                     }
                 }
 
-                is SseEvent.Closed -> {
-                    Log.i(TAG, "SSE connection closed")
+                is PlatformServerEvent.Closed -> {
+                    PlatformLog.i(TAG, "SSE connection closed")
                     // Emit final chunk if we haven't already
                     if (hasEmittedAudio) {
                         emit(
@@ -128,9 +124,15 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                     }
                 }
 
-                is SseEvent.Failure -> {
-                    Log.e(TAG, "SSE connection failed", it.throwable)
-                    throw it.throwable ?: Exception("MiniMax TTS streaming failed")
+                is PlatformServerEvent.Failure -> {
+                    val message = buildString {
+                        append("MiniMax TTS streaming failed")
+                        it.statusCode?.let { statusCode -> append(": $statusCode") }
+                        it.body?.let { body -> append(" $body") }
+                        it.message?.let { failureMessage -> append(" $failureMessage") }
+                    }
+                    PlatformLog.e(TAG, message)
+                    throw Exception(message)
                 }
             }
         }

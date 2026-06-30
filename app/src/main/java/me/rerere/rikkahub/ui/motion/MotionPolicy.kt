@@ -87,7 +87,7 @@ internal fun shouldUseTopLevelFade(initialRoute: String?, targetRoute: String?):
 
 internal fun isTopLevelRootRoute(route: String?): Boolean {
     if (route == null) return false
-    return isChatRoute(route) || route == MENU_ROUTE || route == SETTING_ROUTE
+    return isChatRoute(route) || route == MENU_ROUTE
 }
 
 internal fun isChatRoute(route: String?): Boolean {

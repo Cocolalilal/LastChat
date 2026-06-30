@@ -69,17 +69,28 @@ internal fun SkillsPickerSheet(
     val cornerRadius = 28.dp
     val smallCorner = 8.dp
 
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = remember(settings.skills) {
+        settings.skills
     }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val alwaysEnabledSkillIds = remember(availableSkills) { availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet() }
-    val effectiveEnabledIds = remember(conversation.enabledModeIds, assistant.enabledSkillIds, availableSkillIds, alwaysEnabledSkillIds) {
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
+    val alwaysEnabledSkillIds = remember(availableSkills, assistantAvailableSkillIds) {
+        availableSkills.filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }.map { it.id }.toSet()
+    }
+    val effectiveEnabledIds = remember(
+        conversation.enabledModeIds,
+        assistant.enabledSkillIds,
+        availableSkillIds,
+        assistantAvailableSkillIds,
+        alwaysEnabledSkillIds
+    ) {
         val hasOverride = conversation.enabledModeIds.hasManualSkillSelectionOverride()
         val base = if (hasOverride || conversation.enabledModeIds.isNotEmpty()) {
             conversation.enabledModeIds.withoutSkillSelectionOverride()
         } else {
-            assistant.enabledSkillIds
+            assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
         }
         (base + if (hasOverride) emptySet() else alwaysEnabledSkillIds).intersect(availableSkillIds)
     }
@@ -224,15 +235,18 @@ internal fun SkillsPickerSheet(
 internal fun LorebooksPickerSheet(
     settings: Settings,
     assistant: Assistant,
-    onUpdateAssistant: (Assistant) -> Unit,
+    conversation: Conversation,
+    onUpdateConversation: (Conversation) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
 
-    var localEnabledIds by remember(assistant.id) {
-        mutableStateOf(assistant.enabledLorebookIds)
+    val lorebookIds = remember(settings.lorebooks) { settings.lorebooks.map { it.id }.toSet() }
+    val effectiveEnabledIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
+    var localEnabledIds by remember(conversation.id, conversation.enabledLorebookIds, assistant.enabledLorebookIds, lorebookIds) {
+        mutableStateOf(effectiveEnabledIds)
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -406,7 +420,7 @@ internal fun LorebooksPickerSheet(
                                             localEnabledIds - lorebook.id
                                         }
                                         localEnabledIds = newIds
-                                        onUpdateAssistant(assistant.copy(enabledLorebookIds = newIds))
+                                        onUpdateConversation(conversation.copy(enabledLorebookIds = newIds))
                                     }
                                 )
                             }

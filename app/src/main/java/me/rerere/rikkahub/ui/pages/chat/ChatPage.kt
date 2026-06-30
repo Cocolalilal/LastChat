@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -388,6 +389,14 @@ internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.co
     return if (placement == ChatToolbarPlacement.Bottom) 204.dp else 140.dp
 }
 
+private fun chatToolbarOverflowMenuTransformOrigin(placement: ChatToolbarPlacement): TransformOrigin {
+    return if (placement == ChatToolbarPlacement.Bottom) {
+        TransformOrigin(1f, 1f)
+    } else {
+        TransformOrigin(1f, 0f)
+    }
+}
+
 private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
     return conversation.currentMessages.lastOrNull { message ->
         message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
@@ -668,6 +677,12 @@ fun ChatPage(
         )
     }
     var chatListReady by remember(conversation.id) { mutableStateOf(false) }
+    var chatAnimationsEnabled by remember(conversation.id) { mutableStateOf(false) }
+    LaunchedEffect(conversation.id) {
+        delay(500)
+        chatAnimationsEnabled = true
+    }
+    var consumedFocusLatestMessageKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         conversation.id,
         conversationInitialized,
@@ -675,6 +690,9 @@ fun ChatPage(
         chatListState,
     ) {
         if (!conversationInitialized) {
+            return@LaunchedEffect
+        }
+        if (chatListReady) {
             return@LaunchedEffect
         }
         val savedPosition = vm.chatListScrollPosition
@@ -704,8 +722,13 @@ fun ChatPage(
         }
     }
 
-    LaunchedEffect(focusLatestMessageKey, conversation.id, conversation.messageNodes.size) {
-        if (focusLatestMessageKey != null && conversation.messageNodes.isNotEmpty()) {
+    LaunchedEffect(focusLatestMessageKey, conversation.id, conversation.messageNodes.isNotEmpty()) {
+        if (
+            focusLatestMessageKey != null &&
+            consumedFocusLatestMessageKey != focusLatestMessageKey &&
+            conversation.messageNodes.isNotEmpty()
+        ) {
+            consumedFocusLatestMessageKey = focusLatestMessageKey
             chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
         }
     }
@@ -914,6 +937,7 @@ fun ChatPage(
                                     vm = vm,
                                     chatListState = chatListState,
                                     chatListReady = chatListReady,
+                                    chatAnimationsEnabled = chatAnimationsEnabled,
                                     enableWebSearch = enableWebSearch,
                                     currentSearchMode = currentSearchMode,
                                     currentChatModel = currentChatModel,
@@ -979,6 +1003,7 @@ fun ChatPage(
                     vm = vm,
                     chatListState = chatListState,
                     chatListReady = chatListReady,
+                    chatAnimationsEnabled = chatAnimationsEnabled,
                     enableWebSearch = enableWebSearch,
                     currentSearchMode = currentSearchMode,
                     currentChatModel = currentChatModel,
@@ -1012,6 +1037,7 @@ private fun ChatPageContent(
     vm: ChatVM,
     chatListState: LazyListState,
     chatListReady: Boolean,
+    chatAnimationsEnabled: Boolean,
     enableWebSearch: Boolean,
     currentSearchMode: me.rerere.rikkahub.data.model.AssistantSearchMode,
     currentChatModel: Model?,
@@ -1050,6 +1076,7 @@ private fun ChatPageContent(
     var selectedChatShareItems by remember(conversation.id) { mutableStateOf<Set<Uuid>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var chatSearchQuery by rememberSaveable(conversation.id) { mutableStateOf(initialSearchQuery.orEmpty()) }
+    var consumedInitialSearchQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
@@ -1078,8 +1105,13 @@ private fun ChatPageContent(
     }
     
     // Auto-scroll to first matching message when opened from search
-    LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
-        if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
+    LaunchedEffect(initialSearchQuery, conversation.id, conversation.messageNodes.isNotEmpty()) {
+        if (
+            !initialSearchQuery.isNullOrBlank() &&
+            consumedInitialSearchQuery != initialSearchQuery &&
+            conversation.messageNodes.isNotEmpty()
+        ) {
+            consumedInitialSearchQuery = initialSearchQuery
             // Find the first message containing the search query
             val matchIndex = conversation.messageNodes.indexOfFirst { node ->
                 node.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true)
@@ -1264,100 +1296,112 @@ private fun ChatPageContent(
                         } else {
                             searchQuerySnapshots[targetConversationId]
                         }
-                        ChatList(
-                            innerPadding = PaddingValues(
-                                top = chatListTopPadding(toolbarPlacement),
-                                bottom = chatListBottomPadding(toolbarPlacement)
-                            ),
-                            conversation = frameConversation,
-                            state = frameListState,
-                            loading = targetConversationId == conversation.id && loadingJob != null,
-                            previewMode = previewMode,
-                            settings = setting,
-                            recentlyRestoredNodeIds = recentlyRestoredNodeIds,
-                            initialSearchQuery = frameInitialSearchQuery,
-                            searchQuery = chatSearchQuery,
-                            onSearchQueryChange = { chatSearchQuery = it },
-                            shareSelecting = isChatShareSelecting,
-                            selectedShareItems = selectedChatShareItems,
-                            onSelectedShareItemsChange = { selectedChatShareItems = it },
-                            contentMaxWidth = contentMaxWidth,
-                            onJumpToMessage = { index ->
-                                previewMode = false
-                                scope.launch {
-                                    // Wait for AnimatedContent transition to complete before scrolling
-                                    delay(350)
-                                    frameListState.animateScrollToItem(index)
-                                }
-                            },
-                            onRegenerate = { message ->
-                                if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                    // User message regeneration always truncates - show confirmation
-                                    pendingUserRegenerateMessage = message
-                                    showUserRegenerateConfirmDialog = true
-                                } else if (vm.canPreserveVersionHistory(message)) {
-                                    // Simple assistant message - regenerate with version history
-                                    vm.regenerateAtMessage(message, forceWipe = false)
-                                } else {
-                                    // Complex assistant message - show confirmation dialog
-                                    pendingRegenerateMessage = message
-                                    showRegenerateConfirmDialog = true
-                                }
-                            },
-                            onEdit = {
-                                inputState.editingMessage = it.id
-                                inputState.setContents(it.parts)
-                            },
-                            onDelete = { message ->
-                                if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                    // User message deletion removes all messages after - show confirmation
-                                    pendingDeleteMessage = message
-                                    showDeleteConfirmDialog = true
-                                } else {
-                                    // Assistant message deletion - keep existing behavior with undo toast
-                                    scope.launch {
-                                        val backup = frameConversation
-                                        val removedIds = vm.deleteMessage(message)
-                                        toaster.show(
-                                            message = context.getString(R.string.message_deleted),
-                                            action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                label = context.getString(R.string.undo),
-                                                onClick = {
-                                                    vm.updateConversation(backup)
-                                                    vm.markNodesAsRestored(removedIds)
-                                                }
-                                            )
-                                        )
+                        CompositionLocalProvider(
+                            LocalChatAnimationsEnabled provides chatAnimationsEnabled
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        alpha = if (targetConversationId != conversation.id || chatListReady) 1f else 0f
                                     }
-                                }
-                            },
-                            onUpdateMessage = { newNode ->
-                                val oldNode = frameConversation.messageNodes.find { it.id == newNode.id }
-                                if (oldNode != null) {
-                                    if (oldNode.selectIndex != newNode.selectIndex) {
-                                        vm.selectMessageNode(newNode.id, newNode.selectIndex)
-                                    } else {
-                                        vm.updateConversation(
-                                            frameConversation.copy(
-                                                messageNodes = frameConversation.messageNodes.map { node ->
-                                                    if (node.id == newNode.id) {
-                                                        newNode
-                                                    } else {
-                                                        node
-                                                    }
-                                                }
-                                            )
-                                        )
-                                    }
-                                }
-                            },
-                            onForkMessage = {
-                                scope.launch {
-                                    val forkConversation = vm.forkMessage(it)
-                                    navigateToChatPage(navController, forkConversation.id)
-                                }
-                            },
-                        )
+                            ) {
+                                ChatList(
+                                    innerPadding = PaddingValues(
+                                        top = chatListTopPadding(toolbarPlacement),
+                                        bottom = chatListBottomPadding(toolbarPlacement)
+                                    ),
+                                    conversation = frameConversation,
+                                    state = frameListState,
+                                    loading = targetConversationId == conversation.id && loadingJob != null,
+                                    previewMode = previewMode,
+                                    settings = setting,
+                                    recentlyRestoredNodeIds = recentlyRestoredNodeIds,
+                                    initialSearchQuery = frameInitialSearchQuery,
+                                    searchQuery = chatSearchQuery,
+                                    onSearchQueryChange = { chatSearchQuery = it },
+                                    shareSelecting = isChatShareSelecting,
+                                    selectedShareItems = selectedChatShareItems,
+                                    onSelectedShareItemsChange = { selectedChatShareItems = it },
+                                    contentMaxWidth = contentMaxWidth,
+                                    onJumpToMessage = { index ->
+                                        previewMode = false
+                                        scope.launch {
+                                            // Wait for AnimatedContent transition to complete before scrolling
+                                            delay(350)
+                                            frameListState.animateScrollToItem(index)
+                                        }
+                                    },
+                                    onRegenerate = { message ->
+                                        if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                            // User message regeneration always truncates - show confirmation
+                                            pendingUserRegenerateMessage = message
+                                            showUserRegenerateConfirmDialog = true
+                                        } else if (vm.canPreserveVersionHistory(message)) {
+                                            // Simple assistant message - regenerate with version history
+                                            vm.regenerateAtMessage(message, forceWipe = false)
+                                        } else {
+                                            // Complex assistant message - show confirmation dialog
+                                            pendingRegenerateMessage = message
+                                            showRegenerateConfirmDialog = true
+                                        }
+                                    },
+                                    onEdit = {
+                                        inputState.editingMessage = it.id
+                                        inputState.setContents(it.parts)
+                                    },
+                                    onDelete = { message ->
+                                        if (message.role == me.rerere.ai.core.MessageRole.USER) {
+                                            // User message deletion removes all messages after - show confirmation
+                                            pendingDeleteMessage = message
+                                            showDeleteConfirmDialog = true
+                                        } else {
+                                            // Assistant message deletion - keep existing behavior with undo toast
+                                            scope.launch {
+                                                val backup = frameConversation
+                                                val removedIds = vm.deleteMessage(message)
+                                                toaster.show(
+                                                    message = context.getString(R.string.message_deleted),
+                                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                        label = context.getString(R.string.undo),
+                                                        onClick = {
+                                                            vm.updateConversation(backup)
+                                                            vm.markNodesAsRestored(removedIds)
+                                                        }
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onUpdateMessage = { newNode ->
+                                        val oldNode = frameConversation.messageNodes.find { it.id == newNode.id }
+                                        if (oldNode != null) {
+                                            if (oldNode.selectIndex != newNode.selectIndex) {
+                                                vm.selectMessageNode(newNode.id, newNode.selectIndex)
+                                            } else {
+                                                vm.updateConversation(
+                                                    frameConversation.copy(
+                                                        messageNodes = frameConversation.messageNodes.map { node ->
+                                                            if (node.id == newNode.id) {
+                                                                newNode
+                                                            } else {
+                                                                node
+                                                            }
+                                                        }
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onForkMessage = {
+                                        scope.launch {
+                                            val forkConversation = vm.forkMessage(it)
+                                            navigateToChatPage(navController, forkConversation.id)
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     }
 
                 ChatExportSheet(
@@ -1748,9 +1792,6 @@ private fun ChatPageContent(
                                 listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         } else {
                             toaster.show(modelRequiredMessage, type = ToastType.Error)
                         }
@@ -1784,9 +1825,6 @@ private fun ChatPageContent(
                                 inputState.getContents(),
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         }
                         inputState.clearInput()
                     },
@@ -1806,9 +1844,6 @@ private fun ChatPageContent(
                                 answer = false,
                                 persistenceMode = activePersistenceMode
                             )
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
-                            }
                         }
                         inputState.clearInput()
                     },
@@ -1862,7 +1897,7 @@ private fun ChatPageContent(
                             )
                         ) + scaleIn(
                             initialScale = 0.96f,
-                            transformOrigin = TransformOrigin(1f, 0f),
+                            transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
                             animationSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = 0.75f,
                                 stiffness = 360f
@@ -1875,7 +1910,7 @@ private fun ChatPageContent(
                             )
                         ) + scaleOut(
                             targetScale = 0.96f,
-                            transformOrigin = TransformOrigin(1f, 0f),
+                            transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
                             animationSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = 0.85f,
                                 stiffness = 420f
@@ -2183,6 +2218,7 @@ private fun ChatToolbarOverflowMenu(
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
     val menuTopPadding = if (placement == ChatToolbarPlacement.Top) 64.dp else 0.dp
+    val menuBottomPadding = if (placement == ChatToolbarPlacement.Bottom) 72.dp else 0.dp
     val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (dragDismissInProgress) 0f else 0.16f,
         animationSpec = androidx.compose.animation.core.spring(
@@ -2227,15 +2263,21 @@ private fun ChatToolbarOverflowMenu(
                 color = blurredContainerColor(containerColor),
                 border = border,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(
+                        if (placement == ChatToolbarPlacement.Top) {
+                            Alignment.TopEnd
+                        } else {
+                            Alignment.BottomEnd
+                        }
+                    )
                     .then(
                         if (placement == ChatToolbarPlacement.Top) {
                             Modifier.statusBarsPadding()
                         } else {
-                            Modifier
+                            Modifier.navigationBarsPadding()
                         }
                     )
-                    .padding(top = menuTopPadding, end = 16.dp)
+                    .padding(top = menuTopPadding, bottom = menuBottomPadding, end = 16.dp)
                     .widthIn(min = 196.dp, max = 260.dp)
                     .lastChatBlurEffect(containerColor, menuShape)
                     .clickable(

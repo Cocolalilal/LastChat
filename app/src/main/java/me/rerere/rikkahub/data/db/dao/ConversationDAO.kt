@@ -110,4 +110,16 @@ interface ConversationDAO {
     // Batch query for backfill tasks to prevent OOM
     @Query("SELECT * FROM conversationentity ORDER BY update_at DESC LIMIT :limit OFFSET :offset")
     suspend fun getBackfillDataBatch(limit: Int, offset: Int): List<ConversationEntity>
+
+    // Get most used model ID for an assistant using last_model_id column (no JSON parsing)
+    @Query(
+        """
+        SELECT last_model_id FROM conversationentity
+        WHERE assistant_id = :assistantId AND last_model_id IS NOT NULL AND last_model_id != ''
+        GROUP BY last_model_id
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getMostUsedModelIdForAssistant(assistantId: String): String?
 }

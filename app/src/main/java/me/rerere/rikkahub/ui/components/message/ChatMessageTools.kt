@@ -43,8 +43,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -87,6 +89,9 @@ fun ToolCallItem(
     val sandboxFileSummary = remember(toolName, arguments, content) {
         buildSandboxFileToolSummary(toolName = toolName, arguments = arguments, content = content)
     }
+    val workspaceSummary = remember(toolName, arguments, content) {
+        buildWorkspaceToolSummary(toolName = toolName, arguments = arguments, content = content)
+    }
     Surface(
         modifier = Modifier.animateContentSize(),
         onClick = {
@@ -117,6 +122,9 @@ fun ToolCallItem(
                         "scrape_web" -> Icons.Rounded.Public
                         "eval_python", "pip_install", "write_sandbox_file", "read_sandbox_file",
                         "list_sandbox_files", "delete_sandbox_file", "import_attachment" -> Icons.Rounded.Terminal
+                        "workspace_shell" -> Icons.Rounded.Terminal
+                        "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> Icons.Rounded.Description
+                        in WORKSPACE_TOOLS -> Icons.Rounded.Computer
                         else -> Icons.Rounded.Build
                     },
                     contentDescription = null,
@@ -152,6 +160,22 @@ fun ToolCallItem(
                         "delete_sandbox_file" -> stringResource(
                             R.string.chat_message_tool_python_delete_file,
                             (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "workspace_read_file" -> stringResource(
+                            R.string.chat_message_tool_workspace_read_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "workspace_write_file" -> stringResource(
+                            R.string.chat_message_tool_workspace_write_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "workspace_edit_file" -> stringResource(
+                            R.string.chat_message_tool_workspace_edit_file,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "workspace_shell" -> stringResource(
+                            R.string.chat_message_tool_workspace_shell,
+                            (arguments as? JsonObject)?.get("command")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
                         )
                         "import_attachment" -> stringResource(R.string.chat_message_tool_python_import)
                         else -> stringResource(
@@ -243,6 +267,22 @@ fun ToolCallItem(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (toolName in WORKSPACE_TOOLS && content != null && !loading) {
+                    val previewText = workspaceSummary?.previewText
+                    if (!previewText.isNullOrBlank()) {
+                        Text(
+                            text = previewText.take(100) + if (previewText.length > 100) "..." else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (!workspaceSummary.error.isNullOrBlank()) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            },
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }

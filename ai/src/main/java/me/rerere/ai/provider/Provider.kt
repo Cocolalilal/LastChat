@@ -2,13 +2,11 @@ package me.rerere.ai.provider
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
-import java.math.BigDecimal
 
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
@@ -55,6 +53,7 @@ data class TextGenerationParams(
     val tools: List<Tool> = emptyList(),
     val builtInTools: Set<BuiltInTools> = emptySet(),
     val thinkingBudget: Int? = null,
+    val sessionId: String? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )
@@ -68,46 +67,3 @@ data class ImageGenerationParams(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )
-
-@Serializable
-data class CustomHeader(
-    val name: String,
-    val value: String
-)
-
-@Serializable
-data class CustomBody(
-    val key: String,
-    val value: JsonElement
-)
-
-@Serializable
-data class ReasoningRequestBehavior(
-    val off: List<CustomBody> = emptyList(),
-    val auto: List<CustomBody> = emptyList(),
-    val low: List<CustomBody> = emptyList(),
-    val medium: List<CustomBody> = emptyList(),
-    val high: List<CustomBody> = emptyList(),
-) {
-    fun bodiesFor(level: me.rerere.ai.core.ReasoningLevel): List<CustomBody> {
-        return when (level) {
-            me.rerere.ai.core.ReasoningLevel.OFF -> off
-            me.rerere.ai.core.ReasoningLevel.AUTO -> auto
-            me.rerere.ai.core.ReasoningLevel.LOW -> low
-            me.rerere.ai.core.ReasoningLevel.MEDIUM -> medium
-            me.rerere.ai.core.ReasoningLevel.HIGH -> high
-        }
-    }
-}
-
-@Serializable
-enum class OpenAICompatibilityMode {
-    @kotlinx.serialization.SerialName("auto")
-    AUTO,
-
-    @kotlinx.serialization.SerialName("enabled")
-    ENABLED,
-
-    @kotlinx.serialization.SerialName("disabled")
-    DISABLED,
-}

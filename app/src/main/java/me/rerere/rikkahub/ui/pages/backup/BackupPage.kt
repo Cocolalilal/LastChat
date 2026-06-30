@@ -99,10 +99,11 @@ import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onLoading
 import me.rerere.rikkahub.utils.onSuccess
 import me.rerere.rikkahub.utils.toLocalDateTime
+import okio.buffer
+import okio.sink
+import okio.source
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.system.exitProcess
@@ -862,7 +863,7 @@ private fun ImportExportPage(
                     // 复制到用户选择的位置
                     withContext(Dispatchers.IO) {
                         context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                            FileInputStream(exportFile).use { inputStream ->
+                            exportFile.source().buffer().inputStream().use { inputStream ->
                                 inputStream.copyTo(outputStream)
                             }
                         }
@@ -880,7 +881,7 @@ private fun ImportExportPage(
                 }.onFailure { e ->
                     e.printStackTrace()
                     toaster.show(
-                        context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
+                        context.getString(R.string.backup_page_backup_failed, e.message ?: ""),
                         type = ToastType.Error
                     )
                 }
@@ -905,7 +906,7 @@ private fun ImportExportPage(
 
                             withContext(Dispatchers.IO) {
                                 context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                    FileOutputStream(tempFile).use { outputStream ->
+                                    tempFile.sink().buffer().outputStream().use { outputStream ->
                                         inputStream.copyTo(outputStream)
                                     }
                                 }
@@ -927,7 +928,7 @@ private fun ImportExportPage(
                             try {
                                 withContext(Dispatchers.IO) {
                                     context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                        FileOutputStream(tempFile).use { outputStream ->
+                                        tempFile.sink().buffer().outputStream().use { outputStream ->
                                             inputStream.copyTo(outputStream)
                                         }
                                     }
@@ -946,7 +947,7 @@ private fun ImportExportPage(
                             try {
                                 withContext(Dispatchers.IO) {
                                     context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                        FileOutputStream(tempFile).use { outputStream ->
+                                        tempFile.sink().buffer().outputStream().use { outputStream ->
                                             inputStream.copyTo(outputStream)
                                         }
                                     }

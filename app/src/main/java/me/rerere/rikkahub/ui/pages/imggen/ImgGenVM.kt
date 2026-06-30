@@ -30,6 +30,8 @@ import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
 data class GeneratedImage(
@@ -226,7 +228,7 @@ class ImgGenVM(
                 inputStream?.close()
                 
                 if (bytes != null) {
-                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val base64 = base64Encode(bytes)
                     // Determine mime type
                     val mimeType = getApplication<Application>().contentResolver.getType(uri) ?: "image/jpeg"
                     val url = "data:$mimeType;base64,$base64"
@@ -326,3 +328,6 @@ class ImgGenVM(
         private const val TAG = "ImgGenVM"
     }
 }
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)

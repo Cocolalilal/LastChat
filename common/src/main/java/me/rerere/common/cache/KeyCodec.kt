@@ -3,27 +3,27 @@ package me.rerere.common.cache
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
-import java.nio.charset.StandardCharsets
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 interface KeyCodec<K : Any> {
     fun toFileName(key: K): String
     fun fromFileName(name: String): K?
 }
 
+@OptIn(ExperimentalEncodingApi::class)
 class Base64JsonKeyCodec<K : Any>(
     private val keySerializer: KSerializer<K>,
     private val json: Json = Json { allowStructuredMapKeys = true }
 ) : KeyCodec<K> {
     override fun toFileName(key: K): String {
         val jsonStr = json.encodeToString(keySerializer, key)
-        val bytes = jsonStr.toByteArray(StandardCharsets.UTF_8)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        return Base64.UrlSafe.encode(jsonStr.encodeToByteArray()).trimEnd('=')
     }
 
     override fun fromFileName(name: String): K? = try {
-        val decoded = Base64.getUrlDecoder().decode(name)
-        val jsonStr = String(decoded, StandardCharsets.UTF_8)
+        val paddedName = name.padEnd(name.length + (4 - name.length % 4) % 4, '=')
+        val jsonStr = Base64.UrlSafe.decode(paddedName).decodeToString()
         json.decodeFromString(keySerializer, jsonStr)
     } catch (_: Exception) {
         null

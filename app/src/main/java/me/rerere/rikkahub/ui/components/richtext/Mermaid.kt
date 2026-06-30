@@ -1,17 +1,23 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Base64
 import android.webkit.JavascriptInterface
 import androidx.activity.compose.LocalActivity
+import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,8 +29,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
@@ -56,13 +65,21 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import android.util.LruCache
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
+import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.exportImage
+import androidx.compose.ui.text.style.TextOverflow
 import me.rerere.rikkahub.utils.toCssHex
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val EXPORT_WATERMARK = "LastChat"
 
@@ -109,7 +126,6 @@ fun Mermaid(
     val activity = LocalActivity.current
     val toaster = LocalToaster.current
 
-    var isExpanded by remember { mutableStateOf(true) }
     var contentHeight by remember { mutableIntStateOf(mermaidHeightCache.get(code) ?: 150) }
     val height = with(density) {
         contentHeight.toDp()
@@ -122,14 +138,13 @@ fun Mermaid(
                 contentHeight = (height * density.density).toInt()
                 mermaidHeightCache.put(code, contentHeight)
             },
-            onExportImage = { base64Image ->
+                    onExportImage = { base64Image ->
                 runCatching {
                     check(base64Image.isNotBlank()) { "Exported image was empty" }
                     activity?.let {
                         // 解码Base64图像并保存
-                        val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
-                        val bitmap =
-                            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                        val imageBytes = base64Decode(base64Image)
+                        val bitmap: Bitmap? = decodeBitmapWithBounds(imageBytes, 2048, 2048)
                         checkNotNull(bitmap) { "Could not decode exported image" }
                         context.exportImage(
                             it,
@@ -173,140 +188,144 @@ fun Mermaid(
         }
     )
 
+    val settings = LocalSettings.current
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    val effectiveDisplay = settings.getEffectiveDisplaySetting()
     var preview by remember { mutableStateOf(false) }
-    
-    // Physics-based header animations
-    val headerInteractionSource = remember { MutableInteractionSource() }
-    val isHeaderPressed by headerInteractionSource.collectIsPressedAsState()
-    val headerScale by animateFloatAsState(
-        targetValue = if (isHeaderPressed) 0.97f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.4f,
-            stiffness = 400f
-        ),
-        label = "header_scale"
-    )
-    val headerAlpha by animateFloatAsState(
-        targetValue = if (isHeaderPressed) 0.7f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f,
-            stiffness = 300f
-        ),
-        label = "header_alpha"
-    )
+
+    var expandState by remember(effectiveDisplay.codeBlockAutoCollapse) {
+        mutableStateOf(
+            if (effectiveDisplay.codeBlockAutoCollapse) CodeBlockState.Collapsed
+            else CodeBlockState.Expanded
+        )
+    }
+
+    val shellColor = colorScheme.surfaceContainerHigh
+    val headerColor = colorScheme.surfaceContainerHighest
+    val bodyColor = colorScheme.surfaceContainerLow
+    val footerColor = bodyColor
+    val outlineColor = colorScheme.outline.copy(alpha = 0.18f)
+    val actionTextColor = colorScheme.onSurfaceVariant
+
+    val footerText = if (expandState == CodeBlockState.Collapsed) {
+        stringResource(R.string.activity_timeline_expand)
+    } else {
+        stringResource(R.string.activity_timeline_collapse)
+    }
+
 
     Surface(
         modifier = modifier,
-        shape = AppShapes.MessageBubbleInner, // Optical roundness inside message bubbles (20dp - 12dp = 8dp)
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = AppShapes.InputField,
+        color = shellColor,
+        contentColor = colorScheme.onSurface,
+        border = BorderStroke(1.dp, outlineColor),
     ) {
+        val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
         Column(
             modifier = Modifier
-                .padding(12.dp)
                 .clipToBounds()
-                .animateContentSize(
-                    animationSpec = spring(
-                        dampingRatio = 0.7f,
-                        stiffness = 300f
-                    )
+                .then(
+                    if (chatAnimationsEnabled) {
+                        Modifier.animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing
+                            )
+                        )
+                    } else {
+                        Modifier
+                    }
                 ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            // Header row - always full width with icons at far right
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = headerScale
-                        scaleY = headerScale
-                        alpha = headerAlpha
-                    }
-                    // No clip needed - outer shape is already small (8dp)
-                    .clickable(
-                        onClick = { isExpanded = !isExpanded },
-                        indication = LocalIndication.current,
-                        interactionSource = headerInteractionSource
-                    )
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                    .semantics { role = Role.Button },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .background(headerColor)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                // Left side: Icon and title
-                Icon(
-                    imageVector = Icons.Rounded.AccountTree,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(R.string.mermaid_diagram),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                // Spacer to push icons to the right
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // Right side: Action icons + chevron
-                if (activity != null) {
-                    // Preview icon
-                    IconButton(
-                        onClick = { preview = true },
-                        modifier = Modifier.size(32.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Visibility,
-                            contentDescription = stringResource(R.string.mermaid_preview),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        Text(
+                            text = "mermaid",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = actionTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    
-                    // Download icon
-                    IconButton(
-                        onClick = {
-                            webViewState.webView?.evaluateJavascript(
-                                "exportSvgToPng();",
-                                null
-                            )
-                        },
-                        modifier = Modifier.size(32.dp)
+                    Row(
+                        modifier = Modifier.height(28.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Download,
+                        CodeBlockActionButton(
+                            icon = Icons.Rounded.Download,
                             contentDescription = stringResource(R.string.mermaid_export),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = actionTextColor,
+                            onClick = {
+                                webViewState.webView?.evaluateJavascript(
+                                    "exportSvgToPng();",
+                                    null
+                                )
+                            },
+                            hapticsEnabled = settings.displaySetting.enableUIHaptics
+                        )
+                        CodeBlockActionButton(
+                            icon = Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.mermaid_preview),
+                            tint = actionTextColor,
+                            onClick = { preview = true },
+                            hapticsEnabled = settings.displaySetting.enableUIHaptics
                         )
                     }
                 }
-                
-                // Expand/collapse chevron
-                Icon(
-                    imageVector = if (isExpanded) {
-                        Icons.Rounded.KeyboardArrowUp
-                    } else {
-                        Icons.Rounded.KeyboardArrowDown
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
             }
 
-            // Diagram content (only when expanded)
-            if (isExpanded) {
-                WebView(
-                    state = webViewState,
+            if (expandState == CodeBlockState.Expanded) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // No clip needed - outer shape is already small (8dp)
-                        .height(height),
-                    onUpdated = {
-                        it.evaluateJavascript("calculateAndSendHeight();", null)
+                        .background(bodyColor)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    WebView(
+                        state = webViewState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(height),
+                        onUpdated = {
+                            it.evaluateJavascript("calculateAndSendHeight();", null)
+                        }
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(footerColor)
+            ) {
+                CodeBlockFooter(
+                    expanded = expandState == CodeBlockState.Expanded,
+                    footerText = footerText,
+                    footerAction = codeBlockFooterAction(expandState),
+                    onToggle = {
+                        haptics.perform(HapticPattern.Pop)
+                        expandState = if (expandState == CodeBlockState.Collapsed) CodeBlockState.Expanded else CodeBlockState.Collapsed
                     }
                 )
             }
@@ -584,4 +603,27 @@ private fun buildMermaidHtml(
 enum class MermaidTheme(val value: String) {
     DEFAULT("default"),
     DARK("dark"),
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun base64Decode(value: String): ByteArray = Base64.decode(value)
+
+private fun decodeBitmapWithBounds(data: ByteArray, maxWidth: Int, maxHeight: Int): Bitmap? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(data, 0, data.size, options)
+    options.inJustDecodeBounds = false
+    options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxWidth, maxHeight)
+    return BitmapFactory.decodeByteArray(data, 0, data.size, options)
+}
+
+private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+    var inSampleSize = 1
+    if (srcHeight > reqHeight || srcWidth > reqWidth) {
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+            inSampleSize *= 2
+        }
+    }
+    return inSampleSize
 }

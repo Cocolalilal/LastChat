@@ -127,7 +127,45 @@ fun AssistantRagMemorySubPage(
                 }
             }
 
-
+            // RAG Max Memories
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.assistant_memory_rag_limit),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.assistant_memory_rag_limit_desc,
+                            if (assistant.ragLimit > 50) stringResource(R.string.assistant_memory_rag_limit_unlimited) else assistant.ragLimit.toString()
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    var limit by remember(assistant.ragLimit) {
+                        mutableFloatStateOf(assistant.ragLimit.toFloat())
+                    }
+                    Slider(
+                        value = limit,
+                        onValueChange = { newValue ->
+                            limit = newValue
+                            onUpdateAssistant(
+                                assistant.copy(ragLimit = newValue.toInt())
+                            )
+                        },
+                        valueRange = 5f..55f,
+                        steps = 9
+                    )
+                }
+            }
 
             // Advanced RAG Settings
             Card(

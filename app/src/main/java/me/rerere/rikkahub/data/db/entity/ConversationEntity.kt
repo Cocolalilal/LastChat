@@ -33,6 +33,8 @@ data class ConversationEntity(
     val isConsolidated: Boolean = false,
     @ColumnInfo(name = "enabled_mode_ids", defaultValue = "[]")
     val enabledModeIds: String = "[]",
+    @ColumnInfo(name = "enabled_lorebook_ids", defaultValue = "")
+    val enabledLorebookIds: String = "",
     @ColumnInfo(name = "context_summary", defaultValue = "")
     val contextSummary: String = "",
     @ColumnInfo(name = "context_summary_up_to_index", defaultValue = "-1")
@@ -45,4 +47,6 @@ data class ConversationEntity(
     val lastRefreshTime: Long = 0L,
     @ColumnInfo(name = "is_fork", defaultValue = "0")
     val isFork: Boolean = false,
+    @ColumnInfo(name = "last_model_id", defaultValue = "")
+    val lastModelId: String = "",
 )

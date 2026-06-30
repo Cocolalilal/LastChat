@@ -1,31 +1,27 @@
 package me.rerere.tts.provider.providers
 
-import android.content.Context
-import android.util.Base64
-import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformLog
+import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val TAG = "QwenTTSProvider"
 
-class QwenTTSProvider : TTSProvider<TTSProviderSetting.Qwen> {
-    private val httpClient = OkHttpClient.Builder()
-        .readTimeout(120, TimeUnit.SECONDS)
-        .build()
-
+@OptIn(ExperimentalEncodingApi::class)
+class QwenTTSProvider(
+    private val httpClient: PlatformHttpClient,
+) : TTSProvider<TTSProviderSetting.Qwen> {
     override fun generateSpeech(
-        context: Context,
         providerSetting: TTSProviderSetting.Qwen,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
@@ -38,62 +34,58 @@ class QwenTTSProvider : TTSProvider<TTSProviderSetting.Qwen> {
             })
         }
 
-        Log.i(TAG, "generateSpeech: $requestBody")
+        PlatformLog.i(TAG, "generateSpeech: $requestBody")
 
-        val httpRequest = Request.Builder()
-            .url("${providerSetting.baseUrl}/services/aigc/multimodal-generation/generation")
-            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
-            .addHeader("Content-Type", "application/json")
-            .addHeader("X-DashScope-SSE", "enable")
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        val response = httpClient.newCall(httpRequest).execute()
-
-        if (!response.isSuccessful) {
-            val errorBody = response.body.string()
-            Log.e(TAG, "Qwen TTS request failed: ${response.code} ${response.message}, body: $errorBody")
-            throw Exception("Qwen TTS request failed: ${response.code} ${response.message}")
-        }
-
-        val reader = response.body.byteStream().bufferedReader()
-
-        try {
-            var currentData = StringBuilder()
-
-            reader.lineSequence().forEach { line ->
-                when {
-                    line.startsWith("data:") -> {
-                        currentData.append(line.removePrefix("data:"))
-                    }
-
-                    line.isEmpty() && currentData.isNotEmpty() -> {
-                        val result = parseSseData(currentData.toString())
-                        if (result != null) {
-                            val (audioData, isLast) = result
-                            emit(
-                                AudioChunk(
-                                    data = audioData,
-                                    format = AudioFormat.PCM,
-                                    sampleRate = 24000,
-                                    isLast = isLast,
-                                    metadata = mapOf(
-                                        "provider" to "qwen",
-                                        "model" to providerSetting.model,
-                                        "voice" to providerSetting.voice,
-                                        "sampleRate" to "24000",
-                                        "channels" to "1",
-                                        "bitDepth" to "16"
-                                    )
+        httpClient.streamEvents(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/services/aigc/multimodal-generation/generation",
+                headers = mapOf(
+                    "Authorization" to "Bearer ${providerSetting.apiKey}",
+                    "Content-Type" to "application/json",
+                    "X-DashScope-SSE" to "enable",
+                ),
+                body = requestBody.toString().encodeToByteArray(),
+                mediaType = "application/json",
+            )
+        ).collect { event ->
+            when (event) {
+                is PlatformServerEvent.Open -> Unit
+                PlatformServerEvent.Closed -> Unit
+                is PlatformServerEvent.Event -> {
+                    val result = parseSseData(event.data)
+                    if (result != null) {
+                        val (audioData, isLast) = result
+                        emit(
+                            AudioChunk(
+                                data = audioData,
+                                format = AudioFormat.PCM,
+                                sampleRate = 24000,
+                                isLast = isLast,
+                                metadata = mapOf(
+                                    "provider" to "qwen",
+                                    "model" to providerSetting.model,
+                                    "voice" to providerSetting.voice,
+                                    "sampleRate" to "24000",
+                                    "channels" to "1",
+                                    "bitDepth" to "16"
                                 )
                             )
-                        }
-                        currentData = StringBuilder()
+                        )
                     }
                 }
+
+                is PlatformServerEvent.Failure -> {
+                    val message = buildString {
+                        append("Qwen TTS request failed")
+                        event.statusCode?.let { statusCode -> append(": $statusCode") }
+                        event.body?.let { body -> append(" $body") }
+                        event.message?.let { failureMessage -> append(" $failureMessage") }
+                    }
+                    PlatformLog.e(TAG, message)
+                    throw Exception(message)
+                }
             }
-        } finally {
-            reader.close()
         }
     }
 
@@ -106,14 +98,14 @@ class QwenTTSProvider : TTSProvider<TTSProviderSetting.Qwen> {
             val finishReason = output.optString("finish_reason", "")
 
             if (audioBase64.isNotEmpty()) {
-                val audioData = Base64.decode(audioBase64, Base64.DEFAULT)
+                val audioData = Base64.Default.decode(audioBase64)
                 val isLast = finishReason == "stop"
                 Pair(audioData, isLast)
             } else {
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse SSE data: $data", e)
+            PlatformLog.e(TAG, "Failed to parse SSE data: $data ${e.message}")
             null
         }
     }

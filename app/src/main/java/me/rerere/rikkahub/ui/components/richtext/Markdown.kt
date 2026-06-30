@@ -1,7 +1,8 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import android.content.Intent
-import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,9 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.rounded.Download
@@ -46,6 +44,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,6 +98,7 @@ import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.floor
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -136,14 +136,21 @@ private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
 val LocalRpStyleRules = compositionLocalOf<List<RpStyleRule>> { emptyList() }
 
 private data class StreamingTextReveal(
+    val ranges: List<StreamingSettleRange>,
+    val nowMillis: Long,
+    val color: Color,
+    val smoothedCharsPerSecond: Float
+)
+
+internal data class StreamingSettleRange(
     val startOffset: Int,
     val endOffset: Int,
-    val alpha: Float,
-    val color: Color
+    val revealedAtMillis: Long
 )
 
 private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
-private val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
+val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
+val LocalMarkdownWorkspaceId = compositionLocalOf<String?> { null }
 
 /**
  * Safely get color from RP style rule for a given pattern.
@@ -361,6 +368,7 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     paragraphSpacing: Dp = 4.dp,
     streamingTextReveal: Boolean = false,
+    workspaceId: String? = null,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
 ) {
@@ -368,74 +376,97 @@ fun MarkdownBlock(
     val settings = LocalSettings.current
     val rpStyleRules = settings.displaySetting.rpStyleRules
     val contentColor = style.color.takeOrElse { LocalContentColor.current }
-    val revealAlpha = remember { Animatable(1f) }
-    var revealStartOffset by remember { mutableStateOf(0) }
-    var previousStreamingContent by remember { mutableStateOf(preProcess(content)) }
-    var lastStreamUpdateMillis by remember { mutableStateOf(0L) }
+    val streamingPresentation = remember { StreamingTextPresentationState(content) }
+    var displayContent by remember { mutableStateOf(content) }
+    var settleRanges by remember { mutableStateOf(emptyList<StreamingSettleRange>()) }
+    var streamingFrameMillis by remember { mutableStateOf(0L) }
     
     var (data, setData) = remember {
-        val preprocessed = preProcess(content)
-        val astTree = parser.buildMarkdownTreeFromString(preprocessed)
-        mutableStateOf(
-            value = preprocessed to astTree,
-            policy = referentialEqualityPolicy(),
-        )
+        // For small content, parse synchronously to avoid UI flash.
+        // For large content (like heavy tool outputs or base64 images), initialize with empty
+        // AST and let the LaunchedEffect below parse it on a background thread to avoid UI stutter.
+        if (displayContent.length < 4000) {
+            val preprocessed = preProcess(displayContent)
+            val astTree = parser.buildMarkdownTreeFromString(preprocessed)
+            mutableStateOf(
+                value = preprocessed to astTree,
+                policy = referentialEqualityPolicy(),
+            )
+        } else {
+            val astTree = parser.buildMarkdownTreeFromString("")
+            mutableStateOf(
+                value = "" to astTree,
+                policy = referentialEqualityPolicy(),
+            )
+        }
     }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
-    val updatedContent by rememberUpdatedState(content)
+    val updatedDisplayContent by rememberUpdatedState(displayContent)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedContent }.distinctUntilChanged().mapLatest {
+        // The synchronous parse above already produced the AST for the initial content.
+        // The first snapshotFlow emission mirrors that same content; without this guard
+        // it would call setData with a new Pair instance and, due to referentialEqualityPolicy,
+        // trigger a full redundant recomposition + re-measure of the whole markdown tree
+        // right after the item first appears on screen (a visible stutter, amplified by the
+        // multiple text bubbles present in tool-usage turns).
+        var lastPreprocessed = data.first
+        snapshotFlow { updatedDisplayContent }.distinctUntilChanged().mapLatest {
             val preprocessed = preProcess(it)
             val astTree = parser.buildMarkdownTreeFromString(preprocessed)
             preprocessed to astTree
         }.catch { exception -> exception.printStackTrace() }.flowOn(Dispatchers.Default) // 在后台线程解析AST树
-            .collect {
-                setData(it)
+            .collect { parsed ->
+                if (parsed.first != lastPreprocessed) {
+                    lastPreprocessed = parsed.first
+                    setData(parsed)
+                }
             }
     }
 
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
     LaunchedEffect(content, streamingTextReveal) {
-        val nextContent = preProcess(content)
         if (!streamingTextReveal) {
-            previousStreamingContent = nextContent
-            revealAlpha.snapTo(1f)
+            streamingPresentation.snapTo(content)
+            displayContent = streamingPresentation.displayContent
+            settleRanges = emptyList()
             return@LaunchedEffect
         }
 
-        val previousContent = previousStreamingContent
-        previousStreamingContent = nextContent
+        val now = withFrameMillis { it }
+        streamingPresentation.acceptRawContent(content, now)
+        displayContent = streamingPresentation.displayContent
+        settleRanges = streamingPresentation.settleRanges
+        streamingFrameMillis = now
+        onExpandedStreamingCodeBlockChanged?.invoke()
+    }
+    LaunchedEffect(streamingTextReveal) {
+        if (!streamingTextReveal) return@LaunchedEffect
 
-        if (nextContent.length > previousContent.length) {
-            val now = SystemClock.uptimeMillis()
-            val elapsedMillis = if (lastStreamUpdateMillis == 0L) Long.MAX_VALUE else now - lastStreamUpdateMillis
-            val appendedLength = nextContent.length - previousContent.length
-            revealStartOffset = streamingRevealWordStart(
-                content = nextContent,
-                offset = commonPrefixLength(previousContent, nextContent)
+        var previousFrameMillis = withFrameMillis { it }
+        while (true) {
+            val now = withFrameMillis { it }
+            val changed = streamingPresentation.step(
+                nowMillis = now,
+                elapsedMillis = (now - previousFrameMillis).coerceAtLeast(0L)
             )
-            lastStreamUpdateMillis = now
-            revealAlpha.snapTo(streamingRevealInitialAlpha(elapsedMillis, appendedLength))
-            revealAlpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = 360,
-                    easing = LinearOutSlowInEasing
-                )
-            )
-        } else if (nextContent != previousContent) {
-            revealAlpha.snapTo(1f)
+            previousFrameMillis = now
+            streamingFrameMillis = now
+            if (changed) {
+                displayContent = streamingPresentation.displayContent
+                onExpandedStreamingCodeBlockChanged?.invoke()
+            }
+            settleRanges = streamingPresentation.settleRanges
         }
     }
-    val streamingReveal = if (streamingTextReveal && revealAlpha.value < 0.995f) {
+    val streamingReveal = if (streamingTextReveal && settleRanges.isNotEmpty()) {
         StreamingTextReveal(
-            startOffset = revealStartOffset.coerceIn(0, preprocessed.length),
-            endOffset = preprocessed.length,
-            alpha = revealAlpha.value.coerceIn(0f, 1f),
-            color = contentColor
+            ranges = settleRanges,
+            nowMillis = streamingFrameMillis,
+            color = contentColor,
+            smoothedCharsPerSecond = streamingPresentation.smoothedCharsPerSecond
         )
     } else {
         null
@@ -446,11 +477,25 @@ fun MarkdownBlock(
         LocalRpStyleRules provides rpStyleRules,
         LocalStreamingTextReveal provides streamingReveal,
         LocalMarkdownParagraphSpacing provides paragraphSpacing,
+        LocalMarkdownWorkspaceId provides workspaceId,
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
             Column(
-                modifier = modifier.padding(start = 4.dp)
+                modifier = modifier
+                    .then(
+                        if (streamingTextReveal) {
+                            Modifier.animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = 0.82f,
+                                    stiffness = 420f
+                                )
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(start = 4.dp)
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
@@ -465,45 +510,317 @@ fun MarkdownBlock(
     }
 }
 
-private fun commonPrefixLength(left: String, right: String): Int {
-    val limit = minOf(left.length, right.length)
-    for (index in 0 until limit) {
-        if (left[index] != right[index]) return index
+internal class StreamingTextPresentationState(
+    initialRawContent: String,
+    nowMillis: Long = 0L
+) {
+    var rawContent: String = initialRawContent
+        private set
+    var displayContent: String = initialRawContent
+        private set
+    var settleRanges: List<StreamingSettleRange> = emptyList()
+        private set
+
+    var smoothedCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+        private set
+    private var lastRawUpdateMillis = nowMillis
+    private var firstPendingSinceMillis = 0L
+    private var revealCarry = 0f
+    private var lastRevealMillis = nowMillis
+    private var currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+
+    fun acceptRawContent(nextRawContent: String, nowMillis: Long): Boolean {
+        if (nextRawContent == rawContent) {
+            settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+            return false
+        }
+
+        if (!nextRawContent.startsWith(displayContent)) {
+            snapTo(nextRawContent)
+            lastRawUpdateMillis = nowMillis
+            lastRevealMillis = nowMillis
+            currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+            return true
+        }
+
+        val previousRawContent = rawContent
+        rawContent = nextRawContent
+
+        if (nextRawContent.length > previousRawContent.length && nextRawContent.startsWith(previousRawContent)) {
+            val elapsedMillis = (nowMillis - lastRawUpdateMillis).coerceAtLeast(1L)
+            val appendedLength = nextRawContent.length - previousRawContent.length
+            val instantCharsPerSecond = appendedLength * 1000f / elapsedMillis
+            smoothedCharsPerSecond = smoothStreamingRate(
+                previousCharsPerSecond = smoothedCharsPerSecond,
+                instantCharsPerSecond = instantCharsPerSecond
+            )
+            if (firstPendingSinceMillis == 0L && displayContent.length < rawContent.length) {
+                firstPendingSinceMillis = nowMillis
+            }
+        } else if (!nextRawContent.startsWith(previousRawContent)) {
+            snapTo(nextRawContent)
+            lastRawUpdateMillis = nowMillis
+            lastRevealMillis = nowMillis
+            currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+            return true
+        }
+
+        lastRawUpdateMillis = nowMillis
+        settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+        return false
     }
-    return limit
+
+    fun step(nowMillis: Long, elapsedMillis: Long): Boolean {
+        settleRanges = settleRanges.pruneStreamingSettleRanges(nowMillis)
+        if (displayContent == rawContent) {
+            firstPendingSinceMillis = 0L
+            revealCarry = 0f
+            currentRevealCharsPerSecond = approachStreamingRate(
+                current = currentRevealCharsPerSecond,
+                target = 0f,
+                elapsedMillis = elapsedMillis,
+                timeConstantMillis = STREAMING_DECEL_TIME_CONSTANT_MILLIS
+            )
+            return false
+        }
+
+        val pendingLength = rawContent.length - displayContent.length
+        val pendingAgeMillis = if (firstPendingSinceMillis == 0L) 0L else nowMillis - firstPendingSinceMillis
+        if (pendingAgeMillis < STREAMING_INITIAL_BUFFER_MILLIS && pendingLength < STREAMING_TINY_PENDING_LENGTH) {
+            return false
+        }
+
+        val backlogMillis = pendingLength * 1000f / smoothedCharsPerSecond.coerceAtLeast(1f)
+        val catchUpMultiplier = when {
+            backlogMillis <= STREAMING_CATCH_UP_AFTER_MILLIS -> 1f
+            else -> (backlogMillis / STREAMING_SMOOTHING_WINDOW_MILLIS).coerceIn(1f, STREAMING_MAX_CATCH_UP_MULTIPLIER)
+        }
+        val baseRevealChars = smoothedCharsPerSecond
+            .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND) * catchUpMultiplier
+
+        val stalledMillis = (nowMillis - lastRawUpdateMillis - STREAMING_STALL_GRACE_MILLIS).coerceAtLeast(0L)
+        val stallProgress = (stalledMillis / STREAMING_STALL_DECEL_MILLIS.toFloat()).coerceIn(0f, 1f)
+        val stallEase = stallProgress * stallProgress * (3f - 2f * stallProgress)
+        val targetRevealChars = baseRevealChars * (1f - (1f - STREAMING_STALL_MIN_MULTIPLIER) * stallEase)
+        currentRevealCharsPerSecond = approachStreamingRate(
+            current = currentRevealCharsPerSecond,
+            target = targetRevealChars,
+            elapsedMillis = elapsedMillis,
+            timeConstantMillis = if (targetRevealChars > currentRevealCharsPerSecond) {
+                STREAMING_ACCEL_TIME_CONSTANT_MILLIS
+            } else {
+                STREAMING_DECEL_TIME_CONSTANT_MILLIS
+            }
+        ).coerceIn(STREAMING_MIN_CHARS_PER_SECOND * STREAMING_STALL_MIN_MULTIPLIER, STREAMING_MAX_CHARS_PER_SECOND)
+
+        revealCarry += currentRevealCharsPerSecond * elapsedMillis.coerceAtLeast(1L) / 1000f
+        val revealBudget = floor(revealCarry).toInt().coerceAtMost(pendingLength)
+        val starved = nowMillis - lastRevealMillis >= STREAMING_STARVED_REVEAL_MILLIS
+        if (revealBudget <= 0 && !starved) {
+            return false
+        }
+
+        val count = chooseStreamingRevealCount(
+            pending = rawContent.substring(displayContent.length),
+            budget = revealBudget.coerceAtLeast(if (starved) 1 else 0),
+            starved = starved
+        )
+        if (count <= 0) {
+            return false
+        }
+
+        val start = displayContent.length
+        displayContent = rawContent.substring(0, start + count)
+        revealCarry = (revealCarry - count).coerceAtLeast(0f)
+        lastRevealMillis = nowMillis
+        if (displayContent == rawContent) {
+            firstPendingSinceMillis = 0L
+        }
+        val settledRanges = streamingSettleRangesForReveal(
+            content = displayContent,
+            revealStart = start,
+            revealEnd = displayContent.length,
+            nowMillis = nowMillis
+        )
+        settleRanges = (settleRanges + settledRanges)
+            .mergeAdjacentStreamingSettleRanges()
+            .pruneStreamingSettleRanges(nowMillis)
+            .takeLast(STREAMING_MAX_SETTLE_RANGES)
+        return true
+    }
+
+    fun snapTo(content: String) {
+        rawContent = content
+        displayContent = content
+        settleRanges = emptyList()
+        firstPendingSinceMillis = 0L
+        revealCarry = 0f
+        currentRevealCharsPerSecond = STREAMING_DEFAULT_CHARS_PER_SECOND
+    }
 }
 
-private fun streamingRevealInitialAlpha(elapsedMillis: Long, appendedLength: Int): Float {
-    val cadenceAlpha = when {
-        elapsedMillis < 90L -> 0.22f
-        elapsedMillis < 180L -> 0.30f
-        elapsedMillis < 420L -> 0.42f
-        elapsedMillis < 900L -> 0.58f
-        else -> 0.76f
-    }
-    val tinyDeltaLift = when {
-        appendedLength <= 1 -> 0.16f
-        appendedLength <= 3 -> 0.08f
-        else -> 0f
-    }
-    return (cadenceAlpha + tinyDeltaLift).coerceAtMost(0.82f)
+private fun approachStreamingRate(
+    current: Float,
+    target: Float,
+    elapsedMillis: Long,
+    timeConstantMillis: Long,
+): Float {
+    if (timeConstantMillis <= 0L) return target
+    val progress = (elapsedMillis.coerceAtLeast(1L) / timeConstantMillis.toFloat()).coerceIn(0f, 1f)
+    return current + (target - current) * progress
 }
 
-private fun streamingRevealWordStart(content: String, offset: Int): Int {
-    var index = offset.coerceIn(0, content.length)
-    while (index > 0 && content[index - 1].isStreamingWordCharacter()) {
-        index--
+internal fun smoothStreamingRate(
+    previousCharsPerSecond: Float,
+    instantCharsPerSecond: Float
+): Float {
+    val target = instantCharsPerSecond.coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND)
+    return (previousCharsPerSecond * STREAMING_RATE_KEEP_WEIGHT + target * (1f - STREAMING_RATE_KEEP_WEIGHT))
+        .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND)
+}
+
+internal fun chooseStreamingRevealCount(
+    pending: String,
+    budget: Int,
+    starved: Boolean
+): Int {
+    if (pending.isEmpty() || budget <= 0) return 0
+    if (budget >= pending.length) return pending.length
+
+    val cappedBudget = budget.coerceIn(1, pending.length)
+    if (pending[cappedBudget - 1].isWhitespace()) {
+        return cappedBudget
     }
-    return index
+
+    val previousBoundary = pending.streamingBoundaryAtOrBefore(cappedBudget)
+    if (previousBoundary > 0 && previousBoundary >= cappedBudget - STREAMING_BOUNDARY_BACKTRACK) {
+        return previousBoundary
+    }
+
+    val nextBoundary = pending.streamingBoundaryAfter(cappedBudget)
+    if (nextBoundary in 1..(cappedBudget + STREAMING_BOUNDARY_LOOKAHEAD) && nextBoundary <= pending.length) {
+        return nextBoundary
+    }
+
+    val firstWordEnd = pending.indexOfFirst { !it.isStreamingWordCharacter() }.let { if (it == -1) pending.length else it }
+    return when {
+        firstWordEnd <= STREAMING_SHORT_WORD_LENGTH && !starved -> 0
+        firstWordEnd <= STREAMING_MEDIUM_WORD_LENGTH &&
+            cappedBudget >= firstWordEnd - STREAMING_BOUNDARY_LOOKAHEAD -> firstWordEnd
+        firstWordEnd > STREAMING_LONG_WORD_LENGTH -> cappedBudget
+        starved -> cappedBudget
+        else -> 0
+    }
+}
+
+internal fun streamingSettleRangesForReveal(
+    content: String,
+    revealStart: Int,
+    revealEnd: Int,
+    nowMillis: Long
+): List<StreamingSettleRange> {
+    if (revealEnd <= revealStart) return emptyList()
+    val safeStart = revealStart.coerceIn(0, content.length)
+    val safeEnd = revealEnd.coerceIn(safeStart, content.length)
+    val ranges = mutableListOf<StreamingSettleRange>()
+    var index = safeStart
+
+    while (index < safeEnd) {
+        while (index < safeEnd && content[index].isWhitespace()) {
+            index++
+        }
+        if (index >= safeEnd) break
+
+        val start = index
+        while (index < safeEnd && !content[index].isWhitespace()) {
+            index++
+        }
+        ranges.add(StreamingSettleRange(start, index, nowMillis))
+    }
+
+    return ranges
+}
+
+private fun String.streamingBoundaryAtOrBefore(limit: Int): Int {
+    val cappedLimit = limit.coerceIn(1, length)
+    for (index in cappedLimit downTo 1) {
+        if (this[index - 1].isStreamingBoundaryCharacter()) {
+            return index
+        }
+    }
+    return 0
+}
+
+private fun String.streamingBoundaryAfter(offset: Int): Int {
+    val start = offset.coerceIn(1, length)
+    for (index in start..length) {
+        if (this[index - 1].isStreamingBoundaryCharacter()) {
+            return index
+        }
+    }
+    return 0
+}
+
+private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
+    return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_MAX_MILLIS }
+}
+
+private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): List<StreamingSettleRange> {
+    if (isEmpty()) return emptyList()
+    return sortedWith(compareBy<StreamingSettleRange> { it.revealedAtMillis }.thenBy { it.startOffset })
+        .fold(mutableListOf()) { merged, range ->
+            val previous = merged.lastOrNull()
+            if (previous != null &&
+                previous.revealedAtMillis == range.revealedAtMillis &&
+                previous.endOffset == range.startOffset
+            ) {
+                merged[merged.lastIndex] = previous.copy(endOffset = range.endOffset)
+            } else {
+                merged.add(range)
+            }
+            merged
+        }
 }
 
 private fun Char.isStreamingWordCharacter(): Boolean {
     return isLetterOrDigit() || this == '_' || this == '-' || this == '\''
 }
 
+private fun Char.isStreamingBoundaryCharacter(): Boolean {
+    return isWhitespace() || this in ".,;:!?)]}\"'"
+}
+
+private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
+private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
+private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
+private const val STREAMING_SETTLE_MIN_MILLIS = 180L
+private const val STREAMING_SETTLE_MAX_MILLIS = 360L
+private const val STREAMING_SETTLE_ALPHA_FAST = 0.42f
+private const val STREAMING_SETTLE_ALPHA_SLOW = 0.65f
+private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
+private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
+private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
+private const val STREAMING_MIN_CHARS_PER_SECOND = 18f
+private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 44f
+private const val STREAMING_MAX_CHARS_PER_SECOND = 220f
+private const val STREAMING_MAX_CATCH_UP_MULTIPLIER = 3.2f
+private const val STREAMING_RATE_KEEP_WEIGHT = 0.82f
+private const val STREAMING_ACCEL_TIME_CONSTANT_MILLIS = 140L
+private const val STREAMING_DECEL_TIME_CONSTANT_MILLIS = 620L
+private const val STREAMING_STALL_GRACE_MILLIS = 140L
+private const val STREAMING_STALL_DECEL_MILLIS = 900L
+private const val STREAMING_STALL_MIN_MULTIPLIER = 0.18f
+private const val STREAMING_TINY_PENDING_LENGTH = 4
+private const val STREAMING_SHORT_WORD_LENGTH = 7
+private const val STREAMING_MEDIUM_WORD_LENGTH = 10
+private const val STREAMING_LONG_WORD_LENGTH = 12
+private const val STREAMING_BOUNDARY_LOOKAHEAD = 3
+private const val STREAMING_BOUNDARY_BACKTRACK = 2
+private const val STREAMING_MAX_SETTLE_RANGES = 12
+
 // for debug
 private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
-    println("$indent${node.type} ${if (node.children.isEmpty()) node.getTextInNode(text) else ""} | ${node.javaClass.simpleName}")
+    println("$indent${node.type} ${if (node.children.isEmpty()) node.getTextInNode(text) else ""} | ${node::class.simpleName}")
     node.children.fastForEach {
         dumpAst(it, text, "$indent  ")
     }
@@ -703,8 +1020,9 @@ private fun MarkdownNode(
             val scope = rememberCoroutineScope()
             Text(
                 text = linkText,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
                 textDecoration = TextDecoration.Underline,
+                fontWeight = FontWeight.Medium,
                 modifier = modifier.clickable {
                     Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
                     val uri = linkDest.toUri()
@@ -783,14 +1101,24 @@ private fun MarkdownNode(
         // 图片
         MarkdownElementTypes.IMAGE -> {
             val altText = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_TEXT)?.getTextInNode(content) ?: ""
-            val imageUrl =
-                node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
+            val originalImageUrl = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
+            
+            var imageModel: String = originalImageUrl
+            val workspaceId = LocalMarkdownWorkspaceId.current
+            if (workspaceId != null && originalImageUrl.startsWith("/workspace/")) {
+                val context = LocalContext.current
+                val localFile = java.io.File(context.filesDir, "workspaces/$workspaceId/files" + originalImageUrl.removePrefix("/workspace"))
+                if (localFile.exists()) {
+                    imageModel = "file://" + localFile.absolutePath
+                }
+            }
+
             Column(
                 modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // 这里可以使用Coil等图片加载库加载图片
                 ZoomableAsyncImage(
-                    model = imageUrl,
+                    model = imageModel,
                     contentDescription = altText,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -862,11 +1190,12 @@ private fun MarkdownNode(
 
             val language =
                 node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(content) ?: "plaintext"
+            val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
 
             // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                if (hasEnd && language == "mermaid") {
+                if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
                         code = code,
                         modifier = Modifier
@@ -876,7 +1205,7 @@ private fun MarkdownNode(
                 } else {
                     HighlightCodeBlock(
                         code = code,
-                        language = language,
+                        language = normalizedLanguage,
                         modifier = Modifier
                             .padding(bottom = 4.dp)
                             .fillMaxWidth(),
@@ -1277,7 +1606,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
         node.type == GFMTokenTypes.GFM_AUTOLINK -> {
             val link = node.getTextInNode(content)
             withLink(LinkAnnotation.Url(link)) {
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                withStyle(
+                    SpanStyle(
+                        color = colorScheme.primary.copy(alpha = 0.9f),
+                        fontWeight = FontWeight.Medium,
+                        textDecoration = TextDecoration.Underline
+                    )
+                ) {
                     append(link)
                 }
             }
@@ -1382,7 +1717,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                         }
                                         .fillMaxSize()
                                         .clip(CircleShape)
-                                        .background(colorScheme.tertiaryContainer.copy(0.2f)),
+                                        .background(colorScheme.surfaceVariant),
                                     contentAlignment = Alignment.Center) {
                                     Text(
                                         text = domain,
@@ -1391,8 +1726,8 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                             fontSize = 10.sp,
                                             lineHeight = 10.sp,
                                             fontFamily = FontFamily.Monospace,
-                                            color = colorScheme.onTertiaryContainer,
-                                            fontWeight = FontWeight.Thin
+                                            color = colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Light
                                         ),
                                     )
                                 }
@@ -1425,8 +1760,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                     },
                                 style = TextStyle(
                                     fontSize = style.fontSize,
-                                    color = colorScheme.primary,
-                                    textDecoration = TextDecoration.Underline
+                                    color = colorScheme.primary.copy(alpha = 0.9f),
+                                    textDecoration = TextDecoration.Underline,
+                                    fontWeight = FontWeight.Medium
                                 ),
                             )
                         })
@@ -1436,7 +1772,9 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 withLink(LinkAnnotation.Url(linkDest)) {
                     withStyle(
                         SpanStyle(
-                            color = colorScheme.primary, textDecoration = TextDecoration.Underline
+                            color = colorScheme.primary.copy(alpha = 0.9f),
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Medium
                         )
                     ) {
                         append(linkText)
@@ -1449,7 +1787,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
             val links = node.children.trim(MarkdownTokenTypes.LT, 1).trim(MarkdownTokenTypes.GT, 1)
             links.fastForEach { link ->
                 withLink(LinkAnnotation.Url(link.getTextInNode(content))) {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                    withStyle(
+                        SpanStyle(
+                            color = colorScheme.primary.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.Medium,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    ) {
                         append(link.getTextInNode(content))
                     }
                 }
@@ -1528,22 +1872,47 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
     outputStart: Int,
     outputEnd: Int
 ) {
-    if (reveal == null || reveal.alpha >= 0.995f || sourceEnd <= sourceStart || outputEnd <= outputStart) return
-    val overlapStart = maxOf(sourceStart, reveal.startOffset)
-    val overlapEnd = minOf(sourceEnd, reveal.endOffset)
-    if (overlapEnd <= overlapStart) return
+    if (reveal == null || reveal.ranges.isEmpty() || sourceEnd <= sourceStart || outputEnd <= outputStart) return
 
     val sourceLength = sourceEnd - sourceStart
     val outputLength = outputEnd - outputStart
-    val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
-    val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
-    if (rangeEnd <= rangeStart) return
+    
+    // Compute speed-adaptive constants
+    val speedProgress = ((reveal.smoothedCharsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) / 
+        (STREAMING_SPEED_FAST_THRESHOLD - STREAMING_SPEED_SLOW_THRESHOLD)).coerceIn(0f, 1f)
+    
+    // Faster speed = longer settle duration (for softer fade during bursts)
+    val settleDurationMillis = STREAMING_SETTLE_MIN_MILLIS + 
+        (STREAMING_SETTLE_MAX_MILLIS - STREAMING_SETTLE_MIN_MILLIS) * speedProgress
+        
+    // Faster speed = lower start alpha (for more visible "wave" effect)
+    val startAlpha = STREAMING_SETTLE_ALPHA_SLOW + 
+        (STREAMING_SETTLE_ALPHA_FAST - STREAMING_SETTLE_ALPHA_SLOW) * speedProgress
 
-    addStyle(
-        style = SpanStyle(color = reveal.color.copy(alpha = reveal.alpha)),
-        start = rangeStart.coerceIn(outputStart, outputEnd),
-        end = rangeEnd.coerceIn(outputStart, outputEnd)
-    )
+    reveal.ranges.fastForEach { settleRange ->
+        val ageMillis = reveal.nowMillis - settleRange.revealedAtMillis
+        if (ageMillis < 0 || ageMillis >= settleDurationMillis) return@fastForEach
+
+        val overlapStart = maxOf(sourceStart, settleRange.startOffset)
+        val overlapEnd = minOf(sourceEnd, settleRange.endOffset)
+        if (overlapEnd <= overlapStart) return@fastForEach
+
+        val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
+        // Smooth-step curve: 3t^2 - 2t^3
+        val easedProgress = progress * progress * (3f - 2f * progress)
+        val alpha = startAlpha + (1f - startAlpha) * easedProgress
+        if (alpha >= 0.995f) return@fastForEach
+
+        val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
+        val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
+        if (rangeEnd <= rangeStart) return@fastForEach
+
+        addStyle(
+            style = SpanStyle(color = reveal.color.copy(alpha = alpha)),
+            start = rangeStart.coerceIn(outputStart, outputEnd),
+            end = rangeEnd.coerceIn(outputStart, outputEnd)
+        )
+    }
 }
 
 private fun ASTNode.getTextInNode(text: String): String {
