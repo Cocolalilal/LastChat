@@ -549,8 +549,8 @@ private fun ConversationItem(
                 }
             }
             
-            // Unconsolidated Dot
-            AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated) {
+            // Unconsolidated Dot — only show for chats that are eligible for consolidation (≥4 nodes)
+            AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated && conversation.messageNodes.size >= 4) {
                 Box(
                     modifier = Modifier
                         .padding(end = 4.dp)

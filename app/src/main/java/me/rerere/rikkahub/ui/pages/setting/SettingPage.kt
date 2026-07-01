@@ -10,10 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -23,13 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -116,14 +109,6 @@ fun SettingPage(
                 item {
                     ProviderConfigWarningCard(navController)
                 }
-            }
-
-            // Update Available Banner
-            item {
-                UpdateAvailableBanner(
-                    checkForUpdates = settings.displaySetting.checkForUpdates,
-                    navController = navController
-                )
             }
 
             // General Settings Section
@@ -348,102 +333,3 @@ fun SettingItem(
     }
 }
 
-@Composable
-private fun UpdateAvailableBanner(
-    checkForUpdates: Boolean,
-    navController: NavHostController
-) {
-    if (!checkForUpdates) return
-    
-    val updateChecker = org.koin.compose.koinInject<me.rerere.rikkahub.utils.UpdateChecker>()
-    // Remember the flow to prevent creating a new one on each recomposition
-    val updateFlow = remember(updateChecker) { updateChecker.checkUpdate() }
-    val updateState by updateFlow.collectAsStateWithLifecycle(initialValue = me.rerere.rikkahub.utils.UiState.Loading)
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    
-    when (val state = updateState) {
-        is me.rerere.rikkahub.utils.UiState.Success -> {
-            val updateInfo = state.data
-            val currentVersion = me.rerere.rikkahub.BuildConfig.VERSION_NAME
-            val isNewer = me.rerere.rikkahub.utils.Version(updateInfo.version) > me.rerere.rikkahub.utils.Version(currentVersion)
-            
-            if (isNewer && updateInfo.downloads.isNotEmpty()) {
-                Card(
-                    onClick = { showUpdateDialog = true },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.update_available),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = stringResource(R.string.update_available_version, updateInfo.version),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                }
-                
-                if (showUpdateDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showUpdateDialog = false },
-                        title = { Text(stringResource(R.string.update_dialog_title, updateInfo.version)) },
-                        text = {
-                            Column(
-                                modifier = Modifier.verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.update_changelog),
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    text = updateInfo.changelog.ifEmpty { context.getString(R.string.update_no_changelog) },
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    updateInfo.downloads.firstOrNull()?.let { download ->
-                                        updateChecker.downloadUpdate(context, download)
-                                    }
-                                    showUpdateDialog = false
-                                }
-                            ) {
-                                Text(stringResource(R.string.download))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showUpdateDialog = false }) {
-                                Text(stringResource(R.string.later))
-                            }
-                        }
-                    )
-                }
-            }
-        }
-        else -> { /* Loading or Error - don't show anything */ }
-    }
-}

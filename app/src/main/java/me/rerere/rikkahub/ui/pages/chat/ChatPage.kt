@@ -2633,12 +2633,14 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarInChatLayer(
 
 @Composable
 fun UpdatePill(
-    updateInfo: me.rerere.rikkahub.utils.UpdateInfo,
     bigScreen: Boolean,
+    height: Dp,
     onDismiss: () -> Unit,
     onClick: () -> Unit
 ) {
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val containerColor = MaterialTheme.colorScheme.primaryContainer
+    val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
     
     Surface(
         onClick = {
@@ -2646,19 +2648,20 @@ fun UpdatePill(
             onClick()
         },
         shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.height(48.dp)
+        color = containerColor,
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
+        modifier = Modifier.height(height)
     ) {
         Row(
             modifier = Modifier.padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (bigScreen) stringResource(R.string.update_available_version, updateInfo.version) else "New Update",
+                text = if (bigScreen) stringResource(R.string.update_available) else "New Update",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = contentColor
             )
             
             Spacer(Modifier.width(8.dp))
@@ -2674,7 +2677,7 @@ fun UpdatePill(
                     Icons.Rounded.Close,
                     contentDescription = "Dismiss",
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = contentColor
                 )
             }
         }
@@ -2795,28 +2798,37 @@ private fun ChatToolbar(
 
             Spacer(Modifier.weight(1f))
             
-            val context = LocalContext.current
-            val updateState by vm.updateState.collectAsStateWithLifecycle()
             val isForcedCheck by vm.isForcedCheck.collectAsStateWithLifecycle()
-            
+            val context = LocalContext.current
             var showUpdateDialog by remember { mutableStateOf(false) }
             var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
-            
-            val updateInfo = (updateState as? me.rerere.rikkahub.utils.UiState.Success)?.data
             val currentVersion = remember { me.rerere.rikkahub.utils.Version(BuildConfig.VERSION_NAME) }
-            
             val isNewChat = isEmpty
-            if (settings.displaySetting.showUpdates && isNewChat && !isTemporaryChat) {
+            val shouldObserveUpdates = (settings.displaySetting.checkForUpdates || isForcedCheck) &&
+                isNewChat
+
+            if (shouldObserveUpdates) {
+                val updateState by vm.updateState.collectAsStateWithLifecycle()
+
+                @Suppress("UNCHECKED_CAST")
+                val updateInfo = ((updateState as? me.rerere.rikkahub.utils.UiState.Success<*>)?.data as? me.rerere.rikkahub.utils.UpdateInfo)
                 if (updateInfo != null) {
                     val latestVersion = remember(updateInfo) { me.rerere.rikkahub.utils.Version(updateInfo.version) }
                     val isNewer = latestVersion > currentVersion
                     val isIgnored = remember(updateInfo, isForcedCheck) { vm.updateChecker.isUpdateIgnored(context, updateInfo.version, forceCheck = isForcedCheck) }
-                    
-                    // Show if it's newer, not permanently ignored, and not dismissed for this session
-                    if ((isNewer || isForcedCheck) && !isIgnored && dismissedUpdateVersion != updateInfo.version) {
+
+                    val showUpdatePill = (isNewer || isForcedCheck) &&
+                        !isIgnored &&
+                        dismissedUpdateVersion != updateInfo.version
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showUpdatePill,
+                        enter = fadeIn(animationSpec = tween(140)),
+                        exit = fadeOut(animationSpec = tween(120)),
+                    ) {
                         UpdatePill(
-                            updateInfo = updateInfo,
                             bigScreen = bigScreen,
+                            height = topPillSize,
                             onDismiss = { dismissedUpdateVersion = updateInfo.version },
                             onClick = { showUpdateDialog = true }
                         )

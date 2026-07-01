@@ -65,13 +65,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.core.net.toUri
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.MessageRole
@@ -256,6 +256,179 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     }
     
     return groups
+}
+
+private const val SIGNATURE_OFFSET = -3750763034362895579L
+private const val SIGNATURE_PRIME = 1099511628211L
+
+private fun Long.mix(value: Int): Long {
+    return (this xor value.toLong()) * SIGNATURE_PRIME
+}
+
+private fun Long.mix(value: Long): Long {
+    return (this xor value) * SIGNATURE_PRIME
+}
+
+private fun sampledStringHash(value: String?): Int {
+    if (value.isNullOrEmpty()) return 0
+    if (value.length <= 256) return value.hashCode()
+
+    var hash = value.length
+    hash = 31 * hash + value.substring(0, 64).hashCode()
+    val middleStart = (value.length / 2 - 32).coerceIn(0, value.length - 64)
+    hash = 31 * hash + value.substring(middleStart, middleStart + 64).hashCode()
+    hash = 31 * hash + value.substring(value.length - 64, value.length).hashCode()
+    return hash
+}
+
+private fun JsonElement.lightSignature(depth: Int = 0): Int {
+    return when (this) {
+        is JsonObject -> {
+            var hash = size
+            entries.forEach { (key, value) ->
+                hash = 31 * hash + sampledStringHash(key)
+                hash = 31 * hash + if (depth < 1) value.lightSignature(depth + 1) else value::class.hashCode()
+            }
+            hash
+        }
+
+        is JsonArray -> {
+            var hash = size
+            firstOrNull()?.let { hash = 31 * hash + it.lightSignature(depth + 1) }
+            lastOrNull()?.let { hash = 31 * hash + it.lightSignature(depth + 1) }
+            hash
+        }
+
+        else -> sampledStringHash(jsonPrimitiveOrNull?.contentOrNull)
+    }
+}
+
+private fun MessageTurnGroup.activityStateSignature(loading: Boolean): Long {
+    var hash = SIGNATURE_OFFSET
+        .mix(role.hashCode())
+        .mix(activeVersionTag.hashCode())
+        .mix(if (loading) 1 else 0)
+
+    filteredNodes.forEach { node ->
+        val message = node.currentMessage
+        hash = hash
+            .mix(node.id.hashCode())
+            .mix(node.selectIndex)
+            .mix(message.id.hashCode())
+            .mix(message.parts.size)
+            .mix(message.annotations.size)
+
+        message.annotations.forEach { annotation ->
+            hash = when (annotation) {
+                is UIMessageAnnotation.OcrActivity -> hash
+                    .mix(annotation.source.hashCode())
+                    .mix(sampledStringHash(annotation.fileName))
+                    .mix(annotation.pageNumbers.size)
+
+                else -> hash.mix(annotation::class.hashCode())
+            }
+        }
+
+        message.parts.forEach { part ->
+            hash = when (part) {
+                is UIMessagePart.Text -> hash
+                    .mix(1)
+                    .mix(part.text.length)
+                    .mix(if (part.text.isBlank()) 1 else 0)
+
+                is UIMessagePart.Reasoning -> hash
+                    .mix(2)
+                    .mix(part.reasoning.length)
+                    .mix(part.createdAt.toEpochMilliseconds())
+                    .mix(part.finishedAt?.toEpochMilliseconds() ?: -1L)
+                    .mix(sampledStringHash(part.title))
+
+                is UIMessagePart.ToolCall -> hash
+                    .mix(3)
+                    .mix(sampledStringHash(part.toolCallId))
+                    .mix(sampledStringHash(part.toolName))
+                    .mix(part.arguments.length)
+                    .mix(sampledStringHash(part.arguments))
+                    .mix(part.approvalState.hashCode())
+
+                is UIMessagePart.ToolResult -> hash
+                    .mix(4)
+                    .mix(sampledStringHash(part.toolCallId))
+                    .mix(sampledStringHash(part.toolName))
+
+                else -> hash.mix(part::class.hashCode())
+            }
+        }
+    }
+
+    return hash
+}
+
+private fun MessageTurnGroup.timelineEntriesSignature(loading: Boolean): Long {
+    var hash = activityStateSignature(loading)
+
+    filteredNodes.forEach { node ->
+        node.currentMessage.parts.forEach { part ->
+            if (part is UIMessagePart.ToolResult) {
+                hash = hash
+                    .mix(part.arguments.lightSignature())
+                    .mix(part.content.lightSignature())
+            }
+        }
+    }
+
+    return hash
+}
+
+private fun MessageTurnGroup.attachmentsSignature(): Long {
+    var hash = SIGNATURE_OFFSET
+        .mix(activeVersionTag.hashCode())
+        .mix(filteredNodes.size)
+
+    filteredNodes.forEach { node ->
+        hash = hash
+            .mix(node.id.hashCode())
+            .mix(node.selectIndex)
+            .mix(node.currentMessage.id.hashCode())
+
+        node.currentMessage.parts.forEach { part ->
+            hash = when (part) {
+                is UIMessagePart.Image -> hash
+                    .mix(1)
+                    .mix(sampledStringHash(part.url))
+                    .mix(part.chatAttachmentState().hashCode())
+                    .mix(sampledStringHash(part.chatAttachmentDisplayName()))
+                    .mix(sampledStringHash(part.chatAttachmentMimeHint()))
+
+                is UIMessagePart.Document -> hash
+                    .mix(2)
+                    .mix(sampledStringHash(part.url))
+                    .mix(sampledStringHash(part.fileName))
+                    .mix(sampledStringHash(part.mime))
+                    .mix(part.chatAttachmentState().hashCode())
+                    .mix(sampledStringHash(part.chatAttachmentDisplayName()))
+                    .mix(sampledStringHash(part.chatAttachmentMimeHint()))
+
+                is UIMessagePart.Video -> hash
+                    .mix(3)
+                    .mix(sampledStringHash(part.url))
+                    .mix(part.chatAttachmentState().hashCode())
+                    .mix(sampledStringHash(part.chatAttachmentDisplayName()))
+                    .mix(sampledStringHash(part.chatAttachmentMimeHint()))
+
+                is UIMessagePart.Audio -> hash
+                    .mix(4)
+                    .mix(sampledStringHash(part.url))
+                    .mix(part.chatAttachmentState().hashCode())
+                    .mix(sampledStringHash(part.chatAttachmentDisplayName()))
+                    .mix(sampledStringHash(part.chatAttachmentMimeHint()))
+
+                else -> hash
+            }
+        }
+    }
+
+    return hash
 }
 
 private sealed interface RenderableAttachment {
@@ -886,14 +1059,12 @@ fun ChatMessageTurn(
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
     
-    // Activity state from ALL nodes in the group
-    // For multi-node turns (with tools), the current generation is on the last node.
+    // Activity state from all nodes in the group. Use cheap primitive signatures as
+    // remember keys; using MessageTurnGroup or MessageNode keys can structurally
+    // compare large JsonElement tool payloads on the UI thread.
     val isTimelineLive = loading && isLastTurn
-    // We use activeVersionTag + firstNode.id + allParts.size as keys.
-    // Using group.allParts directly causes massive UI stutters during scrolling because LazyColumn
-    // recycles the node, and Compose evaluates old_parts.equals(new_parts), which performs a
-    // DEEP EQUALS on massive JsonElements (like scraped web pages or SVGs) if toolCallId is empty.
-    val activityState = remember(group.activeVersionTag, group.firstNode.id, group.allParts.size, isTimelineLive) {
+    val activitySignature = group.activityStateSignature(isTimelineLive)
+    val activityState = remember(activitySignature) {
         deriveActivityState(
             parts = group.allParts,
             annotations = group.allAnnotations,
@@ -901,13 +1072,11 @@ fun ChatMessageTurn(
         )
     }
 
-    // Timeline entries — deferred until the timeline is actually opened.
+    // Timeline entries are deferred until the timeline is actually opened.
     // The compact activity pill uses `activityState` (always computed above), not
     // `timelineEntries`, so returning emptyList() while closed is invisible.
-    // This avoids expensive per-tool-call work (result.content.toString(), JSON
-    // recovery parsing, TimelineEntry allocation) on the first-composition frame
-    // when a tool turn scrolls into view, which was the scroll-up stutter source.
-    val timelineEntries = remember(group.activeVersionTag, group.firstNode.id, group.allParts.size, isTimelineLive, timelineOpen) {
+    val timelineSignature = if (timelineOpen) group.timelineEntriesSignature(isTimelineLive) else 0L
+    val timelineEntries = remember(timelineOpen, timelineSignature) {
         if (timelineOpen) {
             buildTimelineEntries(
                 parts = group.allParts,
@@ -921,17 +1090,15 @@ fun ChatMessageTurn(
 
     // Actions should target the visible assistant content node instead of blindly using lastNode,
     // because the last node in a turn can be a tool node.
-    val actionTargetNode = remember(group) {
-        group.filteredNodes
-            .asReversed()
-            .firstOrNull { node ->
-                node.currentMessage.parts.any { part ->
-                    part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Thinking
-                }
+    val actionTargetNode = group.filteredNodes
+        .asReversed()
+        .firstOrNull { node ->
+            node.currentMessage.parts.any { part ->
+                part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Thinking
             }
-            ?: group.filteredNodes.lastOrNull()
-            ?: group.lastNode
-    }
+        }
+        ?: group.filteredNodes.lastOrNull()
+        ?: group.lastNode
     
     ProvideTextStyle(textStyle) {
         when (group.role) {
@@ -1060,7 +1227,8 @@ private fun UserMessageTurn(
     val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val haptics = rememberPremiumHaptics()
-    val attachments = remember(group.filteredNodes, defaultVideoLabel, defaultAudioLabel, context) {
+    val attachmentSignature = group.attachmentsSignature()
+    val attachments = remember(attachmentSignature, defaultVideoLabel, defaultAudioLabel, context) {
         collectRenderableAttachments(
             context = context,
             parts = group.filteredNodes.flatMap { it.currentMessage.parts },
@@ -1241,7 +1409,8 @@ private fun AssistantMessageTurn(
     val showIcon = effectiveDisplay.showModelIcon
     val showModelName = effectiveDisplay.showModelName
     val haptics = rememberPremiumHaptics()
-    val attachments = remember(group.filteredNodes, defaultVideoLabel, defaultAudioLabel, context) {
+    val attachmentSignature = group.attachmentsSignature()
+    val attachments = remember(attachmentSignature, defaultVideoLabel, defaultAudioLabel, context) {
         collectRenderableAttachments(
             context = context,
             parts = group.filteredNodes.flatMap { it.currentMessage.parts },

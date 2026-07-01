@@ -57,6 +57,7 @@ import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.utils.UpdateInfo
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
@@ -356,18 +357,13 @@ class ChatVM(
         return chatService.createConversation(assistantId)
     }
 
+    // --- Update checker ---
     val isForcedCheck: StateFlow<Boolean> = updateChecker.isForcedCheck
-    
-    val updateState = updateChecker.isForcedCheck.flatMapLatest { force ->
-        updateChecker.checkUpdate().map { state ->
-            if (state is UiState.Success) {
-                state
-            } else {
-                state
-            }
-        }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, UiState.Loading)
-    
+
+    val updateState: StateFlow<UiState<UpdateInfo>> = updateChecker.checkTrigger
+        .flatMapLatest { updateChecker.checkUpdate() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
+
     val updateCheckerInstance = updateChecker
 
     /**

@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
@@ -99,8 +101,8 @@ fun SettingAboutPage() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val context = LocalContext.current
             val haptics = rememberPremiumHaptics()
+            val toaster = LocalToaster.current
             val updateChecker = koinInject<me.rerere.rikkahub.utils.UpdateChecker>()
 
             // Version Badge - Pill shaped with tertiaryContainer
@@ -114,7 +116,10 @@ fun SettingAboutPage() {
                             onLongPress = {
                                 haptics.perform(HapticPattern.Pop)
                                 updateChecker.forceUpdateCheck()
-                                android.widget.Toast.makeText(context, "Update banner forced for testing (check chat page)", android.widget.Toast.LENGTH_SHORT).show()
+                                toaster.show(
+                                    message = "Update banner forced for testing.",
+                                    type = ToastType.Info
+                                )
                             }
                         )
                     }

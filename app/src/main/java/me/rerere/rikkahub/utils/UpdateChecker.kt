@@ -2,8 +2,10 @@ package me.rerere.rikkahub.utils
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +30,14 @@ class UpdateChecker(private val client: PlatformHttpClient) {
     private val _isForcedCheck = MutableStateFlow(false)
     val isForcedCheck = _isForcedCheck.asStateFlow()
 
+    // Counter incremented every time a fresh check should be triggered
+    // Start at 1 so the first subscriber immediately gets a check
+    private val _checkTrigger = MutableStateFlow(1)
+    val checkTrigger = _checkTrigger.asStateFlow()
+
     fun forceUpdateCheck() {
         _isForcedCheck.value = true
+        _checkTrigger.value++ // re-trigger the update flow
     }
 
     fun clearForcedCheck() {
@@ -38,6 +46,7 @@ class UpdateChecker(private val client: PlatformHttpClient) {
 
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
+
         emit(
             UiState.Success(
                 data = try {
@@ -85,44 +94,12 @@ class UpdateChecker(private val client: PlatformHttpClient) {
                         throw Exception("Failed to fetch update info: ${response.statusCode}")
                     }
                 } catch (e: Exception) {
-                    if (_isForcedCheck.value) {
-                        UpdateInfo(
-                            version = BuildConfig.VERSION_NAME,
-                            publishedAt = "",
-                            changelog = "This is a forced update for testing the update banner feature (offline fallback).",
-                            downloads = listOf(
-                                UpdateDownload(
-                                    name = "LastChat-forced-test.apk",
-                                    url = "https://github.com/Cocolalilal/LastChat/releases",
-                                    size = "25 MB"
-                                )
-                            )
-                        )
-                    } else {
-                        throw e
-                    }
+                    throw e
                 }
             )
         )
     }.catch {
-        if (_isForcedCheck.value) {
-            emit(UiState.Success(
-                UpdateInfo(
-                    version = BuildConfig.VERSION_NAME,
-                    publishedAt = "",
-                    changelog = "This is a forced update for testing the update banner feature (offline fallback).",
-                    downloads = listOf(
-                        UpdateDownload(
-                            name = "LastChat-forced-test.apk",
-                            url = "https://github.com/Cocolalilal/LastChat/releases",
-                            size = "25 MB"
-                        )
-                    )
-                )
-            ))
-        } else {
-            emit(UiState.Error(it))
-        }
+        emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
     
     private fun getDeviceArchitecture(): String {
@@ -185,7 +162,13 @@ class UpdateChecker(private val client: PlatformHttpClient) {
                             bytesDownloaded = bytesDownloaded,
                             totalBytes = bytesTotal,
                             status = status,
-                            localUri = if (uriIndex != -1) cursor.getString(uriIndex) else null
+                            localUri = if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                dm.getUriForDownloadedFile(downloadId)?.toString()
+                            } else if (uriIndex != -1) {
+                                cursor.getString(uriIndex)
+                            } else {
+                                null
+                            }
                         )
                         
                         if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
@@ -208,6 +191,28 @@ class UpdateChecker(private val client: PlatformHttpClient) {
             .putString("ignored_version", version)
             .putLong("ignored_time", System.currentTimeMillis())
             .apply()
+    }
+
+    fun canInstallDownloadedUpdate(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+    }
+
+    fun installDownloadedUpdate(context: Context, uriString: String): Boolean {
+        if (!canInstallDownloadedUpdate(context)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                "package:${context.packageName}".toUri()
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return false
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uriString.toUri(), "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        context.startActivity(intent)
+        return true
     }
     
     fun isUpdateIgnored(context: Context, version: String, forceCheck: Boolean): Boolean {
