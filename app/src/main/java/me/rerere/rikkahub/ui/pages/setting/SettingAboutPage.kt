@@ -40,11 +40,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import org.koin.compose.koinInject
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -96,11 +99,25 @@ fun SettingAboutPage() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            val context = LocalContext.current
+            val haptics = rememberPremiumHaptics()
+            val updateChecker = koinInject<me.rerere.rikkahub.utils.UpdateChecker>()
+
             // Version Badge - Pill shaped with tertiaryContainer
             Surface(
                 color = MaterialTheme.colorScheme.tertiaryContainer,
                 shape = CircleShape,
-                modifier = Modifier.padding(vertical = 4.dp)
+                modifier = Modifier
+                    .padding(vertical = 4.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = {
+                                haptics.perform(HapticPattern.Pop)
+                                updateChecker.forceUpdateCheck()
+                                android.widget.Toast.makeText(context, "Update banner forced for testing (check chat page)", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
             ) {
                 Text(
                     text = "v${BuildConfig.VERSION_NAME}",

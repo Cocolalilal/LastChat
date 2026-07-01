@@ -43,6 +43,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.verticalScroll
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
@@ -567,7 +568,8 @@ fun MinimalChatInput(
             modifier = Modifier
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp),
+                .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val showSuggestions = !isQuestionnaireActive && !isToolApprovalActive && chatSuggestions.isNotEmpty()

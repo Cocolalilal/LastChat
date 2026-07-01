@@ -258,7 +258,8 @@ private fun isSettingsPaneRoute(route: String?): Boolean {
     return route != null && (
         route.contains("Setting") ||
             route.contains("Assistant") ||
-            route.contains("Backup")
+            route.contains("Backup") ||
+            route.contains("Workspace")
         )
 }
 
@@ -1255,7 +1256,9 @@ class RouteActivity : ComponentActivity() {
                     }
 
                     composable<Screen.Workspaces> {
-                        WorkspacePage()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Workspaces) {
+                            WorkspacePage()
+                        }
                     }
 
                     composable<Screen.WorkspaceDetail> { backStackEntry ->

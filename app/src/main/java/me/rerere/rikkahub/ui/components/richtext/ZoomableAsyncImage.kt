@@ -40,6 +40,12 @@ fun ZoomableAsyncImage(
         .placeholder(placeholder)
         .crossfade(false)
         .allowHardware(!export)
+        .apply {
+            if (model != null && model.startsWith("data:")) {
+                // Avoid hashing massive base64 strings on the main thread
+                memoryCacheKey(model.take(200))
+            }
+        }
         .build()
     var loading by remember(model) { mutableStateOf(!model.isNullOrBlank()) }
     AsyncImage(

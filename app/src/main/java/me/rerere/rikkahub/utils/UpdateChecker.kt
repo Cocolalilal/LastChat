@@ -7,6 +7,8 @@ import android.os.Environment
 import android.widget.Toast
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
@@ -22,6 +24,17 @@ private const val GITHUB_API_URL = "https://api.github.com/repos/Cocolalilal/Las
 
 class UpdateChecker(private val client: PlatformHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private val _isForcedCheck = MutableStateFlow(false)
+    val isForcedCheck = _isForcedCheck.asStateFlow()
+
+    fun forceUpdateCheck() {
+        _isForcedCheck.value = true
+    }
+
+    fun clearForcedCheck() {
+        _isForcedCheck.value = false
+    }
 
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
@@ -72,12 +85,44 @@ class UpdateChecker(private val client: PlatformHttpClient) {
                         throw Exception("Failed to fetch update info: ${response.statusCode}")
                     }
                 } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
+                    if (_isForcedCheck.value) {
+                        UpdateInfo(
+                            version = BuildConfig.VERSION_NAME,
+                            publishedAt = "",
+                            changelog = "This is a forced update for testing the update banner feature (offline fallback).",
+                            downloads = listOf(
+                                UpdateDownload(
+                                    name = "LastChat-forced-test.apk",
+                                    url = "https://github.com/Cocolalilal/LastChat/releases",
+                                    size = "25 MB"
+                                )
+                            )
+                        )
+                    } else {
+                        throw e
+                    }
                 }
             )
         )
     }.catch {
-        emit(UiState.Error(it))
+        if (_isForcedCheck.value) {
+            emit(UiState.Success(
+                UpdateInfo(
+                    version = BuildConfig.VERSION_NAME,
+                    publishedAt = "",
+                    changelog = "This is a forced update for testing the update banner feature (offline fallback).",
+                    downloads = listOf(
+                        UpdateDownload(
+                            name = "LastChat-forced-test.apk",
+                            url = "https://github.com/Cocolalilal/LastChat/releases",
+                            size = "25 MB"
+                        )
+                    )
+                )
+            ))
+        } else {
+            emit(UiState.Error(it))
+        }
     }.flowOn(Dispatchers.IO)
     
     private fun getDeviceArchitecture(): String {
@@ -99,8 +144,8 @@ class UpdateChecker(private val client: PlatformHttpClient) {
         }
     }
 
-    fun downloadUpdate(context: Context, download: UpdateDownload) {
-        runCatching {
+    fun downloadUpdate(context: Context, download: UpdateDownload): Long {
+        return runCatching {
             val request = DownloadManager.Request(download.url.toUri()).apply {
                 setTitle("LastChat Update")
                 setDescription("Downloading ${download.name}...")
@@ -114,8 +159,76 @@ class UpdateChecker(private val client: PlatformHttpClient) {
         }.onFailure {
             Toast.makeText(context, context.getString(R.string.update_download_failed), Toast.LENGTH_SHORT).show()
             context.openUrl(download.url)
-        }
+        }.getOrDefault(-1L)
     }
+
+    fun observeDownload(context: Context, downloadId: Long): Flow<DownloadProgress> = flow {
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        
+        while (true) {
+            var progress = DownloadProgress()
+            var finished = false
+            dm.query(query).use { cursor ->
+                if (cursor != null && cursor.moveToFirst()) {
+                    val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                    
+                    if (bytesDownloadedIndex != -1 && bytesTotalIndex != -1 && statusIndex != -1) {
+                        val bytesDownloaded = cursor.getLong(bytesDownloadedIndex)
+                        val bytesTotal = cursor.getLong(bytesTotalIndex)
+                        val status = cursor.getInt(statusIndex)
+                        
+                        progress = progress.copy(
+                            bytesDownloaded = bytesDownloaded,
+                            totalBytes = bytesTotal,
+                            status = status,
+                            localUri = if (uriIndex != -1) cursor.getString(uriIndex) else null
+                        )
+                        
+                        if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
+                            finished = true
+                        }
+                    }
+                } else {
+                    finished = true
+                }
+            }
+            emit(progress)
+            if (finished) break
+            kotlinx.coroutines.delay(250)
+        }
+    }.flowOn(Dispatchers.IO)
+    
+    fun ignoreUpdate(context: Context, version: String) {
+        val prefs = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("ignored_version", version)
+            .putLong("ignored_time", System.currentTimeMillis())
+            .apply()
+    }
+    
+    fun isUpdateIgnored(context: Context, version: String, forceCheck: Boolean): Boolean {
+        if (forceCheck) return false
+        val prefs = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
+        val ignoredVersion = prefs.getString("ignored_version", null)
+        val ignoredTime = prefs.getLong("ignored_time", 0L)
+        val oneWeekMillis = 7 * 24 * 60 * 60 * 1000L
+        
+        return ignoredVersion == version && (System.currentTimeMillis() - ignoredTime) < oneWeekMillis
+    }
+}
+
+data class DownloadProgress(
+    val bytesDownloaded: Long = 0,
+    val totalBytes: Long = 0,
+    val status: Int = -1,
+    val localUri: String? = null
+) {
+    val progress: Float
+        get() = if (totalBytes > 0) bytesDownloaded.toFloat() / totalBytes.toFloat() else 0f
 }
 
 @Serializable

@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -355,9 +356,19 @@ class ChatVM(
         return chatService.createConversation(assistantId)
     }
 
-    // Update checker
-    val updateState =
-        updateChecker.checkUpdate().stateIn(viewModelScope, SharingStarted.Lazily, UiState.Loading)
+    val isForcedCheck: StateFlow<Boolean> = updateChecker.isForcedCheck
+    
+    val updateState = updateChecker.isForcedCheck.flatMapLatest { force ->
+        updateChecker.checkUpdate().map { state ->
+            if (state is UiState.Success) {
+                state
+            } else {
+                state
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, UiState.Loading)
+    
+    val updateCheckerInstance = updateChecker
 
     /**
      * 处理消息发送

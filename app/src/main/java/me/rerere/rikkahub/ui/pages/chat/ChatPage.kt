@@ -85,6 +85,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,6 +107,7 @@ import androidx.compose.material.icons.rounded.HistoryToggleOff
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 
+import me.rerere.rikkahub.ui.components.ui.UpdateDialog
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import kotlinx.coroutines.Job
@@ -115,6 +118,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -901,7 +905,8 @@ fun ChatPage(
                                             onOpenSettings = { navController.navigate(Screen.Setting) },
                                             onOpenAssistant = {
                                                 showWideRailAssistantPicker = true
-                                            }
+                                            },
+                                            vm = vm
                                         )
                                     } else {
                                         ChatDrawerContent(
@@ -1219,6 +1224,7 @@ private fun ChatPageContent(
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
                             showTopFade = true,
+                            vm = vm,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -1710,6 +1716,7 @@ private fun ChatPageContent(
                             currentChatModel = currentChatModel,
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
+                            vm = vm,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -2623,6 +2630,57 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarInChatLayer(
     }
 }
 
+
+@Composable
+fun UpdatePill(
+    updateInfo: me.rerere.rikkahub.utils.UpdateInfo,
+    bigScreen: Boolean,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit
+) {
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    
+    Surface(
+        onClick = {
+            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+            onClick()
+        },
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.height(48.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (bigScreen) stringResource(R.string.update_available_version, updateInfo.version) else "New Update",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(Modifier.width(8.dp))
+            
+            IconButton(
+                onClick = {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    onDismiss()
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "Dismiss",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatToolbar(
     placement: ChatToolbarPlacement,
@@ -2638,6 +2696,7 @@ private fun ChatToolbar(
     isGenerating: Boolean = false,
     showCloseAction: Boolean,
     showTopFade: Boolean = true,
+    vm: ChatVM,
     onNewChat: () -> Unit,
     onOpenOverflowMenu: () -> Unit,
     onCloseAction: () -> Unit,
@@ -2730,6 +2789,53 @@ private fun ChatToolbar(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Rounded.Menu, "Messages")
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+            
+            val context = LocalContext.current
+            val updateState by vm.updateState.collectAsStateWithLifecycle()
+            val isForcedCheck by vm.isForcedCheck.collectAsStateWithLifecycle()
+            
+            var showUpdateDialog by remember { mutableStateOf(false) }
+            var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+            
+            val updateInfo = (updateState as? me.rerere.rikkahub.utils.UiState.Success)?.data
+            val currentVersion = remember { me.rerere.rikkahub.utils.Version(BuildConfig.VERSION_NAME) }
+            
+            val isNewChat = isEmpty
+            if (settings.displaySetting.showUpdates && isNewChat && !isTemporaryChat) {
+                if (updateInfo != null) {
+                    val latestVersion = remember(updateInfo) { me.rerere.rikkahub.utils.Version(updateInfo.version) }
+                    val isNewer = latestVersion > currentVersion
+                    val isIgnored = remember(updateInfo, isForcedCheck) { vm.updateChecker.isUpdateIgnored(context, updateInfo.version, forceCheck = isForcedCheck) }
+                    
+                    // Show if it's newer, not permanently ignored, and not dismissed for this session
+                    if ((isNewer || isForcedCheck) && !isIgnored && dismissedUpdateVersion != updateInfo.version) {
+                        UpdatePill(
+                            updateInfo = updateInfo,
+                            bigScreen = bigScreen,
+                            onDismiss = { dismissedUpdateVersion = updateInfo.version },
+                            onClick = { showUpdateDialog = true }
+                        )
+                    }
+                    
+                    if (showUpdateDialog) {
+                        UpdateDialog(
+                            info = updateInfo,
+                            updateChecker = vm.updateChecker,
+                            onDismiss = {
+                                showUpdateDialog = false
+                                dismissedUpdateVersion = updateInfo.version 
+                            },
+                            onIgnore = {
+                                vm.updateChecker.ignoreUpdate(context, updateInfo.version)
+                                vm.updateChecker.clearForcedCheck()
+                                showUpdateDialog = false
+                            }
+                        )
                     }
                 }
             }

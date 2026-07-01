@@ -68,6 +68,9 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -81,7 +84,7 @@ import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
-import me.rerere.rikkahub.ui.components.ui.UpdateCard
+
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
@@ -92,6 +95,9 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
+import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.utils.Version
+import me.rerere.rikkahub.utils.onSuccess
 import coil3.compose.AsyncImage
 
 @Composable
@@ -161,10 +167,6 @@ fun ChatDrawerContent(
             modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (settings.displaySetting.showUpdates && !isPlayStore) {
-                UpdateCard(vm)
-            }
-
             // 用户头像和昵称自定义区域
             Row(
                 modifier = Modifier
@@ -568,11 +570,13 @@ fun CollapsedChatSideRail(
     onOpenStatistics: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAssistant: () -> Unit,
+    vm: ChatVM,
     modifier: Modifier = Modifier,
 ) {
     val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
     val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
+    val isPlayStore = rememberIsPlayStoreVersion()
 
     Surface(
         modifier = modifier
