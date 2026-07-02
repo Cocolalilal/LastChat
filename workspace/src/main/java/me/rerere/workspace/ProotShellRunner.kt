@@ -276,6 +276,10 @@ class ProotShellRunner(
                 "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
                 "lib64/ld-linux-x86-64.so.2",
                 "usr/lib64/ld-linux-x86-64.so.2",
+                "lib/ld-linux-armhf.so.3",
+                "usr/lib/ld-linux-armhf.so.3",
+                "lib/arm-linux-gnueabihf/ld-linux-armhf.so.3",
+                "usr/lib/arm-linux-gnueabihf/ld-linux-armhf.so.3",
             )
             linkerPaths.forEach { path ->
                 val f = File(linuxDir, path)
