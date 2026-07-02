@@ -92,7 +92,8 @@ data class Conversation(
         }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
-        return messageNodes.firstOrNull { node -> node.messages.contains(message) }
+        return getMessageNodeByMessageId(message.id)
+            ?: messageNodes.firstOrNull { node -> node.messages.contains(message) }
     }
 
     fun getMessageNodeByMessageId(messageId: Uuid): MessageNode? {

@@ -6,6 +6,19 @@ import org.junit.Test
 
 class MessageNodeVersionSelectionTest {
     @Test
+    fun getMessageNodeByMessageFindsUpdatedMessageWithSameId() {
+        val originalMessage = UIMessage.assistant("Fresh reply")
+        val storedMessage = originalMessage.copy(generationDurationMs = 1200L)
+        val node = MessageNode.of(storedMessage)
+        val conversation = Conversation.ofId(
+            id = kotlin.uuid.Uuid.random(),
+            messages = listOf(node),
+        )
+
+        assertEquals(node, conversation.getMessageNodeByMessage(originalMessage))
+    }
+
+    @Test
     fun versionSelectionIndicesCollapseSnapshotsWithSameVersionTag() {
         val node = MessageNode(
             messages = listOf(
