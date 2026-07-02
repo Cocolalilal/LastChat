@@ -8,6 +8,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.DefaultAlpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +32,7 @@ fun ZoomableAsyncImage(
     alignment: Alignment = Alignment.Center,
     contentScale: ContentScale = ContentScale.Fit,
     alpha: Float = DefaultAlpha,
+    onSizeResolved: ((Size) -> Unit)? = null,
 ) {
     var showImageViewer by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -40,6 +43,12 @@ fun ZoomableAsyncImage(
         .placeholder(placeholder)
         .crossfade(false)
         .allowHardware(!export)
+        .apply {
+            if (model != null && model.startsWith("data:")) {
+                // Avoid hashing massive base64 strings on the main thread
+                memoryCacheKey(model.take(200))
+            }
+        }
         .build()
     var loading by remember(model) { mutableStateOf(!model.isNullOrBlank()) }
     AsyncImage(
@@ -56,8 +65,12 @@ fun ZoomableAsyncImage(
         onLoading = {
             loading = true
         },
-        onSuccess = {
+        onSuccess = { state ->
             loading = false
+            val size = state.painter.intrinsicSize
+            if (onSizeResolved != null && size.isSpecified && size.height > 0f && size.width > 0f) {
+                onSizeResolved(size)
+            }
         },
         onError = {
             loading = false

@@ -15,7 +15,7 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId LIMIT :limit")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId ORDER BY last_accessed_at DESC, created_at DESC LIMIT :limit")
     suspend fun getMemoriesOfAssistantLimited(assistantId: String, limit: Int): List<MemoryEntity>
 
     @Query("SELECT * FROM memoryentity WHERE id = :id")

@@ -19,7 +19,7 @@ import org.koin.dsl.module
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
         ChatVM(
-            id = params.get(),
+            id = params[0],
             context = get(),
             settingsStore = get(),
             conversationRepo = get(),
@@ -46,7 +46,7 @@ val viewModelModule = module {
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
-            id = it.get(),
+            id = it[0],
             settingsStore = get(),
             memoryRepository = get(),
             conversationRepository = get(),
@@ -58,7 +58,7 @@ val viewModelModule = module {
     }
     viewModel<ShareHandlerVM> {
         ShareHandlerVM(
-            text = it.get(),
+            text = it[0],
             settingsStore = get(),
         )
     }
@@ -85,7 +85,7 @@ val viewModelModule = module {
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
     viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
         me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(
-            id = params.get(),
+            id = params[0],
             repository = get(),
         )
     }

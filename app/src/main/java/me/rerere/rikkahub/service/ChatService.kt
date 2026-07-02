@@ -1337,7 +1337,7 @@ class ChatService(
                                 )
                                 handleMessageComplete(
                                     conversationId = conversationId,
-                                    messageRange = 0..firstAssistantIndex,
+                                    messageRange = 0..lastUserIndex,
                                     preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )
@@ -1386,7 +1386,7 @@ class ChatService(
                                 )
                                 handleMessageComplete(
                                     conversationId = conversationId,
-                                    messageRange = 0..firstAssistantIndex,
+                                    messageRange = 0..lastUserIndex,
                                     preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
                                 )

@@ -10,7 +10,7 @@ fun mergeCatalogIntoSettings(
     settings: Settings,
     snapshot: ModelCatalogSnapshot,
     resolver: ModelMetadataResolver,
-    includeMissingCatalogProviders: Boolean = true,
+    includeMissingCatalogProviders: Boolean = false,
 ): Settings {
     val catalogProvidersById = snapshot.providers
         .mapNotNull { provider -> provider.uuidOrNull()?.let { it to provider } }

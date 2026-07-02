@@ -85,6 +85,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,6 +107,7 @@ import androidx.compose.material.icons.rounded.HistoryToggleOff
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 
+import me.rerere.rikkahub.ui.components.ui.UpdateDialog
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import kotlinx.coroutines.Job
@@ -115,6 +118,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -711,7 +715,11 @@ fun ChatPage(
             }
 
             !vm.chatListInitialized -> {
-                chatListState.scrollToItem(conversation.messageNodes.lastIndex)
+                // Scroll to the last item. The LazyColumn shows turn-groups (not raw nodes),
+                // so we cannot use messageNodes.lastIndex as the item index — in a tool-heavy
+                // chat there are far fewer groups than nodes. Int.MAX_VALUE is clamped by
+                // Compose to the true last item index.
+                chatListState.scrollToItem(Int.MAX_VALUE)
                 vm.chatListInitialized = true
                 chatListReady = true
             }
@@ -729,7 +737,9 @@ fun ChatPage(
             conversation.messageNodes.isNotEmpty()
         ) {
             consumedFocusLatestMessageKey = focusLatestMessageKey
-            chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
+            // Same reasoning: use Int.MAX_VALUE instead of messageNodes.lastIndex because
+            // the LazyColumn items are turn-groups, not individual nodes.
+            chatListState.animateScrollToItem(Int.MAX_VALUE)
         }
     }
 
@@ -901,7 +911,8 @@ fun ChatPage(
                                             onOpenSettings = { navController.navigate(Screen.Setting) },
                                             onOpenAssistant = {
                                                 showWideRailAssistantPicker = true
-                                            }
+                                            },
+                                            vm = vm
                                         )
                                     } else {
                                         ChatDrawerContent(
@@ -1219,6 +1230,7 @@ private fun ChatPageContent(
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
                             showTopFade = true,
+                            vm = vm,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -1710,6 +1722,7 @@ private fun ChatPageContent(
                             currentChatModel = currentChatModel,
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
+                            vm = vm,
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
@@ -2623,6 +2636,63 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarInChatLayer(
     }
 }
 
+
+@Composable
+fun UpdatePill(
+    bigScreen: Boolean,
+    height: Dp,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit
+) {
+    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val containerColor = MaterialTheme.colorScheme.primaryContainer
+    val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val pillShape = RoundedCornerShape(999.dp)
+
+    Surface(
+        onClick = {
+            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+            onClick()
+        },
+        shape = pillShape,
+        color = blurredContainerColor(containerColor),
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .height(height)
+            .lastChatBlurEffect(containerColor, pillShape)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (bigScreen) stringResource(R.string.update_available) else "New Update",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor
+            )
+            
+            Spacer(Modifier.width(8.dp))
+            
+            IconButton(
+                onClick = {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    onDismiss()
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "Dismiss",
+                    modifier = Modifier.size(16.dp),
+                    tint = contentColor
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatToolbar(
     placement: ChatToolbarPlacement,
@@ -2638,6 +2708,7 @@ private fun ChatToolbar(
     isGenerating: Boolean = false,
     showCloseAction: Boolean,
     showTopFade: Boolean = true,
+    vm: ChatVM,
     onNewChat: () -> Unit,
     onOpenOverflowMenu: () -> Unit,
     onCloseAction: () -> Unit,
@@ -2732,6 +2803,69 @@ private fun ChatToolbar(
                         Icon(Icons.Rounded.Menu, "Messages")
                     }
                 }
+            }
+
+            Spacer(Modifier.weight(1f))
+            
+            val isForcedCheck by vm.isForcedCheck.collectAsStateWithLifecycle()
+            val context = LocalContext.current
+            var showUpdateDialog by remember { mutableStateOf(false) }
+            var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+            val currentVersion = remember { me.rerere.rikkahub.utils.Version(BuildConfig.VERSION_NAME) }
+            val isNewChat = isEmpty
+            val shouldObserveUpdates = (settings.displaySetting.checkForUpdates || isForcedCheck) &&
+                isNewChat
+
+            // Always collect update state so AnimatedVisibility can fade out gracefully
+            // even when shouldObserveUpdates becomes false mid-session.
+            val updateState by vm.updateState.collectAsStateWithLifecycle()
+            @Suppress("UNCHECKED_CAST")
+            val updateInfo = ((updateState as? me.rerere.rikkahub.utils.UiState.Success<*>)?.data as? me.rerere.rikkahub.utils.UpdateInfo)
+            val latestVersion = remember(updateInfo) {
+                updateInfo?.let { me.rerere.rikkahub.utils.Version(it.version) }
+            }
+            val isNewer = latestVersion != null && latestVersion > currentVersion
+            val isIgnored = remember(updateInfo, isForcedCheck) {
+                if (updateInfo != null)
+                    vm.updateChecker.isUpdateIgnored(context, updateInfo.version, forceCheck = isForcedCheck)
+                else true
+            }
+            val showUpdatePill = shouldObserveUpdates &&
+                updateInfo != null &&
+                (isNewer || isForcedCheck) &&
+                !isIgnored &&
+                dismissedUpdateVersion != updateInfo?.version
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showUpdatePill,
+                enter = fadeIn(animationSpec = tween(220)),
+                exit = fadeOut(animationSpec = tween(200)),
+            ) {
+                UpdatePill(
+                    bigScreen = bigScreen,
+                    height = topPillSize,
+                    onDismiss = { dismissedUpdateVersion = updateInfo?.version },
+                    onClick = { showUpdateDialog = true }
+                )
+            }
+
+            if (showUpdateDialog && updateInfo != null) {
+                UpdateDialog(
+                    info = updateInfo,
+                    updateChecker = vm.updateChecker,
+                    onDismiss = {
+                        showUpdateDialog = false
+                    },
+                    onLater = {
+                        showUpdateDialog = false
+                        dismissedUpdateVersion = updateInfo.version
+                    },
+                    onIgnore = {
+                        vm.updateChecker.ignoreUpdate(context, updateInfo.version)
+                        vm.updateChecker.clearForcedCheck()
+                        showUpdateDialog = false
+                    }
+                )
             }
 
             Spacer(Modifier.weight(1f))

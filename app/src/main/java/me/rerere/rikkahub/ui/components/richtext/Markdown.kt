@@ -6,7 +6,9 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -117,6 +119,91 @@ private val flavour by lazy {
 
 private val parser by lazy {
     MarkdownParser(flavour)
+}
+
+/**
+ * Maximum content length that is still parsed synchronously on the UI thread for complete
+ * (non-streaming) messages. Realistic assistant/tool messages are far below this; the cap only
+ * exists as a safety valve so a single pathologically huge message (e.g. a large embedded base64
+ * blob) can still fall back to background parsing instead of risking a long UI-thread hang.
+ */
+private const val SYNC_PARSE_MAX_LENGTH = 200_000
+
+private const val MARKDOWN_AST_CACHE_SIZE = 64
+
+/**
+ * Process-wide LRU cache of parsed markdown ASTs keyed by the raw (pre-`preProcess`) content.
+ *
+ * This lets [MarkdownBlock] parse a complete message synchronously on first composition (so the
+ * item has its correct height immediately, avoiding a scroll-anchor "jump") while paying the parse
+ * cost at most once per unique message — repeated compositions (e.g. scrolling a turn off screen
+ * and back) reuse the cached AST instantly.
+ */
+private val markdownAstCache = object : LinkedHashMap<String, Pair<String, ASTNode>>(
+    16, 0.75f, /* accessOrder = */ true
+) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, ASTNode>>): Boolean {
+        return size > MARKDOWN_AST_CACHE_SIZE
+    }
+}
+
+@Synchronized
+private fun parseMarkdownCached(content: String): Pair<String, ASTNode> {
+    markdownAstCache[content]?.let { return it }
+    val preprocessed = preProcess(content)
+    val astTree = parser.buildMarkdownTreeFromString(preprocessed)
+    val result = preprocessed to astTree
+    markdownAstCache[content] = result
+    return result
+}
+
+/** Intrinsic pixel dimensions of an image, used to reserve its layout box before it decodes. */
+private data class ImageDisplayInfo(val widthPx: Int, val heightPx: Int) {
+    val aspectRatio: Float get() = widthPx.toFloat() / heightPx.toFloat()
+}
+
+/**
+ * Cache of known image dimensions, keyed by model string. Populated either synchronously (local
+ * files, via a header-only decode) or lazily when a remote image finishes loading.
+ */
+private val imageDisplayInfoCache = java.util.concurrent.ConcurrentHashMap<String, ImageDisplayInfo>()
+
+/**
+ * Best-effort intrinsic dimensions for [model], used to reserve the correct box for an image
+ * *before* it decodes. Without this an image renders at its placeholder height and then jumps to
+ * full size once loaded, shoving the LazyColumn scroll anchor (a visible "jump" when scrolling up
+ * into a message that contains an image).
+ *
+ * For local `file://`, absolute-path and `content://` sources the size is read synchronously from
+ * the image header (only bounds are decoded, not the pixels — cheap). Remote sources return a
+ * previously learned size if available, otherwise null (we can't cheaply probe them).
+ */
+private fun resolveImageDisplayInfo(context: Context, model: String?): ImageDisplayInfo? {
+    if (model.isNullOrBlank()) return null
+    imageDisplayInfoCache[model]?.let { return it }
+    val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    try {
+        when {
+            model.startsWith("file://") || model.startsWith("/") -> {
+                val path = if (model.startsWith("file://")) model.toUri().path else model
+                if (path != null) android.graphics.BitmapFactory.decodeFile(path, options)
+            }
+
+            model.startsWith("content://") -> {
+                context.contentResolver.openInputStream(model.toUri())?.use { stream ->
+                    android.graphics.BitmapFactory.decodeStream(stream, null, options)
+                }
+            }
+
+            else -> return null
+        }
+    } catch (_: Throwable) {
+        return null
+    }
+    if (options.outWidth <= 0 || options.outHeight <= 0) return null
+    val info = ImageDisplayInfo(options.outWidth, options.outHeight)
+    imageDisplayInfoCache[model] = info
+    return info
 }
 
 private val INLINE_LATEX_REGEX = Regex("\\\\\\((.+?)\\\\\\)")
@@ -382,14 +469,22 @@ fun MarkdownBlock(
     var streamingFrameMillis by remember { mutableStateOf(0L) }
     
     var (data, setData) = remember {
-        // For small content, parse synchronously to avoid UI flash.
-        // For large content (like heavy tool outputs or base64 images), initialize with empty
-        // AST and let the LaunchedEffect below parse it on a background thread to avoid UI stutter.
-        if (displayContent.length < 4000) {
-            val preprocessed = preProcess(displayContent)
-            val astTree = parser.buildMarkdownTreeFromString(preprocessed)
+        // Complete (non-streaming) messages MUST parse synchronously so the block reports its
+        // correct height on first composition. Deferring to a background parse renders the block
+        // at ~0 height and then grows it a frame later; when the user scrolls up into a large
+        // tool-usage turn, that growth shoves the LazyColumn scroll anchor and produces the
+        // visible "scroll up, snap down, then re-follow" jump. Parsing is memoized in
+        // [markdownAstCache], so this UI-thread cost is paid at most once per unique message.
+        //
+        // Only actively STREAMING content keeps the deferred empty-AST path: there the text
+        // changes every frame, so parsing large content on the UI thread would drop frames. Very
+        // small content parses synchronously even while streaming (cheap, avoids an initial flash),
+        // and pathologically huge content always defers as an ANR safety valve.
+        val parseSynchronously = displayContent.length < 4000 ||
+            (!streamingTextReveal && displayContent.length <= SYNC_PARSE_MAX_LENGTH)
+        if (parseSynchronously) {
             mutableStateOf(
-                value = preprocessed to astTree,
+                value = parseMarkdownCached(displayContent),
                 policy = referentialEqualityPolicy(),
             )
         } else {
@@ -413,9 +508,7 @@ fun MarkdownBlock(
         // multiple text bubbles present in tool-usage turns).
         var lastPreprocessed = data.first
         snapshotFlow { updatedDisplayContent }.distinctUntilChanged().mapLatest {
-            val preprocessed = preProcess(it)
-            val astTree = parser.buildMarkdownTreeFromString(preprocessed)
-            preprocessed to astTree
+            parseMarkdownCached(it)
         }.catch { exception -> exception.printStackTrace() }.flowOn(Dispatchers.Default) // 在后台线程解析AST树
             .collect { parsed ->
                 if (parsed.first != lastPreprocessed) {
@@ -1113,17 +1206,49 @@ private fun MarkdownNode(
                 }
             }
 
+            val imageContext = LocalContext.current
+            val density = LocalDensity.current
+            // Reserve the image's real box up front so it doesn't grow from a placeholder height to
+            // full size on load and shove the scroll anchor. Recomputed only when the model changes;
+            // remote images learn their size via onSizeResolved below. The reserved width is capped
+            // to the image's intrinsic width so the displayed size matches the previous behaviour
+            // (Coil's ContentScale.Fit never upscales past the natural size).
+            var reservedInfo by remember(imageModel) {
+                mutableStateOf(resolveImageDisplayInfo(imageContext, imageModel))
+            }
+
             Column(
                 modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val info = reservedInfo
+                val reservedModifier = if (info != null && info.widthPx > 0 && info.heightPx > 0) {
+                    val intrinsicWidthDp = with(density) { info.widthPx.toDp() }
+                    Modifier
+                        .widthIn(min = 120.dp, max = intrinsicWidthDp)
+                        .fillMaxWidth()
+                        .aspectRatio(info.aspectRatio)
+                } else {
+                    Modifier
+                        .widthIn(min = 120.dp)
+                        .heightIn(min = 120.dp)
+                }
                 // 这里可以使用Coil等图片加载库加载图片
                 ZoomableAsyncImage(
                     model = imageModel,
                     contentDescription = altText,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .widthIn(min = 120.dp)
-                        .heightIn(min = 120.dp),
+                        .then(reservedModifier),
+                    onSizeResolved = { resolved ->
+                        if (reservedInfo == null) {
+                            val newInfo = ImageDisplayInfo(
+                                widthPx = resolved.width.toInt(),
+                                heightPx = resolved.height.toInt(),
+                            )
+                            imageDisplayInfoCache[imageModel] = newInfo
+                            reservedInfo = newInfo
+                        }
+                    },
                 )
             }
         }

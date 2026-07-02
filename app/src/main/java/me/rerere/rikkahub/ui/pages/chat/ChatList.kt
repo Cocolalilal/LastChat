@@ -136,6 +136,46 @@ private const val ScrollBottomKey = "ScrollBottomKey"
 private const val AssistantInitialTurnKey = "assistant_initial"
 private const val AssistantResponseTurnKey = "assistant_response"
 
+/**
+ * Computes a cheap structural fingerprint of a [MessageNode] list that deliberately avoids
+ * calling equals() on any [kotlinx.serialization.json.JsonElement] fields (which performs a
+ * full deep structural comparison and is the source of scroll-stutter in tool-heavy chats).
+ *
+ * Only primitive/identity fields are mixed in: node IDs, selectIndex, message IDs, part count,
+ * and the *length* of string payloads (never their content, which may embed large JSON).
+ */
+private fun List<MessageNode>.messageNodesSignature(): Long {
+    var hash = -3750763034362895579L
+    for (node in this) {
+        hash = (hash xor node.id.hashCode().toLong()) * 1099511628211L
+        hash = (hash xor node.selectIndex.toLong()) * 1099511628211L
+        hash = (hash xor node.messages.size.toLong()) * 1099511628211L
+        for (msg in node.messages) {
+            hash = (hash xor msg.id.hashCode().toLong()) * 1099511628211L
+            hash = (hash xor msg.parts.size.toLong()) * 1099511628211L
+            hash = (hash xor msg.annotations.size.toLong()) * 1099511628211L
+            for (part in msg.parts) {
+                hash = when (part) {
+                    is me.rerere.ai.ui.UIMessagePart.Text ->
+                        (hash xor 1L xor part.text.length.toLong()) * 1099511628211L
+                    is me.rerere.ai.ui.UIMessagePart.ToolCall ->
+                        (hash xor 2L xor part.toolCallId.hashCode().toLong()
+                            xor part.arguments.length.toLong()) * 1099511628211L
+                    is me.rerere.ai.ui.UIMessagePart.ToolResult ->
+                        // Use toolCallId + toolName only; never compare content/arguments JsonElement.
+                        (hash xor 3L xor part.toolCallId.hashCode().toLong()
+                            xor part.toolName.hashCode().toLong()) * 1099511628211L
+                    is me.rerere.ai.ui.UIMessagePart.Reasoning ->
+                        (hash xor 4L xor part.reasoning.length.toLong()) * 1099511628211L
+                    else ->
+                        (hash xor part::class.hashCode().toLong()) * 1099511628211L
+                }
+            }
+        }
+    }
+    return hash
+}
+
 internal fun chatListTurnKey(
     group: MessageTurnGroup,
     index: Int,
@@ -449,9 +489,14 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Group consecutive messages by role into turns
-        // Memoized to prevent O(N) grouping on every recomposition (e.g. during scroll or UI state changes)
-        val turnGroups = remember(conversation.messageNodes) {
+        // Group consecutive messages by role into turns.
+        // Memoized with a cheap structural signature to prevent O(N) grouping on every
+        // recomposition. We deliberately avoid using `conversation.messageNodes` directly as the
+        // key because Kotlin List.equals() deep-compares JsonElement fields inside ToolResult
+        // (content/arguments), which can be huge JSON trees and causes a visible stutter on
+        // first scroll in tool-heavy chats.
+        val turnGroupsKey = conversation.messageNodes.messageNodesSignature()
+        val turnGroups = remember(turnGroupsKey) {
             conversation.messageNodes.groupIntoTurns()
         }
 

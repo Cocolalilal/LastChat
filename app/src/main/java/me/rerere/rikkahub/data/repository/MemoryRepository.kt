@@ -206,6 +206,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
         // Invalidate cache
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
+        embeddingCache.keys.removeAll { it.startsWith("${MemoryType.CORE}:$id:") }
 
         return AssistantMemory(
             id = newMemory.id,
@@ -223,6 +224,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
         // Invalidate cache
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
+        embeddingCache.keys.removeAll { it.startsWith("${MemoryType.EPISODIC}:$id:") }
 
         return AssistantMemory(
             id = -newEpisode.id,
@@ -282,8 +284,10 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
     }
 
     suspend fun deleteMemory(id: Int) {
+        if (id < 0) error("Cannot delete episodic memories via tool — they are auto-managed")
         memoryDAO.deleteMemory(id)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
+        embeddingCache.keys.removeAll { it.startsWith("${MemoryType.CORE}:$id:") }
     }
 
     /**

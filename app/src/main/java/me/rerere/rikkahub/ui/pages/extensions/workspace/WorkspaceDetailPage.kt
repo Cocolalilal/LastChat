@@ -1022,15 +1022,10 @@ private fun workspaceRuntimeSupport(nativeLibraryDir: String): WorkspaceRuntimeS
             ?: Build.SUPPORTED_ABIS.firstOrNull()
     }
     return when (abi) {
-        "arm64-v8a", "x86_64" -> WorkspaceRuntimeSupport(
+        "arm64-v8a", "x86_64", "armeabi-v7a", "armeabi" -> WorkspaceRuntimeSupport(
             supported = true,
             abi = abi,
             message = "",
-        )
-        "armeabi-v7a", "armeabi" -> WorkspaceRuntimeSupport(
-            supported = false,
-            abi = abi,
-            message = "Linux workspaces need a 64-bit Android runtime. This device is running the app as ARMv7, and no compatible proot runtime is bundled.",
         )
         else -> WorkspaceRuntimeSupport(
             supported = false,
