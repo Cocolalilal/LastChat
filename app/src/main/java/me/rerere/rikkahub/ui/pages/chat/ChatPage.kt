@@ -715,7 +715,11 @@ fun ChatPage(
             }
 
             !vm.chatListInitialized -> {
-                chatListState.scrollToItem(conversation.messageNodes.lastIndex)
+                // Scroll to the last item. The LazyColumn shows turn-groups (not raw nodes),
+                // so we cannot use messageNodes.lastIndex as the item index — in a tool-heavy
+                // chat there are far fewer groups than nodes. Int.MAX_VALUE is clamped by
+                // Compose to the true last item index.
+                chatListState.scrollToItem(Int.MAX_VALUE)
                 vm.chatListInitialized = true
                 chatListReady = true
             }
@@ -733,7 +737,9 @@ fun ChatPage(
             conversation.messageNodes.isNotEmpty()
         ) {
             consumedFocusLatestMessageKey = focusLatestMessageKey
-            chatListState.animateScrollToItem(conversation.messageNodes.lastIndex)
+            // Same reasoning: use Int.MAX_VALUE instead of messageNodes.lastIndex because
+            // the LazyColumn items are turn-groups, not individual nodes.
+            chatListState.animateScrollToItem(Int.MAX_VALUE)
         }
     }
 
@@ -2641,17 +2647,20 @@ fun UpdatePill(
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val containerColor = MaterialTheme.colorScheme.primaryContainer
     val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-    
+    val pillShape = RoundedCornerShape(999.dp)
+
     Surface(
         onClick = {
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
             onClick()
         },
-        shape = RoundedCornerShape(999.dp),
-        color = containerColor,
+        shape = pillShape,
+        color = blurredContainerColor(containerColor),
         contentColor = contentColor,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
-        modifier = Modifier.height(height)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .height(height)
+            .lastChatBlurEffect(containerColor, pillShape)
     ) {
         Row(
             modifier = Modifier.padding(start = 16.dp, end = 4.dp),
@@ -2807,49 +2816,52 @@ private fun ChatToolbar(
             val shouldObserveUpdates = (settings.displaySetting.checkForUpdates || isForcedCheck) &&
                 isNewChat
 
-            if (shouldObserveUpdates) {
-                val updateState by vm.updateState.collectAsStateWithLifecycle()
+            // Always collect update state so AnimatedVisibility can fade out gracefully
+            // even when shouldObserveUpdates becomes false mid-session.
+            val updateState by vm.updateState.collectAsStateWithLifecycle()
+            @Suppress("UNCHECKED_CAST")
+            val updateInfo = ((updateState as? me.rerere.rikkahub.utils.UiState.Success<*>)?.data as? me.rerere.rikkahub.utils.UpdateInfo)
+            val latestVersion = remember(updateInfo) {
+                updateInfo?.let { me.rerere.rikkahub.utils.Version(it.version) }
+            }
+            val isNewer = latestVersion != null && latestVersion > currentVersion
+            val isIgnored = remember(updateInfo, isForcedCheck) {
+                if (updateInfo != null)
+                    vm.updateChecker.isUpdateIgnored(context, updateInfo.version, forceCheck = isForcedCheck)
+                else true
+            }
+            val showUpdatePill = shouldObserveUpdates &&
+                updateInfo != null &&
+                (isNewer || isForcedCheck) &&
+                !isIgnored &&
+                dismissedUpdateVersion != updateInfo?.version
 
-                @Suppress("UNCHECKED_CAST")
-                val updateInfo = ((updateState as? me.rerere.rikkahub.utils.UiState.Success<*>)?.data as? me.rerere.rikkahub.utils.UpdateInfo)
-                if (updateInfo != null) {
-                    val latestVersion = remember(updateInfo) { me.rerere.rikkahub.utils.Version(updateInfo.version) }
-                    val isNewer = latestVersion > currentVersion
-                    val isIgnored = remember(updateInfo, isForcedCheck) { vm.updateChecker.isUpdateIgnored(context, updateInfo.version, forceCheck = isForcedCheck) }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showUpdatePill,
+                enter = fadeIn(animationSpec = tween(220)),
+                exit = fadeOut(animationSpec = tween(200)),
+            ) {
+                UpdatePill(
+                    bigScreen = bigScreen,
+                    height = topPillSize,
+                    onDismiss = { dismissedUpdateVersion = updateInfo?.version },
+                    onClick = { showUpdateDialog = true }
+                )
+            }
 
-                    val showUpdatePill = (isNewer || isForcedCheck) &&
-                        !isIgnored &&
-                        dismissedUpdateVersion != updateInfo.version
-
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showUpdatePill,
-                        enter = fadeIn(animationSpec = tween(140)),
-                        exit = fadeOut(animationSpec = tween(120)),
-                    ) {
-                        UpdatePill(
-                            bigScreen = bigScreen,
-                            height = topPillSize,
-                            onDismiss = { dismissedUpdateVersion = updateInfo.version },
-                            onClick = { showUpdateDialog = true }
-                        )
+            if (showUpdateDialog && updateInfo != null) {
+                UpdateDialog(
+                    info = updateInfo,
+                    updateChecker = vm.updateChecker,
+                    onDismiss = {
+                        showUpdateDialog = false
+                    },
+                    onIgnore = {
+                        vm.updateChecker.ignoreUpdate(context, updateInfo.version)
+                        vm.updateChecker.clearForcedCheck()
+                        showUpdateDialog = false
                     }
-                    
-                    if (showUpdateDialog) {
-                        UpdateDialog(
-                            info = updateInfo,
-                            updateChecker = vm.updateChecker,
-                            onDismiss = {
-                                showUpdateDialog = false
-                                dismissedUpdateVersion = updateInfo.version 
-                            },
-                            onIgnore = {
-                                vm.updateChecker.ignoreUpdate(context, updateInfo.version)
-                                vm.updateChecker.clearForcedCheck()
-                                showUpdateDialog = false
-                            }
-                        )
-                    }
-                }
+                )
             }
 
             Spacer(Modifier.weight(1f))
