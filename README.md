@@ -37,7 +37,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Multi-Modal Inputs**: Interact using Text, Images, Video, and Audio.
 
 ### Tools & Integrations
-*   **Python**: Built-in **Python Engine** (Chaquopy)
+*   **Python**: Built-in Python Engine, powered by Workspaces/PRoot-based Linux environments.
 *   **JavaScript**: Built-in **JavaScript Engine** (QuickJS)
 *   **Web Search**: Integrated web search capabilities to fetch real-time information.
 *   **MCP**: Support for MCP servers.
@@ -64,7 +64,6 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 *   **Koin** for Dependency Injection
 *   **Room** & **DataStore** for persistence
 *   **WorkManager** & **AlarmManager** for reliable background tasks
-*   **Chaquopy** for Python integration
 *   **QuickJS** for JavaScript integration
 
 ## Credits
@@ -74,5 +73,18 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
     *   **Claude Opus** models
     *   **GPT Codex**
 
----
+
+
+##
+
+
+<a href="https://www.star-history.com/?repos=Cocolalilal%2FLastChat&type=date&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=top-left" />
+ </picture>
+</a>
+
+##
 *Note: This project is a fork and may contain modifications or features not present in the original RikkaHub repository.*
