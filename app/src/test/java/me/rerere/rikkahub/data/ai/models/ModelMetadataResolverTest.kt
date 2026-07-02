@@ -769,7 +769,6 @@ class ModelMetadataResolverTest {
             settings = Settings(providers = listOf(existing)),
             snapshot = snapshot,
             resolver = resolver,
-            includeMissingCatalogProviders = false,
         )
 
         assertEquals(1, merged.providers.size)
