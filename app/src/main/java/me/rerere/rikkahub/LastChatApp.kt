@@ -181,7 +181,6 @@ class LastChatApp : Application() {
                         settings = settings,
                         snapshot = snapshot,
                         resolver = get<ModelMetadataResolver>(),
-                        includeMissingCatalogProviders = false,
                     )
                 )
             }.onFailure {
