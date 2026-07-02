@@ -24,29 +24,36 @@ bun run dev          # Vite dev server, proxies /api → http://localhost:8080
 bun run build        # react-router build → build/client/ + build/server/
 bun run start        # Run build/server/index.js (unused in SPA mode)
 bun run typecheck    # react-router typegen + tsc
-bun run fmt          # Prettier write
-bun run fmt:check    # Prettier check
+bun run lint         # oxlint app --fix
+bun run fmt          # oxfmt app (NOT Prettier)
+bun run fmt:check    # oxfmt app --check
 ```
 
-Build output: `build/client/` (HTML + JS + CSS). Gradle consumes this — no manual copy. **For Android builds, `npm run build` is invoked (not `bun run build`).**
+Build output: `build/client/` (HTML + JS + CSS). Gradle consumes this — no manual copy. **For Android builds, `npm run build` is invoked (not `bun run build`)**, and the `lint`/`fmt` scripts use **`oxlint`/`oxfmt`** (not ESLint/Prettier).
 
 ## Critical gotchas
 
-1. **Icons**: `vite.config.ts` + `tsconfig.json` alias `lucide-react` → `app/lib/material-icons.tsx`, which shims `@material-symbols/svg-400` SVGs under lucide-compatible names. Only shadcn/ui-generated `ui/*.tsx` files import from `lucide-react`. **For new components, import from `~/lib/material-icons` directly.** Add new icons by editing `app/lib/material-icons.tsx`:
+1. **Icons**: `vite.config.ts` + `tsconfig.json` alias `lucide-react` → `app/lib/material-icons.tsx`, which shims `@material-symbols/svg-400` SVGs under lucide-compatible names. The alias exists for shadcn/ui compatibility, but **ZERO `app/components/ui/*.tsx` files actually import from `lucide-react`** — the only literal `lucide-react` import in the entire codebase is `app/routes/conversations.tsx:67` (`MessageSquare`). **For new components, import from `~/lib/material-icons` directly.** Add new icons by editing `app/lib/material-icons.tsx`:
    ```tsx
    import IconSvg from "@material-symbols/svg-400/rounded/<name>.svg?react";
    export const IconName = createIcon(IconSvg);
    ```
-2. **Markdown lib is `streamdown`**, not `react-markdown`. Custom `remark-rp` plugin in `app/components/markdown/remark-rp.ts` does RP-style colorization. LaTeX via `\(...\)` and `\[...\]` (rewritten to `$...$`/`$$...$$`). `<think>` tags → blockquote style. Code highlighting via Shiki. Theme-aware.
+2. **Markdown lib is `streamdown`**, not `react-markdown`. Custom `remark-rp` plugin in `app/components/markdown/remark-rp.ts` does RP-style colorization. LaTeX via `\(...\)` and `\[...\]` (rewritten to `$...$`/`$$...$$`). Code highlighting via Shiki. Theme-aware. (Note: `<think>` tag rendering is NOT handled in web-ui — `<think>` content arrives already-parsed as `ReasoningPart` from the backend; if you see stray `<think>` tags in markdown output, that's a backend transformer issue, not a web-ui one.)
 3. **3 store slices, not 2**: `settings-slice`, `chat-input-slice`, **`clock-slice`** (`clockOffset`/`setClockOffset`). `lib/utils.ts::serverNow()` uses `clockOffset` — use it instead of `Date.now()` for server-relative timestamps.
 4. **5 i18n namespaces** (not 4): `common` (default), `input`, `markdown`, `message`, **`page`**.
 5. **WebAuth gate**: ~half of `api.ts` handles a token-based auth flow. `window.__LASTCHAT_WEB_BOOT__` is injected by the Kotlin server into `index.html`. Key APIs: `requestWebAuthToken`, `isWebAuthLocked`, `onWebAuthStateChange`, `appendWebAuthQuery`, `Authorization: Bearer` header. `root.tsx` calls `useSettingsSubscription(!webAuthLocked)` and renders `WebAuthGate`. **Pause new top-level data fetching while locked.**
-6. **`resolveFileUrl(url)`** (`lib/files.ts`): `data:`/`http(s):` → as-is. `file://`/`content://`/`android.resource://` → `/api/files/content?uri=<encoded>` (with auth token query). `/api/...` URLs go through `appendWebAuthQuery` to inject `?access_token=`. **NOT `/api/files/path/...`** (old doc was wrong).
+6. **`resolveFileUrl(url)`** (`lib/files.ts`) handles **5 cases** (NOT 3):
+   - `data:` / `http(s):` → as-is
+   - `/api/...` URLs → `appendWebAuthQuery(url)` (injects `?access_token=`)
+   - `file://` / `content://` / `android.resource://` → `/api/files/content?uri=<encoded>` + `appendWebAuthQuery`
+   - **Relative paths** (no scheme, no leading `/api/`) → `/api/files/path/<path>` + `appendWebAuthQuery`
+   
+   Use `resolveFileUrl()` for ALL file URLs in the UI — never construct `/api/files/...` paths by hand.
 7. **SSE URLs are relative** (no `/api/` prefix) because `ky.prefixUrl = "/api"`. So `sse("settings/stream", ...)`.
 8. **`verbatimModuleSyntax: true`** — must use `import type { X }` for type-only imports.
 9. **Path alias `~`** → `app/` directory.
 10. **Build for Android uses `npm run build`**, not `bun run build`. Don't introduce bun-only APIs.
-11. **Unused deps in `package.json`**: `immer` and `zod` are declared but have ZERO imports — don't add to them.
+11. **Unused deps in `package.json`**: `immer` and `zod` are declared but have ZERO imports — don't add to them. `react-infinite-scroll-component` IS used legitimately in `app/components/extended/infinite-scroll-area.tsx` for list pagination (NOT chat autoscroll — that uses `use-stick-to-bottom`).
 12. **Persona placeholders** (`{{char}}`, `{char}`, `{{user}}`, `{user}`) are substituted ONLY in `TextPart` rendering via `replacePersonaPlaceholders` — not in previews, exports, or quick-jump.
 
 ## Directory structure
@@ -60,10 +67,10 @@ app/
 │   └── conversation-draft-support.ts
 ├── components/
 │   ├── ui/              # shadcn/ui (34 components) — New York style
-│   ├── message/         # ChatMessage, MessagePart dispatcher, parts/{text,image,video,audio,document,reasoning,tool}-part.tsx
+│   ├── message/         # ChatMessage, MessagePart dispatcher, parts/{text,image,video,audio,document,reasoning,reasoning-step,tool}-part.tsx, assistant-turn-message.tsx, chain-of-thought.tsx, activity-timeline.tsx, activity-pill.tsx, chat-message-annotations.tsx, chat-message-avatar-row.tsx
 │   ├── markdown/        # markdown.tsx + code-block.tsx + remark-rp.ts + markdown.css
-│   ├── input/           # chat-input, model-list, pickers (search/reasoning/injection/mcp)
-│   ├── workbench/       # Code execution workbench
+│   ├── input/           # chat-input, model-list, pickers (search/reasoning/injection/mcp), picker-error-alert
+│   ├── workbench/       # Code execution workbench (workbench-host, workbench-context, code-preview-language)
 │   ├── extended/        # conversation, infinite-scroll-area
 │   ├── conversation-sidebar.tsx, conversation-quick-jump.tsx, conversation-search-button.tsx
 │   ├── custom-theme-dialog.tsx, theme-provider.tsx, web-auth-gate.tsx, conversation-greeting.tsx, logo.tsx
@@ -90,7 +97,7 @@ app/
 | `UIMessage` | `UIMessage` | `ai/.../ui/MessageUtils.kt` |
 | `MessageNode` | `MessageNode` | `app/.../data/model/Conversation.kt` |
 | `Conversation` | `Conversation` | `app/.../data/model/Conversation.kt` |
-| `ConversationDto` | `ConversationDto` | `app/.../web/dto/WebDto.kt` |
+| `ConversationDto` | `ConversationDto` | `app/.../web/WebDtos.kt` (plural, NOT `WebDto.kt`) |
 | `Settings` | `Settings` | `app/.../data/datastore/PreferencesModels.kt` |
 
 Additional types in `app/types/`: `dto.ts` (API DTOs), `settings.ts` (DisplaySetting, AssistantProfile), `helpers.ts` (type guards), `annotations.ts`, `parts.ts`, `message.ts`, `conversation.ts`, `core.ts`, `index.ts`.
@@ -150,7 +157,7 @@ sse<T>(url, { onMessage, onError, onOpen, onClose }, { signal })
 5. Add type guard in `app/types/helpers.ts`
 6. Add preview switch in `app/routes/conversation-draft-support.ts`
 7. Add markdown export case in `app/lib/export-markdown.ts`
-8. Add `hasRenderableContentPart` switch in `app/lib/message-turns.ts`
+8. Add `hasRenderableContentPart` switch in `app/components/message/assistant-turn-message.tsx` (NOT `lib/message-turns.ts` — that file does not contain it)
 9. Add i18n keys in **both** `zh-CN/message.json` and `en-US/message.json`
 
 ## Conventions
@@ -162,19 +169,30 @@ sse<T>(url, { onMessage, onError, onOpen, onClose }, { signal })
 - Animations: `motion/react` (NOT framer-motion)
 - Local state with `useState`; pickers via `@tanstack/react-query`
 - Component props pattern: `interface MyComponentProps extends ComponentProps<"div"> { ... }`
-- Default language: zh-CN. Language detection: `localStorage["lang"]` → browser language → default zh-CN.
+- Default language: zh-CN. Language detection order: `localStorage["lang"]` → browser language (`zh*` → zh-CN, **everything else → en-US**) → default zh-CN. So a browser set to French will resolve to **en-US**, not zh-CN. The `fallbackLng: "zh-CN"` in i18next only kicks in for missing translation keys.
 
 ## API endpoints (served by Kotlin Ktor backend)
 
 - `GET /api/settings/stream` — settings SSE stream
 - `GET /api/conversations` — conversation list
+- `GET /api/conversations/paged` — paged conversation list
+- `GET /api/conversations/search` — search conversations
 - `GET /api/conversations/:id` — get conversation
 - `GET /api/conversations/:id/stream` — conversation SSE stream
-- `POST /api/conversations/:id/send` — send message
+- `POST /api/conversations/:id/messages` — send message (**NOT** `/send` — that endpoint does not exist)
+- `POST /api/conversations/:id/messages/:messageId/edit` — edit a message
+- `POST /api/conversations/:id/regenerate` — regenerate last assistant turn
+- `POST /api/conversations/:id/stop` — stop active generation
+- `POST /api/conversations/:id/tool-approval` — approve/deny a pending tool call
+- `POST /api/conversations/:id/fork` — fork conversation at a node
+- `POST /api/conversations/:id/nodes/:nodeId/select` — switch branch
+- `DELETE /api/conversations/:id/messages/:messageId` — delete a message
 - `POST /api/files/upload` — file upload
 - `GET /api/files/content?uri=...` — file access (with `?access_token=` for WebAuth)
 - `GET /api/files/path/*` — relative path file access
 - `POST /api/auth/token` — WebAuth token issue (JWT HMAC-SHA256, 30-day TTL)
+- `GET /api/bootstrap` — boot config (incl. `authRequired`)
+- `GET /api/ai-icon?...` — provider/model icon proxy
 
 SSE event types from backend: `ConversationSnapshotEventDto` (full snapshot), `ConversationNodeUpdateEventDto` (incremental).
 
@@ -196,7 +214,7 @@ User selects/creates conversation
 
 User sends message
   → useChatInputStore.getSubmitParts(conversationId)
-  → POST /api/conversations/:id/send { parts: UIMessagePart[] }
+  → POST /api/conversations/:id/messages { parts: UIMessagePart[] }   # NOT /send
   → SSE stream: node_update events per token/part
   → conversation.isGenerating = true → false
   → on completion: useChatInputStore.clearDraft(conversationId)
@@ -204,19 +222,19 @@ User sends message
 
 ## What NOT to do
 
-- **Don't import from `lucide-react`** in new code — import from `~/lib/material-icons` directly. The `lucide-react` alias exists only for shadcn/ui-generated `ui/*.tsx` files.
+- **Don't import from `lucide-react`** in new code — import from `~/lib/material-icons` directly. The `lucide-react` alias exists for shadcn/ui compatibility but **no `ui/*.tsx` file actually imports from it** (the only literal `lucide-react` import is `routes/conversations.tsx:67`).
 - **Don't use `react-markdown`** — use `streamdown`.
 - **Don't call `Date.now()`** for server-relative timestamps — use `serverNow()` from `lib/utils.ts`.
 - **Don't strip `__from_message_attachment` / `__from_message_source_index`** metadata from attachment parts — `buildEditedParts()` reads them.
 - **Don't add a part type without updating all 9 places** listed above.
 - **Don't assume `ReasoningPart` has `steps[]`** — it doesn't.
 - **Don't use bun-only APIs** — Gradle builds with `npm run build`.
-- **Don't use `react-infinite-scroll-component`** — autoscroll uses `use-stick-to-bottom`.
+- **Don't conflate `react-infinite-scroll-component` with chat autoscroll** — the package IS used legitimately in `extended/infinite-scroll-area.tsx` for paginated lists; chat autoscroll uses `use-stick-to-bottom`. Don't remove the dep, but don't use it for chat message scrolling either.
 - **Don't add `immer` or `zod` patterns** — both deps are unused and shouldn't grow.
 
 ## Troubleshooting
 
 - Port 5173 conflict: `lsof -ti:5173 | xargs kill -9`
-- API requests fail in dev: ensure Kotlin backend running on `:8080` (`./gradlew :app:run` from project root, or run `RouteActivity` from Android Studio)
+- API requests fail in dev: ensure Kotlin backend running on `:8080` (run `RouteActivity` from Android Studio, or start the app on a device/emulator — there is no `./gradlew :app:run` task for this Android app).
 - Type errors: `bun run typecheck`, check `.react-router/types/`
 - Build fails: `rm -rf node_modules .react-router build && bun install && bun run build`

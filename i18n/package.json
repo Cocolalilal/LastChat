@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.3",
-    "@ai-sdk/openai": "^2.0.8",
     "@ai-sdk/openai-compatible": "^1.0.13",
     "@tqman/ink-table": "^0.0.0-development",
     "ai": "^5.0.8",

@@ -6,7 +6,7 @@ Standalone TypeScript TUI tool (Bun + React 19 + Ink 6) that scans Android `stri
 
 - TypeScript 5.9.2 (strict), ESNext modules, bundler resolution
 - React 19.1.1 + Ink 6.1.0 (terminal UI)
-- Vercel AI SDK 5.0.8 (`@ai-sdk/google`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`)
+- Vercel AI SDK 5.0.8 — **actually used**: `@ai-sdk/google` and `@ai-sdk/openai-compatible` (via `createOpenAICompatible`). `@ai-sdk/openai` is declared in `package.json` but **NOT imported anywhere** — don't add new code depending on it; either use `@ai-sdk/openai-compatible`'s `createOpenAICompatible` or remove the unused dep.
 - xml2js 0.6.2 (Android string resources), yaml 2.8.1 (config), dotenv 16.4.5
 - Bun (runtime + package manager); `tsx` for dev, `tsc` for build
 
@@ -44,9 +44,11 @@ concurrency: 4
 
 # AI provider configuration
 provider:
-  type: openai                    # "google" | "openai" | "openai-compatible"
+  type: openai                    # "google" | "openai" (NOT "openai-compatible" — see warning below)
   model: moonshotai/kimi-k2-0905
 ```
+
+**⚠️ Provider type caveat**: `getModel()` in `src/translator.ts` only handles `"google"`/`"gemini"`/`"openai"`. Setting `type: "openai-compatible"` will throw `Unsupported provider: openai-compatible` at runtime, even though `@ai-sdk/openai-compatible` is installed. To add real `openai-compatible` support, extend the `switch` in `getModel()`.
 
 **Only `app` and `search` are currently configured** — strings in `:tts`/`:speech`/`:highlight`/`:document`/`:workspace` are NOT auto-translated.
 
@@ -70,6 +72,7 @@ OPENAI_BASE_URL=https://...    # optional, for OpenAI-compatible providers
 - Package: `package.json`
 - TS config: `tsconfig.json` (strict)
 - Entry: `src/index.tsx`
+- **`src/xml-parser.ts`** — core XML parse/write/merge module (107 lines). Used by `module-loader.ts` and `translator.ts` to read/write `strings.xml`. Not previously mentioned here; documented in `i18n/README.md`.
 
 ## Translation workflow
 
@@ -79,7 +82,7 @@ OPENAI_BASE_URL=https://...    # optional, for OpenAI-compatible providers
 4. AI-translates missing entries with context (module + key information)
 5. Preserves Android formatting (`%1$d`, `%1$s`, `\n`, `\'`)
 6. Saves to appropriate `values-{locale}/strings.xml` files
-7. 100ms rate-limiting delays between requests; error handling with fallback to original text; comprehensive logging to `logs.txt`
+7. 100ms rate-limiting delays between requests; error handling with **fallback to original text (NO retry)** — failed translations are kept as the source string and logged to `logs.txt`, but not re-attempted; comprehensive logging to `logs.txt`
 
 ## TUI navigation
 
@@ -95,10 +98,10 @@ Current targets (full names provided to AI for context):
 - `b+zh+Hans`: Simplified Chinese (简体中文)
 - `zh-rTW`: Traditional Chinese (繁體中文)
 - `ja`: Japanese (日本語)
-- `ko-rKR`: Korean (한국어)
+- `ko-rKR`: Korean (한국어) — **⚠️ latent bug**: `LANGUAGE_NAMES` in `src/translator.ts` only has the key `ko` (NOT `ko-rKR`), so `getLanguageName("ko-rKR")` returns the raw locale string `"ko-rKR"` instead of `"Korean (한국어)"`. Fix by adding `'ko-rKR': 'Korean (한국어)'` to the map (or rename the `ko` key to `ko-rKR`).
 - `ru`: Russian (Русский)
 
-Add new languages to the `LANGUAGE_NAMES` mapping in `src/translator.ts` and to `targets` in `config.yml`.
+Add new languages to the `LANGUAGE_NAMES` mapping in `src/translator.ts` and to `targets` in `config.yml`. **Verify the `LANGUAGE_NAMES` key exactly matches the `targets` entry** (e.g. `ko-rKR`, not `ko`) or the AI will receive the raw locale string instead of the language name.
 
 ## Code style
 
@@ -118,7 +121,7 @@ Auto-scans for modules containing `src/main/res/values/strings.xml`. Non-existen
 ## Error handling
 
 - File permissions: check write access to Android module directories
-- API rate limits: built-in delays and retry logic
+- API rate limits: built-in 100ms delays between requests (**NO retry logic** — failed translations fall back to the original source string and are skipped, not re-attempted)
 - Missing translations: filter functionality to focus on incomplete items
 - API key issues: verify `.env` config and quota
 
