@@ -48,6 +48,7 @@ fun UpdateDialog(
     info: UpdateInfo,
     updateChecker: UpdateChecker,
     onDismiss: () -> Unit,
+    onLater: () -> Unit,
     onIgnore: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -243,7 +244,7 @@ fun UpdateDialog(
                             OutlinedButton(
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
-                                    onDismiss()
+                                    onLater()
                                 },
                                 shape = buttonShape,
                                 modifier = Modifier
@@ -257,7 +258,7 @@ fun UpdateDialog(
                         OutlinedButton(
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onDismiss()
+                                onLater()
                             },
                             shape = buttonShape,
                             modifier = Modifier

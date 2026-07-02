@@ -2856,6 +2856,10 @@ private fun ChatToolbar(
                     onDismiss = {
                         showUpdateDialog = false
                     },
+                    onLater = {
+                        showUpdateDialog = false
+                        dismissedUpdateVersion = updateInfo.version
+                    },
                     onIgnore = {
                         vm.updateChecker.ignoreUpdate(context, updateInfo.version)
                         vm.updateChecker.clearForcedCheck()
