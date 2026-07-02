@@ -173,7 +173,12 @@ class RootfsPatcher {
         sh.parentFile?.mkdirs()
         runCatching {
             val parent = sh.parentFile ?: return@runCatching
-            val relativeTarget = parent.toPath().relativize(source.toPath())
+            val relativeTarget = if (Files.isSymbolicLink(parent.toPath())) {
+                // If bin is a symlink to usr/bin, resolve the target relative to the canonical path
+                parent.canonicalFile.toPath().relativize(source.toPath())
+            } else {
+                parent.toPath().relativize(source.toPath())
+            }
             Files.createSymbolicLink(sh.toPath(), relativeTarget)
         }.recoverCatching {
             source.copyTo(sh, overwrite = true)
