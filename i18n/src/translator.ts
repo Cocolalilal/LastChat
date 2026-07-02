@@ -35,7 +35,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
   'zh': 'Simplified Chinese (简体中文)',
   'zh-rTW': 'Traditional Chinese (繁體中文)',
   'ja': 'Japanese (日本語)',
-  'ko': 'Korean (한국어)',
+  'ko-rKR': 'Korean (한국어)',
   'es': 'Spanish (Español)',
   'fr': 'French (Français)',
   'de': 'German (Deutsch)',
@@ -60,6 +60,7 @@ function getModel(config: I18nConfig) {
     case 'gemini':
       return google(config.provider.model);
     case 'openai':
+    case 'openai-compatible':
       return openaiProvider(config.provider.model);
     default:
       throw new Error(`Unsupported provider: ${config.provider.type}`);

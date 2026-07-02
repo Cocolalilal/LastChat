@@ -776,7 +776,7 @@ private fun ModelList(
             fromModelIndex in providerSetting.models.indices &&
             toModelIndex in providerSetting.models.indices
         ) {
-            onUpdateProvider(providerSetting.moveMove(fromModelIndex, toModelIndex))
+            onUpdateProvider(providerSetting.moveModel(fromModelIndex, toModelIndex))
         }
     }
     val density = LocalDensity.current

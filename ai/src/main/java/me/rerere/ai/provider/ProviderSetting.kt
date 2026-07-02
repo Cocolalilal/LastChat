@@ -44,7 +44,7 @@ sealed class ProviderSetting {
     abstract fun addModel(model: Model): ProviderSetting
     abstract fun editModel(model: Model): ProviderSetting
     abstract fun delModel(model: Model): ProviderSetting
-    abstract fun moveMove(from: Int, to: Int): ProviderSetting
+    abstract fun moveModel(from: Int, to: Int): ProviderSetting
     abstract fun copyProvider(
         id: Uuid = this.id,
         enabled: Boolean = this.enabled,
@@ -91,7 +91,7 @@ sealed class ProviderSetting {
             return copy(models = models.filter { it.id != model.id })
         }
 
-        override fun moveMove(
+        override fun moveModel(
             from: Int,
             to: Int
         ): ProviderSetting {
@@ -158,7 +158,7 @@ sealed class ProviderSetting {
             return copy(models = models.filter { it.id != model.id })
         }
 
-        override fun moveMove(
+        override fun moveModel(
             from: Int,
             to: Int
         ): ProviderSetting {
@@ -220,7 +220,7 @@ sealed class ProviderSetting {
             return copy(models = models.filter { it.id != model.id })
         }
 
-        override fun moveMove(
+        override fun moveModel(
             from: Int,
             to: Int
         ): ProviderSetting {
@@ -295,7 +295,7 @@ sealed class ProviderSetting {
             return copy(models = models.filter { it.id != model.id })
         }
 
-        override fun moveMove(
+        override fun moveModel(
             from: Int,
             to: Int
         ): ProviderSetting {
