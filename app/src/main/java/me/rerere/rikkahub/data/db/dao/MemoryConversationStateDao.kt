@@ -28,4 +28,7 @@ interface MemoryConversationStateDao {
 
     @Query("DELETE FROM memory_conversation_state WHERE assistant_id = :assistantId")
     suspend fun deleteForAssistant(assistantId: String)
+
+    @Query("DELETE FROM memory_conversation_state")
+    suspend fun deleteAll()
 }

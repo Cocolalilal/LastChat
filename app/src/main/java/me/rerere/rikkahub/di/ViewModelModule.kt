@@ -82,6 +82,18 @@ val viewModelModule = module {
             templateTransformer = get(),
         )
     }
+    viewModel<me.rerere.rikkahub.ui.pages.memory.MemoryCenterVM> { params ->
+        me.rerere.rikkahub.ui.pages.memory.MemoryCenterVM(
+            scopeAssistantId = params.get<String>(),
+            settingsStore = get(),
+            graphRepository = get(),
+            applier = get(),
+            budget = get(),
+            storeMetaDao = get(),
+            legacyMemoryDao = get(),
+            legacyEpisodeDao = get(),
+        )
+    }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
     viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
         me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(

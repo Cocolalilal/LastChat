@@ -1416,6 +1416,25 @@ private fun ChatPageContent(
                         }
                     }
 
+                // §7.5 non-blocking "🧠 N memories updated" pill for the active conversation.
+                if (conversationInitialized && !previewMode) {
+                    me.rerere.rikkahub.ui.components.chat.MemoryUpdatePill(
+                        assistantId = conversation.assistantId.toString(),
+                        conversationId = conversation.id.toString(),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = chatListTopPadding(toolbarPlacement) + 8.dp),
+                        onOpenMemory = { focusNodeId ->
+                            navController.navigate(
+                                Screen.MemoryCenter(
+                                    assistantId = conversation.assistantId.toString(),
+                                    focusNodeId = focusNodeId,
+                                )
+                            )
+                        },
+                    )
+                }
+
                 ChatExportSheet(
                     visible = showExportSheet,
                     onDismissRequest = {

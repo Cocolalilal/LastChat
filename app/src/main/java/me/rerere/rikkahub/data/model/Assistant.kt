@@ -66,6 +66,9 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
+    // Graph memory system (v34): per-character overrides for the shared layer + background model.
+    val useSharedUserMemory: Boolean = true, // Participate in the GLOBAL_USER layer (read + write). Off = CHARACTER scope only.
+    val memoryModelId: Uuid? = null, // Per-assistant override for the background memory model; null = fall back to global chain.
     val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
     val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
     val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages

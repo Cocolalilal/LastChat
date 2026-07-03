@@ -36,4 +36,10 @@ interface MemoryEdgeDao {
 
     @Query("DELETE FROM memory_edge WHERE from_id IN (:nodeIds) OR to_id IN (:nodeIds)")
     suspend fun deleteTouchingAny(nodeIds: List<String>)
+
+    @Query("SELECT * FROM memory_edge")
+    suspend fun getAll(): List<MemoryEdgeEntity>
+
+    @Query("DELETE FROM memory_edge")
+    suspend fun deleteAll()
 }

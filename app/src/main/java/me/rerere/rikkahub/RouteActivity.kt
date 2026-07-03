@@ -839,6 +839,14 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.MemoryCenter> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemoryCenter>()
+                        me.rerere.rikkahub.ui.pages.memory.MemoryCenterPage(
+                            assistantId = route.assistantId,
+                            focusNodeId = route.focusNodeId,
+                        )
+                    }
+
                     composable<Screen.Menu> {
                         MenuPage()
                     }
@@ -1306,6 +1314,12 @@ sealed interface Screen {
         val startRoute: String? = null,  // Navigate directly to a sub-route (e.g., "memory")
         val initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
         val scrollToMemoryId: Int? = null  // Memory ID to scroll to
+    ) : Screen
+
+    @Serializable
+    data class MemoryCenter(
+        val assistantId: String? = null, // null = the shared GLOBAL_USER layer (opened from Settings)
+        val focusNodeId: String? = null,  // optional node to open on entry (activity-pill deep link)
     ) : Screen
 
     @Serializable

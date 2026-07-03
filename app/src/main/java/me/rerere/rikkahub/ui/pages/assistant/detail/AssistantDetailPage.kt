@@ -194,12 +194,10 @@ fun AssistantDetailPage(
         }
     }
     
-    // Auto-navigate to start route if specified (e.g., for deep linking to memory)
+    // Auto-navigate to start route if specified (e.g., for deep linking to memory → Memory Center)
     LaunchedEffect(startRoute) {
         if (startRoute == AssistantDetailRoutes.MEMORY) {
-            navController.navigate(AssistantDetailRoutes.MEMORY) {
-                popUpTo(AssistantDetailRoutes.HOME) { inclusive = false }
-            }
+            rootNavController.navigate(Screen.MemoryCenter(assistantId = id))
         }
     }
 
@@ -372,7 +370,7 @@ fun AssistantDetailPage(
                     onNavigateToPrompts = { navController.navigate(AssistantDetailRoutes.PROMPTS) },
                     onNavigateToContextManagement = { navController.navigate(AssistantDetailRoutes.CONTEXT_MANAGEMENT) },
                     onNavigateToTools = { navController.navigate(AssistantDetailRoutes.TOOLS) },
-                    onNavigateToMemory = { navController.navigate(AssistantDetailRoutes.MEMORY) },
+                    onNavigateToMemory = { rootNavController.navigate(Screen.MemoryCenter(assistantId = id)) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
                     onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) }
                 )
@@ -443,33 +441,6 @@ fun AssistantDetailPage(
                     onUpdate = { onUpdate(it) },
                     vm = vm,
                     mcpServerConfigs = mcpServerConfigs
-                )
-            }
-
-            // Memory
-            composable(AssistantDetailRoutes.MEMORY) {
-                val embeddingProgress by vm.embeddingProgress.collectAsStateWithLifecycle()
-                val estimatedMemoryCapacity by vm.estimatedMemoryCapacity.collectAsStateWithLifecycle()
-                val needsEmbeddingRegeneration by vm.needsEmbeddingRegeneration.collectAsStateWithLifecycle()
-                val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
-                AssistantMemorySettings(
-                    assistant = assistant,
-                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
-                    memories = memories,
-                    onUpdateAssistant = { onUpdate(it) },
-                    onDeleteMemory = { vm.deleteMemory(it) },
-                    onAddMemory = { vm.addMemory(it) },
-                    onUpdateMemory = { vm.updateMemory(it) },
-                    onRegenerateEmbeddings = { vm.regenerateEmbeddings() },
-                    embeddingProgress = embeddingProgress,
-                    onTestRetrieval = { vm.testRetrieval(it) },
-                    retrievalResults = retrievalResults,
-                    assistantDetailVM = vm,
-                    estimatedMemoryCapacity = estimatedMemoryCapacity,
-                    needsEmbeddingRegeneration = needsEmbeddingRegeneration,
-                    initialMemoryTab = initialMemoryTab,
-                    scrollToMemoryId = scrollToMemoryId,
-                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }
 

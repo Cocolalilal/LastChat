@@ -172,7 +172,8 @@ class MemoryEncoder(
     }
 
     private fun resolveModel(settings: Settings, assistant: Assistant): Pair<ProviderSetting, Model>? {
-        val modelId = settings.memory.memoryModelId
+        val modelId = assistant.memoryModelId
+            ?: settings.memory.memoryModelId
             ?: settings.summarizerModelId
             ?: assistant.backgroundModelId
             ?: settings.chatModelId

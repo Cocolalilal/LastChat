@@ -109,10 +109,27 @@ interface MemoryNodeDao {
     @Query("SELECT * FROM memory_node WHERE embedding_model_id IS NULL OR embedding_model_id != :modelId")
     suspend fun getNeedingEmbedding(modelId: String): List<MemoryNodeEntity>
 
+    // ----- export / global reads -----
+
+    @Query("SELECT * FROM memory_node WHERE scope = :scope")
+    suspend fun getByScope(scope: Int): List<MemoryNodeEntity>
+
+    @Query("SELECT * FROM memory_node")
+    suspend fun getAll(): List<MemoryNodeEntity>
+
+    @Query("SELECT id FROM memory_node WHERE scope = 0")
+    suspend fun getGlobalNodeIds(): List<String>
+
     // ----- deletion cascades (character wipe / conversation forget) -----
 
     @Query("SELECT id FROM memory_node WHERE scope = 1 AND owner_assistant_id = :assistantId")
     suspend fun getCharacterNodeIds(assistantId: String): List<String>
+
+    @Query("DELETE FROM memory_node")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM memory_node_fts")
+    suspend fun deleteAllFts()
 
     @Query("DELETE FROM memory_node WHERE scope = 1 AND owner_assistant_id = :assistantId")
     suspend fun deleteCharacterNodes(assistantId: String)
@@ -128,6 +145,20 @@ interface MemoryNodeDao {
         """
     )
     fun observeVisible(assistantId: String): Flow<List<MemoryNodeEntity>>
+
+    /**
+     * Every status the Memory Center Browse tab can show (adds SUPERSEDED history + FORGOTTEN-in-grace)
+     * for [assistantId]'s visible scope. Reactive so pin/forget/restore/edit reflect immediately.
+     */
+    @Query(
+        """
+        SELECT * FROM memory_node
+        WHERE status IN (0, 1, 2, 3, 4, 5)
+          AND (scope = 0 OR (scope = 1 AND owner_assistant_id = :assistantId))
+        ORDER BY importance DESC, last_confirmed_at DESC
+        """
+    )
+    fun observeBrowsable(assistantId: String): Flow<List<MemoryNodeEntity>>
 
     // ----- FTS mirror (kept in sync explicitly by the applier) -----
 

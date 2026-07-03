@@ -52,4 +52,18 @@ interface MemoryActivityDao {
 
     @Query("DELETE FROM memory_activity WHERE scope = 1 AND owner_assistant_id = :assistantId")
     suspend fun deleteForAssistant(assistantId: String)
+
+    /** Suggestion rows (e.g. scope-promotion chips) still awaiting a user decision. */
+    @Query(
+        """
+        SELECT * FROM memory_activity
+        WHERE kind = :kind AND state = :state
+          AND (scope = 0 OR (scope = 1 AND owner_assistant_id = :assistantId))
+        ORDER BY at DESC
+        """
+    )
+    suspend fun getPendingSuggestions(assistantId: String, kind: String, state: String): List<MemoryActivityEntity>
+
+    @Query("DELETE FROM memory_activity")
+    suspend fun deleteAll()
 }

@@ -37,4 +37,10 @@ interface MemoryProvenanceDao {
 
     @Query("DELETE FROM memory_provenance WHERE node_id IN (:nodeIds)")
     suspend fun deleteForNodes(nodeIds: List<String>)
+
+    @Query("SELECT * FROM memory_provenance WHERE node_id IN (:nodeIds) ORDER BY created_at ASC")
+    suspend fun getForNodes(nodeIds: List<String>): List<MemoryProvenanceEntity>
+
+    @Query("DELETE FROM memory_provenance")
+    suspend fun deleteAll()
 }

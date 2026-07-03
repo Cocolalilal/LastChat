@@ -35,6 +35,7 @@ import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -135,6 +136,13 @@ fun SettingPage(
                         icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingPromptInjections) }
+                    )
+
+                    SettingGroupItem(
+                        title = "Memory",
+                        icon = { Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.MemoryCenter()) }
                     )
                 }
             }
