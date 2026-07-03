@@ -62,10 +62,19 @@ class MemoryOpApplier(
     private val edgeDao: MemoryEdgeDao,
     private val provenanceDao: MemoryProvenanceDao,
     private val activityDao: MemoryActivityDao,
+    private val scopeLocks: MemoryScopeLocks,
 ) {
 
+    /**
+     * Apply a batch of ops atomically. Held under the per-scope write lock (§7.2) — not just the DB
+     * transaction — so a future sleep pass's read-modify-write cannot interleave with this apply on
+     * the same scope. The transaction still bounds atomicity: a crash mid-apply leaves the watermark
+     * unmoved and the pass re-runs idempotently (the dedup gate absorbs the replay).
+     */
     suspend fun apply(ops: List<MemoryOp>, ctx: MemoryApplyContext): MemoryApplyResult =
-        db.withTransaction { Pass(ctx).run(ops) }
+        scopeLocks.withScope(ctx.assistantId) {
+            db.withTransaction { Pass(ctx).run(ops) }
+        }
 
     /** One transactional pass. Keeps a small in-memory entity cache so hubs created mid-pass are reused. */
     private inner class Pass(val ctx: MemoryApplyContext) {
@@ -190,7 +199,10 @@ class MemoryOpApplier(
             // of the supersession chain.
             val targetId = followSupersedeChain(id) ?: id
             val fresh = nodeDao.getById(targetId) ?: run { dropped++; return }
-            val promote = fresh.status == MemStatus.PROVISIONAL && !fresh.adjudicationPending
+            // REINFORCE reactivates: a re-selected branch or re-stated fact pulls a PROVISIONAL or a
+            // branch-demoted DORMANT node back to ACTIVE (§7.3).
+            val promote = (fresh.status == MemStatus.PROVISIONAL || fresh.status == MemStatus.DORMANT) &&
+                !fresh.adjudicationPending
             nodeDao.update(
                 fresh.copy(
                     timesReinforced = fresh.timesReinforced + 1,

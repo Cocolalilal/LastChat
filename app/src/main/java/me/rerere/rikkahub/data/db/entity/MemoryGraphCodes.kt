@@ -74,6 +74,7 @@ object MemActivityKind {
     const val PROMOTED = "PROMOTED"
     const val PROMOTION_SUGGESTED = "PROMOTION_SUGGESTED"
     const val DECAYED = "DECAYED"
+    const val DEMOTED_BRANCH = "DEMOTED_BRANCH"
     const val COMPRESSED = "COMPRESSED"
     const val CLOSED = "CLOSED"
     const val GOAL_OPENED = "GOAL_OPENED"

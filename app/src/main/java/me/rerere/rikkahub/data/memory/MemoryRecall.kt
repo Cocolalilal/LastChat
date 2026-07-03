@@ -3,7 +3,6 @@ package me.rerere.rikkahub.data.memory
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.util.fuzzyMemoryAgeLabel
-import me.rerere.rikkahub.data.db.dao.MemoryConversationStateDao
 import me.rerere.rikkahub.data.db.entity.MemEdgeType
 import me.rerere.rikkahub.data.db.entity.MemNodeType
 import me.rerere.rikkahub.data.db.entity.MemStatus
@@ -31,7 +30,6 @@ import kotlin.uuid.Uuid
 class MemoryRecall(
     private val repository: MemoryGraphRepository,
     private val conversationRepo: ConversationRepository,
-    private val conversationStateDao: MemoryConversationStateDao,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -223,8 +221,8 @@ class MemoryRecall(
             val convId = conversation.id.toString()
             if (convId == activeConversationId) continue
             if ((now - conversation.updateAt.toEpochMilli()) > PENDING_TAIL_WINDOW_MS) continue
-            val watermark = conversationStateDao.getWatermark(convId) ?: -1
             val msgs = conversation.currentMessages
+            val watermark = repository.resolveWatermarkIndex(convId, msgs.map { it.id.toString() })
             val lag = msgs.size - (watermark + 1)
             if (lag <= 0) continue
             msgs.takeLast(PENDING_TAIL_LINES).forEach { msg ->

@@ -53,9 +53,17 @@ class MemoryEncoder(
 
         val messages = conversation.currentMessages
         val convId = conversation.id.toString()
-        val watermark = conversationStateDao.getWatermark(convId) ?: -1
 
-        val chunk = MemoryWindow.nextChunk(watermark, messages.size, MAX_WINDOW_MESSAGES)
+        // §7.3: reconcile abandoned-branch demotions before choosing the window. This also lets the
+        // watermark clamp back — a demoted/abandoned anchor re-resolves to a surviving earlier message.
+        repository.reconcileBranchDemotions(conversation, clock())
+
+        // Fix 1: the watermark is anchored on a message id, re-resolved to an index against the
+        // current branch (self-correcting under deletion/reordering/branch switch).
+        val messageIds = messages.map { it.id.toString() }
+        val resolvedWatermark = repository.resolveWatermarkIndex(convId, messageIds)
+
+        val chunk = MemoryWindow.nextChunk(resolvedWatermark, messages.size, MAX_WINDOW_MESSAGES)
         if (chunk.isEmpty) return Outcome.Skipped
 
         val caps = MemoryBudgetCaps.of(MemoryPreset.fromNameOrDefault(settings.memory.preset))
@@ -94,12 +102,13 @@ class MemoryEncoder(
             )
         }
 
-        // Advance the watermark exactly to this chunk's end (only on a successful pass).
+        // Advance the watermark to this chunk's end, anchored on the last processed message's id
+        // (only on a successful pass — deferral/failure leaves it where it was).
         conversationStateDao.upsert(
             MemoryConversationStateEntity(
                 conversationId = convId,
                 assistantId = assistant.id.toString(),
-                extractedUpToIndex = chunk.processedUpToIndex,
+                extractedUpToMessageId = messageIds[chunk.processedUpToIndex],
                 lastExtractAt = clock(),
             )
         )

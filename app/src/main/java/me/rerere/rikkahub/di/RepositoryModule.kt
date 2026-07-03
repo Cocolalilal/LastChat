@@ -54,12 +54,17 @@ val repositoryModule = module {
 
     // ----- graph memory store (v34) -----
     single {
+        me.rerere.rikkahub.data.memory.MemoryScopeLocks()
+    }
+
+    single {
         me.rerere.rikkahub.data.memory.MemoryOpApplier(
             db = get(),
             nodeDao = get(),
             edgeDao = get(),
             provenanceDao = get(),
             activityDao = get(),
+            scopeLocks = get(),
         )
     }
 
@@ -71,6 +76,7 @@ val repositoryModule = module {
             provenanceDao = get(),
             activityDao = get(),
             conversationStateDao = get(),
+            scopeLocks = get(),
         )
     }
 
@@ -82,7 +88,6 @@ val repositoryModule = module {
         me.rerere.rikkahub.data.memory.MemoryRecall(
             repository = get(),
             conversationRepo = get(),
-            conversationStateDao = get(),
         )
     }
 

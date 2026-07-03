@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 34,
-    "identityHash": "ca95e2a26510e70c919d911cd88c9c77",
+    "identityHash": "cc7960a1bb8ad97723b7349881921979",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -1342,7 +1342,7 @@
       },
       {
         "tableName": "memory_conversation_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`conversation_id` TEXT NOT NULL, `assistant_id` TEXT NOT NULL, `extracted_up_to_index` INTEGER NOT NULL, `last_extract_at` INTEGER NOT NULL, PRIMARY KEY(`conversation_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`conversation_id` TEXT NOT NULL, `assistant_id` TEXT NOT NULL, `extracted_up_to_message_id` TEXT, `last_extract_at` INTEGER NOT NULL, PRIMARY KEY(`conversation_id`))",
         "fields": [
           {
             "fieldPath": "conversationId",
@@ -1357,10 +1357,9 @@
             "notNull": true
           },
           {
-            "fieldPath": "extractedUpToIndex",
-            "columnName": "extracted_up_to_index",
-            "affinity": "INTEGER",
-            "notNull": true
+            "fieldPath": "extractedUpToMessageId",
+            "columnName": "extracted_up_to_message_id",
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "lastExtractAt",
@@ -1390,7 +1389,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ca95e2a26510e70c919d911cd88c9c77')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cc7960a1bb8ad97723b7349881921979')"
     ]
   }
 }

@@ -18,6 +18,10 @@ interface MemoryProvenanceDao {
     @Query("SELECT node_id FROM memory_provenance WHERE conversation_id = :conversationId")
     suspend fun getNodeIdsForConversation(conversationId: String): List<String>
 
+    /** Raw `message_ids` JSON arrays for a conversation; the union of these is the processed set. */
+    @Query("SELECT message_ids FROM memory_provenance WHERE conversation_id = :conversationId")
+    suspend fun getMessageIdsJsonForConversation(conversationId: String): List<String>
+
     @Query("SELECT COUNT(*) FROM memory_provenance WHERE node_id = :nodeId")
     suspend fun countForNode(nodeId: String): Int
 

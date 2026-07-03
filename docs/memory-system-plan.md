@@ -13,6 +13,14 @@ P6 (hardening) are not yet built. Supersedes all prior memory designs, including
   conversation-persist path (which rebuilds the whole entity every save and would clobber a
   column) and keeps the memory system self-contained. FTS is a standalone manually-synced FTS4
   table (no Room triggers), as the plan intends.
+- **§7.2/§7.3 hardening (applied after the initial P1/P2 build)**: the watermark is anchored on a
+  **message id** (`extracted_up_to_message_id`), not a list index — re-resolved against the current
+  branch, falling back to the nearest surviving earlier processed message when the anchor is gone
+  (`MemoryWatermark`); this was an in-place v34 column change (no v35). Branch/regenerate
+  abandonment demotes nodes whose evidence is entirely on the abandoned branch to DORMANT, keeping
+  facts still evidenced elsewhere and never demoting on plain deletion (`MemoryBranchLogic`,
+  reconciled at encode start); REINFORCE reactivates DORMANT. All memory writes serialize through a
+  per-scope mutex (`MemoryScopeLocks`) so a future sleep pass can't interleave with extraction.
 - **Applier / dedup gate (P1)**: `MemoryOpApplier` is the sole writer with the lexical dedup gate,
   entity-hub resolution, provenance/activity/FTS sync, and all guardrails. Vector-assisted dedup,
   inline embedding of new nodes, and scope promotion are deferred (FTS-only path works today).
