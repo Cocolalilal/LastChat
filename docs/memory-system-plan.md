@@ -510,6 +510,25 @@ scan + 1-hop expansion over indexed edges). No model calls, ever, on this path.
 described in §5.1. Generation is never awaited on; extraction failures never surface as chat
 errors (activity row + `PlatformLog` only).
 
+Operational hardening (normative for implementation):
+- **Never trigger off streaming checkpoints.** The 1s streaming checkpoint saves must not
+  count toward watermark lag; triggers evaluate only after `generationDone` (or on
+  user-message save when no generation is running), so extraction never reads a
+  half-generated assistant message. The watermark may never sit inside a message that is
+  still streaming.
+- **Single writer per scope.** Extraction and sleep passes serialize through unique
+  WorkManager work (`memory-extract-<conversationId>` with `ExistingWorkPolicy.KEEP`;
+  `memory-sleep` unique periodic) plus an app-level per-scope mutex around
+  `MemoryOpApplier`, so a sleep-pass merge can never race an in-flight extraction write.
+- **Atomic apply.** Ops, provenance, activity row, and the watermark advance commit in one
+  Room transaction — a crash mid-apply leaves the watermark unmoved and the pass re-runs
+  idempotently (the dedup gate absorbs the replay).
+- **Worker constraints.** Extraction/sleep workers require `NetworkType.CONNECTED` (model
+  call) and use exponential backoff; the deterministic sleep stages (decay, expiry, size
+  enforcement) run in a separate no-network pass so an offline device still ages its graph.
+  All of this is delay-safe by construction: reboot, Doze, or OEM task-killers only postpone
+  the watermark, never lose content.
+
 ### 7.3 Streaming/regenerate/branches
 Extraction reads `currentMessages` (selected branch) only; watermark is per-conversation
 against the selected path. On branch switch/regenerate below the watermark, the watermark is
@@ -521,6 +540,17 @@ who regenerated *because* the branch went wrong must not have its facts injected
 while decay grinds. If the branch is re-selected or the same content re-extracted, the dedup
 gate's REINFORCE path reactivates them. Edited messages (`buildEditedParts` metadata
 preserved) re-extract the affected window the same way.
+
+**Message deletion** (single messages removed from a chat): memories derived from
+already-extracted deleted messages are **kept** — same diary-burned principle as conversation
+deletion (§11), and provenance excerpts are stored copies so node sheets keep working; a user
+who deleted a message *because* it was wrong can forget the derived nodes from the node sheet
+(the provenance link makes them findable). Mechanically, the watermark must be **anchored to
+a message id, not a list index** — on any deletion, it re-resolves to the nearest surviving
+earlier message, so it can never point into a gap after indices shift. Deleting *unprocessed*
+messages needs nothing: they simply never get extracted. Regenerate-triggered demotion (above)
+does **not** apply to plain deletion — removing a message is ambiguous cleanup, not the clear
+"this content was wrong" signal that abandoning a branch is.
 
 ### 7.4 Async consistency (the "remembered too late" bug)
 Guarantee: *anything said in a conversation is either still in that conversation's context, or
