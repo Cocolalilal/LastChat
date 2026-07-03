@@ -66,6 +66,7 @@ val appModule = module {
             chatAttachmentRepository = get(),
             memoryRepository = get(),
             memoryRecall = get(),
+            memoryGraphRepository = get(),
             generationHandler = get(),
             templateTransformer = get(),
             providerManager = get(),

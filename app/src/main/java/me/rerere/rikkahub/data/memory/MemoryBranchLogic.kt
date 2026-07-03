@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.memory
 
+import me.rerere.rikkahub.data.model.Conversation
+
 /**
  * Pure decision for branch/regenerate demotion (§7.3).
  *
@@ -18,6 +20,20 @@ package me.rerere.rikkahub.data.memory
 object MemoryBranchLogic {
 
     data class ProvRow(val conversationId: String?, val messageIds: List<String>)
+
+    /** The message ids on the selected branch, and across every version, of a conversation. */
+    data class BranchSets(val surviving: Set<String>, val allExisting: Set<String>)
+
+    /**
+     * Derive the sets reconciliation compares: [BranchSets.surviving] = the currently selected
+     * branch; [BranchSets.allExisting] = every message across all `MessageNode` versions. A message
+     * present in `allExisting` but not `surviving` is on an abandoned (unselected) branch; a message
+     * in neither was deleted outright.
+     */
+    fun branchSets(conversation: Conversation): BranchSets = BranchSets(
+        surviving = conversation.currentMessages.map { it.id.toString() }.toSet(),
+        allExisting = conversation.messageNodes.flatMap { node -> node.messages }.map { it.id.toString() }.toSet(),
+    )
 
     fun shouldDemote(
         rows: List<ProvRow>,

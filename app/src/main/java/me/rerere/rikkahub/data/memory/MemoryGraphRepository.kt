@@ -107,8 +107,7 @@ class MemoryGraphRepository(
     suspend fun reconcileBranchDemotions(conversation: Conversation, now: Long = System.currentTimeMillis()): Int {
         val convId = conversation.id.toString()
         val assistantId = conversation.assistantId.toString()
-        val survivingIds = conversation.currentMessages.map { it.id.toString() }.toSet()
-        val allExistingIds = conversation.messageNodes.flatMap { node -> node.messages }.map { it.id.toString() }.toSet()
+        val (survivingIds, allExistingIds) = MemoryBranchLogic.branchSets(conversation)
         // No unselected versions exist → no branch was ever abandoned; deletion alone never demotes.
         if (allExistingIds.size == survivingIds.size) return 0
 

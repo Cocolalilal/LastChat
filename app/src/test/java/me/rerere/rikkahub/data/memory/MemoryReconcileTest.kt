@@ -5,12 +5,18 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.toMessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
+import kotlin.uuid.Uuid
 
 /**
  * Property tests for the three §7.2/§7.3 corrections: message-id watermark integrity across
@@ -114,6 +120,57 @@ class MemoryReconcileTest {
     @Test
     fun noProvenanceMeansNoDemotion() {
         assertFalse(MemoryBranchLogic.shouldDemote(emptyList(), "conv", setOf("m1"), setOf("m1")))
+    }
+
+    @Test
+    fun pureVersionSwitchWithoutRegenerationDemotesAbandonedBranch() {
+        // A common user turn plus an assistant turn with two versions; version A is selected.
+        val userMsg = UIMessage.user("I study CS at TU Wien")
+        val versionA = UIMessage.assistant("Nice, computer science!")
+        val versionB = UIMessage.assistant("Tell me more about that.")
+        val branchedNode = MessageNode(messages = listOf(versionA, versionB), selectIndex = 0)
+        val conversation = Conversation(
+            id = Uuid.parse("00000000-0000-0000-0000-0000000004a1"),
+            assistantId = Uuid.parse("00000000-0000-0000-0000-0000000004a2"),
+            title = "branch switch",
+            createAt = Instant.parse("2026-07-03T10:00:00Z"),
+            updateAt = Instant.parse("2026-07-03T10:05:00Z"),
+            messageNodes = listOf(userMsg.toMessageNode(), branchedNode),
+        )
+        val convId = conversation.id.toString()
+
+        // Before the switch: version A is selected, so its facts are on the surviving branch — keep.
+        val before = MemoryBranchLogic.branchSets(conversation)
+        assertTrue(versionA.id.toString() in before.surviving)
+        assertFalse(
+            MemoryBranchLogic.shouldDemote(
+                listOf(row(convId, versionA.id.toString())), convId, before.surviving, before.allExisting,
+            )
+        )
+
+        // User switches to version B — no regeneration. Version A's branch is now abandoned but its
+        // message still exists as an unselected version.
+        val switched = conversation.copy(
+            messageNodes = conversation.messageNodes.map { node ->
+                if (node.id == branchedNode.id) node.copy(selectIndex = 1) else node
+            }
+        )
+        val after = MemoryBranchLogic.branchSets(switched)
+        assertTrue(versionB.id.toString() in after.surviving)
+        assertFalse(versionA.id.toString() in after.surviving)
+        assertTrue(versionA.id.toString() in after.allExisting)
+
+        // A fact extracted from version A must demote immediately; the common user turn's facts stay.
+        assertTrue(
+            MemoryBranchLogic.shouldDemote(
+                listOf(row(convId, versionA.id.toString())), convId, after.surviving, after.allExisting,
+            )
+        )
+        assertFalse(
+            MemoryBranchLogic.shouldDemote(
+                listOf(row(convId, userMsg.id.toString())), convId, after.surviving, after.allExisting,
+            )
+        )
     }
 
     // ---------------- Fix 3: per-scope serialization (MemoryScopeLocks) ----------------

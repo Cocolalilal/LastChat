@@ -84,7 +84,9 @@ import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.MemoryRecallTransformer
 import me.rerere.rikkahub.data.memory.MemoryRecall
+import me.rerere.rikkahub.data.memory.MemoryGraphRepository
 import me.rerere.rikkahub.data.memory.MemoryExtractionWorker
+import me.rerere.common.platform.PlatformLog
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -568,6 +570,7 @@ class ChatService(
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
     private val memoryRecall: MemoryRecall,
+    private val memoryGraphRepository: MemoryGraphRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -1078,6 +1081,25 @@ class ChatService(
             updateAt = Instant.now(),
         )
         saveConversation(conversationId, updatedConversation)
+        // Switching versions abandons the previously-selected branch; demote its now-orphaned
+        // memories immediately instead of waiting for the next extraction pass.
+        reconcileBranchMemoryAsync(updatedConversation)
+    }
+
+    /**
+     * Fire-and-forget branch reconciliation (§7.2, §7.3): runs on the memory scope, never awaited by
+     * generation, failures logged only. Demotes nodes whose evidence is entirely on an abandoned
+     * branch; a re-selection later reactivates them via the dedup gate's REINFORCE path.
+     */
+    private fun reconcileBranchMemoryAsync(conversation: Conversation) {
+        if (!settingsStore.settingsFlow.value.memory.enabled) return
+        appScope.launch {
+            try {
+                memoryGraphRepository.reconcileBranchDemotions(conversation)
+            } catch (e: Exception) {
+                PlatformLog.e("MemoryRecall", "branch reconcile failed: ${e.message}")
+            }
+        }
     }
 
     suspend fun handleToolApproval(
