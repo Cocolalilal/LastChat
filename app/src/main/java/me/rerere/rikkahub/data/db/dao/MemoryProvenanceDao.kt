@@ -25,6 +25,13 @@ interface MemoryProvenanceDao {
     @Query("SELECT COUNT(*) FROM memory_provenance WHERE node_id = :nodeId")
     suspend fun countForNode(nodeId: String): Int
 
+    /** Node ids whose provenance row count exceeds [maxRows] — candidates for the "keep first + last 3" cap (§9). */
+    @Query("SELECT node_id FROM memory_provenance GROUP BY node_id HAVING COUNT(*) > :maxRows")
+    suspend fun nodesExceedingProvenance(maxRows: Int): List<String>
+
+    @Query("DELETE FROM memory_provenance WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM memory_provenance WHERE node_id = :nodeId")
     suspend fun deleteForNode(nodeId: String)
 

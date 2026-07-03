@@ -1,9 +1,9 @@
 # LastChat Human-Like Memory System — Complete Plan
 
-Status: **P1 + Room v34 migration + P2 implemented** (behind the master toggle
-`Settings.memory.enabled`, default OFF). P3 (sleep pass), P4 (UI), P5 (profiles/curiosity), and
-P6 (hardening) are not yet built. Supersedes all prior memory designs, including the unmerged
-`MemoryItemEntity` two-layer store (deleted; its good ideas are absorbed here).
+Status: **P1 + Room v34 migration + P2 + P3 (sleep pass) implemented** (behind the master toggle
+`Settings.memory.enabled`, default OFF). P4 (UI), P5 (profiles/curiosity), and P6 (hardening) are
+not yet built. Supersedes all prior memory designs, including the unmerged `MemoryItemEntity`
+two-layer store (deleted; its good ideas are absorbed here).
 
 ### Implementation status / deviations from this plan
 - **Store & migration (P1)**: `memory_node/edge/provenance/fts/activity/budget_ledger/store_meta`
@@ -28,8 +28,28 @@ P6 (hardening) are not yet built. Supersedes all prior memory designs, including
   from `ChatService`) and `MemoryRecall` (injected via `MemoryRecallTransformer`, replacing the
   legacy per-message injection when the toggle is on). Budget ledger + presets enforced. Character
   profiles/frames, curiosity, and the retrieval access-time bump are deferred to later phases.
-- The legacy `MemoryConsolidationWorker` / `MemoryEntity` / `ChatEpisodeEntity` remain (read-only,
-  imported once into the graph store when the toggle is first enabled); they are retired in P3.
+- **Sleep pass (P3)**: `MemorySleepPass` (Koin single) + `MemorySleepWorker` implement §5.4's staged
+  pipeline. Deterministic stages — decay/promotion (retention `R = importance·w1 + log(1+reinforced)·w2
+  + log(1+retrieved)·w3 − ageDecay(last_accessed)`; ACTIVE→DORMANT→FORGOTTEN with 30-day grace →
+  hard-delete; PROVISIONAL→ACTIVE auto-promote for importance≥3 after 7 quiet days gated on no
+  CONTRADICTS/supersession/adjudication flag), expiry (`valid_until`/horizon → CLOSED), and size
+  enforcement (§9: per-scope non-entity budgets ~1,500 char / ~1,000 global, lowest-retention DORMANT
+  eviction, provenance first+last-3 cap, activity ~500/scope, FORGOTTEN-past-grace purge) — live in
+  the pure, unit-tested `MemorySleepLogic` and run under the per-scope `MemoryScopeLocks` with **no
+  network/budget dependency**. Model-assisted stages — identity adjudication + contradiction (one
+  batched call: merge/supersede/coexist, deterministic MERGE field-combination, MANUAL/CONFIRMED
+  never merged-away or auto-superseded) and episode compression → GIST + habit induction (one batched
+  call, toggleable via `habitInduction`) — draw from `MemoryBudget` (category SLEEP), make their model
+  call *outside* the scope lock and re-validate under it, and simply skip when the budget is exhausted
+  or the call fails (never block, never error the app). Everything writes a `memory_activity` row. The
+  worker self-schedules ~12h (battery-not-low) and is triggered opportunistically by the extraction
+  worker when the adjudication backlog exceeds a threshold. §6.4 goal generation and §6.5 scope-
+  promotion review are left as clean TODO(P5) hooks in the pipeline.
+- The legacy `MemoryConsolidationWorker` / `MemoryEntity` / `ChatEpisodeEntity` remain read-only and
+  are imported once into the graph store when the toggle is first enabled. The legacy worker's
+  periodic scheduling is now **retired for memory-enabled users** (`LastChatApp` schedules exactly one
+  of `memory_sleep` or `memory_consolidation` based on `memory.enabled`); the class + its manual-
+  trigger UI paths stay until P4 removes the old sub-pages.
 
 ---
 
@@ -777,8 +797,9 @@ Riskiest-first; each phase ships behind the master toggle and leaves the app rel
 - **P2 — Encode + recall**: `MemoryEncoder` + triggers in `ChatService`, `MemoryRecall`
   injection (core sheet, query recall, episode strip, pending-tail), time verbalization,
   budget ledger. Old injection path removed. This is the end-to-end MVP.
-- **P3 — Sleep pass**: decay/expiry/size enforcement (deterministic), then merge/contradiction
-  confirmation, compression, habit induction. Retire `MemoryConsolidationWorker`.
+- **P3 — Sleep pass** ✅ *implemented*: decay/expiry/size enforcement (deterministic), then
+  merge/contradiction confirmation, compression, habit induction. Legacy `MemoryConsolidationWorker`
+  periodic path retired for memory-enabled users.
 - **P4 — UI**: Memory Center (Overview + Browse + node sheet + export/wipe first; Graph tab
   second — it's the most polish-hungry, and Browse makes the system fully usable meanwhile).
   Activity pill integration. Remove old sub-pages.

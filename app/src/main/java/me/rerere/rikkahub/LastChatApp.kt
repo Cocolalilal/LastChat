@@ -37,6 +37,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import me.rerere.rikkahub.data.memory.MemorySleepWorker
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
 import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
@@ -150,28 +151,45 @@ class LastChatApp : Application() {
                 }
         }
 
-        // Schedule Memory Consolidation Worker dynamically
+        // Memory maintenance scheduling. When the graph memory system is enabled, the periodic sleep
+        // pass (P3) owns decay/consolidation/bounded-growth and the legacy MemoryConsolidationWorker is
+        // retired; when it is off, existing installs keep the legacy consolidation behaviour until they
+        // opt in. Exactly one of the two is scheduled at any time.
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
-                .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
+                .map { Triple(it.memory.enabled, it.consolidationWorkerIntervalMinutes, it.consolidationRequiresDeviceIdle) }
                 .distinctUntilChanged()
-                .collect { (interval, idle) ->
-                    val constraints = Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .apply {
-                            if (idle) setRequiresDeviceIdle(true)
-                        }
-                        .build()
-
-                    WorkManager.getInstance(this@LastChatApp).enqueueUniquePeriodicWork(
-                        "memory_consolidation",
-                        ExistingPeriodicWorkPolicy.UPDATE,
-                        PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
-                            interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
+                .collect { (memoryEnabled, interval, idle) ->
+                    val wm = WorkManager.getInstance(this@LastChatApp)
+                    if (memoryEnabled) {
+                        // Sleep pass every ~12h, battery-not-low only: the deterministic decay/expiry/
+                        // size stages must age the graph even offline; model stages self-skip.
+                        wm.cancelUniqueWork("memory_consolidation")
+                        wm.enqueueUniquePeriodicWork(
+                            MemorySleepWorker.PERIODIC_WORK_NAME,
+                            ExistingPeriodicWorkPolicy.UPDATE,
+                            PeriodicWorkRequestBuilder<MemorySleepWorker>(12, TimeUnit.HOURS)
+                                .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                                .build()
                         )
-                            .setConstraints(constraints)
+                    } else {
+                        wm.cancelUniqueWork(MemorySleepWorker.PERIODIC_WORK_NAME)
+                        val constraints = Constraints.Builder()
+                            .setRequiredNetworkType(NetworkType.CONNECTED)
+                            .apply {
+                                if (idle) setRequiresDeviceIdle(true)
+                            }
                             .build()
-                    )
+                        wm.enqueueUniquePeriodicWork(
+                            "memory_consolidation",
+                            ExistingPeriodicWorkPolicy.UPDATE,
+                            PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
+                                interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
+                            )
+                                .setConstraints(constraints)
+                                .build()
+                        )
+                    }
                 }
         }
         

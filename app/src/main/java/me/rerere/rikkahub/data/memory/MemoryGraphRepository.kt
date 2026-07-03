@@ -63,6 +63,9 @@ class MemoryGraphRepository(
     suspend fun searchFts(assistantId: String, ftsQuery: String, limit: Int, statuses: List<Int> = SEARCHABLE_STATUSES): List<String> =
         runCatching { nodeDao.searchFts(assistantId, ftsQuery, statuses, limit) }.getOrDefault(emptyList())
 
+    /** Live count of dedup-adjudication-flagged nodes; drives the sleep pass's opportunistic scheduling. */
+    suspend fun countPendingAdjudications(): Int = nodeDao.countPendingAdjudications()
+
     suspend fun getEdgesTouching(nodeId: String): List<MemoryEdgeEntity> = edgeDao.getTouching(nodeId)
 
     suspend fun getEdgesTouchingAny(nodeIds: List<String>): List<MemoryEdgeEntity> =

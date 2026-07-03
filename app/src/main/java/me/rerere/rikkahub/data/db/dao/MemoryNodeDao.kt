@@ -86,6 +86,21 @@ interface MemoryNodeDao {
     @Query("SELECT * FROM memory_node WHERE status = :status AND pinned = 0")
     suspend fun getByStatus(status: Int): List<MemoryNodeEntity>
 
+    /**
+     * All nodes (any scope) in the given statuses — the store-wide input to the sleep pass's
+     * deterministic decay/expiry/size stages. The pass groups the result by scope and mutates each
+     * group under its own per-scope write lock.
+     */
+    @Query("SELECT * FROM memory_node WHERE status IN (:statuses)")
+    suspend fun getAllByStatuses(statuses: List<Int>): List<MemoryNodeEntity>
+
+    /**
+     * Count of live nodes flagged for dedup adjudication (§5.3 step 3). Drives the sleep pass's
+     * opportunistic-sooner scheduling: a large backlog means merges/contradictions are piling up.
+     */
+    @Query("SELECT COUNT(*) FROM memory_node WHERE adjudication_pending = 1 AND status IN (0, 1)")
+    suspend fun countPendingAdjudications(): Int
+
     @Query(
         "SELECT COUNT(*) FROM memory_node WHERE type != 0 AND scope = :scope AND (:ownerId IS NULL OR owner_assistant_id = :ownerId) AND status IN (1, 0)"
     )

@@ -28,6 +28,7 @@ class MemoryExtractionWorker(
     private val encoder: MemoryEncoder by inject()
     private val conversationRepo: ConversationRepository by inject()
     private val settingsStore: SettingsStore by inject()
+    private val graphRepository: MemoryGraphRepository by inject()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
@@ -46,6 +47,14 @@ class MemoryExtractionWorker(
                 when (encoder.encode(conversation, assistant, settings)) {
                     is MemoryEncoder.Outcome.Encoded -> continue // work off any remaining backlog
                     MemoryEncoder.Outcome.Skipped, MemoryEncoder.Outcome.Deferred -> break
+                }
+            }
+
+            // Opportunistic sleep: extraction is what produces the merge/contradiction backlog, so if
+            // it has grown large, ask for a sleep run sooner than the next 12h tick (§5.4).
+            runCatching {
+                if (graphRepository.countPendingAdjudications() >= MemorySleepWorker.OPPORTUNISTIC_BACKLOG_THRESHOLD) {
+                    MemorySleepWorker.enqueueExpedited(applicationContext)
                 }
             }
             Result.success()

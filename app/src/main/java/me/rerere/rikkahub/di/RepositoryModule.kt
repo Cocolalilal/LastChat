@@ -102,6 +102,21 @@ val repositoryModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.memory.MemorySleepPass(
+            db = get(),
+            nodeDao = get(),
+            edgeDao = get(),
+            provenanceDao = get(),
+            activityDao = get(),
+            storeMetaDao = get(),
+            scopeLocks = get(),
+            budget = get(),
+            providerManager = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
         GenMediaRepository(get())
     }
 
