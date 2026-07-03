@@ -33,6 +33,9 @@ interface ChatEpisodeDAO {
     @Query("SELECT COUNT(*) FROM ChatEpisodeEntity")
     suspend fun getCount(): Int
 
+    @Query("SELECT * FROM ChatEpisodeEntity ORDER BY id ASC LIMIT :limit OFFSET :offset")
+    suspend fun getEpisodesPaged(limit: Int, offset: Int): List<ChatEpisodeEntity>
+
     @Query("SELECT COUNT(*) FROM ChatEpisodeEntity")
     fun getCountFlow(): Flow<Int>
     @Query("DELETE FROM chatepisodeentity WHERE conversation_id = :conversationId")

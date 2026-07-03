@@ -172,6 +172,34 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().memoryNodeDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryEdgeDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryProvenanceDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryActivityDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryBudgetDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryStoreMetaDao()
+    }
+
+    single {
+        get<AppDatabase>().memoryConversationStateDao()
+    }
+
+    single {
         McpManager(
             settingsStore = get(),
             appScope = get(),

@@ -82,6 +82,13 @@ import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
+import me.rerere.rikkahub.data.ai.transformers.MemoryRecallTransformer
+import me.rerere.rikkahub.data.memory.MemoryRecall
+import me.rerere.rikkahub.data.memory.MemoryExtractionWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -560,6 +567,7 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
+    private val memoryRecall: MemoryRecall,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -892,6 +900,23 @@ class ChatService(
             }
         }
         return false
+    }
+
+    /**
+     * Enqueue graph-memory extraction for a conversation, deduped per conversation (KEEP). Gated on
+     * the master toggle; the worker itself re-checks the per-character switch, budget, and watermark.
+     * Never awaited on the generation path — extraction failures never surface as chat errors.
+     */
+    private fun enqueueMemoryExtraction(conversationId: Uuid) {
+        if (!settingsStore.settingsFlow.value.memory.enabled) return
+        val request = OneTimeWorkRequestBuilder<MemoryExtractionWorker>()
+            .setInputData(workDataOf(MemoryExtractionWorker.KEY_CONVERSATION_ID to conversationId.toString()))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            MemoryExtractionWorker.uniqueName(conversationId.toString()),
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
     }
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
@@ -1486,6 +1511,9 @@ class ChatService(
                 assistant = assistant,
                 memories = if (
                     assistant.enableMemory &&
+                    // When the graph memory system is active it injects via MemoryRecallTransformer
+                    // instead of this list, so the legacy per-message injection is disabled.
+                    !settings.memory.enabled &&
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
                     if (assistant.useRagMemoryRetrieval) {
@@ -1531,6 +1559,20 @@ class ChatService(
                         chatId = conversation.id.toString()
                     )
                     add(WorkspaceReminderTransformer(workspaceRepository, cwd))
+                    // Graph memory recall: injects the memory section into the system prompt.
+                    if (
+                        settings.memory.enabled &&
+                        assistant.enableMemory &&
+                        getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+                    ) {
+                        add(
+                            MemoryRecallTransformer(
+                                recall = memoryRecall,
+                                activeConversationId = conversation.id.toString(),
+                                timeAwareness = settings.memory.timeAwareness,
+                            )
+                        )
+                    }
                     add(templateTransformer)
                 },
                 outputTransformers = defaultChatOutputTransformers,
@@ -1574,6 +1616,9 @@ class ChatService(
                 } else {
                     true
                 }
+
+                // Graph memory: extract new memories from this conversation off the hot path.
+                if (completionPersisted) enqueueMemoryExtraction(conversationId)
 
                 // Show notification if app is not in foreground
                 if (

@@ -52,6 +52,50 @@ val repositoryModule = module {
         MemorySearchService(get(), get(), get(), get())
     }
 
+    // ----- graph memory store (v34) -----
+    single {
+        me.rerere.rikkahub.data.memory.MemoryOpApplier(
+            db = get(),
+            nodeDao = get(),
+            edgeDao = get(),
+            provenanceDao = get(),
+            activityDao = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.memory.MemoryGraphRepository(
+            db = get(),
+            nodeDao = get(),
+            edgeDao = get(),
+            provenanceDao = get(),
+            activityDao = get(),
+            conversationStateDao = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.memory.MemoryBudget(budgetDao = get())
+    }
+
+    single {
+        me.rerere.rikkahub.data.memory.MemoryRecall(
+            repository = get(),
+            conversationRepo = get(),
+            conversationStateDao = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.memory.MemoryEncoder(
+            providerManager = get(),
+            applier = get(),
+            repository = get(),
+            conversationStateDao = get(),
+            budget = get(),
+        )
+    }
+
     single {
         GenMediaRepository(get())
     }

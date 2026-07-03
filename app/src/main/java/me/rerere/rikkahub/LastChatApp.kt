@@ -24,6 +24,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
@@ -31,7 +32,9 @@ import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
@@ -123,6 +126,29 @@ class LastChatApp : Application() {
                 )
                 .build()
         )
+
+        // One-shot import of legacy memories into the graph store (v34), enqueued the first time the
+        // user turns the memory system on (KEEP → runs once, resumes across restarts via its own
+        // watermark). Gating on enable avoids populating the store for users who never opt in.
+        get<AppScope>().launch {
+            get<SettingsStore>().settingsFlow
+                .map { it.memory.enabled }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
+                    WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
+                        me.rerere.rikkahub.data.memory.MemoryImportWorker.WORK_NAME,
+                        ExistingWorkPolicy.KEEP,
+                        OneTimeWorkRequestBuilder<me.rerere.rikkahub.data.memory.MemoryImportWorker>()
+                            .setConstraints(
+                                Constraints.Builder()
+                                    .setRequiresBatteryNotLow(true)
+                                    .build()
+                            )
+                            .build()
+                    )
+                }
+        }
 
         // Schedule Memory Consolidation Worker dynamically
         get<AppScope>().launch {

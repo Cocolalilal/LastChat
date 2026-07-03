@@ -100,11 +100,34 @@ data class Settings(
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
+    val memory: MemorySettings = MemorySettings(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)
     }
 }
+
+/**
+ * Global settings for the graph-based human-like memory system (v34). Per-character enable/disable
+ * reuses `Assistant.enableMemory`; this controls the shared cross-character behaviour, cost preset,
+ * and the model used for background memory calls.
+ *
+ * `enabled` is the master toggle. It defaults OFF so existing installs keep their current
+ * (legacy) memory behaviour until the user opts in; when on, the new extraction + graph recall path
+ * replaces the legacy per-message injection.
+ */
+@Serializable
+data class MemorySettings(
+    val enabled: Boolean = false,
+    /** One of [me.rerere.rikkahub.data.memory.MemoryPreset] names. */
+    val preset: String = "BALANCED",
+    val timeAwareness: Boolean = true,
+    val proactiveCuriosity: Boolean = false,
+    val curiosityWebLookups: Boolean = false,
+    val habitInduction: Boolean = true,
+    /** Model for background memory calls; falls back to the summarizer chain when null. */
+    val memoryModelId: Uuid? = null,
+)
 
 data class ConversationContext(
     val assistantId: Uuid,

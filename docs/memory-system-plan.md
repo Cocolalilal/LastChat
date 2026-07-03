@@ -1,7 +1,27 @@
 # LastChat Human-Like Memory System — Complete Plan
 
-Status: PLAN (nothing implemented). Supersedes all prior memory designs, including the
-unmerged `MemoryItemEntity` two-layer store (its good ideas are absorbed here).
+Status: **P1 + Room v34 migration + P2 implemented** (behind the master toggle
+`Settings.memory.enabled`, default OFF). P3 (sleep pass), P4 (UI), P5 (profiles/curiosity), and
+P6 (hardening) are not yet built. Supersedes all prior memory designs, including the unmerged
+`MemoryItemEntity` two-layer store (deleted; its good ideas are absorbed here).
+
+### Implementation status / deviations from this plan
+- **Store & migration (P1)**: `memory_node/edge/provenance/fts/activity/budget_ledger/store_meta`
+  tables live in Room v34 via `AutoMigration(33→34)` (schema `34.json` committed). The
+  encoding watermark lives in a dedicated `memory_conversation_state` table instead of a
+  `Conversation.extracted_up_to_index` column — this keeps it off the high-frequency
+  conversation-persist path (which rebuilds the whole entity every save and would clobber a
+  column) and keeps the memory system self-contained. FTS is a standalone manually-synced FTS4
+  table (no Room triggers), as the plan intends.
+- **Applier / dedup gate (P1)**: `MemoryOpApplier` is the sole writer with the lexical dedup gate,
+  entity-hub resolution, provenance/activity/FTS sync, and all guardrails. Vector-assisted dedup,
+  inline embedding of new nodes, and scope promotion are deferred (FTS-only path works today).
+- **Encode + recall (P2)**: `MemoryEncoder` (+ `MemoryExtractionWorker`, triggered post-persist
+  from `ChatService`) and `MemoryRecall` (injected via `MemoryRecallTransformer`, replacing the
+  legacy per-message injection when the toggle is on). Budget ledger + presets enforced. Character
+  profiles/frames, curiosity, and the retrieval access-time bump are deferred to later phases.
+- The legacy `MemoryConsolidationWorker` / `MemoryEntity` / `ChatEpisodeEntity` remain (read-only,
+  imported once into the graph store when the toggle is first enabled); they are retired in P3.
 
 ---
 

@@ -21,6 +21,12 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE id = :id")
     suspend fun getMemoryById(id: Int): MemoryEntity?
 
+    @Query("SELECT COUNT(*) FROM memoryentity")
+    suspend fun countAll(): Int
+
+    @Query("SELECT * FROM memoryentity ORDER BY id ASC LIMIT :limit OFFSET :offset")
+    suspend fun getMemoriesPaged(limit: Int, offset: Int): List<MemoryEntity>
+
     @Insert
     suspend fun insertMemory(memory: MemoryEntity): Long
 

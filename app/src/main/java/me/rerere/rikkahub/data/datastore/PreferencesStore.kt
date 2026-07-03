@@ -158,6 +158,9 @@ class SettingsStore(
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
 
+        // Graph memory system (v34)
+        val MEMORY_SETTINGS = stringPreferencesKey("memory_settings")
+
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
     }
@@ -279,6 +282,9 @@ class SettingsStore(
                     textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: TextSelectionConfig(),
+                    memory = preferences[MEMORY_SETTINGS]?.let {
+                        JsonInstant.decodeFromString(it)
+                    } ?: MemorySettings(),
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -580,6 +586,7 @@ class SettingsStore(
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
+            preferences[MEMORY_SETTINGS] = JsonInstant.encodeToString(normalizedSettings.memory)
         }
     }
 
