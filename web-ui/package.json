@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "react-router build",
-    "dev": "react-router dev",
-    "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc",
-    "lint": "oxlint app --fix",
-    "fmt": "oxfmt app",
-    "fmt:check": "oxfmt app --check"
+    "build": "/usr/bin/bunx react-router build",
+    "dev": "/usr/bin/bunx react-router dev",
+    "start": "/usr/bin/bunx react-router-serve ./build/server/index.js",
+    "typecheck": "/usr/bin/bunx react-router typegen && tsc",
+    "lint": "/usr/bin/bunx oxlint app --fix",
+    "fmt": "/usr/bin/bunx oxfmt app",
+    "fmt:check": "/usr/bin/bunx oxfmt app --check"
   },
   "dependencies": {
     "@material-symbols/svg-400": "^0.40.2",

@@ -4,8 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
-import com.google.firebase.remoteconfig.FirebaseRemoteConfig
-import com.google.firebase.remoteconfig.remoteConfigSettings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -85,15 +83,6 @@ class LastChatApp : Application() {
         // delete temp files
         deleteTempFiles()
 
-        // Init remote config
-        get<FirebaseRemoteConfig>().apply {
-            setConfigSettingsAsync(remoteConfigSettings {
-                minimumFetchIntervalInSeconds = 1800
-            })
-            setDefaultsAsync(R.xml.remote_config_defaults)
-            fetchAndActivate()
-        }
-
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             SPONTANEOUS_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -148,7 +137,7 @@ class LastChatApp : Application() {
                     )
                 }
         }
-        
+
         // Update app shortcuts when recently used assistants change
         val appShortcutManager = me.rerere.rikkahub.utils.AppShortcutManager(this)
         get<AppScope>().launch {
@@ -168,7 +157,7 @@ class LastChatApp : Application() {
                 WebServerService.start(this@LastChatApp, settings.webServerPort)
             }
         }
-        
+
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 val catalogService = get<ModelCatalogService>()
