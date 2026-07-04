@@ -40,7 +40,6 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.data.model.TextSelectionConfig
-import me.rerere.rikkahub.data.ai.tools.PythonSandbox
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -108,7 +107,7 @@ class WebdavSyncBackupRoundTripTest {
         val restoredFontPath = restoredSettings.displaySetting.fontSettings.headerFont.customFontPath
         assertNotNull(restoredFontPath)
         assertTrue(File(restoredFontPath ?: "").exists())
-        assertTrue(fixture.pythonOutputFile(env).exists())
+        assertTrue(fixture.workspaceOutputFile(env).exists())
 
         val restoredPrefs = env.context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE)
         assertTrue(restoredPrefs.getBoolean("create_new_conversation_on_start", false))
@@ -124,7 +123,7 @@ class WebdavSyncBackupRoundTripTest {
             val restoredConversation =
                 restoredDb.conversationDao().getConversationById(fixture.conversationId.toString())
             assertNotNull(restoredConversation)
-            assertTrue(restoredConversation?.nodes?.contains(fixture.pythonOutputUri.toString()) == true)
+            assertTrue(restoredConversation?.nodes?.contains(fixture.workspaceOutputUri.toString()) == true)
 
             val restoredMedia = restoredDb.genMediaDao().getAllMedia()
             assertEquals(1, restoredMedia.size)
@@ -294,13 +293,17 @@ class WebdavSyncBackupRoundTripTest {
         val chatAttachment = writeFile(env.context.filesDir, "chat_files/attachment.txt", "chat-file")
         val importedAttachment = writeFile(env.context.filesDir, "lorebook_attachments/imported.txt", "imported-file")
 
-        val pythonConversationId = conversationId
-        val pythonSandbox = PythonSandbox(env.context)
-        val pythonOutputUri = pythonSandbox.saveOutputFile(
-            pythonConversationId,
-            "report.txt",
-            "python-output".toByteArray(),
+        // Formerly produced via PythonSandbox.saveOutputFile (now removed). Generated
+        // tool-output files live under the "workspaces" managed backup directory, so
+        // write one there directly to exercise the same round-trip: the file must
+        // survive restore and its URI must stay intact inside the conversation node.
+        val workspaceConversationId = conversationId
+        val workspaceOutputFile = writeFile(
+            env.context.filesDir,
+            "workspaces/${workspaceConversationId}/report.txt",
+            "workspace-output",
         )
+        val workspaceOutputUri = Uri.fromFile(workspaceOutputFile)
 
         val providerModel = Model(
             modelId = "portable-model",
@@ -387,7 +390,7 @@ class WebdavSyncBackupRoundTripTest {
                                 UIMessage(
                                     role = MessageRole.ASSISTANT,
                                     parts = listOf(
-                                        UIMessagePart.Text("Download: ${pythonOutputUri}")
+                                        UIMessagePart.Text("Download: ${workspaceOutputUri}")
                                     ),
                                 )
                             )
@@ -423,8 +426,8 @@ class WebdavSyncBackupRoundTripTest {
         return RoundTripFixture(
             assistant = assistant,
             conversationId = conversationId,
-            pythonConversationId = pythonConversationId,
-            pythonOutputUri = pythonOutputUri,
+            workspaceConversationId = workspaceConversationId,
+            workspaceOutputUri = workspaceOutputUri,
         )
     }
 
@@ -500,17 +503,17 @@ class WebdavSyncBackupRoundTripTest {
     private data class RoundTripFixture(
         val assistant: Assistant,
         val conversationId: Uuid,
-        val pythonConversationId: Uuid,
-        val pythonOutputUri: Uri,
+        val workspaceConversationId: Uuid,
+        val workspaceOutputUri: Uri,
     ) {
         fun avatarFile(env: TestEnvironment): File {
             return File(env.context.filesDir, "avatars/assistant-avatar.png")
         }
 
-        fun pythonOutputFile(env: TestEnvironment): File {
+        fun workspaceOutputFile(env: TestEnvironment): File {
             return File(
                 env.context.filesDir,
-                "workspaces/${pythonConversationId}/report.txt",
+                "workspaces/${workspaceConversationId}/report.txt",
             )
         }
     }
