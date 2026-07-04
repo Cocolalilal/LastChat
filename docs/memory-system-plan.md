@@ -1,9 +1,9 @@
 # LastChat Human-Like Memory System — Complete Plan
 
-Status: **P1 + Room v34 migration + P2 + P3 (sleep pass) implemented** (behind the master toggle
-`Settings.memory.enabled`, default OFF). P4 (UI), P5 (profiles/curiosity), and P6 (hardening) are
-not yet built. Supersedes all prior memory designs, including the unmerged `MemoryItemEntity`
-two-layer store (deleted; its good ideas are absorbed here).
+Status: **P1 + Room v34 migration + P2 + P3 (sleep pass) + P4 (UI) + P5 (profiles/curiosity/privacy
+promotion) implemented** (behind the master toggle `Settings.memory.enabled`, default OFF). P6
+(hardening) is not yet built. Supersedes all prior memory designs, including the unmerged
+`MemoryItemEntity` two-layer store (deleted; its good ideas are absorbed here).
 
 ### Implementation status / deviations from this plan
 - **Store & migration (P1)**: `memory_node/edge/provenance/fts/activity/budget_ledger/store_meta`
@@ -43,8 +43,20 @@ two-layer store (deleted; its good ideas are absorbed here).
   call *outside* the scope lock and re-validate under it, and simply skip when the budget is exhausted
   or the call fails (never block, never error the app). Everything writes a `memory_activity` row. The
   worker self-schedules ~12h (battery-not-low) and is triggered opportunistically by the extraction
-  worker when the adjudication backlog exceeds a threshold. §6.4 goal generation and §6.5 scope-
-  promotion review are left as clean TODO(P5) hooks in the pipeline.
+  worker when the adjudication backlog exceeds a threshold. Sleep-pass stage 7 (§6.4 curiosity goal
+  generation + §6.5 scope-promotion review) is now implemented in P5 (see below).
+- **Profiles / curiosity / privacy promotion (P5)**: `CharacterProfileGenerator` (§6.1, PROFILE
+  budget, hash-keyed cache in `memory_store_meta`, materialises FRAME hubs via the applier) feeds
+  frames + care-abouts + persona relation into extraction (`MemoryEncoder`) and frame labels into
+  retrieval (`MemoryRecall` resolves `IN_FRAME` edges → "*[roleplay, a week ago]* …"). `CuriosityEngine`
+  (default OFF via `MemorySettings.proactiveCuriosity`) generates ≤1 goal/run from importance≥3 NORMAL
+  beliefs in the sleep pass (CURIOSITY budget, optional web-fill via `:search`), delivers at most one
+  gated + rate-limited hint from `MemoryRecall`, and backs off structurally (DECLINED→ABANDONED,
+  time-based ASKED→IGNORED→ABANDONED, no re-ask) — `CuriosityLogic` holds the pure gate/back-off rules.
+  Sleep-pass stage 7 promotion review (`PromotionLogic`) auto-promotes only whitelisted identity-level
+  user facts (never SENSITIVE, respects `useSharedUserMemory`) and offers the rest as
+  PROMOTION_SUGGESTED chips wired to P4a's accept/dismiss. Pure logic unit-tested (`CuriosityLogicTest`,
+  `PromotionLogicTest`, `MemoryFrameRetrievalTest`).
 - The legacy `MemoryConsolidationWorker` / `MemoryEntity` / `ChatEpisodeEntity` remain read-only and
   are imported once into the graph store when the toggle is first enabled. The legacy worker's
   periodic scheduling is now **retired for memory-enabled users** (`LastChatApp` schedules exactly one
@@ -800,11 +812,13 @@ Riskiest-first; each phase ships behind the master toggle and leaves the app rel
 - **P3 — Sleep pass** ✅ *implemented*: decay/expiry/size enforcement (deterministic), then
   merge/contradiction confirmation, compression, habit induction. Legacy `MemoryConsolidationWorker`
   periodic path retired for memory-enabled users.
-- **P4 — UI**: Memory Center (Overview + Browse + node sheet + export/wipe first; Graph tab
-  second — it's the most polish-hungry, and Browse makes the system fully usable meanwhile).
-  Activity pill integration. Remove old sub-pages.
-- **P5 — Profiles + curiosity**: character profile generation, frames in extraction/retrieval,
-  `CuriosityEngine` (off by default), web-fill option.
+- **P4 — UI**: Memory Center (Overview + Browse + node sheet + export/wipe first ✅ *P4a*; Graph
+  tab second ✅ *P4b* — custom Canvas force layout, bounded-neighborhood + freeze, `graphicsLayer`
+  pan/zoom; §14 Q2 resolved to the custom path). Activity pill integration. Remove old sub-pages.
+- **P5 — Profiles + curiosity** ✅ *implemented*: character profile generation
+  (`CharacterProfileGenerator`), frames in extraction/retrieval, `CuriosityEngine` (off by default,
+  gated + rate-limited delivery, structural back-off), web-fill option, and §6.5 privacy promotion
+  (whitelist auto-promote + confirm chips) as sleep-pass stage 7.
 - **P6 — Hardening**: embedding backfill worker, settings migration polish, on-device v33→v34
   migration test, i18n pass (English-only until then, per repo policy), baseline-profile check
   for the graph canvas.
@@ -827,6 +841,11 @@ Still open (defaults chosen, validate during implementation):
 1. Node budget numbers (1,500/1,000) — validate against real DB sizes during P3.
 2. Graph physics: custom Canvas simulation (chosen) vs. precomputed static layout — fall back
    to static clustered layout if 60fps pan/zoom isn't comfortably reachable on mid-range ARM.
+   **Resolved (P4b):** custom simulation kept. The 5k risk is bounded away, not simulated through
+   — `MemoryGraphBuilder` draws only a ≤180-node neighborhood, `MemoryForceLayout` settles it
+   off-thread and freezes, and pan/zoom is a pure `graphicsLayer` transform that never recomputes
+   positions or recomposes, so it stays 60fps regardless of store size. Reduced-motion collapses to
+   a pre-settled static layout — which also serves as the graceful-degradation path.
 3. Whether `memory_search` tool should also search raw past conversations (as today) — keep
    initially, since gists may not cover everything until compression matures.
 4. Per-embedding-model similarity calibration (§5.3) — enhancement only; not needed for

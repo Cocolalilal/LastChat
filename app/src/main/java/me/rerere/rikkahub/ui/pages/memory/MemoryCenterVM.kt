@@ -6,7 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +63,19 @@ class MemoryCenterVM(
 
     val activity: StateFlow<List<MemoryActivityEntity>> = graphRepository.observeActivity(scopeId, limit = 300)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Reactive graph input for the Graph tab (§10.2): this scope's browsable nodes plus every edge.
+     * Edges are loaded whole (see [MemoryGraphRepository.getAllEdges]) and only while the Graph tab is
+     * subscribed (WhileSubscribed) — `MemoryGraphBuilder` filters them to the drawn neighborhood.
+     */
+    val graphInput: StateFlow<MemoryGraphInput> = nodes
+        .mapLatest { ns ->
+            val edges = if (ns.isEmpty()) emptyList() else graphRepository.getAllEdges()
+            MemoryGraphInput(ns, edges)
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MemoryGraphInput.EMPTY)
 
     private val _importProgress = MutableStateFlow<MemoryGraphRepository.ImportProgress?>(null)
     val importProgress: StateFlow<MemoryGraphRepository.ImportProgress?> = _importProgress

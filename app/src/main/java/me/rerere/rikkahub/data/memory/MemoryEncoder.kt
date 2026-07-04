@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.db.entity.MemSource
 import me.rerere.rikkahub.data.db.entity.MemoryConversationStateEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.utils.JsonInstant
 
 /**
  * The encoding (extraction) pass (§5.1). One model call per pass turns an un-encoded window of chat
@@ -33,6 +34,7 @@ class MemoryEncoder(
     private val repository: MemoryGraphRepository,
     private val conversationStateDao: MemoryConversationStateDao,
     private val budget: MemoryBudget,
+    private val profileGenerator: CharacterProfileGenerator,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -77,8 +79,18 @@ class MemoryEncoder(
         val window = messages.subList(chunk.startInclusive, chunk.endExclusive)
         val contextBefore = messages.subList((chunk.startInclusive - CONTEXT_LOOKBACK).coerceAtLeast(0), chunk.startInclusive)
 
+        // §6.1/6.3: the character profile (frames, care-abouts, persona relation) steers classification
+        // and frame tagging. refresh() is a no-op model-call-wise when the persona hash is unchanged.
+        val profile = try {
+            profileGenerator.refresh(assistant, settings)
+        } catch (e: Exception) {
+            PlatformLog.e(TAG, "profile refresh failed: ${e.message}")
+            CharacterProfileLogic.defaultProfile()
+        }
+        val openGoals = collectOpenGoals(assistant.id.toString())
+
         val digest = buildNeighborhoodDigest(assistant.id.toString(), window)
-        val prompt = buildPrompt(window, contextBefore, digest)
+        val prompt = buildPrompt(window, contextBefore, digest, profile, openGoals)
 
         val responseText = try {
             callModel(resolved.first, resolved.second, prompt, settings)
@@ -130,15 +142,50 @@ class MemoryEncoder(
             .map { it.id to it.content }
     }
 
+    /** Open (non-terminal) curiosity goals so extraction can RESOLVE_GOAL when a chat answers one (§6.4). */
+    private suspend fun collectOpenGoals(assistantId: String): List<Pair<String, String>> {
+        return repository.getVisibleByType(assistantId, MemNodeType.GOAL, MemoryGraphRepository.INJECTABLE_STATUSES)
+            .filter { !CuriosityLogic.isTerminal(decodeGoalState(it.extra)) }
+            .map { it.id to (decodeGoalQuestion(it.extra) ?: it.content) }
+            .take(6)
+    }
+
+    private fun decodeGoalState(json: String): String? =
+        runCatching { JsonInstant.decodeFromString<me.rerere.rikkahub.data.model.MemoryExtra>(json).goalState }.getOrNull()
+
+    private fun decodeGoalQuestion(json: String): String? =
+        runCatching { JsonInstant.decodeFromString<me.rerere.rikkahub.data.model.MemoryExtra>(json).goalQuestion }.getOrNull()
+
     private fun buildPrompt(
         window: List<UIMessage>,
         contextBefore: List<UIMessage>,
         digest: List<Pair<String, String>>,
+        profile: CharacterMemoryProfile,
+        openGoals: List<Pair<String, String>>,
     ): String = buildString {
         appendLine("You are the memory-encoding subsystem for an AI character. Read the NEW MESSAGES and extract durable memories about the user and your shared history, as a strict JSON array of operations. Output ONLY the JSON array.")
         appendLine()
         appendLine("Current time (epoch millis): ${clock()}")
         appendLine()
+        // §6.1/6.3 character context: what this character is to the user, what it cares to remember,
+        // and its interaction frames — used to classify literal/joke/fiction and to tag episodes.
+        if (profile.personaRelation.isNotBlank() || profile.careAbouts.isNotEmpty() || profile.frames.isNotEmpty()) {
+            appendLine("CHARACTER CONTEXT:")
+            if (profile.personaRelation.isNotBlank()) appendLine("  Relation to user: ${profile.personaRelation}")
+            if (profile.careAbouts.isNotEmpty()) appendLine("  Cares about remembering: ${profile.careAbouts.joinToString(", ")}")
+            if (profile.frames.isNotEmpty()) {
+                appendLine("  Frames (tag each EPISODE with the best-matching \"frame\" label; roleplay frames imply reality=FICTION):")
+                profile.frames.forEach { f ->
+                    appendLine("    - ${f.label}${if (f.roleplay) " [roleplay]" else ""}${if (f.descriptor.isNotBlank()) ": ${f.descriptor}" else ""}")
+                }
+            }
+            appendLine()
+        }
+        if (openGoals.isNotEmpty()) {
+            appendLine("OPEN CURIOSITY GOALS (if the NEW MESSAGES clearly answer one, emit RESOLVE_GOAL with its id, outcome=CONFIRMED and a \"learned\" fact; if the user brushed it off, outcome=DECLINED):")
+            openGoals.forEach { (id, q) -> appendLine("  [$id] $q") }
+            appendLine()
+        }
         if (digest.isNotEmpty()) {
             appendLine("EXISTING BELIEFS (reference these ids to REINFORCE/UPDATE/CLOSE instead of adding duplicates):")
             digest.forEach { (id, content) -> appendLine("  [$id] $content") }
@@ -203,6 +250,7 @@ OPERATIONS:
 {"op":"REINFORCE","id":"<existing belief id>","rationale":"restated"}
 {"op":"UPDATE","old_id":"<existing belief id>","content":"corrected statement","rationale":"user corrected"}
 {"op":"CLOSE","id":"<existing belief id>","ended_at":<epochMillis>}
+{"op":"RESOLVE_GOAL","id":"<open goal id>","outcome":"CONFIRMED|DECLINED","learned":"the fact the user just revealed (CONFIRMED only)"}
 
 If nothing is worth remembering, output [].
 """

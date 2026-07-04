@@ -106,6 +106,14 @@ class MemoryGraphRepository(
     suspend fun getEdgesTouchingAny(nodeIds: List<String>): List<MemoryEdgeEntity> =
         if (nodeIds.isEmpty()) emptyList() else edgeDao.getTouchingAny(nodeIds)
 
+    /**
+     * Every edge in the store, for the Graph tab (§10.2). Returned whole rather than filtered by an
+     * `IN (:nodeIds)` list: a large scope would blow SQLite's variable limit, and the Graph tab
+     * already holds its scope's nodes in memory, so [MemoryGraphBuilder] filters edges to the drawn
+     * neighborhood client-side.
+     */
+    suspend fun getAllEdges(): List<MemoryEdgeEntity> = edgeDao.getAll()
+
     suspend fun getProvenance(nodeId: String): List<MemoryProvenanceEntity> = provenanceDao.getForNode(nodeId)
 
     fun observeActivity(assistantId: String, limit: Int = 200): Flow<List<MemoryActivityEntity>> =

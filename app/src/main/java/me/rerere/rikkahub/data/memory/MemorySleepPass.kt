@@ -23,6 +23,7 @@ import me.rerere.rikkahub.data.db.dao.MemoryNodeDao
 import me.rerere.rikkahub.data.db.dao.MemoryProvenanceDao
 import me.rerere.rikkahub.data.db.dao.MemoryStoreMetaDao
 import me.rerere.rikkahub.data.db.entity.MemActivityKind
+import me.rerere.rikkahub.data.db.entity.MemActivityState
 import me.rerere.rikkahub.data.db.entity.MemBudgetCategory
 import me.rerere.rikkahub.data.db.entity.MemEdgeType
 import me.rerere.rikkahub.data.db.entity.MemNodeType
@@ -68,6 +69,7 @@ class MemorySleepPass(
     private val budget: MemoryBudget,
     private val providerManager: ProviderManager,
     private val settingsStore: SettingsStore,
+    private val curiosityEngine: CuriosityEngine,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -79,6 +81,9 @@ class MemorySleepPass(
 
         const val ACTIVITY_KEEP_PER_SCOPE = 500
         const val PROVENANCE_KEEP_PER_NODE = 4 // first + last 3
+
+        // §6.5/§10.1: at most this many pending scope-promotion chips per character at once.
+        const val MAX_PENDING_PROMOTION_CHIPS = 3
 
         // compression / habit clustering
         private const val COMPRESSION_AGE_MS = 45L * 24 * 60 * 60 * 1000
@@ -146,8 +151,23 @@ class MemorySleepPass(
                 PlatformLog.e(TAG, "compression stage failed for ${ref.key}: ${e.message}")
             }
 
-            // §5.4 stage 7 — scope-promotion review (§6.5) and goal generation (§6.4) are P5.
-            // TODO(P5): promotion whitelist auto-promote + suggestion chips; CuriosityEngine goals.
+            // §5.4 stage 7 — scope-promotion review (§6.5) + curiosity goals (§6.4). CHARACTER-only:
+            // the global layer has nothing to promote *into*, and curiosity is per-character.
+            if (ref.scope == MemScope.CHARACTER && ref.ownerId != null) {
+                val assistant = settings.assistants.find { it.id.toString() == ref.ownerId }
+                try {
+                    promotionReviewStage(ref, assistant, now)
+                } catch (e: Exception) {
+                    PlatformLog.e(TAG, "promotion review failed for ${ref.key}: ${e.message}")
+                }
+                if (assistant != null) {
+                    try {
+                        curiosityEngine.runSleepPass(assistant, settings, caps, now)
+                    } catch (e: Exception) {
+                        PlatformLog.e(TAG, "curiosity pass failed for ${ref.key}: ${e.message}")
+                    }
+                }
+            }
 
             // §9 stage 8 — size enforcement, always (independent of budget).
             try {
@@ -484,6 +504,90 @@ class MemorySleepPass(
         writeProvenanceCopy(id, "induced from ${episodes.size} episodes", now)
         return true
     }
+
+    // ================= §5.4 stage 7: scope-promotion review (§6.5) =================
+
+    /**
+     * Promote identity-level user facts to the shared GLOBAL_USER layer, and offer the rest as opt-in
+     * chips. Conservative by construction ([PromotionLogic]): only ACTIVE, NORMAL user FACTs on the
+     * closed identity whitelist auto-promote; SENSITIVE never promotes and never chips; everything
+     * else becomes a PROMOTION_SUGGESTED chip (non-action stays private). A character opted out of the
+     * shared layer (`useSharedUserMemory=false`) is skipped entirely — no promotion, no chips.
+     */
+    private suspend fun promotionReviewStage(ref: ScopeRef, assistant: me.rerere.rikkahub.data.model.Assistant?, now: Long) {
+        if (assistant?.useSharedUserMemory == false) return
+        val ownerId = ref.ownerId ?: return
+
+        val nodes = nodeDao.getVisibleWithStatuses(ownerKeyForRead(ref), listOf(MemStatus.ACTIVE)).filter { inScope(it, ref) }
+        val userEntityIds = nodes
+            .filter { it.type == MemNodeType.ENTITY && MemoryText.normalize(it.displayLabel ?: it.content) == "user" }
+            .map { it.id }.toSet()
+        if (userEntityIds.isEmpty()) return
+        val facts = nodes.filter { it.type == MemNodeType.FACT }
+        if (facts.isEmpty()) return
+
+        val existingPending = activityDao.getPendingSuggestions(ownerId, MemActivityKind.PROMOTION_SUGGESTED, MemActivityState.PENDING)
+        val alreadySuggested = existingPending.flatMap { parseNodeIdList(it.nodeIds) }.toSet()
+        var suggestionSlots = (MAX_PENDING_PROMOTION_CHIPS - existingPending.size).coerceAtLeast(0)
+
+        scopeLocks.withScope(ref.key) {
+            db.withTransaction {
+                var promoted = 0
+                for (fact in facts) {
+                    val fresh = nodeDao.getById(fact.id) ?: continue
+                    if (fresh.scope != MemScope.CHARACTER || fresh.status != MemStatus.ACTIVE) continue
+                    val isAboutUser = aboutEntitiesOf(fresh.id).any { it in userEntityIds }
+                    val category = decodeExtra(fresh.extra).category
+                    when (PromotionLogic.classify(fresh.scope, fresh.status, fresh.sensitivity, fresh.type, isAboutUser, category)) {
+                        PromotionLogic.Action.AUTO -> {
+                            nodeDao.update(fresh.copy(scope = MemScope.GLOBAL_USER, ownerAssistantId = null, lastAccessedAt = now))
+                            promoted++
+                            activityDao.insert(
+                                MemoryActivityEntity(
+                                    id = Uuid.random().toString(), at = now, scope = MemScope.GLOBAL_USER,
+                                    ownerAssistantId = null, kind = MemActivityKind.PROMOTED,
+                                    summary = "shared with all characters: ${fresh.content.take(80)}",
+                                    nodeIds = JsonInstant.encodeToString(listOf(fresh.id)),
+                                )
+                            )
+                        }
+
+                        PromotionLogic.Action.SUGGEST -> {
+                            if (suggestionSlots > 0 && fresh.id !in alreadySuggested) {
+                                suggestionSlots--
+                                activityDao.insert(
+                                    MemoryActivityEntity(
+                                        id = Uuid.random().toString(), at = now, scope = MemScope.CHARACTER,
+                                        ownerAssistantId = ownerId, kind = MemActivityKind.PROMOTION_SUGGESTED,
+                                        summary = "Share “${fresh.content.take(80)}” with all characters?",
+                                        nodeIds = JsonInstant.encodeToString(listOf(fresh.id)),
+                                        state = MemActivityState.PENDING,
+                                    )
+                                )
+                            }
+                        }
+
+                        PromotionLogic.Action.SKIP -> Unit
+                    }
+                }
+                if (promoted > 0) {
+                    // A summary row on the character scope so the character's own feed reflects it too.
+                    activityDao.insert(
+                        MemoryActivityEntity(
+                            id = Uuid.random().toString(), at = now, scope = MemScope.CHARACTER,
+                            ownerAssistantId = ownerId, kind = MemActivityKind.PROMOTED,
+                            summary = "$promoted fact(s) shared with all characters",
+                            nodeIds = "[]",
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun parseNodeIdList(json: String): List<String> = runCatching {
+        JsonInstant.decodeFromString<List<String>>(json)
+    }.getOrDefault(emptyList())
 
     // ================= §9 stage 8: size enforcement (always) =================
 

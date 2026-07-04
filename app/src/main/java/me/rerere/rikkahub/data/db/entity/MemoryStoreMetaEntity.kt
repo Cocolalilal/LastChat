@@ -25,6 +25,7 @@ object MemoryStoreMetaKeys {
     const val IMPORT_WATERMARK = "import_watermark"
     const val LAST_SLEEP_RUN = "last_sleep_run"
     const val PROFILE_HASH_PREFIX = "profile_hash_" // + assistantId
+    const val PROFILE_JSON_PREFIX = "profile_json_" // + assistantId → serialized CharacterMemoryProfile
 
     /** Current semantic schema version of the memory store. Bump for in-store migrations. */
     const val CURRENT_STORE_SCHEMA_VERSION = "1"

@@ -30,6 +30,7 @@ import kotlin.uuid.Uuid
 class MemoryRecall(
     private val repository: MemoryGraphRepository,
     private val conversationRepo: ConversationRepository,
+    private val curiosityEngine: CuriosityEngine? = null,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -50,6 +51,7 @@ class MemoryRecall(
         activeConversationId: String?,
         messages: List<UIMessage>,
         timeAwareness: Boolean,
+        curiosityEnabled: Boolean = false,
     ): String {
         val now = clock()
         val queryText = messages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty()
@@ -67,9 +69,24 @@ class MemoryRecall(
         val episodes = repository.getRecentEpisodes(assistantId, EPISODE_LIMIT)
             .filter { it.id !in coreIds && it.id !in suppressed }
 
+        // §6.2 frames: resolve each episode's IN_FRAME → frame label + roleplay flag so retrieval can
+        // label roleplay vs. chat memories ("*[roleplay, about a week ago]* …") — the shared-history split.
+        val frameByEpisode = resolveEpisodeFrames(queryNodes + episodes)
+
         val pendingTail = buildPendingTail(assistantId, activeConversationId, now)
 
-        if (coreNodes.isEmpty() && queryNodes.isEmpty() && episodes.isEmpty() && pendingTail.isEmpty()) return ""
+        // §6.4 curiosity hint (default OFF): at most one, gated + rate-limited by the engine, which also
+        // transitions the goal PRIMED→ASKED. midRoleplay suppresses asks during an active fiction scene.
+        val midRoleplay = episodes.take(1).any { frameByEpisode[it.id]?.roleplay == true }
+        val curiosityHint = if (curiosityEnabled) {
+            try {
+                curiosityEngine?.selectHint(assistantId, messages.size, midRoleplay, now)
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
+        if (coreNodes.isEmpty() && queryNodes.isEmpty() && episodes.isEmpty() && pendingTail.isEmpty() && curiosityHint.isNullOrBlank()) return ""
 
         return buildString {
             appendLine("<memory>")
@@ -83,7 +100,7 @@ class MemoryRecall(
                 appendLine()
                 appendLine("Relevant to what they just said:")
                 queryNodes.forEach { node ->
-                    val line = if (node.type == MemNodeType.EPISODE) verbalizeEpisode(node, now, timeAwareness)
+                    val line = if (node.type == MemNodeType.EPISODE) verbalizeEpisode(node, now, timeAwareness, frameByEpisode[node.id])
                     else verbalizeFact(node, now, timeAwareness)
                     appendLine("- $line")
                 }
@@ -91,15 +108,41 @@ class MemoryRecall(
             if (episodes.isNotEmpty()) {
                 appendLine()
                 appendLine("Recently, together:")
-                episodes.forEach { appendLine("- ${verbalizeEpisode(it, now, timeAwareness)}") }
+                episodes.forEach { appendLine("- ${verbalizeEpisode(it, now, timeAwareness, frameByEpisode[it.id])}") }
             }
             if (pendingTail.isNotEmpty()) {
                 appendLine()
                 appendLine("Recent unprocessed chat with you (raw and unclassified — may include roleplay or jokes; treat cautiously):")
                 pendingTail.forEach { appendLine("  $it") }
             }
+            if (!curiosityHint.isNullOrBlank()) {
+                appendLine()
+                appendLine(curiosityHint)
+            }
             append("</memory>")
         }
+    }
+
+    // ---------------- frame resolution (§6.2) ----------------
+
+    /** Frame descriptor for an episode: the FRAME node it points at via its IN_FRAME edge. */
+    data class FrameRef(val label: String, val roleplay: Boolean)
+
+    private suspend fun resolveEpisodeFrames(nodes: List<MemoryNodeEntity>): Map<String, FrameRef> {
+        val episodeIds = nodes.filter { it.type == MemNodeType.EPISODE }.map { it.id }
+        if (episodeIds.isEmpty()) return emptyMap()
+        val inFrame = repository.getEdgesTouchingAny(episodeIds).filter { it.type == MemEdgeType.IN_FRAME }
+        if (inFrame.isEmpty()) return emptyMap()
+        val frameNodes = repository.getNodes(inFrame.map { it.toId }.distinct()).associateBy { it.id }
+        val out = HashMap<String, FrameRef>()
+        for (edge in inFrame) {
+            if (edge.fromId in out) continue // first frame wins
+            val frame = frameNodes[edge.toId] ?: continue
+            val extra = decodeExtra(frame.extra)
+            val label = frame.displayLabel ?: extra.frameLabel ?: frame.content
+            out[edge.fromId] = FrameRef(label, extra.frameRoleplay)
+        }
+        return out
     }
 
     // ---------------- core sheet ----------------
@@ -246,16 +289,31 @@ class MemoryRecall(
         return hedged
     }
 
-    private fun verbalizeEpisode(node: MemoryNodeEntity, now: Long, timeAwareness: Boolean): String {
-        val frameLabel = decodeExtra(node.extra).frameLabel
-        val prefixParts = buildList {
-            if (frameLabel != null) add(frameLabel)
-            if (timeAwareness) add(fuzzyMemoryAgeLabel(node.eventStart ?: node.recordedAt, now))
-        }
-        val prefix = if (prefixParts.isEmpty()) "" else "*[${prefixParts.joinToString(", ")}]* "
-        return "$prefix${node.content}"
+    private fun verbalizeEpisode(node: MemoryNodeEntity, now: Long, timeAwareness: Boolean, frame: FrameRef?): String {
+        // Frame comes from the IN_FRAME graph edge (§6.2); fall back to any label stashed on the node.
+        val frameLabel = frame?.label ?: decodeExtra(node.extra).frameLabel
+        val ageLabel = if (timeAwareness) fuzzyMemoryAgeLabel(node.eventStart ?: node.recordedAt, now) else null
+        return MemoryRecallLogic.episodeLine(node.content, frameLabel, ageLabel)
     }
 
     private fun decodeExtra(json: String): MemoryExtra =
         runCatching { JsonInstant.decodeFromString<MemoryExtra>(json) }.getOrDefault(MemoryExtra())
+}
+
+/**
+ * Pure verbalization helpers (§5.5/§6.2), model- and Room-free so the frame/tense formatting that
+ * produces "*[roleplay, about a week ago]* we played at learning together" is unit-testable.
+ */
+object MemoryRecallLogic {
+    /** The bracketed prefix combining an optional frame label and an optional fuzzy age label. */
+    fun episodePrefix(frameLabel: String?, ageLabel: String?): String {
+        val parts = buildList {
+            if (!frameLabel.isNullOrBlank()) add(frameLabel.trim())
+            if (!ageLabel.isNullOrBlank()) add(ageLabel.trim())
+        }
+        return if (parts.isEmpty()) "" else "*[${parts.joinToString(", ")}]* "
+    }
+
+    fun episodeLine(content: String, frameLabel: String?, ageLabel: String?): String =
+        episodePrefix(frameLabel, ageLabel) + content
 }

@@ -16,6 +16,7 @@ class MemoryRecallTransformer(
     private val recall: MemoryRecall,
     private val activeConversationId: String?,
     private val timeAwareness: Boolean,
+    private val curiosityEnabled: Boolean = false,
 ) : InputMessageTransformer {
 
     override suspend fun transform(
@@ -28,6 +29,7 @@ class MemoryRecallTransformer(
                 activeConversationId = activeConversationId,
                 messages = messages,
                 timeAwareness = timeAwareness,
+                curiosityEnabled = curiosityEnabled,
             )
         } catch (e: Exception) {
             PlatformLog.e("MemoryRecall", "recall failed: ${e.message}")

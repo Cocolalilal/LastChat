@@ -32,8 +32,14 @@ data class MemoryExtra(
     val habitCadence: String? = null,
     /** FRAME: descriptor of the mode ("roleplay mode", "study-buddy chat"). */
     val frameLabel: String? = null,
+    /** FRAME: whether this mode is a roleplay/fiction scene — used to suppress curiosity mid-scene (§6.4). */
+    val frameRoleplay: Boolean = false,
     /** FACT: proposed validity horizon in millis from recorded_at, if the model suggested one. */
     val validityHorizonMillis: Long? = null,
+    /** GOAL: how many times the ask has gone unanswered; two IGNOREs → ABANDONED (§6.4 back-off). */
+    val goalIgnoreCount: Int = 0,
+    /** GOAL: when the ask was last delivered (drives the ≥72h / weekly-cap rate limiting, §6.4). */
+    val goalLastAskedAt: Long? = null,
 )
 
 /** Goal lifecycle states, stored in [MemoryExtra.goalState]. */

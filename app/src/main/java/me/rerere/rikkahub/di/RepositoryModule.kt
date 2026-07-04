@@ -85,9 +85,33 @@ val repositoryModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.memory.CharacterProfileGenerator(
+            providerManager = get(),
+            applier = get(),
+            storeMetaDao = get(),
+            budget = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.memory.CuriosityEngine(
+            db = get(),
+            nodeDao = get(),
+            edgeDao = get(),
+            activityDao = get(),
+            scopeLocks = get(),
+            budget = get(),
+            providerManager = get(),
+            applier = get(),
+            profileGenerator = get(),
+        )
+    }
+
+    single {
         me.rerere.rikkahub.data.memory.MemoryRecall(
             repository = get(),
             conversationRepo = get(),
+            curiosityEngine = get(),
         )
     }
 
@@ -98,6 +122,7 @@ val repositoryModule = module {
             repository = get(),
             conversationStateDao = get(),
             budget = get(),
+            profileGenerator = get(),
         )
     }
 
@@ -113,6 +138,7 @@ val repositoryModule = module {
             budget = get(),
             providerManager = get(),
             settingsStore = get(),
+            curiosityEngine = get(),
         )
     }
 

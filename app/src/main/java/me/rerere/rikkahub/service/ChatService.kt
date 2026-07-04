@@ -1592,6 +1592,7 @@ class ChatService(
                                 recall = memoryRecall,
                                 activeConversationId = conversation.id.toString(),
                                 timeAwareness = settings.memory.timeAwareness,
+                                curiosityEnabled = settings.memory.proactiveCuriosity,
                             )
                         )
                     }

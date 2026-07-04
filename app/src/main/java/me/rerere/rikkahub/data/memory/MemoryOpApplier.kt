@@ -76,10 +76,64 @@ class MemoryOpApplier(
             db.withTransaction { Pass(ctx).run(ops) }
         }
 
+    /**
+     * Ensure the character's profile frames (§6.1) exist as FRAME hub nodes, idempotently by
+     * normalized label. Routed through the applier so it stays the single writer of nodes/edges; runs
+     * under the per-scope write lock. Updates a frame's roleplay flag/descriptor if the profile
+     * changed it. Extraction's `op.frame` strings then reuse these hubs by label (see [Pass.resolveFrame]).
+     */
+    suspend fun ensureCharacterFrames(
+        assistantId: String,
+        frames: List<me.rerere.rikkahub.data.memory.CharacterFrame>,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        if (frames.isEmpty()) return
+        scopeLocks.withScope(assistantId) {
+            db.withTransaction {
+                val existing = nodeDao.getVisibleByType(assistantId, MemNodeType.FRAME, listOf(MemStatus.ACTIVE))
+                    .filter { it.ownerAssistantId == assistantId }
+                for (frame in frames) {
+                    val label = frame.label.trim()
+                    if (label.isBlank()) continue
+                    val norm = MemoryText.normalize(label)
+                    val match = existing.firstOrNull { MemoryText.normalize(it.displayLabel ?: it.content) == norm }
+                    if (match != null) {
+                        val extra = decodeExtra(match.extra)
+                        if (extra.frameRoleplay != frame.roleplay || extra.frameLabel != label) {
+                            nodeDao.update(match.copy(extra = JsonInstant.encodeToString(extra.copy(frameLabel = label, frameRoleplay = frame.roleplay))))
+                        }
+                        continue
+                    }
+                    val id = newId()
+                    val node = MemoryNodeEntity(
+                        id = id,
+                        type = MemNodeType.FRAME,
+                        scope = MemScope.CHARACTER,
+                        ownerAssistantId = assistantId,
+                        content = label,
+                        displayLabel = label,
+                        importance = 3,
+                        confidence = 1f,
+                        status = MemStatus.ACTIVE,
+                        recordedAt = now,
+                        lastConfirmedAt = now,
+                        lastAccessedAt = now,
+                        source = MemSource.DERIVED,
+                        extra = JsonInstant.encodeToString(MemoryExtra(frameLabel = label, frameRoleplay = frame.roleplay)),
+                    )
+                    nodeDao.upsert(node)
+                    nodeDao.insertFts(MemoryNodeFtsEntity(id, label, label))
+                }
+            }
+        }
+    }
+
     /** One transactional pass. Keeps a small in-memory entity cache so hubs created mid-pass are reused. */
     private inner class Pass(val ctx: MemoryApplyContext) {
         private val entities = mutableListOf<MemoryNodeEntity>()
         private var entitiesLoaded = false
+        private val frames = mutableListOf<MemoryNodeEntity>()
+        private var framesLoaded = false
 
         private val added = mutableListOf<String>()
         private val reinforced = mutableListOf<String>()
@@ -328,9 +382,51 @@ class MemoryOpApplier(
         private suspend fun handleResolveGoal(op: MemoryOp.ResolveGoal) {
             val node = nodeDao.getById(op.id) ?: run { dropped++; return }
             if (node.type != MemNodeType.GOAL) { dropped++; return }
-            val extra = decodeExtra(node.extra).copy(goalState = op.outcome)
+            // Normalize the model's outcome through the back-off state machine: DECLINED retires the
+            // goal forever, CONFIRMED banks the answer, anything else leaves it for the ignore sweep.
+            val newState = CuriosityLogic.stateOnOutcome(op.outcome)
+            val extra = decodeExtra(node.extra).copy(goalState = newState)
             nodeDao.update(node.copy(extra = JsonInstant.encodeToString(extra), lastAccessedAt = ctx.now))
             goalsResolved += node.id
+
+            // A confirmed goal that taught us something enters the store as a high-confidence,
+            // user-confirmed FACT through the same dedup guardrails (§6.4) — only on CONFIRMED.
+            val learned = op.learned?.trim()
+            if (newState != MemoryGoalState.CONFIRMED || learned.isNullOrBlank() || addsAccepted >= ctx.maxAdds) return
+            val entityIds = aboutEntitiesOf(node.id).ifEmpty { listOf(resolveUserEntity()) }
+            val neighbors = collectNeighbors(entityIds, MemNodeType.FACT)
+            when (val decision = MemoryDedupGate.decide(learned, neighbors)) {
+                is MemoryDedupGate.Decision.Reinforce -> reinforceNode(decision.targetId, op.rationale, op.excerpt)
+                else -> {
+                    addsAccepted++
+                    val id = newId()
+                    val flaggedRelated = (decision as? MemoryDedupGate.Decision.Flag)?.relatedId
+                    val factNode = MemoryNodeEntity(
+                        id = id,
+                        type = MemNodeType.FACT,
+                        scope = MemScope.CHARACTER,
+                        ownerAssistantId = ctx.assistantId,
+                        content = learned,
+                        importance = 4,
+                        confidence = 0.95f,
+                        status = MemStatus.ACTIVE,
+                        reality = MemReality.REAL,
+                        recordedAt = ctx.now,
+                        lastConfirmedAt = ctx.now,
+                        lastAccessedAt = ctx.now,
+                        source = MemSource.CONFIRMED_BY_USER,
+                        extra = JsonInstant.encodeToString(MemoryExtra()),
+                        adjudicationPending = flaggedRelated != null,
+                    )
+                    nodeDao.upsert(factNode)
+                    nodeDao.insertFts(MemoryNodeFtsEntity(id, learned, ""))
+                    for (eid in entityIds.distinct()) addEdge(id, eid, MemEdgeType.ABOUT)
+                    if (flaggedRelated != null) addEdge(id, flaggedRelated, MemEdgeType.RELATES_TO)
+                    writeProvenance(id, op.rationale.ifBlank { "confirmed via a curiosity question" }, op.excerpt)
+                    added += id
+                    if (flaggedRelated != null) flagged += id
+                }
+            }
         }
 
         // ---------------- EDGE (extraction: RELATES_TO / CONTRADICTS only) ----------------
@@ -387,11 +483,20 @@ class MemoryOpApplier(
 
         private suspend fun resolveUserEntity(): String = resolveEntity("User", listOf("me", "I"))
 
+        private suspend fun ensureFramesLoaded() {
+            if (framesLoaded) return
+            // Reuse profile-created / previously-extracted FRAME hubs so episodes attach to the same
+            // frame across passes (§6.1/6.2) — getVisibleEntities returns only ENTITY nodes, so frames
+            // need their own cache.
+            frames.addAll(nodeDao.getVisibleByType(ctx.assistantId, MemNodeType.FRAME, listOf(MemStatus.ACTIVE))
+                .filter { it.ownerAssistantId == ctx.assistantId })
+            framesLoaded = true
+        }
+
         private suspend fun resolveFrame(label: String): String {
-            ensureEntitiesLoaded()
-            // Frames are hub-like; reuse the entity index by matching FRAME nodes lazily.
+            ensureFramesLoaded()
             val norm = MemoryText.normalize(label)
-            val existing = entities.firstOrNull { it.type == MemNodeType.FRAME && entityMatches(it, norm) }
+            val existing = frames.firstOrNull { MemoryText.normalize(it.displayLabel ?: it.content) == norm }
             if (existing != null) return existing.id
             val id = newId()
             val node = MemoryNodeEntity(
@@ -412,7 +517,7 @@ class MemoryOpApplier(
             )
             nodeDao.upsert(node)
             nodeDao.insertFts(MemoryNodeFtsEntity(id, label, label))
-            entities.add(node)
+            frames.add(node)
             return id
         }
 

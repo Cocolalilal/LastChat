@@ -110,7 +110,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.uuid.Uuid
 
-private enum class MemoryTab(val label: String) { OVERVIEW("Overview"), BROWSE("Browse"), SETTINGS("Settings") }
+private enum class MemoryTab(val label: String) { OVERVIEW("Overview"), GRAPH("Graph"), BROWSE("Browse"), SETTINGS("Settings") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,6 +132,7 @@ fun MemoryCenterPage(assistantId: String?, focusNodeId: String? = null) {
     val importProgress by vm.importProgress.collectAsStateWithLifecycle()
     val budgetToday by vm.budgetToday.collectAsStateWithLifecycle()
     val nodeDetail by vm.nodeDetail.collectAsStateWithLifecycle()
+    val graphInput by vm.graphInput.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showOverflow by remember { mutableStateOf(false) }
@@ -209,6 +210,11 @@ fun MemoryCenterPage(assistantId: String?, focusNodeId: String? = null) {
             ) { tab ->
                 when (MemoryTab.entries[tab]) {
                     MemoryTab.OVERVIEW -> OverviewTab(vm, nodes, activity, importProgress, budgetToday, settings, onOpenNode = { vm.openNode(it) })
+                    MemoryTab.GRAPH -> MemoryGraphTab(
+                        input = graphInput,
+                        onOpenNode = { vm.openNode(it) },
+                        onTogglePin = { nodeId, pinned -> vm.setPinned(nodeId, pinned) },
+                    )
                     MemoryTab.BROWSE -> BrowseTab(vm, nodes, onOpenNode = { vm.openNode(it) })
                     MemoryTab.SETTINGS -> SettingsTab(vm, settings, navController)
                 }

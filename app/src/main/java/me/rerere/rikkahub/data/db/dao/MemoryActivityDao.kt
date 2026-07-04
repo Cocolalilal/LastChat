@@ -64,6 +64,26 @@ interface MemoryActivityDao {
     )
     suspend fun getPendingSuggestions(assistantId: String, kind: String, state: String): List<MemoryActivityEntity>
 
+    /** Count of activity rows of a kind for a character since [since] — e.g. curiosity asks this week (§6.4). */
+    @Query(
+        """
+        SELECT COUNT(*) FROM memory_activity
+        WHERE kind = :kind AND at >= :since
+          AND (scope = 0 OR (scope = 1 AND owner_assistant_id = :assistantId))
+        """
+    )
+    suspend fun countKindSince(assistantId: String, kind: String, since: Long): Int
+
+    /** Timestamp of the most recent row of a kind for a character, or null — drives the ≥72h ask gap. */
+    @Query(
+        """
+        SELECT MAX(at) FROM memory_activity
+        WHERE kind = :kind
+          AND (scope = 0 OR (scope = 1 AND owner_assistant_id = :assistantId))
+        """
+    )
+    suspend fun lastAtForKind(assistantId: String, kind: String): Long?
+
     @Query("DELETE FROM memory_activity")
     suspend fun deleteAll()
 }
