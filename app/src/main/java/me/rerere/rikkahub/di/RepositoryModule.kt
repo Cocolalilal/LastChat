@@ -143,6 +143,19 @@ val repositoryModule = module {
     }
 
     single {
+        me.rerere.rikkahub.data.memory.MemoryEmbeddingBackfill(
+            db = get(),
+            nodeDao = get(),
+            activityDao = get(),
+            storeMetaDao = get(),
+            scopeLocks = get(),
+            budget = get(),
+            embeddingService = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
         GenMediaRepository(get())
     }
 

@@ -88,6 +88,7 @@ object MemActivityKind {
     const val IMPORTED = "IMPORTED"
     const val WIPED = "WIPED"
     const val MANUAL_ADDED = "MANUAL_ADDED"
+    const val EMBEDDED = "EMBEDDED" // embedding backfill re-embedded a batch of nodes (§12.4)
 }
 
 /** State for suggestion-style activity rows (e.g. scope-promotion chips). */

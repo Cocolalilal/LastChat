@@ -109,6 +109,45 @@ interface MemoryNodeDao {
     @Query("SELECT * FROM memory_node WHERE embedding_model_id IS NULL OR embedding_model_id != :modelId")
     suspend fun getNeedingEmbedding(modelId: String): List<MemoryNodeEntity>
 
+    /**
+     * The next batch of ACTIVE nodes whose stored vector is missing or was produced by a different
+     * embedding model than [modelId] — the input to the embedding backfill worker (§12.4). Ordered by
+     * importance so the most salient nodes regain vector coverage first; FTS serves everything in the
+     * interim. Bounded by [limit] so each pass is a fixed-size unit of work.
+     */
+    @Query(
+        """
+        SELECT * FROM memory_node
+        WHERE status = 1
+          AND (embedding_model_id IS NULL OR embedding_model_id != :modelId)
+        ORDER BY importance DESC, last_confirmed_at DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getActiveNeedingEmbedding(modelId: String, limit: Int): List<MemoryNodeEntity>
+
+    /** Remaining ACTIVE nodes not yet embedded with [modelId] — drives the health-strip progress. */
+    @Query(
+        """
+        SELECT COUNT(*) FROM memory_node
+        WHERE status = 1
+          AND (embedding_model_id IS NULL OR embedding_model_id != :modelId)
+        """
+    )
+    suspend fun countActiveNeedingEmbedding(modelId: String): Int
+
+    /** Total ACTIVE nodes — denominator for embedding-coverage progress. */
+    @Query("SELECT COUNT(*) FROM memory_node WHERE status = 1")
+    suspend fun countActive(): Int
+
+    /**
+     * Targeted embedding write. Updates only the vector columns so a concurrent extraction status/
+     * content change on the same row is never clobbered by a stale full-row replace (§ single-writer
+     * discipline: the backfill still takes the scope lock, this keeps the write minimal).
+     */
+    @Query("UPDATE memory_node SET embedding_blob = :blob, embedding_model_id = :modelId WHERE id = :id")
+    suspend fun setEmbedding(id: String, blob: ByteArray?, modelId: String)
+
     // ----- export / global reads -----
 
     @Query("SELECT * FROM memory_node WHERE scope = :scope")

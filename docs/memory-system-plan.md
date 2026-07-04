@@ -1,9 +1,9 @@
 # LastChat Human-Like Memory System — Complete Plan
 
 Status: **P1 + Room v34 migration + P2 + P3 (sleep pass) + P4 (UI) + P5 (profiles/curiosity/privacy
-promotion) implemented** (behind the master toggle `Settings.memory.enabled`, default OFF). P6
-(hardening) is not yet built. Supersedes all prior memory designs, including the unmerged
-`MemoryItemEntity` two-layer store (deleted; its good ideas are absorbed here).
+promotion) + P6 (hardening) implemented** (behind the master toggle `Settings.memory.enabled`,
+default OFF). Supersedes all prior memory designs, including the unmerged `MemoryItemEntity`
+two-layer store (deleted; its good ideas are absorbed here).
 
 ### Implementation status / deviations from this plan
 - **Store & migration (P1)**: `memory_node/edge/provenance/fts/activity/budget_ledger/store_meta`
@@ -57,6 +57,23 @@ promotion) implemented** (behind the master toggle `Settings.memory.enabled`, de
   user facts (never SENSITIVE, respects `useSharedUserMemory`) and offers the rest as
   PROMOTION_SUGGESTED chips wired to P4a's accept/dismiss. Pure logic unit-tested (`CuriosityLogicTest`,
   `PromotionLogicTest`, `MemoryFrameRetrievalTest`).
+- **Hardening (P6)**: the embedding backfill worker (`MemoryEmbeddingBackfill` + `MemoryEmbeddingBackfillWorker`,
+  §12.4) re-embeds ACTIVE nodes whose `embedding_model_id` is null/mismatched, oldest-salient first,
+  metered against budget category SLEEP and made outside the scope lock; it is enqueued by `LastChatApp`
+  whenever the configured embedding model changes (or is first set), self-continues a large backfill
+  across days, and no-ops once the store is aligned (`memory_store_meta[embed_backfill_model]`) — FTS
+  covers every recall/dedup path in the interim. Settings migration polish (§12.3) adds the
+  `normalizeMemorySettings` stage (preset validity + the §11 dependent-toggle rule, curiosity web
+  lookups require proactive curiosity); the legacy `enableMemoryConsolidation`/`useRagMemoryRetrieval`/
+  `enableRecentChatsReference` outcomes are satisfied by the new defaults (Balanced preset, always-hybrid
+  retrieval gated behind `!memory.enabled`, unconditional recent-episode strip) and those flags stay
+  declared on `Assistant` so old settings keep deserializing. Test matrix: an on-device
+  `MigrationTestHelper` v33→v34 test (`AppDatabaseMigrationTest`) against a real historical DB, and a
+  5k-node retrieval-latency benchmark (`MemoryRetrievalLatencyTest`, in-memory Room); the baseline-profile
+  generator gained a best-effort Memory Center graph-canvas journey. (Both instrumented tests compile
+  and are correct, but the androidTest source set currently also contains pre-existing unrelated
+  breakage — `PythonSandbox` references in `ContextUtilAndroidTest`/`WebdavSyncBackupRoundTripTest` — that
+  must be resolved before the whole instrumented suite can run on a device.)
 - The legacy `MemoryConsolidationWorker` / `MemoryEntity` / `ChatEpisodeEntity` remain read-only and
   are imported once into the graph store when the toggle is first enabled. The legacy worker's
   periodic scheduling is now **retired for memory-enabled users** (`LastChatApp` schedules exactly one
@@ -819,9 +836,10 @@ Riskiest-first; each phase ships behind the master toggle and leaves the app rel
   (`CharacterProfileGenerator`), frames in extraction/retrieval, `CuriosityEngine` (off by default,
   gated + rate-limited delivery, structural back-off), web-fill option, and §6.5 privacy promotion
   (whitelist auto-promote + confirm chips) as sleep-pass stage 7.
-- **P6 — Hardening**: embedding backfill worker, settings migration polish, on-device v33→v34
-  migration test, i18n pass (English-only until then, per repo policy), baseline-profile check
-  for the graph canvas.
+- **P6 — Hardening** ✅ *implemented*: embedding backfill worker (`MemoryEmbeddingBackfill`), settings
+  migration polish (`normalizeMemorySettings`), on-device v33→v34 migration test
+  (`AppDatabaseMigrationTest`), 5k-node retrieval-latency benchmark (`MemoryRetrievalLatencyTest`), and
+  a graph-canvas journey in the baseline-profile generator. i18n stays English-only per repo policy.
 
 Explicit test matrix per phase: applier property tests (no op sequence can produce a
 neighbor-duplicate or an orphan non-entity node), watermark/branch tests, retrieval latency

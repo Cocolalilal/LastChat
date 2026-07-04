@@ -193,6 +193,21 @@ class LastChatApp : Application() {
                 }
         }
         
+        // Embedding backfill (§12.4). When the memory system is on and the configured embedding model
+        // changes — or is configured for the first time — re-embed mismatched/missing-vector ACTIVE
+        // nodes in the background. FTS covers every recall/dedup path in the interim, so a model
+        // switch is a temporary recall-quality dip, never data loss. The worker no-ops (and stops
+        // re-enqueuing) once the store is aligned with the current model.
+        get<AppScope>().launch {
+            get<SettingsStore>().settingsFlow
+                .map { it.memory.enabled to it.embeddingModelId }
+                .distinctUntilChanged()
+                .filter { (enabled, _) -> enabled }
+                .collect {
+                    me.rerere.rikkahub.data.memory.MemoryEmbeddingBackfillWorker.enqueue(this@LastChatApp)
+                }
+        }
+
         // Update app shortcuts when recently used assistants change
         val appShortcutManager = me.rerere.rikkahub.utils.AppShortcutManager(this)
         get<AppScope>().launch {

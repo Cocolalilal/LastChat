@@ -319,6 +319,33 @@ internal fun Settings.normalizeThemeId(): Settings {
     }
 }
 
+/**
+ * §11/§12.3 memory-settings normalization (the "new `normalizeMemorySettings` stage" the plan calls
+ * for). Keeps persisted [MemorySettings] internally consistent on every write:
+ *  - coerces [MemorySettings.preset] to a canonical, known [MemoryPreset] name (unknown/hand-edited/
+ *    downgraded-then-upgraded → the Balanced default), so the budget resolver never has to guess;
+ *  - enforces the §11 dependent-toggle rule in *data*, not only in the UI: curiosity web lookups can
+ *    only be on when proactive curiosity is on (the child grays out under its parent).
+ *
+ * The one-time legacy migrations described in §12.3 are satisfied *by construction* and need no
+ * forcing here — forcing a preset on every update would rob the user of the Eco/Rich choice:
+ *  - `enableMemoryConsolidation` users land on the new **Balanced** default (the preset default);
+ *  - `useRagMemoryRetrieval` is retired — retrieval is always hybrid, and the legacy RAG block is
+ *    gated behind `!memory.enabled`, so the flag no longer drives the graph path;
+ *  - the recent-episode strip is unconditional in `MemoryRecall`, so `enableRecentChatsReference`
+ *    is always effectively on.
+ * Those old per-assistant flags stay declared on [Assistant] with defaults so pre-v34 serialized
+ * settings keep deserializing (the `PythonEngine`-style pattern) and a downgrade never crashes.
+ */
+internal fun Settings.normalizeMemorySettings(): Settings {
+    val canonicalPreset = me.rerere.rikkahub.data.memory.MemoryPreset.fromNameOrDefault(memory.preset).name
+    val normalizedMemory = memory.copy(
+        preset = canonicalPreset,
+        curiosityWebLookups = memory.curiosityWebLookups && memory.proactiveCuriosity,
+    )
+    return if (normalizedMemory == memory) this else copy(memory = normalizedMemory)
+}
+
 @Serializable
 enum class ProviderViewMode {
     LIST,

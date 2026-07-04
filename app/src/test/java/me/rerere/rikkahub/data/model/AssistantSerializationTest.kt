@@ -109,6 +109,36 @@ class AssistantSerializationTest {
     }
 
     @Test
+    fun legacyMemoryFlagsStayDeserializable() {
+        // §12.3: the pre-v34 per-assistant memory flags are retired on the graph path but must remain
+        // deserializable so old serialized settings (and a downgrade) never crash. A blob that still
+        // carries them must load, keeping their values, alongside the new graph-memory fields.
+        val assistant = JsonInstant.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000015",
+              "name": "Legacy Consolidation Assistant",
+              "enableMemory": true,
+              "useRagMemoryRetrieval": false,
+              "enableRecentChatsReference": true,
+              "enableMemoryConsolidation": true,
+              "ragSimilarityThreshold": 0.6,
+              "ragLimit": 25
+            }
+            """.trimIndent()
+        )
+
+        assertTrue(assistant.enableMemory)
+        assertFalse(assistant.useRagMemoryRetrieval)
+        assertTrue(assistant.enableRecentChatsReference)
+        assertTrue(assistant.enableMemoryConsolidation)
+        assertEquals(0.6f, assistant.ragSimilarityThreshold, 0.0001f)
+        assertEquals(25, assistant.ragLimit)
+        // New graph-memory field defaults apply for old blobs that never had them.
+        assertTrue(assistant.useSharedUserMemory)
+    }
+
+    @Test
     fun notificationsLocalToolRoundTripsThroughSerialization() {
         val assistant = Assistant(
             id = Uuid.parse("00000000-0000-0000-0000-000000000012"),

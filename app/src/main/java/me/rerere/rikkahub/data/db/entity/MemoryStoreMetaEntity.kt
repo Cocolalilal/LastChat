@@ -27,6 +27,13 @@ object MemoryStoreMetaKeys {
     const val PROFILE_HASH_PREFIX = "profile_hash_" // + assistantId
     const val PROFILE_JSON_PREFIX = "profile_json_" // + assistantId → serialized CharacterMemoryProfile
 
+    /**
+     * Embedding model id the backfill worker (§12.4) last brought the store into alignment with.
+     * When the configured embedding model differs from this, a backfill is (re)enqueued to re-embed
+     * mismatched/missing-vector ACTIVE nodes while FTS covers the gap.
+     */
+    const val EMBED_BACKFILL_MODEL = "embed_backfill_model"
+
     /** Current semantic schema version of the memory store. Bump for in-store migrations. */
     const val CURRENT_STORE_SCHEMA_VERSION = "1"
 }

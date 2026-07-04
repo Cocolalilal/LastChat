@@ -1,9 +1,12 @@
 package me.rerere.baselineprofile
 
+import androidx.benchmark.macro.MacrobenchmarkScope
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,14 +58,33 @@ class BaselineProfileGenerator {
             pressHome()
             startActivityAndWait()
 
-            // TODO Write more interactions to optimize advanced journeys of your app.
-            // For example:
-            // 1. Wait until the content is asynchronously loaded
-            // 2. Scroll the feed content
-            // 3. Navigate to detail screen
+            // Memory Center graph-canvas journey (§10.2 / P6). The custom force-directed Canvas
+            // (MemoryGraphLayout / MemoryForceLayout / MemoryGraphBuilder / MemoryGraphTab) is the
+            // heaviest first-render surface added in P4b, so we want its classes in the profile.
+            // Best-effort and fully guarded: the graph tab is only reachable when the memory system
+            // is enabled, so a failure here must never abort startup-profile generation.
+            exerciseMemoryGraphCanvas()
+        }
+    }
 
-            // Check UiAutomator documentation for more information how to interact with the app.
-            // https://d.android.com/training/testing/other-components/ui-automator
+    /**
+     * Best-effort navigation into Memory Center → Graph tab so the graph-canvas classes are AOT
+     * captured. Wrapped in [runCatching]: if the memory feature is off, the labels differ on a given
+     * build, or the surface is unreachable, we silently fall back to the startup-only profile.
+     */
+    private fun MacrobenchmarkScope.exerciseMemoryGraphCanvas() {
+        runCatching {
+            // The "Graph" primary tab inside Memory Center (see MemoryCenterPage.MemoryTab.GRAPH).
+            val graphTab = device.wait(Until.findObject(By.text("Graph")), 3_000) ?: return@runCatching
+            graphTab.click()
+            device.wait(Until.hasObject(By.text("Overview")), 2_000)
+            // Let the off-thread force layout settle and freeze, then pan/zoom the pure graphicsLayer
+            // transform a couple of times to exercise the gesture/render path.
+            repeat(2) {
+                device.waitForIdle(1_000)
+                val bounds = device.displayHeight
+                device.swipe(device.displayWidth / 2, bounds / 3, device.displayWidth / 2, bounds * 2 / 3, 8)
+            }
         }
     }
 }
