@@ -143,8 +143,8 @@ fun MemoryActivityBall(
                     items(state.freshRows, key = { it.id }) { row ->
                         Surface(
                             onClick = { onOpenMemory(firstNodeId(row.nodeIds)) },
-                            shape = AppShapes.CardSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            shape = AppShapes.CardLarge,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

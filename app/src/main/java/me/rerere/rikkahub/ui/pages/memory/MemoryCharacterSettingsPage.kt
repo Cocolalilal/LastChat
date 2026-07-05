@@ -87,7 +87,7 @@ fun MemoryCharacterSettingsPage(assistantId: String) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Memory
-            Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     FormItem(
                         label = { Text("Memory") },
@@ -111,7 +111,7 @@ fun MemoryCharacterSettingsPage(assistantId: String) {
             }
 
             // Cost preset
-            Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FormItem(
                         label = { Text("Cost preset") },
@@ -135,7 +135,7 @@ fun MemoryCharacterSettingsPage(assistantId: String) {
             }
 
             // Behaviour
-            Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     FormItem(
                         label = { Text("Time awareness") },

@@ -5,28 +5,25 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,10 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -51,18 +48,19 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.db.entity.MemNodeType
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -75,13 +73,17 @@ import kotlin.math.abs
 import kotlin.uuid.Uuid
 
 /**
- * Full-screen live memory graph (§10.2 + user's graph brief). Live, smooth, interactive: pan/zoom is
- * a pure `graphicsLayer` transform (60fps, never recomputes positions), LOD labels fade in on
- * zoom-in with a hard no-overlap guarantee ([MemoryGraphLabels]), node radius is driven by relation
- * count, and tapping a node enters focus mode (camera flies to it, everything else fades away); a
- * second tap opens the node sheet. Back gesture / recenter / pinch-out exit focus. Reduced motion
- * collapses to a pre-settled static layout with no camera animation.
+ * Full-screen live memory graph, per the brief:
+ *  - pan/zoom is a pure `graphicsLayer` transform over a frozen frame — always smooth;
+ *  - labels appear **smoothly** as you zoom in, with a hard zero-overlap guarantee
+ *    ([MemoryGraphLabels] picks the visible set; each label cross-fades in/out individually);
+ *  - node size ∝ relation count (degree; see [MemoryGraphBuilder.radiusFor]);
+ *  - tap a node → focus mode: the camera flies to it, its neighborhood stays, the rest fades out;
+ *    back gesture / pinch-out / recenter fades everything back; tapping the focused node again
+ *    opens the same node sheet used everywhere else;
+ *  - reduced motion → pre-settled static layout, no camera or fade animation.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryGraphPage(assistantId: String?, focusNodeId: String? = null) {
     val vm: MemoryVM = koinViewModel(
@@ -91,13 +93,32 @@ fun MemoryGraphPage(assistantId: String?, focusNodeId: String? = null) {
     val navController = LocalNavController.current
     val input by vm.graphInput.collectAsStateWithLifecycle()
     val nodeDetail by vm.nodeDetail.collectAsStateWithLifecycle()
+    val assistant by vm.assistant.collectAsStateWithLifecycle()
 
-    MemoryGraphCanvas(
-        input = input,
-        initialFocusId = focusNodeId,
-        onOpenNode = { vm.openNode(it) },
-        onTogglePin = { id, pinned -> vm.setPinned(id, pinned) },
-    )
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (vm.isGlobal) "Shared memory graph"
+                        else (assistant?.name?.takeIf { it.isNotBlank() } ?: "Memory graph"),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = { BackButton() },
+            )
+        },
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            MemoryGraphCanvas(
+                input = input,
+                initialFocusId = focusNodeId,
+                onOpenNode = { vm.openNode(it) },
+                onTogglePin = { id, pinned -> vm.setPinned(id, pinned) },
+            )
+        }
+    }
 
     nodeDetail?.let { detail ->
         MemoryNodeSheet(
@@ -148,9 +169,11 @@ private fun MemoryGraphCanvas(
     var render by remember { mutableStateOf<GraphRender?>(null) }
     var fitRequest by remember { mutableStateOf(FitRequest(0, animate = false)) }
 
-    // Focus mode: the tapped node's neighborhood stays lit; everything else fades to near-transparent.
+    // Focus mode.
     var focusedId by remember { mutableStateOf(initialFocusId) }
     val focusAnim = remember { Animatable(if (initialFocusId != null) 1f else 0f) }
+    // Cumulative pinch since focus entry — zooming out noticeably exits focus.
+    var focusPinchAccum by remember { mutableFloatStateOf(1f) }
 
     val labels = remember(render?.prepared, labelStyle) {
         render?.prepared?.nodes?.map { textMeasurer.measure(it.label, labelStyle) } ?: emptyList()
@@ -164,7 +187,6 @@ private fun MemoryGraphCanvas(
         else p.nodes.indices.filter { p.nodes[it].id in matchIds }.toIntArray()
     }
 
-    // Focus neighborhood (1-hop) computed from the prepared edges when focus changes.
     val focusNeighbors = remember(render?.prepared, focusedId) {
         val p = render?.prepared ?: return@remember null
         val fid = focusedId ?: return@remember null
@@ -179,7 +201,7 @@ private fun MemoryGraphCanvas(
         set
     }
 
-    // ---- build + simulate off-thread ----
+    // ---- build + simulate off-thread; swap whole immutable frames ----
     LaunchedEffect(input, expandedIds, forcedIds, reduceMotion) {
         val prepared = withContext(Dispatchers.Default) {
             MemoryGraphBuilder.build(input, expandedIds = expandedIds, forcedIds = forcedIds)
@@ -236,9 +258,9 @@ private fun MemoryGraphCanvas(
         flyCamera(cameraScale, cameraOffset, fit, animate = !reduceMotion) { s, o -> cameraScale = s; cameraOffset = o }
     }
 
-    // Focus entry: fly the camera to center the focused node and light its neighborhood.
     fun enterFocus(id: String) {
         focusedId = id
+        focusPinchAccum = 1f
         val r = render ?: return
         val idx = r.prepared.nodes.indexOfFirst { it.id == id }
         if (idx < 0) return
@@ -257,6 +279,7 @@ private fun MemoryGraphCanvas(
     }
 
     fun exitFocus() {
+        if (focusedId == null) return
         focusedId = null
         scope.launch {
             focusAnim.animateTo(0f, if (reduceMotion) tween(0) else tween(240, easing = FastOutSlowInEasing))
@@ -265,7 +288,6 @@ private fun MemoryGraphCanvas(
         fitRequest = FitRequest(fitRequest.token + 1, animate = !reduceMotion)
     }
 
-    // Initial focus (deep link) once the render is available.
     LaunchedEffect(render?.prepared, initialFocusId) {
         val fid = initialFocusId ?: return@LaunchedEffect
         val r = render ?: return@LaunchedEffect
@@ -274,21 +296,23 @@ private fun MemoryGraphCanvas(
 
     BackHandler(enabled = focusedId != null) { exitFocus() }
 
-    // ---- LOD labels: recompute only when scale changes >2% or the frame swaps ----
-    var visibleLabels by remember { mutableStateOf(IntArray(0)) }
-    LaunchedEffect(render?.prepared) {
+    // ---- LOD labels: zero-overlap target set + smooth per-label cross-fade ----
+    var labelTargets by remember { mutableStateOf(IntArray(0)) }
+    LaunchedEffect(render?.prepared, labelSizes) {
         val r = render ?: return@LaunchedEffect
-        if (r.prepared.isEmpty) { visibleLabels = IntArray(0); return@LaunchedEffect }
+        if (r.prepared.isEmpty || labelSizes.isEmpty()) { labelTargets = IntArray(0); return@LaunchedEffect }
         var lastScale = -1f
         snapshotFlow { Triple(cameraScale, cameraOffset, r.positions) }
             .collect { (scale, offset, positions) ->
-                if (abs(scale - lastScale) < lastScale * 0.02f && lastScale > 0f) return@collect
+                // Overlap is pan-invariant (labels are constant screen size), so recompute only on
+                // meaningful zoom changes or a new frame.
+                if (lastScale > 0f && abs(scale - lastScale) < lastScale * 0.02f) return@collect
                 lastScale = scale
                 val n = r.prepared.nodes.size
                 val xs = FloatArray(n) { positions[it * 2] }
                 val ys = FloatArray(n) { positions[it * 2 + 1] }
                 val radii = FloatArray(n) { r.prepared.nodes[it].radius }
-                visibleLabels = withContext(Dispatchers.Default) {
+                labelTargets = withContext(Dispatchers.Default) {
                     MemoryGraphLabels.computeVisibleLabels(
                         worldX = xs, worldY = ys, radii = radii, labelSizes = labelSizes,
                         scale = scale, offsetX = offset.x, offsetY = offset.y,
@@ -296,6 +320,45 @@ private fun MemoryGraphCanvas(
                     )
                 }
             }
+    }
+
+    // Per-label alphas eased toward the target set (~150ms); whole-array swaps drive draw only.
+    var labelAlphas by remember { mutableStateOf(FloatArray(0)) }
+    LaunchedEffect(render?.prepared, reduceMotion) {
+        val r = render ?: return@LaunchedEffect
+        val n = r.prepared.nodes.size
+        if (labelAlphas.size != n) labelAlphas = FloatArray(n)
+        snapshotFlow { labelTargets }.collectLatest { targets ->
+            val targetSet = targets.toHashSet()
+            if (reduceMotion) {
+                labelAlphas = FloatArray(n) { if (it in targetSet) 1f else 0f }
+                return@collectLatest
+            }
+            var animating = true
+            var lastNanos = 0L
+            while (isActive && animating) {
+                withFrameNanos { nanos ->
+                    val dt = if (lastNanos == 0L) 16_000_000L else (nanos - lastNanos)
+                    lastNanos = nanos
+                    val step = (dt / 1_000_000f) / LABEL_FADE_MS // fraction of the fade per frame
+                    val current = labelAlphas
+                    val next = FloatArray(n)
+                    animating = false
+                    for (i in 0 until n) {
+                        val target = if (i in targetSet) 1f else 0f
+                        val cur = current.getOrElse(i) { 0f }
+                        val v = when {
+                            cur < target -> (cur + step).coerceAtMost(target)
+                            cur > target -> (cur - step).coerceAtLeast(target)
+                            else -> cur
+                        }
+                        next[i] = v
+                        if (abs(v - target) > 0.001f) animating = true
+                    }
+                    labelAlphas = next
+                }
+            }
+        }
     }
 
     val prepared = render?.prepared
@@ -320,18 +383,21 @@ private fun MemoryGraphCanvas(
                             cameraOffset = centroid - (centroid - cameraOffset) * (newScale / oldScale) + pan
                             cameraScale = newScale
                             userInteracted = true
-                            // Pinch-out while focused exits focus mode.
-                            if (focusedId != null && zoom < 0.985f) exitFocus()
+                            if (focusedId != null) {
+                                focusPinchAccum *= zoom
+                                if (focusPinchAccum < FOCUS_EXIT_ZOOM) exitFocus()
+                            }
                         }
                     }
                     .pointerInput(render) {
                         detectTapGestures(
                             onTap = { p ->
-                                val hit = hitTest(render, p, cameraOffset, cameraScale) ?: return@detectTapGestures
+                                val hit = hitTest(render, p, cameraOffset, cameraScale)
+                                if (hit == null) return@detectTapGestures
                                 haptics.perform(HapticPattern.Pop)
                                 userInteracted = true
                                 if (focusedId == hit.id) {
-                                    onOpenNode(hit.id) // second tap on the focused node → detail sheet
+                                    onOpenNode(hit.id) // second tap on the focused node → node sheet
                                 } else {
                                     expandedIds = expandedIds + hit.id
                                     enterFocus(hit.id)
@@ -345,7 +411,7 @@ private fun MemoryGraphCanvas(
                         )
                     },
             ) {
-                // Node/edge layer under the graphicsLayer transform (frozen frame, no recompute on pan/zoom).
+                // Node/edge layer: frozen frame under the camera transform (60fps pan/zoom).
                 Canvas(
                     Modifier
                         .fillMaxSize()
@@ -361,14 +427,15 @@ private fun MemoryGraphCanvas(
                     drawGraphNodes(r, highlightIndices, palette, focusNeighbors, focusAnim.value)
                 }
 
-                // Label overlay: NOT under graphicsLayer; reads camera state in the draw phase so only
-                // the draw is invalidated (never composition), and labels stay constant screen size.
+                // Label overlay: screen space (constant text size). Reads camera + alphas in the
+                // draw phase only, so pan/zoom never recomposes.
                 Canvas(Modifier.fillMaxSize()) {
                     val r = render ?: return@Canvas
-                    drawGraphLabels(r, labels, visibleLabels, palette, cameraScale, cameraOffset, focusNeighbors, focusAnim.value)
+                    drawGraphLabels(r, labels, labelAlphas, palette, cameraScale, cameraOffset, focusNeighbors, focusAnim.value)
                 }
             }
 
+            // Search pill, app style.
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -382,27 +449,24 @@ private fun MemoryGraphCanvas(
                 shape = AppShapes.SearchField,
             )
 
-            IconButton(
+            // Round teal recenter (exits focus first), matching the app's round FABs.
+            FloatingActionButton(
                 onClick = {
+                    haptics.perform(HapticPattern.Pop)
                     if (focusedId != null) exitFocus() else {
                         userInteracted = false
                         fitRequest = FitRequest(fitRequest.token + 1, animate = !reduceMotion)
                     }
                 },
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(50)),
+                    .padding(16.dp),
             ) {
                 Icon(Icons.Rounded.CenterFocusStrong, contentDescription = "Re-center")
             }
-
-            GraphLegend(
-                truncated = prepared?.truncated ?: 0,
-                shown = prepared?.nodes?.size ?: 0,
-                palette = palette,
-                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-            )
         }
     }
 }
@@ -413,8 +477,10 @@ private const val STEP_BATCH = 6
 private const val FRAME_DELAY_MS = 16L
 private const val MATCH_ZOOM_CAP = 1.8f
 private const val FOCUS_ZOOM_CAP = 2.2f
+private const val FOCUS_EXIT_ZOOM = 0.8f
 private const val TOUCH_SLOP_PX = 14f
 private const val LABEL_MIN_SCREEN_RADIUS = 13f
+private const val LABEL_FADE_MS = 150f
 private const val FOCUS_DIM_ALPHA = 0.07f
 
 // ─────────────────────────────── drawing ───────────────────────────────
@@ -471,11 +537,11 @@ private fun DrawScope.drawGraphNodes(
     }
 }
 
-/** Labels are drawn in screen space (constant size) so they never overlap and zoom reveals more. */
+/** Labels drawn in screen space (constant size) with individual cross-fade alphas — never overlap. */
 private fun DrawScope.drawGraphLabels(
     render: GraphRender,
     labels: List<TextLayoutResult>,
-    visible: IntArray,
+    alphas: FloatArray,
     palette: GraphPalette,
     scale: Float,
     offset: Offset,
@@ -485,13 +551,14 @@ private fun DrawScope.drawGraphLabels(
     val pos = render.positions
     val nodes = render.prepared.nodes
     if (pos.size < nodes.size * 2) return
-    for (i in visible) {
-        if (i >= nodes.size) continue
+    for (i in nodes.indices) {
+        val fade = alphas.getOrElse(i) { 0f }
+        if (fade <= 0.01f) continue
         val n = nodes[i]
         val layout = labels.getOrNull(i) ?: continue
         val nodeScreenX = pos[i * 2] * scale + offset.x
         val nodeScreenY = pos[i * 2 + 1] * scale + offset.y
-        var alpha = if (n.faded) 0.55f else 0.95f
+        var alpha = (if (n.faded) 0.55f else 0.95f) * fade
         if (focusNeighbors != null && focusT > 0f) {
             val lit = i in focusNeighbors
             val target = if (lit) alpha else FOCUS_DIM_ALPHA * alpha
@@ -507,7 +574,7 @@ private fun DrawScope.drawGraphLabels(
 
 // ─────────────────────────────── camera / hit-test ───────────────────────────────
 
-private fun hitTest(render: GraphRender?, screen: Offset, offset: Offset, scale: Float): me.rerere.rikkahub.ui.pages.memory.GraphVizNode? {
+private fun hitTest(render: GraphRender?, screen: Offset, offset: Offset, scale: Float): GraphVizNode? {
     val r = render ?: return null
     val nodes = r.prepared.nodes
     val pos = r.positions
@@ -548,34 +615,4 @@ private fun matchesGraphQuery(node: MemoryNodeEntity, query: String): Boolean {
     val q = query.trim()
     if (q.isEmpty()) return false
     return node.content.contains(q, ignoreCase = true) || (node.displayLabel?.contains(q, ignoreCase = true) == true)
-}
-
-// ─────────────────────────────── legend ───────────────────────────────
-
-@Composable
-private fun GraphLegend(truncated: Int, shown: Int, palette: GraphPalette, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = AppShapes.CardSmall,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LegendDot("Entity", palette.entity)
-                LegendDot("Frame", palette.frame)
-                LegendDot("Episode", palette.episode)
-                LegendDot("Fact", palette.fact)
-            }
-            val hint = if (truncated > 0) "$shown shown · $truncated more — tap to explore" else "$shown memories"
-            Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun LegendDot(label: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(10.dp).background(color, RoundedCornerShape(50)))
-        Text(label, style = MaterialTheme.typography.labelSmall)
-    }
 }

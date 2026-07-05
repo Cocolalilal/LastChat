@@ -53,10 +53,9 @@ fun MemoryGraphPreviewCard(
         }
     }
 
-    Surface(
+    // Mockup: near-black card with a subtle outline ring (GraphCard), not a tonal surface.
+    GraphCard(
         onClick = onClick,
-        shape = AppShapes.CardLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
         modifier = modifier.fillMaxWidth(),
     ) {
         Box(Modifier.height(200.dp).padding(16.dp)) {

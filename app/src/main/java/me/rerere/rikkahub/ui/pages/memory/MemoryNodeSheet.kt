@@ -107,24 +107,25 @@ fun MemoryNodeSheet(
                 if (node.sensitivity == MemSensitivity.SENSITIVE) SmallTag("sensitive")
             }
 
-            // Title / content
-            Text(node.content, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            // Title / content — long memories read as body text, not a bold wall.
+            if (node.content.length <= MEMORY_TITLE_MAX_CHARS) {
+                Text(node.content, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            } else {
+                Text(node.content, style = MaterialTheme.typography.bodyLarge)
+            }
 
-            // Focused static mini-graph: this node + its direct relations.
+            // Focused static mini-graph: this node + its direct relations (black + outline, mockup).
             if (detail.edges.isNotEmpty()) {
-                Surface(
-                    shape = AppShapes.CardLarge,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    onClick = { onOpenGraph?.invoke(node.id) },
-                    enabled = onOpenGraph != null,
+                GraphCard(
+                    onClick = onOpenGraph?.let { open -> { open(node.id) } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     NodeMiniGraph(
                         detail = detail,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(160.dp)
-                            .padding(12.dp),
+                            .height(170.dp)
+                            .padding(16.dp),
                     )
                 }
             }
@@ -142,11 +143,11 @@ fun MemoryNodeSheet(
                 )
             }
 
-            // Sources card — quoted provenance excerpts
+            // Sources card — quoted provenance excerpts on the teal container (mockup).
             if (detail.provenance.any { it.excerpt.isNotBlank() || it.rationale.isNotBlank() }) {
                 Surface(
-                    shape = AppShapes.CardMedium,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    shape = AppShapes.CardLarge,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -159,7 +160,7 @@ fun MemoryNodeSheet(
                                     Modifier
                                         .width(3.dp)
                                         .height(if (p.excerpt.isNotBlank()) 36.dp else 20.dp)
-                                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f), AppShapes.Tag)
+                                        .background(MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.55f), AppShapes.Tag)
                                 )
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     if (p.excerpt.isNotBlank()) {
@@ -246,7 +247,7 @@ fun MemoryNodeSheet(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Rounded.PushPin,
                     label = if (node.pinned) "Unpin" else "Pin",
-                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
                     content = if (node.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     onClick = { haptics.perform(HapticPattern.Pop); onPin() },
                 )
@@ -254,7 +255,7 @@ fun MemoryNodeSheet(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Rounded.Edit,
                     label = "Edit",
-                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
                     content = MaterialTheme.colorScheme.onSurface,
                     onClick = { haptics.perform(HapticPattern.Pop); editing = true },
                 )
@@ -295,11 +296,11 @@ fun MemoryNodeSheet(
     }
 }
 
-/** Non-provisional status shown as a plain small label chip in the header row. */
+/** Non-provisional status shown as a plain small label pill in the header row. */
 @Composable
 private fun StatusLabelChip(status: Int) {
-    Surface(shape = AppShapes.Chip, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Box(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) { StatusLabel(status) }
+    Surface(shape = AppShapes.Tag, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Box(Modifier.padding(horizontal = 10.dp, vertical = 3.dp)) { StatusLabel(status) }
     }
 }
 
@@ -312,14 +313,15 @@ private fun ActionBlock(
     content: Color,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, shape = AppShapes.CardSmall, color = container, modifier = modifier) {
+    // Big square-ish blocks per the sketch's bottom action row.
+    Surface(onClick = onClick, shape = AppShapes.CardMedium, color = container, modifier = modifier) {
         Column(
-            Modifier.padding(vertical = 14.dp),
+            Modifier.padding(vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(icon, null, tint = content, modifier = Modifier.size(20.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, color = content)
+            Icon(icon, null, tint = content, modifier = Modifier.size(22.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = content)
         }
     }
 }

@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -127,29 +128,54 @@ fun MemoryBrowsePage(assistantId: String?) {
                 singleLine = true,
                 shape = AppShapes.SearchField,
             )
+            // Filter pills styled like the tags they filter for (mockup chip row), not generic chips.
             FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(
+                FilterPill(
+                    label = "Recently forgotten",
                     selected = recentlyForgotten,
+                    container = MaterialTheme.colorScheme.errorContainer,
+                    content = MaterialTheme.colorScheme.onErrorContainer,
                     onClick = { haptics.perform(HapticPattern.Tick); recentlyForgotten = !recentlyForgotten },
-                    label = { Text("Recently forgotten") },
-                    leadingIcon = { Icon(Icons.Rounded.Restore, null, modifier = Modifier.size(18.dp)) },
                 )
                 if (!recentlyForgotten) {
                     listOf(
                         MemNodeType.FACT to "Facts", MemNodeType.EPISODE to "Episodes", MemNodeType.ENTITY to "Entities",
                         MemNodeType.HABIT to "Habits", MemNodeType.GOAL to "Goals",
                     ).forEach { (t, label) ->
-                        FilterChip(selected = typeFilter == t, onClick = { typeFilter = if (typeFilter == t) null else t }, label = { Text(label) })
+                        val (container, content) = nodeTypeChipColors(t)
+                        FilterPill(
+                            label = label,
+                            selected = typeFilter == t,
+                            container = container,
+                            content = content,
+                            onClick = { haptics.perform(HapticPattern.Tick); typeFilter = if (typeFilter == t) null else t },
+                        )
                     }
-                    listOf(
-                        MemStatus.PROVISIONAL to "Provisional", MemStatus.DORMANT to "Dormant", MemStatus.CLOSED to "Closed",
-                    ).forEach { (s, label) ->
-                        FilterChip(selected = statusFilter == s, onClick = { statusFilter = if (statusFilter == s) null else s }, label = { Text(label) })
+                    FilterPill(
+                        label = "Provisional",
+                        selected = statusFilter == MemStatus.PROVISIONAL,
+                        container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        content = MaterialTheme.colorScheme.onSurfaceVariant,
+                        dashed = true,
+                        onClick = {
+                            haptics.perform(HapticPattern.Tick)
+                            statusFilter = if (statusFilter == MemStatus.PROVISIONAL) null else MemStatus.PROVISIONAL
+                        },
+                    )
+                    listOf(MemStatus.DORMANT to "Dormant", MemStatus.CLOSED to "Closed").forEach { (s, label) ->
+                        FilterPill(
+                            label = label,
+                            selected = statusFilter == s,
+                            container = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            content = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = { haptics.perform(HapticPattern.Tick); statusFilter = if (statusFilter == s) null else s },
+                        )
                     }
                 }
             }
@@ -214,7 +240,36 @@ fun MemoryBrowsePage(assistantId: String?) {
     }
 }
 
-/** Redesigned list row: chip row (type / Literal-Roleplay / dashed Provisional / pin), preview, age. */
+/** A selectable pill styled like the tag it filters for; unselected = quiet outline of that style. */
+@Composable
+private fun FilterPill(
+    label: String,
+    selected: Boolean,
+    container: androidx.compose.ui.graphics.Color,
+    content: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+    dashed: Boolean = false,
+) {
+    val baseModifier = if (dashed && !selected) {
+        Modifier.dashedBorder(MaterialTheme.colorScheme.outline, cornerRadius = 50.dp)
+    } else Modifier
+    Surface(
+        onClick = onClick,
+        shape = AppShapes.Tag,
+        color = if (selected) container else androidx.compose.ui.graphics.Color.Transparent,
+        border = if (selected || dashed) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = baseModifier,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            color = if (selected) content else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Mockup list row: title first (bold only when short), tag pills below. */
 @Composable
 fun MemoryListItem(
     node: MemoryNodeEntity,
@@ -222,17 +277,21 @@ fun MemoryListItem(
     onClick: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    Surface(onClick = onClick, shape = AppShapes.CardSmall, color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Surface(onClick = onClick, shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val text = node.displayLabel ?: node.content
+                if (text.length <= MEMORY_TITLE_MAX_CHARS) {
+                    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     TypeChip(node.type)
                     if (node.type != MemNodeType.ENTITY) RealityChip(node.reality)
                     if (node.status == MemStatus.PROVISIONAL) ProvisionalChip() else if (node.status != MemStatus.ACTIVE) StatusLabel(node.status)
                     if (node.pinned) Icon(Icons.Rounded.PushPin, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                 }
-                Text(node.displayLabel ?: node.content, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Text(fuzzyMemoryAgeLabel(node.recordedAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (showRestore) {
                 IconButton(onClick = onRestore) { Icon(Icons.Rounded.Restore, "Restore", tint = MaterialTheme.colorScheme.primary) }

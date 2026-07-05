@@ -171,10 +171,16 @@ fun MemoryCharacterPage(assistantId: String, focusNodeId: String? = null) {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                haptics.perform(HapticPattern.Pop)
-                navController.navigate(Screen.MemoryCharacterSettings(assistantId))
-            }) {
+            // Round teal gear per the mockups (bottom-right).
+            FloatingActionButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    navController.navigate(Screen.MemoryCharacterSettings(assistantId))
+                },
+                shape = androidx.compose.foundation.shape.CircleShape,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
                 Icon(Icons.Rounded.Settings, contentDescription = "Memory settings")
             }
         },
@@ -190,7 +196,7 @@ fun MemoryCharacterPage(assistantId: String, focusNodeId: String? = null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatCard(Modifier.weight(1f), live.size.toString(), "memories", MaterialTheme.colorScheme.primary)
                     StatCard(Modifier.weight(1f), thisWeek.toString(), "this week", MaterialTheme.colorScheme.tertiary)
-                    StatCard(Modifier.weight(1f), entityCount.toString(), "entities", MaterialTheme.colorScheme.secondary)
+                    StatCard(Modifier.weight(1f), entityCount.toString(), "entities", MaterialTheme.colorScheme.tertiary)
                 }
             }
 
@@ -221,16 +227,22 @@ fun MemoryCharacterPage(assistantId: String, focusNodeId: String? = null) {
                 items(adjudicationPending.take(3), key = { "adj_${it.id}" }) { node ->
                     Surface(
                         onClick = { vm.openNode(node.id) },
-                        shape = AppShapes.CardSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.CardLarge,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("Possibly duplicated or corrected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
-                                Text(node.content, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text("Possibly duplicated or corrected", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Text(
+                                    node.content,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
                 }
@@ -247,15 +259,23 @@ fun MemoryCharacterPage(assistantId: String, focusNodeId: String? = null) {
                             navController.navigate(Screen.MemoryGraph(assistantId = assistantId))
                         },
                     )
-                    FilledTonalButton(
+                    // Quiet full-width pill (mockup), not a tonal button.
+                    Surface(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
                             navController.navigate(Screen.MemoryBrowse(assistantId = assistantId))
                         },
                         shape = AppShapes.ButtonPill,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Browse all memories")
+                        Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                "Browse all memories",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
             }
@@ -348,11 +368,12 @@ private fun MemoryStatusPill(
         }
         else -> "Rebuilding memory · $embedPercent%"
     }
+    // Solid teal pill per the mockup ("Rebuilding memory · 83%").
     Surface(
         onClick = onOpenModels,
         enabled = modelsMissing,
         shape = AppShapes.ButtonPill,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {
@@ -360,7 +381,7 @@ private fun MemoryStatusPill(
                 Text(
                     label,
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
             if (importing && importProgress != null) {
@@ -375,12 +396,15 @@ private fun MemoryStatusPill(
 
 @Composable
 private fun PromotionSuggestionCard(row: MemoryActivityEntity, onAccept: () -> Unit, onDismiss: () -> Unit) {
-    Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+    // Teal suggestion cards per the mockup.
+    Surface(shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(row.summary.ifBlank { "Share this with all characters?" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text(row.summary.ifBlank { "Share this with all characters?" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAccept, colors = ButtonDefaults.buttonColors()) { Text("Share") }
-                TextButton(onClick = onDismiss) { Text("Keep private") }
+                Button(onClick = onAccept, shape = AppShapes.ButtonPill) { Text("Share") }
+                TextButton(onClick = onDismiss, shape = AppShapes.ButtonPill) {
+                    Text("Keep private", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
             }
         }
     }
@@ -397,11 +421,11 @@ private fun ExpandableActivityCard(row: MemoryActivityEntity, onOpenNode: (Strin
     }
     Surface(
         onClick = { expanded = !expanded },
-        shape = AppShapes.CardSmall,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = AppShapes.CardLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(14.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(activityIcon(row.kind), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Text(
@@ -421,7 +445,7 @@ private fun ExpandableActivityCard(row: MemoryActivityEntity, onOpenNode: (Strin
                         nodeIds.take(4).forEach { id ->
                             Surface(
                                 onClick = { onOpenNode(id) },
-                                shape = AppShapes.Chip,
+                                shape = AppShapes.Tag,
                                 color = MaterialTheme.colorScheme.secondaryContainer,
                             ) {
                                 Text(

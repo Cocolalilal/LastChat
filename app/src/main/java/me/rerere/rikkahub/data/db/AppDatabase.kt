@@ -60,7 +60,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class, MemoryNodeEntity::class, MemoryEdgeEntity::class, MemoryProvenanceEntity::class, MemoryNodeFtsEntity::class, MemoryActivityEntity::class, MemoryBudgetLedgerEntity::class, MemoryStoreMetaEntity::class, MemoryConversationStateEntity::class],
-    version = 34,
+    version = 35,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -92,6 +92,9 @@ import kotlinx.serialization.json.put
         // 31->32 is manual migration (MIGRATION_31_32) - adds embedding_blob columns
         // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
         AutoMigration(from = 33, to = 34), // adds graph memory store tables (memory_node/edge/provenance/fts/activity/budget_ledger/store_meta/conversation_state)
+        // 34->35 is manual migration (MIGRATION_34_35) - rebuilds the graph memory tables to the
+        // canonical schema (the v34 memory entities were revised in place across P1..P6 without a
+        // version bump, so early-tester devices carry a stale v34 shape that Room rejects at open).
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -132,7 +135,93 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
-        
+
+        /** True if [table] currently has a column named [column] (PRAGMA table_info). */
+        private fun columnExists(db: SupportSQLiteDatabase, table: String, column: String): Boolean {
+            db.query("PRAGMA table_info(`$table`)").use { c ->
+                val nameIdx = c.getColumnIndex("name")
+                if (nameIdx < 0) return false
+                while (c.moveToNext()) {
+                    if (c.getString(nameIdx) == column) return true
+                }
+            }
+            return false
+        }
+
+        /**
+         * 34 -> 35: rebuild the graph-memory tables to the canonical v35 schema.
+         *
+         * The v34 memory entities were revised in place across the P1..P6 phases (e.g. the
+         * `adjudication_pending` column and the message-id watermark) *without* bumping the DB
+         * version, so early-tester devices carry an older "v34" table shape than the one the current
+         * code validates against — Room aborts at open with an identity-hash mismatch.
+         *
+         * These tables are entirely disposable: memories re-import from the legacy CORE/EPISODIC
+         * store on next run (MemoryImportWorker), so dropping and recreating them is safe and lands
+         * *any* prior v34 variant on the exact schema Room expects. Non-memory tables are untouched.
+         */
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 34 to 35 (rebuild graph memory tables)")
+
+                // An early graph-memory build added `extracted_up_to_index` to ConversationEntity;
+                // a later build moved the watermark to `memory_conversation_state` and removed the
+                // column. Devices that ran the early build still carry the stray column, so drop it
+                // by rebuilding the table (SQLite DROP COLUMN isn't reliable across Android versions).
+                // Only rebuild when the column is actually present — no-op for aligned devices.
+                if (columnExists(db, "ConversationEntity", "extracted_up_to_index")) {
+                    Log.i(TAG, "migrate 34->35: dropping stray ConversationEntity.extracted_up_to_index")
+                    db.execSQL("DROP TABLE IF EXISTS `ConversationEntity_new`")
+                    db.execSQL("CREATE TABLE `ConversationEntity_new` (`id` TEXT NOT NULL, `assistant_id` TEXT NOT NULL DEFAULT '0950e2dc-9bd5-4801-afa3-aa887aa36b4e', `title` TEXT NOT NULL, `nodes` TEXT NOT NULL, `create_at` INTEGER NOT NULL, `update_at` INTEGER NOT NULL, `truncate_index` INTEGER NOT NULL DEFAULT -1, `suggestions` TEXT NOT NULL DEFAULT '[]', `is_pinned` INTEGER NOT NULL DEFAULT 0, `is_consolidated` INTEGER NOT NULL DEFAULT 0, `enabled_mode_ids` TEXT NOT NULL DEFAULT '[]', `enabled_lorebook_ids` TEXT NOT NULL DEFAULT '', `context_summary` TEXT NOT NULL DEFAULT '', `context_summary_up_to_index` INTEGER NOT NULL DEFAULT -1, `last_prune_time` INTEGER NOT NULL DEFAULT 0, `last_prune_message_count` INTEGER NOT NULL DEFAULT 0, `last_refresh_time` INTEGER NOT NULL DEFAULT 0, `is_fork` INTEGER NOT NULL DEFAULT 0, `last_model_id` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))")
+                    db.execSQL(
+                        "INSERT INTO `ConversationEntity_new` (`id`, `assistant_id`, `title`, `nodes`, `create_at`, `update_at`, `truncate_index`, `suggestions`, `is_pinned`, `is_consolidated`, `enabled_mode_ids`, `enabled_lorebook_ids`, `context_summary`, `context_summary_up_to_index`, `last_prune_time`, `last_prune_message_count`, `last_refresh_time`, `is_fork`, `last_model_id`) " +
+                            "SELECT `id`, `assistant_id`, `title`, `nodes`, `create_at`, `update_at`, `truncate_index`, `suggestions`, `is_pinned`, `is_consolidated`, `enabled_mode_ids`, `enabled_lorebook_ids`, `context_summary`, `context_summary_up_to_index`, `last_prune_time`, `last_prune_message_count`, `last_refresh_time`, `is_fork`, `last_model_id` FROM `ConversationEntity`"
+                    )
+                    db.execSQL("DROP TABLE `ConversationEntity`")
+                    db.execSQL("ALTER TABLE `ConversationEntity_new` RENAME TO `ConversationEntity`")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_ConversationEntity_assistant_id_is_pinned_update_at` ON `ConversationEntity` (`assistant_id`, `is_pinned`, `update_at`)")
+                }
+
+                // Drop in any order — no FKs between them; edges/provenance reference nodes only by id.
+                for (t in listOf(
+                    "memory_node", "memory_edge", "memory_provenance", "memory_node_fts",
+                    "memory_activity", "memory_budget_ledger", "memory_store_meta",
+                    "memory_conversation_state",
+                )) {
+                    db.execSQL("DROP TABLE IF EXISTS `$t`")
+                }
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_node` (`id` TEXT NOT NULL, `type` INTEGER NOT NULL, `scope` INTEGER NOT NULL, `owner_assistant_id` TEXT, `content` TEXT NOT NULL, `display_label` TEXT, `importance` INTEGER NOT NULL, `confidence` REAL NOT NULL, `sensitivity` INTEGER NOT NULL, `status` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, `reality` INTEGER NOT NULL, `event_start` INTEGER, `event_end` INTEGER, `valid_from` INTEGER, `valid_until` INTEGER, `recorded_at` INTEGER NOT NULL, `last_confirmed_at` INTEGER NOT NULL, `last_accessed_at` INTEGER NOT NULL, `times_reinforced` INTEGER NOT NULL, `times_retrieved` INTEGER NOT NULL, `source` INTEGER NOT NULL, `embedding_blob` BLOB, `embedding_model_id` TEXT, `extra` TEXT NOT NULL, `adjudication_pending` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_node_scope_status` ON `memory_node` (`scope`, `status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_node_owner_assistant_id_status_type` ON `memory_node` (`owner_assistant_id`, `status`, `type`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_node_type_status` ON `memory_node` (`type`, `status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_node_embedding_model_id` ON `memory_node` (`embedding_model_id`)")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_edge` (`id` TEXT NOT NULL, `from_id` TEXT NOT NULL, `to_id` TEXT NOT NULL, `type` INTEGER NOT NULL, `weight` REAL NOT NULL, `created_at` INTEGER NOT NULL, `extra` TEXT NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_edge_from_id` ON `memory_edge` (`from_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_edge_to_id` ON `memory_edge` (`to_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_edge_type_from_id` ON `memory_edge` (`type`, `from_id`)")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_provenance` (`id` TEXT NOT NULL, `node_id` TEXT NOT NULL, `conversation_id` TEXT, `message_ids` TEXT NOT NULL, `excerpt` TEXT NOT NULL, `rationale` TEXT NOT NULL, `created_at` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_provenance_node_id` ON `memory_provenance` (`node_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_provenance_conversation_id` ON `memory_provenance` (`conversation_id`)")
+
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `memory_node_fts` USING FTS4(`node_id` TEXT NOT NULL, `content` TEXT NOT NULL, `display_label` TEXT NOT NULL)")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_activity` (`id` TEXT NOT NULL, `at` INTEGER NOT NULL, `scope` INTEGER NOT NULL, `owner_assistant_id` TEXT, `kind` TEXT NOT NULL, `summary` TEXT NOT NULL, `node_ids` TEXT NOT NULL, `conversation_id` TEXT, `state` TEXT, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_activity_scope_at` ON `memory_activity` (`scope`, `at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_activity_owner_assistant_id_at` ON `memory_activity` (`owner_assistant_id`, `at`)")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_budget_ledger` (`day` INTEGER NOT NULL, `category` TEXT NOT NULL, `calls` INTEGER NOT NULL, `tokens_in` INTEGER NOT NULL, `tokens_out` INTEGER NOT NULL, PRIMARY KEY(`day`, `category`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_budget_ledger_day` ON `memory_budget_ledger` (`day`)")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_store_meta` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
+
+                db.execSQL("CREATE TABLE IF NOT EXISTS `memory_conversation_state` (`conversation_id` TEXT NOT NULL, `assistant_id` TEXT NOT NULL, `extracted_up_to_message_id` TEXT, `last_extract_at` INTEGER NOT NULL, PRIMARY KEY(`conversation_id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memory_conversation_state_assistant_id` ON `memory_conversation_state` (`assistant_id`)")
+            }
+        }
+
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 11 to 12")

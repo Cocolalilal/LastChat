@@ -70,46 +70,70 @@ fun Modifier.dashedBorder(color: Color, cornerRadius: Dp, strokeWidth: Dp = 1.dp
     )
 }
 
+/**
+ * Container/on-container color pair for a node type chip. Matched to the mockups: Episode is the
+ * teal (secondary) chip, entities purple-ish (tertiary), frames primary, facts neutral. The pair
+ * keeps the text readable on every container (never onSecondaryContainer over another container —
+ * that's what produced black-on-dark text).
+ */
+@Composable
+fun nodeTypeChipColors(type: Int): Pair<Color, Color> = when (type) {
+    MemNodeType.EPISODE, MemNodeType.GIST ->
+        MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+    MemNodeType.ENTITY, MemNodeType.HABIT ->
+        MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+    MemNodeType.FRAME, MemNodeType.GOAL ->
+        MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+    else -> // FACT and anything unknown
+        MaterialTheme.colorScheme.surfaceContainerHigh to MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/** One pill-shaped tag, sized like the mockups' chip row. */
+@Composable
+fun MemoryPill(
+    label: String,
+    container: Color,
+    content: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(shape = AppShapes.Tag, color = container, modifier = modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+            color = content,
+        )
+    }
+}
+
 @Composable
 fun TypeChip(type: Int) {
     val label = MemoryNodeTypeCodec.toString(type).lowercase().replaceFirstChar { it.uppercase() }
-    Surface(shape = AppShapes.Chip, color = nodeTypeColor(type)) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-    }
+    val (container, content) = nodeTypeChipColors(type)
+    MemoryPill(label, container, content)
 }
 
-/** "Literal" for real-world memories, "Roleplay" for fiction — the sketch's second chip. */
+/** "Literal" for real-world memories, "Roleplay" for fiction — the sketch's second (gray) chip. */
 @Composable
 fun RealityChip(reality: Int) {
     val roleplay = reality == MemReality.FICTION
-    Surface(
-        shape = AppShapes.Chip,
-        color = if (roleplay) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Text(
-            if (roleplay) "Roleplay" else "Literal",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            color = if (roleplay) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    MemoryPill(
+        label = if (roleplay) "Roleplay" else "Literal",
+        container = if (roleplay) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        content = if (roleplay) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
-/** Dashed-outline "Provisional" chip (the sketch's dashed tag) — only shown while unconfirmed. */
+/** Dashed-outline "( Provisional )" chip per the sketch — only shown while unconfirmed. */
 @Composable
 fun ProvisionalChip() {
     Box(
-        modifier = Modifier.dashedBorder(MaterialTheme.colorScheme.outline, cornerRadius = 12.dp),
+        modifier = Modifier.dashedBorder(MaterialTheme.colorScheme.outline, cornerRadius = 50.dp),
     ) {
         Text(
             "Provisional",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -117,14 +141,7 @@ fun ProvisionalChip() {
 
 @Composable
 fun SmallTag(text: String) {
-    Surface(shape = AppShapes.Chip, color = MaterialTheme.colorScheme.primaryContainer) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-    }
+    MemoryPill(text, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
 }
 
 @Composable
@@ -141,10 +158,42 @@ fun StatusLabel(status: Int) {
     Text(label, style = MaterialTheme.typography.labelSmall, color = color)
 }
 
+/** Accent-colored section title ("Memories", "Activity", "Suggestions") per the mockups. */
 @Composable
 fun SectionHeader(text: String) {
-    Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
+
+/**
+ * The mockups' "Memories" graph container: near-black fill with a subtle outline ring, large
+ * corner radius. Used by both the minimized preview and the node sheet's focused mini-graph.
+ */
+@Composable
+fun GraphCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val shape = AppShapes.CardLarge
+    val color = MaterialTheme.colorScheme.surface
+    val border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    if (onClick != null) {
+        Surface(onClick = onClick, shape = shape, color = color, border = border, modifier = modifier) { content() }
+    } else {
+        Surface(shape = shape, color = color, border = border, modifier = modifier) { content() }
+    }
+}
+
+/**
+ * Threshold for switching a memory's text from bold-title styling to plain body styling — long
+ * memories set in bold read like a wall of shouting; short ones are titles.
+ */
+const val MEMORY_TITLE_MAX_CHARS = 80
 
 @Composable
 fun EmptyHint(text: String) {
@@ -153,22 +202,18 @@ fun EmptyHint(text: String) {
     }
 }
 
+/** Mockup stat card: large rounded square, big accent number over a quiet lowercase label. */
 @Composable
 fun StatCard(modifier: Modifier, value: String, label: String, color: Color) {
-    Surface(modifier = modifier, shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
-        Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = color)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    Surface(modifier = modifier, shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(
+            Modifier.padding(vertical = 20.dp, horizontal = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(value, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = color)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
-}
-
-@Composable
-fun nodeTypeColor(type: Int): Color = when (type) {
-    MemNodeType.ENTITY -> MaterialTheme.colorScheme.secondaryContainer
-    MemNodeType.EPISODE -> MaterialTheme.colorScheme.tertiaryContainer
-    MemNodeType.FRAME -> MaterialTheme.colorScheme.primaryContainer
-    else -> MaterialTheme.colorScheme.surfaceContainerHigh
 }
 
 fun edgeTypeLabel(type: Int): String = when (type) {
