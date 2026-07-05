@@ -3,7 +3,7 @@
 <div align="center">
   <img src="docs/LastChat_icon.png" alt="LastChat Icon" width="128" height="128" />
   <br><br>
-  <a href="https://www.buymeacoffee.com/cocolalilal"><img src="https://img.buymeacoffee.com/button-api/?text=Support%20the%20development&emoji=%F0%9F%98%8E&slug=cocolalilal&button_colour=005143&font_colour=ffffff&font_family=Bree&outline_colour=ffffff&coffee_colour=FFDD00" alt="Buy Me A Coffee" width="220" /></a> 
+  <a href="https://www.buymeacoffee.com/cocolalilal"><img src="https://img.buymeacoffee.com/button-api/?text=Support%20the%20development!&slug=cocolalilal&button_colour=005143&font_colour=ffffff&font_family=Bree&outline_colour=ffffff&coffee_colour=FFDD00" alt="Buy Me A Coffee" width="220" /></a> 
   <br><br>
 </div>
 
