@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.ui.pages.memory
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -31,7 +33,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -43,42 +47,78 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.db.entity.MemNodeType
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.theme.AppShapes
-import kotlin.math.min
+import me.rerere.rikkahub.utils.navigateToChatPage
+import org.koin.androidx.compose.koinViewModel
+import org.koin.core.parameter.parametersOf
+import kotlin.math.abs
+import kotlin.uuid.Uuid
 
 /**
- * The Memory Center **Graph** tab (§10.2). A custom Compose `Canvas` force-directed view — no heavy
- * graph dependency. See [MemoryGraphLayout] for the design rationale and the §14 open-question-2
- * decision (custom simulation, bounded neighborhood + freeze, so pan/zoom stays 60fps on mid-range
- * ARM; reduced-motion collapses to a pre-settled static layout).
- *
- * Pipeline: [MemoryGraphBuilder] selects a bounded neighborhood → [MemoryForceLayout] settles it off
- * the UI thread → whole immutable position frames are swapped into one Compose state (never a
- * `SnapshotStateList` drawn per element) → the frozen frame is rendered once, and pan/zoom is a pure
- * `graphicsLayer` transform that neither recomputes positions nor recomposes the tree.
+ * Full-screen live memory graph (§10.2 + user's graph brief). Live, smooth, interactive: pan/zoom is
+ * a pure `graphicsLayer` transform (60fps, never recomputes positions), LOD labels fade in on
+ * zoom-in with a hard no-overlap guarantee ([MemoryGraphLabels]), node radius is driven by relation
+ * count, and tapping a node enters focus mode (camera flies to it, everything else fades away); a
+ * second tap opens the node sheet. Back gesture / recenter / pinch-out exit focus. Reduced motion
+ * collapses to a pre-settled static layout with no camera animation.
  */
 @Composable
-fun MemoryGraphTab(
+fun MemoryGraphPage(assistantId: String?, focusNodeId: String? = null) {
+    val vm: MemoryVM = koinViewModel(
+        key = "graph_${assistantId ?: "global"}",
+        parameters = { parametersOf(assistantId ?: "") },
+    )
+    val navController = LocalNavController.current
+    val input by vm.graphInput.collectAsStateWithLifecycle()
+    val nodeDetail by vm.nodeDetail.collectAsStateWithLifecycle()
+
+    MemoryGraphCanvas(
+        input = input,
+        initialFocusId = focusNodeId,
+        onOpenNode = { vm.openNode(it) },
+        onTogglePin = { id, pinned -> vm.setPinned(id, pinned) },
+    )
+
+    nodeDetail?.let { detail ->
+        MemoryNodeSheet(
+            detail = detail,
+            onDismiss = { vm.closeNode() },
+            onPin = { vm.setPinned(detail.node.id, !detail.node.pinned) },
+            onForget = { vm.forget(detail.node.id); vm.closeNode() },
+            onRestore = { vm.restore(detail.node.id) },
+            onEdit = { vm.edit(detail.node.id, it) },
+            onOpenConversation = { convId ->
+                runCatching { Uuid.parse(convId) }.getOrNull()?.let { navigateToChatPage(navController, chatId = it) }
+            },
+            onOpenGraph = null, // already on the graph
+        )
+    }
+}
+
+@Composable
+private fun MemoryGraphCanvas(
     input: MemoryGraphInput,
+    initialFocusId: String?,
     onOpenNode: (String) -> Unit,
     onTogglePin: (nodeId: String, pinned: Boolean) -> Unit,
 ) {
@@ -87,11 +127,11 @@ fun MemoryGraphTab(
     val palette = rememberGraphPalette()
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = remember { TextStyle(fontSize = 11.sp) }
+    val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
     var expandedIds by remember { mutableStateOf(emptySet<String>()) }
 
-    // Pinned ids and current search matches come from the live input (the source of truth).
     val pinnedIds = remember(input) { input.nodes.filter { it.pinned }.mapTo(HashSet()) { it.id } }
     val matchIds = remember(input, query) {
         if (query.isBlank()) emptySet()
@@ -103,26 +143,43 @@ fun MemoryGraphTab(
     var cameraOffset by remember { mutableStateOf(Offset.Zero) }
     var cameraScale by remember { mutableFloatStateOf(1f) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    // Set once the user pans/zooms/taps, so an auto-fit on settle doesn't yank the view back.
     var userInteracted by remember(input, expandedIds) { mutableStateOf(false) }
 
-    // The rendered frame. Whole-object swaps only — obeys the no-SnapshotStateList-to-draw rule.
     var render by remember { mutableStateOf<GraphRender?>(null) }
-    // Bumped to request an auto-fit; consumed by the fit effect once the canvas has a size.
     var fitRequest by remember { mutableStateOf(FitRequest(0, animate = false)) }
 
-    // Cache measured labels per prepared graph (positions animate; text does not).
+    // Focus mode: the tapped node's neighborhood stays lit; everything else fades to near-transparent.
+    var focusedId by remember { mutableStateOf(initialFocusId) }
+    val focusAnim = remember { Animatable(if (initialFocusId != null) 1f else 0f) }
+
     val labels = remember(render?.prepared, labelStyle) {
         render?.prepared?.nodes?.map { textMeasurer.measure(it.label, labelStyle) } ?: emptyList()
     }
-    // Indices of the current search matches within the prepared graph (for the highlight ring).
+    val labelSizes = remember(labels) {
+        labels.map { MemoryGraphLabels.LabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
+    }
     val highlightIndices = remember(render?.prepared, matchIds) {
         val p = render?.prepared ?: return@remember IntArray(0)
         if (matchIds.isEmpty()) IntArray(0)
         else p.nodes.indices.filter { p.nodes[it].id in matchIds }.toIntArray()
     }
 
-    // Build + simulate off-thread whenever the graph shape or the neighborhood selection changes.
+    // Focus neighborhood (1-hop) computed from the prepared edges when focus changes.
+    val focusNeighbors = remember(render?.prepared, focusedId) {
+        val p = render?.prepared ?: return@remember null
+        val fid = focusedId ?: return@remember null
+        val focusIdx = p.nodes.indexOfFirst { it.id == fid }
+        if (focusIdx < 0) return@remember null
+        val set = HashSet<Int>()
+        set.add(focusIdx)
+        for (e in p.edges) {
+            if (e.from == focusIdx) set.add(e.to)
+            if (e.to == focusIdx) set.add(e.from)
+        }
+        set
+    }
+
+    // ---- build + simulate off-thread ----
     LaunchedEffect(input, expandedIds, forcedIds, reduceMotion) {
         val prepared = withContext(Dispatchers.Default) {
             MemoryGraphBuilder.build(input, expandedIds = expandedIds, forcedIds = forcedIds)
@@ -133,7 +190,7 @@ fun MemoryGraphTab(
         }
         val sim = withContext(Dispatchers.Default) { MemoryForceLayout(prepared) }
         render = GraphRender(prepared, sim.snapshot(), frozen = false)
-        fitRequest = FitRequest(fitRequest.token + 1, animate = false) // fit the seeded spread
+        fitRequest = FitRequest(fitRequest.token + 1, animate = false)
 
         if (reduceMotion) {
             val frame = withContext(Dispatchers.Default) { sim.runToSettle(); sim.snapshot() }
@@ -153,11 +210,12 @@ fun MemoryGraphTab(
             if (!settled) delay(FRAME_DELAY_MS)
         }
         render = GraphRender(prepared, sim.snapshot(), frozen = true)
-        // Re-fit on freeze unless the user has taken over the camera or is searching.
-        if (!userInteracted && query.isBlank()) fitRequest = FitRequest(fitRequest.token + 1, animate = true)
+        if (!userInteracted && query.isBlank() && focusedId == null) {
+            fitRequest = FitRequest(fitRequest.token + 1, animate = true)
+        }
     }
 
-    // Auto-fit (initial spread / settle) once the canvas size is known.
+    // Auto-fit once the canvas size is known.
     LaunchedEffect(fitRequest, canvasSize) {
         val r = render ?: return@LaunchedEffect
         if (r.prepared.isEmpty || canvasSize == IntSize.Zero) return@LaunchedEffect
@@ -167,18 +225,77 @@ fun MemoryGraphTab(
         }
     }
 
-    // Search "flies the camera" to frame the matches.
+    // Search flies the camera to frame matches.
     LaunchedEffect(matchIds, render?.frozen, canvasSize) {
         if (matchIds.isEmpty() || canvasSize == IntSize.Zero) return@LaunchedEffect
         val r = render ?: return@LaunchedEffect
         val indices = r.prepared.nodes.indices.filter { r.prepared.nodes[it].id in matchIds }
         if (indices.isEmpty()) return@LaunchedEffect
-        val fit = computeFit(r.positions, r.prepared, canvasSize, onlyIndices = indices, zoomCap = MATCH_ZOOM_CAP)
-            ?: return@LaunchedEffect
-        userInteracted = true // the fly-to is an intentional camera move; don't let settle override it
-        flyCamera(cameraScale, cameraOffset, fit, animate = !reduceMotion) { s, o ->
-            cameraScale = s; cameraOffset = o
+        val fit = computeFit(r.positions, r.prepared, canvasSize, onlyIndices = indices, zoomCap = MATCH_ZOOM_CAP) ?: return@LaunchedEffect
+        userInteracted = true
+        flyCamera(cameraScale, cameraOffset, fit, animate = !reduceMotion) { s, o -> cameraScale = s; cameraOffset = o }
+    }
+
+    // Focus entry: fly the camera to center the focused node and light its neighborhood.
+    fun enterFocus(id: String) {
+        focusedId = id
+        val r = render ?: return
+        val idx = r.prepared.nodes.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val neighborIdx = buildList {
+            add(idx)
+            for (e in r.prepared.edges) {
+                if (e.from == idx) add(e.to)
+                if (e.to == idx) add(e.from)
+            }
         }
+        scope.launch {
+            val fit = computeFit(r.positions, r.prepared, canvasSize, onlyIndices = neighborIdx, zoomCap = FOCUS_ZOOM_CAP)
+            if (fit != null) flyCamera(cameraScale, cameraOffset, fit, animate = !reduceMotion) { s, o -> cameraScale = s; cameraOffset = o }
+            focusAnim.animateTo(1f, if (reduceMotion) tween(0) else tween(280, easing = FastOutSlowInEasing))
+        }
+    }
+
+    fun exitFocus() {
+        focusedId = null
+        scope.launch {
+            focusAnim.animateTo(0f, if (reduceMotion) tween(0) else tween(240, easing = FastOutSlowInEasing))
+        }
+        userInteracted = false
+        fitRequest = FitRequest(fitRequest.token + 1, animate = !reduceMotion)
+    }
+
+    // Initial focus (deep link) once the render is available.
+    LaunchedEffect(render?.prepared, initialFocusId) {
+        val fid = initialFocusId ?: return@LaunchedEffect
+        val r = render ?: return@LaunchedEffect
+        if (r.prepared.nodes.any { it.id == fid }) enterFocus(fid)
+    }
+
+    BackHandler(enabled = focusedId != null) { exitFocus() }
+
+    // ---- LOD labels: recompute only when scale changes >2% or the frame swaps ----
+    var visibleLabels by remember { mutableStateOf(IntArray(0)) }
+    LaunchedEffect(render?.prepared) {
+        val r = render ?: return@LaunchedEffect
+        if (r.prepared.isEmpty) { visibleLabels = IntArray(0); return@LaunchedEffect }
+        var lastScale = -1f
+        snapshotFlow { Triple(cameraScale, cameraOffset, r.positions) }
+            .collect { (scale, offset, positions) ->
+                if (abs(scale - lastScale) < lastScale * 0.02f && lastScale > 0f) return@collect
+                lastScale = scale
+                val n = r.prepared.nodes.size
+                val xs = FloatArray(n) { positions[it * 2] }
+                val ys = FloatArray(n) { positions[it * 2 + 1] }
+                val radii = FloatArray(n) { r.prepared.nodes[it].radius }
+                visibleLabels = withContext(Dispatchers.Default) {
+                    MemoryGraphLabels.computeVisibleLabels(
+                        worldX = xs, worldY = ys, radii = radii, labelSizes = labelSizes,
+                        scale = scale, offsetX = offset.x, offsetY = offset.y,
+                        minScreenRadiusPx = LABEL_MIN_SCREEN_RADIUS,
+                    )
+                }
+            }
     }
 
     val prepared = render?.prepared
@@ -192,37 +309,33 @@ fun MemoryGraphTab(
                 )
             }
         } else {
-            val a11y = remember(prepared) {
-                prepared?.let {
-                    "Memory graph, ${it.nodes.size} memories and ${it.edges.size} connections shown. " +
-                        "Use the Browse tab for a screen-reader-friendly list."
-                } ?: "Memory graph loading"
-            }
-            // Gesture surface: the Box's layout bounds are NOT transformed by the child Canvas's
-            // graphicsLayer, so pointer coordinates stay in screen space and the inverse transform below is exact.
             Box(
                 Modifier
                     .fillMaxSize()
                     .onSizeChanged { canvasSize = it }
-                    .semantics { contentDescription = a11y }
                     .pointerInput(Unit) {
                         detectTransformGestures { centroid, pan, zoom, _ ->
                             val oldScale = cameraScale
-                            val newScale = (oldScale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                            // Keep the world point under the centroid fixed while applying pan.
+                            val newScale = (oldScale * zoom).coerceIn(GRAPH_MIN_SCALE, GRAPH_MAX_SCALE)
                             cameraOffset = centroid - (centroid - cameraOffset) * (newScale / oldScale) + pan
                             cameraScale = newScale
                             userInteracted = true
+                            // Pinch-out while focused exits focus mode.
+                            if (focusedId != null && zoom < 0.985f) exitFocus()
                         }
                     }
-                    .pointerInput(Unit) {
+                    .pointerInput(render) {
                         detectTapGestures(
                             onTap = { p ->
                                 val hit = hitTest(render, p, cameraOffset, cameraScale) ?: return@detectTapGestures
                                 haptics.perform(HapticPattern.Pop)
                                 userInteracted = true
-                                expandedIds = expandedIds + hit.id // grow the neighborhood
-                                onOpenNode(hit.id)                  // + open the P4a detail sheet
+                                if (focusedId == hit.id) {
+                                    onOpenNode(hit.id) // second tap on the focused node → detail sheet
+                                } else {
+                                    expandedIds = expandedIds + hit.id
+                                    enterFocus(hit.id)
+                                }
                             },
                             onLongPress = { p ->
                                 val hit = hitTest(render, p, cameraOffset, cameraScale) ?: return@detectTapGestures
@@ -232,7 +345,8 @@ fun MemoryGraphTab(
                         )
                     },
             ) {
-                androidx.compose.foundation.Canvas(
+                // Node/edge layer under the graphicsLayer transform (frozen frame, no recompute on pan/zoom).
+                Canvas(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -244,11 +358,17 @@ fun MemoryGraphTab(
                         },
                 ) {
                     val r = render ?: return@Canvas
-                    drawGraph(r, labels, highlightIndices, palette)
+                    drawGraphNodes(r, highlightIndices, palette, focusNeighbors, focusAnim.value)
+                }
+
+                // Label overlay: NOT under graphicsLayer; reads camera state in the draw phase so only
+                // the draw is invalidated (never composition), and labels stay constant screen size.
+                Canvas(Modifier.fillMaxSize()) {
+                    val r = render ?: return@Canvas
+                    drawGraphLabels(r, labels, visibleLabels, palette, cameraScale, cameraOffset, focusNeighbors, focusAnim.value)
                 }
             }
 
-            // Search field
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -262,11 +382,12 @@ fun MemoryGraphTab(
                 shape = AppShapes.SearchField,
             )
 
-            // Re-center button.
             IconButton(
                 onClick = {
-                    userInteracted = false
-                    fitRequest = FitRequest(fitRequest.token + 1, animate = !reduceMotion)
+                    if (focusedId != null) exitFocus() else {
+                        userInteracted = false
+                        fitRequest = FitRequest(fitRequest.token + 1, animate = !reduceMotion)
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -276,7 +397,6 @@ fun MemoryGraphTab(
                 Icon(Icons.Rounded.CenterFocusStrong, contentDescription = "Re-center")
             }
 
-            // Legend + truncation hint.
             GraphLegend(
                 truncated = prepared?.truncated ?: 0,
                 shown = prepared?.nodes?.size ?: 0,
@@ -287,43 +407,45 @@ fun MemoryGraphTab(
     }
 }
 
-// ─────────────────────────────── render frame ───────────────────────────────
-
-/** Immutable position frame handed from the simulation to the UI. */
-class GraphRender(
-    val prepared: PreparedGraph,
-    val positions: FloatArray,
-    val frozen: Boolean = false,
-)
-
 private data class FitRequest(val token: Int, val animate: Boolean)
 
 private const val STEP_BATCH = 6
 private const val FRAME_DELAY_MS = 16L
-private const val MIN_SCALE = 0.2f
-private const val MAX_SCALE = 3.5f
 private const val MATCH_ZOOM_CAP = 1.8f
-private const val FIT_MARGIN_PX = 80f
+private const val FOCUS_ZOOM_CAP = 2.2f
 private const val TOUCH_SLOP_PX = 14f
+private const val LABEL_MIN_SCREEN_RADIUS = 13f
+private const val FOCUS_DIM_ALPHA = 0.07f
 
 // ─────────────────────────────── drawing ───────────────────────────────
 
-private fun DrawScope.drawGraph(
+private fun DrawScope.drawGraphNodes(
     render: GraphRender,
-    labels: List<TextLayoutResult>,
     highlightIndices: IntArray,
     palette: GraphPalette,
+    focusNeighbors: Set<Int>?,
+    focusT: Float,
 ) {
     val pos = render.positions
     val nodes = render.prepared.nodes
     if (pos.size < nodes.size * 2) return
 
-    // Edges under nodes.
+    fun dim(index: Int, base: Float): Float {
+        if (focusNeighbors == null || focusT <= 0f) return base
+        val lit = index in focusNeighbors
+        val target = if (lit) base else FOCUS_DIM_ALPHA * base
+        return base + (target - base) * focusT
+    }
+
     for (e in render.prepared.edges) {
         val a = e.from; val b = e.to
         val faded = nodes[a].faded || nodes[b].faded
+        val base = if (faded) 0.12f else 0.22f
+        val edgeLit = focusNeighbors == null || (a in focusNeighbors && b in focusNeighbors)
+        val alpha = if (focusNeighbors == null || focusT <= 0f) base
+        else base + ((if (edgeLit) base else FOCUS_DIM_ALPHA * base) - base) * focusT
         drawLine(
-            color = palette.edge.copy(alpha = if (faded) 0.12f else 0.22f),
+            color = palette.edge.copy(alpha = alpha),
             start = Offset(pos[a * 2], pos[a * 2 + 1]),
             end = Offset(pos[b * 2], pos[b * 2 + 1]),
             strokeWidth = 1.5f,
@@ -331,15 +453,12 @@ private fun DrawScope.drawGraph(
     }
 
     val highlight = HashSet<Int>(highlightIndices.size * 2).apply { highlightIndices.forEach { add(it) } }
-
     for (i in nodes.indices) {
         val n = nodes[i]
         val center = Offset(pos[i * 2], pos[i * 2 + 1])
-        val alpha = if (n.faded) 0.42f else 1f
-        drawCircle(color = graphFill(n.type, palette).copy(alpha = alpha), radius = n.radius, center = center)
-
+        val alpha = dim(i, if (n.faded) 0.42f else 1f)
+        drawCircle(color = graphNodeFill(n.type, palette).copy(alpha = alpha), radius = n.radius, center = center)
         if (n.provisional) {
-            // Dashed ring = provisional belief awaiting confirmation.
             drawCircle(
                 color = palette.onSurface.copy(alpha = 0.55f * alpha),
                 radius = n.radius + 2.5f,
@@ -347,47 +466,54 @@ private fun DrawScope.drawGraph(
                 style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))),
             )
         }
-        if (n.pinned) {
-            drawCircle(color = palette.pin, radius = n.radius + 3.5f, center = center, style = Stroke(width = 2f))
-        }
-        if (i in highlight) {
-            drawCircle(color = palette.highlight, radius = n.radius + 6f, center = center, style = Stroke(width = 2.5f))
-        }
+        if (n.pinned) drawCircle(color = palette.pin.copy(alpha = dim(i, 1f)), radius = n.radius + 3.5f, center = center, style = Stroke(width = 2f))
+        if (i in highlight) drawCircle(color = palette.highlight, radius = n.radius + 6f, center = center, style = Stroke(width = 2.5f))
     }
+}
 
-    // Labels last. Scale-independent (hubs + matches only) so zoom never triggers a redraw.
-    for (i in nodes.indices) {
+/** Labels are drawn in screen space (constant size) so they never overlap and zoom reveals more. */
+private fun DrawScope.drawGraphLabels(
+    render: GraphRender,
+    labels: List<TextLayoutResult>,
+    visible: IntArray,
+    palette: GraphPalette,
+    scale: Float,
+    offset: Offset,
+    focusNeighbors: Set<Int>?,
+    focusT: Float,
+) {
+    val pos = render.positions
+    val nodes = render.prepared.nodes
+    if (pos.size < nodes.size * 2) return
+    for (i in visible) {
+        if (i >= nodes.size) continue
         val n = nodes[i]
-        if (!n.isHub && i !in highlight) continue
         val layout = labels.getOrNull(i) ?: continue
-        val center = Offset(pos[i * 2], pos[i * 2 + 1])
+        val nodeScreenX = pos[i * 2] * scale + offset.x
+        val nodeScreenY = pos[i * 2 + 1] * scale + offset.y
+        var alpha = if (n.faded) 0.55f else 0.95f
+        if (focusNeighbors != null && focusT > 0f) {
+            val lit = i in focusNeighbors
+            val target = if (lit) alpha else FOCUS_DIM_ALPHA * alpha
+            alpha += (target - alpha) * focusT
+        }
         drawText(
             textLayoutResult = layout,
-            color = palette.onSurface.copy(alpha = if (n.faded) 0.5f else 0.95f),
-            topLeft = Offset(center.x - layout.size.width / 2f, center.y + n.radius + 2f),
+            color = palette.onSurface.copy(alpha = alpha),
+            topLeft = Offset(nodeScreenX - layout.size.width / 2f, nodeScreenY + n.radius * scale + 2f),
         )
     }
 }
 
-private fun graphFill(type: Int, p: GraphPalette): Color = when (type) {
-    MemNodeType.ENTITY -> p.entity
-    MemNodeType.FRAME -> p.frame
-    MemNodeType.EPISODE, MemNodeType.GIST -> p.episode
-    MemNodeType.GOAL -> p.frame
-    MemNodeType.HABIT -> p.entity
-    else -> p.fact // FACT and anything else
-}
+// ─────────────────────────────── camera / hit-test ───────────────────────────────
 
-// ─────────────────────────────── camera / fit / hit-test ───────────────────────────────
-
-private fun hitTest(render: GraphRender?, screen: Offset, offset: Offset, scale: Float): GraphVizNode? {
+private fun hitTest(render: GraphRender?, screen: Offset, offset: Offset, scale: Float): me.rerere.rikkahub.ui.pages.memory.GraphVizNode? {
     val r = render ?: return null
     val nodes = r.prepared.nodes
     val pos = r.positions
     if (pos.size < nodes.size * 2) return null
     val world = (screen - offset) / scale
     val slop = TOUCH_SLOP_PX / scale
-    // Reverse order = topmost first.
     for (i in nodes.indices.reversed()) {
         val dx = world.x - pos[i * 2]
         val dy = world.y - pos[i * 2 + 1]
@@ -395,38 +521,6 @@ private fun hitTest(render: GraphRender?, screen: Offset, offset: Offset, scale:
         if (dx * dx + dy * dy <= reach * reach) return nodes[i]
     }
     return null
-}
-
-private data class CameraFit(val scale: Float, val offset: Offset)
-
-private fun computeFit(
-    positions: FloatArray,
-    prepared: PreparedGraph,
-    size: IntSize,
-    onlyIndices: List<Int>? = null,
-    zoomCap: Float = 1.6f,
-): CameraFit? {
-    val nodes = prepared.nodes
-    if (nodes.isEmpty() || size == IntSize.Zero || positions.size < nodes.size * 2) return null
-    val indices = onlyIndices ?: nodes.indices.toList()
-    if (indices.isEmpty()) return null
-    var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE
-    var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-    for (i in indices) {
-        val x = positions[i * 2]; val y = positions[i * 2 + 1]; val rad = nodes[i].radius
-        if (x - rad < minX) minX = x - rad
-        if (y - rad < minY) minY = y - rad
-        if (x + rad > maxX) maxX = x + rad
-        if (y + rad > maxY) maxY = y + rad
-    }
-    val worldW = (maxX - minX).coerceAtLeast(1f)
-    val worldH = (maxY - minY).coerceAtLeast(1f)
-    val availW = (size.width - 2 * FIT_MARGIN_PX).coerceAtLeast(1f)
-    val availH = (size.height - 2 * FIT_MARGIN_PX).coerceAtLeast(1f)
-    val scale = min(availW / worldW, availH / worldH).coerceIn(MIN_SCALE, zoomCap)
-    val cx = (minX + maxX) / 2f
-    val cy = (minY + maxY) / 2f
-    return CameraFit(scale, Offset(size.width / 2f - cx * scale, size.height / 2f - cy * scale))
 }
 
 private suspend fun flyCamera(
@@ -453,39 +547,10 @@ private suspend fun flyCamera(
 private fun matchesGraphQuery(node: MemoryNodeEntity, query: String): Boolean {
     val q = query.trim()
     if (q.isEmpty()) return false
-    return node.content.contains(q, ignoreCase = true) ||
-        (node.displayLabel?.contains(q, ignoreCase = true) == true)
+    return node.content.contains(q, ignoreCase = true) || (node.displayLabel?.contains(q, ignoreCase = true) == true)
 }
 
-// ─────────────────────────────── palette & legend ───────────────────────────────
-
-data class GraphPalette(
-    val entity: Color,
-    val frame: Color,
-    val episode: Color,
-    val fact: Color,
-    val edge: Color,
-    val highlight: Color,
-    val pin: Color,
-    val onSurface: Color,
-)
-
-@Composable
-private fun rememberGraphPalette(): GraphPalette {
-    val cs = MaterialTheme.colorScheme
-    return remember(cs) {
-        GraphPalette(
-            entity = cs.secondaryContainer,
-            frame = cs.primaryContainer,
-            episode = cs.tertiaryContainer,
-            fact = cs.surfaceContainerHighest,
-            edge = cs.onSurfaceVariant,
-            highlight = cs.primary,
-            pin = cs.primary,
-            onSurface = cs.onSurface,
-        )
-    }
-}
+// ─────────────────────────────── legend ───────────────────────────────
 
 @Composable
 private fun GraphLegend(truncated: Int, shown: Int, palette: GraphPalette, modifier: Modifier = Modifier) {

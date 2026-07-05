@@ -54,8 +54,8 @@ class CharacterProfileGenerator(
         val storedHash = storeMetaDao.get(MemoryStoreMetaKeys.PROFILE_HASH_PREFIX + assistantId)
         if (storedHash == hash) return getCached(assistantId)
 
-        val caps = MemoryBudgetCaps.of(MemoryPreset.fromNameOrDefault(settings.memory.preset))
-        val resolved = resolveModel(settings, assistant) ?: return getCached(assistantId)
+        val caps = MemoryBudgetCaps.of(MemoryModels.presetFor(settings, assistantId))
+        val resolved = MemoryModels.resolveConsolidation(settings) ?: return getCached(assistantId)
         if (!budget.tryConsumeDaily(MemBudgetCategory.PROFILE, caps.profileDailyCap)) return getCached(assistantId)
 
         val prompt = CharacterProfileLogic.buildPrompt(assistant.name, assistant.systemPrompt)
@@ -85,14 +85,4 @@ class CharacterProfileGenerator(
         return response.choices.firstOrNull()?.message?.toContentText().orEmpty()
     }
 
-    private fun resolveModel(settings: Settings, assistant: Assistant): Pair<ProviderSetting, Model>? {
-        val modelId = assistant.memoryModelId
-            ?: settings.memory.memoryModelId
-            ?: settings.summarizerModelId
-            ?: assistant.backgroundModelId
-            ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: return null
-        val provider = model.findProvider(settings.providers) ?: return null
-        return provider to model
-    }
 }

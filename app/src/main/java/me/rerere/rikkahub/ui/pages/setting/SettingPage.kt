@@ -132,17 +132,17 @@ fun SettingPage(
                     )
 
                     SettingGroupItem(
+                        title = "Shared Memory",
+                        icon = { Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.MemoryBrowse()) }
+                    )
+
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_page_prompt_injections),
                         icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingPromptInjections) }
-                    )
-
-                    SettingGroupItem(
-                        title = "Memory",
-                        icon = { Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = mainSettingItemPadding,
-                        onClick = { navController.navigate(Screen.MemoryCenter()) }
                     )
                 }
             }

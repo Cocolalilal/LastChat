@@ -51,7 +51,7 @@ class MemoryEncoder(
     }
 
     suspend fun encode(conversation: Conversation, assistant: Assistant, settings: Settings): Outcome {
-        if (!assistant.enableMemory || !settings.memory.enabled) return Outcome.Skipped
+        if (!assistant.enableMemory) return Outcome.Skipped
 
         val messages = conversation.currentMessages
         val convId = conversation.id.toString()
@@ -68,10 +68,11 @@ class MemoryEncoder(
         val chunk = MemoryWindow.nextChunk(resolvedWatermark, messages.size, MAX_WINDOW_MESSAGES)
         if (chunk.isEmpty) return Outcome.Skipped
 
-        val caps = MemoryBudgetCaps.of(MemoryPreset.fromNameOrDefault(settings.memory.preset))
+        val caps = MemoryBudgetCaps.of(MemoryModels.presetFor(settings, assistant.id.toString()))
         if (!caps.extractionEnabled) return Outcome.Skipped
 
-        val resolved = resolveModel(settings, assistant) ?: return Outcome.Skipped
+        // No fallback chain: an unset parser model pauses extraction (watermark holds, nothing lost).
+        val resolved = MemoryModels.resolveParser(settings) ?: return Outcome.Skipped
 
         // Budget admission — deferral leaves the watermark untouched (nothing lost).
         if (!budget.tryConsumeDaily(MemBudgetCategory.EXTRACTION, caps.extractionDailyCap)) return Outcome.Deferred
@@ -218,16 +219,6 @@ class MemoryEncoder(
         return response.choices.firstOrNull()?.message?.toContentText().orEmpty()
     }
 
-    private fun resolveModel(settings: Settings, assistant: Assistant): Pair<ProviderSetting, Model>? {
-        val modelId = assistant.memoryModelId
-            ?: settings.memory.memoryModelId
-            ?: settings.summarizerModelId
-            ?: assistant.backgroundModelId
-            ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: return null
-        val provider = model.findProvider(settings.providers) ?: return null
-        return provider to model
-    }
 }
 
 private const val OP_INSTRUCTIONS = """

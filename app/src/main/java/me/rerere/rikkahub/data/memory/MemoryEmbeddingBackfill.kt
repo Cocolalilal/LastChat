@@ -6,6 +6,7 @@ import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.ai.rag.toByteArray
 import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.dao.MemoryActivityDao
@@ -77,7 +78,7 @@ class MemoryEmbeddingBackfill(
 
     suspend fun run(): Outcome {
         val settings = settingsStore.settingsFlow.value
-        if (!settings.memory.enabled) return Outcome.Idle
+        if (!settings.anyMemoryEnabled) return Outcome.Idle
 
         // Resolve the currently-configured embedding model. Unconfigured (random/disabled placeholder,
         // or not present in any provider) → FTS-only; leave existing vectors untouched.
@@ -87,8 +88,8 @@ class MemoryEmbeddingBackfill(
             return Outcome.Idle
         }
 
-        val caps = MemoryBudgetCaps.of(MemoryPreset.fromNameOrDefault(settings.memory.preset))
-        if (caps.sleepDailyCap <= 0) return Outcome.Idle // OFF/Eco-with-no-sleep-budget: FTS covers it
+        val caps = MemoryBudgetCaps.of(MemoryModels.globalPreset(settings))
+        if (caps.sleepDailyCap <= 0) return Outcome.Idle // no sleep budget: FTS covers it
 
         var totalEmbedded = 0
         var budgetBlocked = false

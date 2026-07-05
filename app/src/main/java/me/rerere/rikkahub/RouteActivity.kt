@@ -839,12 +839,30 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    composable<Screen.MemoryCenter> { backStackEntry ->
-                        val route = backStackEntry.toRoute<Screen.MemoryCenter>()
-                        me.rerere.rikkahub.ui.pages.memory.MemoryCenterPage(
+                    composable<Screen.MemoryCharacter> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemoryCharacter>()
+                        me.rerere.rikkahub.ui.pages.memory.MemoryCharacterPage(
                             assistantId = route.assistantId,
                             focusNodeId = route.focusNodeId,
                         )
+                    }
+
+                    composable<Screen.MemoryBrowse> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemoryBrowse>()
+                        me.rerere.rikkahub.ui.pages.memory.MemoryBrowsePage(assistantId = route.assistantId)
+                    }
+
+                    composable<Screen.MemoryGraph> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemoryGraph>()
+                        me.rerere.rikkahub.ui.pages.memory.MemoryGraphPage(
+                            assistantId = route.assistantId,
+                            focusNodeId = route.focusNodeId,
+                        )
+                    }
+
+                    composable<Screen.MemoryCharacterSettings> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemoryCharacterSettings>()
+                        me.rerere.rikkahub.ui.pages.memory.MemoryCharacterSettingsPage(assistantId = route.assistantId)
                     }
 
                     composable<Screen.Menu> {
@@ -1317,9 +1335,25 @@ sealed interface Screen {
     ) : Screen
 
     @Serializable
-    data class MemoryCenter(
-        val assistantId: String? = null, // null = the shared GLOBAL_USER layer (opened from Settings)
-        val focusNodeId: String? = null,  // optional node to open on entry (activity-pill deep link)
+    data class MemoryCharacter(
+        val assistantId: String,          // per-character memory page
+        val focusNodeId: String? = null,  // optional node to open on entry (activity-ball deep link)
+    ) : Screen
+
+    @Serializable
+    data class MemoryBrowse(
+        val assistantId: String? = null,  // null = the shared GLOBAL_USER "Shared Memory" page
+    ) : Screen
+
+    @Serializable
+    data class MemoryGraph(
+        val assistantId: String? = null,  // null = shared scope graph
+        val focusNodeId: String? = null,  // optional node to focus on entry
+    ) : Screen
+
+    @Serializable
+    data class MemoryCharacterSettings(
+        val assistantId: String,
     ) : Screen
 
     @Serializable

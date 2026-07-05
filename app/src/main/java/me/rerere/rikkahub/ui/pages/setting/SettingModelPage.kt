@@ -75,6 +75,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Memory
 
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
@@ -129,11 +130,84 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(title = stringResource(R.string.setting_model_page_group_processing)) {
                     DefaultImageGenerationModelSetting(settings = settings, vm = vm)
                     DefaultOcrModelSetting(settings = settings, vm = vm)
+                }
+            }
+
+            item {
+                SettingsGroup(title = "Memory") {
+                    MemoryParserModelSetting(settings = settings, vm = vm)
                     DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+                    MemoryConsolidationModelSetting(settings = settings, vm = vm)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MemoryParserModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = { Text("Parser model", maxLines = 1) },
+        description = { Text("Extracts memories from chats. When unset, memory extraction pauses (nothing is lost).") },
+        icon = { Icon(Icons.Rounded.Memory, null) },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.memory.parserModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(memory = settings.memory.copy(parserModelId = settings.findModelById(selectedModel.id)?.id))
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(memory = settings.memory.copy(parserModelId = null))
+                        )
+                    },
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun MemoryConsolidationModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = { Text("Consolidation model", maxLines = 1) },
+        description = { Text("Merges, compresses and reviews memories during sleep passes. When unset, those stages pause.") },
+        icon = { Icon(Icons.Rounded.AutoAwesome, null) },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.memory.consolidationModelId,
+                    type = ModelType.CHAT,
+                    onSelect = { selectedModel ->
+                        vm.updateSettings(
+                            settings.copy(memory = settings.memory.copy(consolidationModelId = settings.findModelById(selectedModel.id)?.id))
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    onClear = {
+                        vm.updateSettings(
+                            settings.copy(memory = settings.memory.copy(consolidationModelId = null))
+                        )
+                    },
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable
@@ -968,13 +1042,10 @@ private fun DefaultEmbeddingModelSetting(
     var isRegenerating by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
-            Text(
-                stringResource(R.string.setting_model_page_embedding_model),
-                maxLines = 1
-            )
+            Text("Embedding model", maxLines = 1)
         },
         description = {
-            Text(stringResource(R.string.setting_model_page_embedding_model_desc))
+            Text("Vector index for memory recall (also powers lorebook/RAG embeddings). Unset = full-text search only.")
         },
         icon = {
             Icon(Icons.Rounded.Psychology, null)

@@ -1416,17 +1416,22 @@ private fun ChatPageContent(
                         }
                     }
 
-                // §7.5 non-blocking "🧠 N memories updated" pill for the active conversation.
+                // §7.5 subtle "memory ball": a small dot that appears only when something interesting
+                // happened for the active conversation (not routine reinforcement). Far less obtrusive
+                // than the old center popup; tap opens the events sheet with deep links.
                 if (conversationInitialized && !previewMode) {
-                    me.rerere.rikkahub.ui.components.chat.MemoryUpdatePill(
+                    val ballState = me.rerere.rikkahub.ui.components.chat.rememberMemoryActivityBallState(
                         assistantId = conversation.assistantId.toString(),
                         conversationId = conversation.id.toString(),
+                    )
+                    me.rerere.rikkahub.ui.components.chat.MemoryActivityBall(
+                        state = ballState,
                         modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = chatListTopPadding(toolbarPlacement) + 8.dp),
+                            .align(Alignment.TopEnd)
+                            .padding(top = chatListTopPadding(toolbarPlacement) + 8.dp, end = 16.dp),
                         onOpenMemory = { focusNodeId ->
                             navController.navigate(
-                                Screen.MemoryCenter(
+                                Screen.MemoryCharacter(
                                     assistantId = conversation.assistantId.toString(),
                                     focusNodeId = focusNodeId,
                                 )

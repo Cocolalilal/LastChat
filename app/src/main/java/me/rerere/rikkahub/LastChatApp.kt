@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
@@ -128,12 +129,12 @@ class LastChatApp : Application() {
                 .build()
         )
 
-        // One-shot import of legacy memories into the graph store (v34), enqueued the first time the
-        // user turns the memory system on (KEEP → runs once, resumes across restarts via its own
+        // One-shot import of legacy memories into the graph store (v34), enqueued the first time any
+        // character has memory enabled (KEEP → runs once, resumes across restarts via its own
         // watermark). Gating on enable avoids populating the store for users who never opt in.
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
-                .map { it.memory.enabled }
+                .map { it.anyMemoryEnabled }
                 .distinctUntilChanged()
                 .filter { it }
                 .collect {
@@ -151,13 +152,13 @@ class LastChatApp : Application() {
                 }
         }
 
-        // Memory maintenance scheduling. When the graph memory system is enabled, the periodic sleep
-        // pass (P3) owns decay/consolidation/bounded-growth and the legacy MemoryConsolidationWorker is
-        // retired; when it is off, existing installs keep the legacy consolidation behaviour until they
-        // opt in. Exactly one of the two is scheduled at any time.
+        // Memory maintenance scheduling. When any character has graph memory enabled, the periodic
+        // sleep pass (P3) owns decay/consolidation/bounded-growth and the legacy
+        // MemoryConsolidationWorker is retired; when no character does, existing installs keep the
+        // legacy consolidation behaviour. Exactly one of the two is scheduled at any time.
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
-                .map { Triple(it.memory.enabled, it.consolidationWorkerIntervalMinutes, it.consolidationRequiresDeviceIdle) }
+                .map { Triple(it.anyMemoryEnabled, it.consolidationWorkerIntervalMinutes, it.consolidationRequiresDeviceIdle) }
                 .distinctUntilChanged()
                 .collect { (memoryEnabled, interval, idle) ->
                     val wm = WorkManager.getInstance(this@LastChatApp)
@@ -200,7 +201,7 @@ class LastChatApp : Application() {
         // re-enqueuing) once the store is aligned with the current model.
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
-                .map { it.memory.enabled to it.embeddingModelId }
+                .map { it.anyMemoryEnabled to it.embeddingModelId }
                 .distinctUntilChanged()
                 .filter { (enabled, _) -> enabled }
                 .collect {

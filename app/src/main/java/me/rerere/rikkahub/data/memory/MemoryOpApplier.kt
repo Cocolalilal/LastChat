@@ -41,6 +41,17 @@ data class MemoryApplyContext(
     val useSharedUserMemory: Boolean = true,
     val now: Long = System.currentTimeMillis(),
     val maxAdds: Int = 6,
+    /**
+     * Bitemporal override for imports: when set, new nodes get this as `recordedAt` (when the fact
+     * was originally learned) while `lastAccessedAt`/`lastConfirmedAt` still use [now] — so decay
+     * restarts at import time instead of instantly demoting old-but-important imports.
+     */
+    val recordedAt: Long? = null,
+    /**
+     * Manual writes from the Shared Memory page target GLOBAL_USER scope. Honored ONLY when
+     * [source] == MemSource.MANUAL — extraction/import can structurally never write the shared layer.
+     */
+    val manualGlobalScope: Boolean = false,
 )
 
 /**
@@ -71,10 +82,16 @@ class MemoryOpApplier(
      * the same scope. The transaction still bounds atomicity: a crash mid-apply leaves the watermark
      * unmoved and the pass re-runs idempotently (the dedup gate absorbs the replay).
      */
-    suspend fun apply(ops: List<MemoryOp>, ctx: MemoryApplyContext): MemoryApplyResult =
-        scopeLocks.withScope(ctx.assistantId) {
+    suspend fun apply(ops: List<MemoryOp>, ctx: MemoryApplyContext): MemoryApplyResult {
+        val lockKey = if (ctx.manualGlobalScope && ctx.source == MemSource.MANUAL) {
+            MemoryScopeLocks.GLOBAL_SCOPE
+        } else {
+            ctx.assistantId
+        }
+        return scopeLocks.withScope(lockKey) {
             db.withTransaction { Pass(ctx).run(ops) }
         }
+    }
 
     /**
      * Ensure the character's profile frames (§6.1) exist as FRAME hub nodes, idempotently by
@@ -130,6 +147,11 @@ class MemoryOpApplier(
 
     /** One transactional pass. Keeps a small in-memory entity cache so hubs created mid-pass are reused. */
     private inner class Pass(val ctx: MemoryApplyContext) {
+        /** GLOBAL_USER writes are possible only for user-authored ops from the Shared Memory page. */
+        private val globalWrite: Boolean = ctx.manualGlobalScope && ctx.source == MemSource.MANUAL
+        private val writeScope: Int = if (globalWrite) MemScope.GLOBAL_USER else MemScope.CHARACTER
+        private val writeOwner: String? = if (globalWrite) null else ctx.assistantId
+
         private val entities = mutableListOf<MemoryNodeEntity>()
         private var entitiesLoaded = false
         private val frames = mutableListOf<MemoryNodeEntity>()
@@ -206,8 +228,8 @@ class MemoryOpApplier(
             val node = MemoryNodeEntity(
                 id = id,
                 type = op.type,
-                scope = MemScope.CHARACTER, // extraction never writes GLOBAL_USER
-                ownerAssistantId = ctx.assistantId,
+                scope = writeScope, // extraction never writes GLOBAL_USER; only MANUAL shared adds do
+                ownerAssistantId = writeOwner,
                 content = op.content.trim(),
                 displayLabel = null,
                 importance = op.importance.coerceIn(1, 5),
@@ -220,7 +242,7 @@ class MemoryOpApplier(
                 eventEnd = op.eventEnd,
                 validFrom = op.validFrom,
                 validUntil = op.validUntil,
-                recordedAt = ctx.now,
+                recordedAt = ctx.recordedAt ?: ctx.now,
                 lastConfirmedAt = ctx.now,
                 lastAccessedAt = ctx.now,
                 source = ctx.source,
@@ -462,8 +484,8 @@ class MemoryOpApplier(
             val node = MemoryNodeEntity(
                 id = id,
                 type = MemNodeType.ENTITY,
-                scope = MemScope.CHARACTER,
-                ownerAssistantId = ctx.assistantId,
+                scope = writeScope,
+                ownerAssistantId = writeOwner,
                 content = label,
                 displayLabel = label,
                 importance = 3,
@@ -614,8 +636,8 @@ class MemoryOpApplier(
                 MemoryActivityEntity(
                     id = newId(),
                     at = ctx.now,
-                    scope = MemScope.CHARACTER,
-                    ownerAssistantId = ctx.assistantId,
+                    scope = writeScope,
+                    ownerAssistantId = writeOwner,
                     kind = kind,
                     summary = if (parts.isEmpty()) "memory updated" else parts.joinToString(", "),
                     nodeIds = JsonInstant.encodeToString(result.touchedNodeIds),

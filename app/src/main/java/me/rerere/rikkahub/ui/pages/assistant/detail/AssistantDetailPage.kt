@@ -197,7 +197,7 @@ fun AssistantDetailPage(
     // Auto-navigate to start route if specified (e.g., for deep linking to memory → Memory Center)
     LaunchedEffect(startRoute) {
         if (startRoute == AssistantDetailRoutes.MEMORY) {
-            rootNavController.navigate(Screen.MemoryCenter(assistantId = id))
+            rootNavController.navigate(Screen.MemoryCharacter(assistantId = id))
         }
     }
 
@@ -370,7 +370,7 @@ fun AssistantDetailPage(
                     onNavigateToPrompts = { navController.navigate(AssistantDetailRoutes.PROMPTS) },
                     onNavigateToContextManagement = { navController.navigate(AssistantDetailRoutes.CONTEXT_MANAGEMENT) },
                     onNavigateToTools = { navController.navigate(AssistantDetailRoutes.TOOLS) },
-                    onNavigateToMemory = { rootNavController.navigate(Screen.MemoryCenter(assistantId = id)) },
+                    onNavigateToMemory = { rootNavController.navigate(Screen.MemoryCharacter(assistantId = id)) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
                     onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) }
                 )

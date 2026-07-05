@@ -9,9 +9,10 @@ import me.rerere.rikkahub.data.db.entity.MemBudgetCategory
  * enforcement) ignore the budget entirely and always run.
  */
 enum class MemoryPreset {
-    OFF, ECO, BALANCED, RICH;
+    ECO, BALANCED, RICH;
 
     companion object {
+        /** Unknown names (including the retired "OFF" — off is `Assistant.enableMemory`) → Balanced. */
         fun fromNameOrDefault(name: String?): MemoryPreset =
             entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: BALANCED
     }
@@ -28,11 +29,10 @@ data class MemoryBudgetCaps(
     /** Token cap applied to the *context* portions of a prompt only (never the extraction window). */
     val contextTokenCap: Int,
 ) {
-    val extractionEnabled: Boolean get() = preset != MemoryPreset.OFF && extractionDailyCap > 0
+    val extractionEnabled: Boolean get() = extractionDailyCap > 0
 
     companion object {
         fun of(preset: MemoryPreset): MemoryBudgetCaps = when (preset) {
-            MemoryPreset.OFF -> MemoryBudgetCaps(preset, Int.MAX_VALUE, 0, 0, 0, 0, 1500)
             MemoryPreset.ECO -> MemoryBudgetCaps(preset, 25, 6, 1, 1, 0, 1200)
             MemoryPreset.BALANCED -> MemoryBudgetCaps(preset, 10, 24, 4, 2, 2, 1500)
             MemoryPreset.RICH -> MemoryBudgetCaps(preset, 6, 48, 8, 3, 3, 2000)

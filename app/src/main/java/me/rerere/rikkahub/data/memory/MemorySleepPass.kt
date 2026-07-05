@@ -14,6 +14,7 @@ import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -114,7 +115,7 @@ class MemorySleepPass(
 
     suspend fun run(): Outcome {
         val settings = settingsStore.settingsFlow.value
-        if (!settings.memory.enabled) return Outcome.Skipped
+        if (!settings.anyMemoryEnabled) return Outcome.Skipped
         val now = clock()
 
         val all = nodeDao.getAllByStatuses(SWEEP_STATUSES)
@@ -124,11 +125,12 @@ class MemorySleepPass(
             return Outcome.Ran(0)
         }
 
-        val caps = MemoryBudgetCaps.of(MemoryPreset.fromNameOrDefault(settings.memory.preset))
-
         for ((_, scopeNodes) in groups) {
             val ref = scopeRefOf(scopeNodes.first())
             val ids = scopeNodes.map { it.id }
+            // Per-scope caps: a character scope runs on its own preset; the global layer on the max
+            // preset among memory-enabled assistants.
+            val caps = MemoryBudgetCaps.of(MemoryModels.presetFor(settings, ref.ownerId))
 
             // §5.4 stages 1 + 2 — deterministic, no network/budget.
             try {
@@ -263,8 +265,6 @@ class MemorySleepPass(
     private data class Pair2(val aId: String, val bId: String)
 
     private suspend fun adjudicationStage(ref: ScopeRef, settings: Settings, caps: MemoryBudgetCaps, now: Long) {
-        if (caps.preset == MemoryPreset.OFF) return
-
         // 1. Gather candidate pairs (read only).
         val nodes = nodeDao.getVisibleWithStatuses(ownerKeyForRead(ref), MemoryGraphRepository.INJECTABLE_STATUSES)
             .filter { inScope(it, ref) }
@@ -386,8 +386,6 @@ class MemorySleepPass(
     // ================= §5.4 stages 5 + 6: episode compression + habit induction =================
 
     private suspend fun compressionAndHabitStage(ref: ScopeRef, settings: Settings, caps: MemoryBudgetCaps, now: Long) {
-        if (caps.preset == MemoryPreset.OFF) return
-
         val nodes = nodeDao.getVisibleWithStatuses(ownerKeyForRead(ref), MemoryGraphRepository.SEARCHABLE_STATUSES)
             .filter { inScope(it, ref) }
 
@@ -397,9 +395,15 @@ class MemorySleepPass(
         // the pass reach here sooner because more clusters qualify as the store fills.
         val compressible = episodeClusters(episodes, now).filter { it.value.size >= CLUSTER_MIN }
 
-        // Habit groups: ≥3 episodes about the same primary entity (toggleable). Primary entities are
-        // resolved first (a suspend DB read) so the grouping lambda itself stays non-suspend.
-        val habitGroups: Map<String?, List<MemoryNodeEntity>> = if (settings.memory.habitInduction) {
+        // Habit groups: ≥3 episodes about the same primary entity (toggleable per character; the
+        // global scope induces habits when any memory-enabled assistant wants them). Primary
+        // entities are resolved first (a suspend DB read) so the grouping lambda stays non-suspend.
+        val habitInduction = if (ref.ownerId != null) {
+            settings.assistants.firstOrNull { it.id.toString() == ref.ownerId }?.memoryHabitInduction ?: true
+        } else {
+            MemoryModels.globalHabitInduction(settings)
+        }
+        val habitGroups: Map<String?, List<MemoryNodeEntity>> = if (habitInduction) {
             val withEntity = episodes.map { it to primaryEntityId(it) }.filter { it.second != null }
             withEntity.groupBy { it.second }
                 .mapValues { entry -> entry.value.map { it.first } }
@@ -724,12 +728,9 @@ class MemorySleepPass(
 
     // ================= model plumbing =================
 
-    private fun resolveModel(settings: Settings): kotlin.Pair<ProviderSetting, Model>? {
-        val modelId = settings.memory.memoryModelId ?: settings.summarizerModelId ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: return null
-        val provider = model.findProvider(settings.providers) ?: return null
-        return provider to model
-    }
+    // No fallback chain: an unset consolidation model simply pauses the model-assisted stages.
+    private fun resolveModel(settings: Settings): kotlin.Pair<ProviderSetting, Model>? =
+        MemoryModels.resolveConsolidation(settings)
 
     private suspend fun callModel(provider: ProviderSetting, model: Model, prompt: String, settings: Settings): String {
         val handler = providerManager.getProviderByType(provider)

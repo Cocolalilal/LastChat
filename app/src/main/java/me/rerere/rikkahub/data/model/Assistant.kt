@@ -66,9 +66,13 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
-    // Graph memory system (v34): per-character overrides for the shared layer + background model.
+    // Graph memory system: all behavioural memory settings are per-character (models are global).
     val useSharedUserMemory: Boolean = true, // Participate in the GLOBAL_USER layer (read + write). Off = CHARACTER scope only.
-    val memoryModelId: Uuid? = null, // Per-assistant override for the background memory model; null = fall back to global chain.
+    val memoryPreset: String = "BALANCED", // MemoryPreset name: ECO / BALANCED / RICH
+    val memoryTimeAwareness: Boolean = true, // Fuzzy ages/tenses in memory injection
+    val memoryProactiveCuriosity: Boolean = false, // Curiosity goal generation + delivery
+    val memoryCuriosityWebLookups: Boolean = false, // Only effective when memoryProactiveCuriosity is on
+    val memoryHabitInduction: Boolean = true, // HABIT node clustering in the sleep pass
     val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
     val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
     val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages

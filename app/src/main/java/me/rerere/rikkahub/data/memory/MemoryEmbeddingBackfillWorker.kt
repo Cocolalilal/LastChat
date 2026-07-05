@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.util.concurrent.TimeUnit
@@ -36,7 +37,7 @@ class MemoryEmbeddingBackfillWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            if (!settingsStore.settingsFlow.value.memory.enabled) return@withContext Result.success()
+            if (!settingsStore.settingsFlow.value.anyMemoryEnabled) return@withContext Result.success()
             when (val outcome = backfill.run()) {
                 is MemoryEmbeddingBackfill.Outcome.Idle -> Unit
                 is MemoryEmbeddingBackfill.Outcome.Ran -> {

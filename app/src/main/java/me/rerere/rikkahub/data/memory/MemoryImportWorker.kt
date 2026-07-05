@@ -41,6 +41,11 @@ class MemoryImportWorker(
             if (metaDao.get(MemoryStoreMetaKeys.IMPORT_COMPLETED) == "true") return@withContext Result.success()
 
             val start = (metaDao.get(MemoryStoreMetaKeys.IMPORT_WATERMARK)?.toIntOrNull()) ?: 0
+            // Decay must restart at import time: `now` (→ lastAccessedAt/lastConfirmedAt) is the wall
+            // clock, while the legacy timestamp goes into `recordedAt` (bitemporal honesty for fuzzy
+            // "learned X ago" labels). Passing the legacy time as `now` would make old-but-important
+            // memories instantly DORMANT/FORGOTTEN on the first sleep passes.
+            val wallClock = System.currentTimeMillis()
 
             // Phase 1: legacy core memories → FACT nodes.
             val coreCount = memoryDao.countAll()
@@ -63,7 +68,8 @@ class MemoryImportWorker(
                         ctx = MemoryApplyContext(
                             assistantId = m.assistantId,
                             source = MemSource.IMPORTED,
-                            now = if (m.createdAt > 0) m.createdAt else System.currentTimeMillis(),
+                            now = wallClock,
+                            recordedAt = m.createdAt.takeIf { it > 0 },
                         ),
                     )
                 }
@@ -96,7 +102,8 @@ class MemoryImportWorker(
                             assistantId = e.assistantId,
                             conversationId = e.conversationId?.takeIf { it.isNotBlank() },
                             source = MemSource.IMPORTED,
-                            now = if (e.endTime > 0) e.endTime else System.currentTimeMillis(),
+                            now = wallClock,
+                            recordedAt = e.endTime.takeIf { it > 0 },
                         ),
                     )
                 }

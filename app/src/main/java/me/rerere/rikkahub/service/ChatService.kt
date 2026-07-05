@@ -93,6 +93,7 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -106,7 +107,6 @@ import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -568,7 +568,6 @@ class ChatService(
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
-    private val memoryRepository: MemoryRepository,
     private val memoryRecall: MemoryRecall,
     private val memoryGraphRepository: MemoryGraphRepository,
     private val generationHandler: GenerationHandler,
@@ -907,11 +906,11 @@ class ChatService(
 
     /**
      * Enqueue graph-memory extraction for a conversation, deduped per conversation (KEEP). Gated on
-     * the master toggle; the worker itself re-checks the per-character switch, budget, and watermark.
-     * Never awaited on the generation path — extraction failures never surface as chat errors.
+     * any character having memory on; the worker re-checks the per-character switch, budget, and
+     * watermark. Never awaited on the generation path — failures never surface as chat errors.
      */
     private fun enqueueMemoryExtraction(conversationId: Uuid) {
-        if (!settingsStore.settingsFlow.value.memory.enabled) return
+        if (!settingsStore.settingsFlow.value.anyMemoryEnabled) return
         val request = OneTimeWorkRequestBuilder<MemoryExtractionWorker>()
             .setInputData(workDataOf(MemoryExtractionWorker.KEY_CONVERSATION_ID to conversationId.toString()))
             .build()
@@ -1092,7 +1091,7 @@ class ChatService(
      * branch; a re-selection later reactivates them via the dedup gate's REINFORCE path.
      */
     private fun reconcileBranchMemoryAsync(conversation: Conversation) {
-        if (!settingsStore.settingsFlow.value.memory.enabled) return
+        if (!settingsStore.settingsFlow.value.anyMemoryEnabled) return
         appScope.launch {
             try {
                 memoryGraphRepository.reconcileBranchDemotions(conversation)
@@ -1531,48 +1530,9 @@ class ChatService(
                     }
                 },
                 assistant = assistant,
-                memories = if (
-                    assistant.enableMemory &&
-                    // When the graph memory system is active it injects via MemoryRecallTransformer
-                    // instead of this list, so the legacy per-message injection is disabled.
-                    !settings.memory.enabled &&
-                    getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
-                ) {
-                    if (assistant.useRagMemoryRetrieval) {
-                        // RAG mode: retrieve relevant memories based on context
-                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        
-                        if (settings.enableRagLogging) {
-                            Log.d("RAG", "Query: $lastUserMessage")
-                        }
-
-                        if (lastUserMessage.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = conversation.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
-                            )
-                            if (settings.enableRagLogging) {
-                                Log.d("RAG", "Retrieved ${results.size} memories")
-                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
-                            }
-                            results
-                        } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
-                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                                .take(50)
-                        }
-                    } else {
-                        // Simple mode: inject recent memories
-                        memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                            .take(50)
-                    }
-                } else {
-                    emptyList()
-                },
+                // Graph memory injects via MemoryRecallTransformer; the legacy per-message
+                // injection list is retired (enableMemory now means the graph system).
+                memories = emptyList(),
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
                     val cwd = getWorkspaceCwd(
@@ -1583,7 +1543,6 @@ class ChatService(
                     add(WorkspaceReminderTransformer(workspaceRepository, cwd))
                     // Graph memory recall: injects the memory section into the system prompt.
                     if (
-                        settings.memory.enabled &&
                         assistant.enableMemory &&
                         getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                     ) {
@@ -1591,8 +1550,8 @@ class ChatService(
                             MemoryRecallTransformer(
                                 recall = memoryRecall,
                                 activeConversationId = conversation.id.toString(),
-                                timeAwareness = settings.memory.timeAwareness,
-                                curiosityEnabled = settings.memory.proactiveCuriosity,
+                                timeAwareness = assistant.memoryTimeAwareness,
+                                curiosityEnabled = assistant.memoryProactiveCuriosity,
                             )
                         )
                     }

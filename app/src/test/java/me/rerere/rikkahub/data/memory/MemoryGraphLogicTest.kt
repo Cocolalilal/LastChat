@@ -97,10 +97,16 @@ class MemoryGraphLogicTest {
     // ---------------- MemoryBudgetCaps ----------------
 
     @Test
-    fun offPresetDisablesExtraction() {
-        val caps = MemoryBudgetCaps.of(MemoryPreset.OFF)
-        assertFalse(caps.extractionEnabled)
-        assertEquals(0, caps.extractionDailyCap)
+    fun retiredOffPresetNameFallsBackToBalanced() {
+        // "OFF" is no longer a preset (off is Assistant.enableMemory); persisted "OFF" → Balanced.
+        assertEquals(MemoryPreset.BALANCED, MemoryPreset.fromNameOrDefault("OFF"))
+    }
+
+    @Test
+    fun allPresetsEnableExtraction() {
+        MemoryPreset.entries.forEach { preset ->
+            assertTrue(preset.name, MemoryBudgetCaps.of(preset).extractionEnabled)
+        }
     }
 
     @Test

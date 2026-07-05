@@ -12,32 +12,30 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MemoryStoreMetaDao
 import me.rerere.rikkahub.data.db.entity.MemNodeType
 import me.rerere.rikkahub.data.db.entity.MemSource
-import me.rerere.rikkahub.data.db.entity.MemStatus
 import me.rerere.rikkahub.data.db.entity.MemoryActivityEntity
 import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
 import me.rerere.rikkahub.data.db.entity.MemoryStoreMetaKeys
-import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.memory.MemoryApplyContext
 import me.rerere.rikkahub.data.memory.MemoryBudget
 import me.rerere.rikkahub.data.memory.MemoryGraphRepository
 import me.rerere.rikkahub.data.memory.MemoryOpApplier
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.MemoryOp
-import kotlin.uuid.Uuid
 
 /**
- * Backs the Memory Center (P4a). [assistantId] null → the shared GLOBAL_USER layer (opened from
- * Settings); non-null → that character's view (its CHARACTER scope + the shared layer). The empty
- * string is used as the SQL owner filter for the global view so only GLOBAL_USER rows match.
+ * Backs every memory screen (character page, browse, graph, per-character settings).
+ * [scopeAssistantId] blank → the shared GLOBAL_USER layer (the Settings "Shared Memory" page);
+ * non-blank → that character's view (its CHARACTER scope + the shared layer). The empty string is
+ * used as the SQL owner filter for the global view so only GLOBAL_USER rows match.
  */
-class MemoryCenterVM(
-    /** The assistant id, or the empty string for the shared GLOBAL_USER view. */
+class MemoryVM(
     scopeAssistantId: String,
     private val settingsStore: SettingsStore,
     private val graphRepository: MemoryGraphRepository,
@@ -65,9 +63,9 @@ class MemoryCenterVM(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * Reactive graph input for the Graph tab (§10.2): this scope's browsable nodes plus every edge.
-     * Edges are loaded whole (see [MemoryGraphRepository.getAllEdges]) and only while the Graph tab is
-     * subscribed (WhileSubscribed) — `MemoryGraphBuilder` filters them to the drawn neighborhood.
+     * Reactive graph input (§10.2): this scope's browsable nodes plus every edge. Edges are loaded
+     * whole and only while a graph view is subscribed — `MemoryGraphBuilder` filters them to the
+     * drawn neighborhood.
      */
     val graphInput: StateFlow<MemoryGraphInput> = nodes
         .mapLatest { ns ->
@@ -99,11 +97,6 @@ class MemoryCenterVM(
             _budgetToday.value = MemoryBudget.ALL_CATEGORIES.associateWith { budget.callsToday(it) }
         }
     }
-
-    // ---- overview stats derived from the live node subset ----
-
-    fun liveNodes(all: List<MemoryNodeEntity>): List<MemoryNodeEntity> =
-        all.filter { it.status == MemStatus.ACTIVE || it.status == MemStatus.PROVISIONAL || it.status == MemStatus.DORMANT || it.status == MemStatus.CLOSED }
 
     // ---- node sheet ----
 
@@ -143,10 +136,11 @@ class MemoryCenterVM(
         reloadNodeDetail()
     }
 
-    /** Hand-written fact via the "+ Add memory" FAB — routed through the applier (dedup gate) as a
-     *  MANUAL, ACTIVE node. Only available in character view (extraction/manual writes need an owner). */
+    /**
+     * Hand-written fact via the "+ Add memory" FAB — routed through the applier (dedup gate) as a
+     * MANUAL, ACTIVE node. In the shared view it writes GLOBAL_USER scope directly.
+     */
     fun addManual(content: String, importance: Int, pinned: Boolean) = viewModelScope.launch(Dispatchers.IO) {
-        val ownerId = assistantId ?: return@launch
         if (content.isBlank()) return@launch
         val result = applier.apply(
             ops = listOf(
@@ -158,20 +152,28 @@ class MemoryCenterVM(
                     rationale = "added by you",
                 )
             ),
-            ctx = MemoryApplyContext(assistantId = ownerId, source = MemSource.MANUAL),
+            ctx = MemoryApplyContext(
+                assistantId = assistantId ?: "",
+                source = MemSource.MANUAL,
+                manualGlobalScope = isGlobal,
+            ),
         )
         if (pinned) result.added.forEach { graphRepository.setPinned(it, true) }
     }
 
     /** Edit = a MANUAL supersede (append-only; the old version stays as history). */
     fun edit(nodeId: String, newContent: String) = viewModelScope.launch(Dispatchers.IO) {
-        val ownerId = assistantId ?: nodeDetail.value?.node?.ownerAssistantId ?: return@launch
         if (newContent.isBlank()) return@launch
+        val ownerId = assistantId ?: nodeDetail.value?.node?.ownerAssistantId ?: ""
         applier.apply(
             ops = listOf(
                 MemoryOp.UpdateNode(oldId = nodeId, content = newContent.trim(), rationale = "edited by you")
             ),
-            ctx = MemoryApplyContext(assistantId = ownerId, source = MemSource.MANUAL),
+            ctx = MemoryApplyContext(
+                assistantId = ownerId,
+                source = MemSource.MANUAL,
+                manualGlobalScope = isGlobal && ownerId.isBlank(),
+            ),
         )
         reloadNodeDetail()
     }
@@ -193,8 +195,6 @@ class MemoryCenterVM(
         if (isGlobal) graphRepository.exportGlobal() else graphRepository.exportCharacter(assistantId!!)
     }
 
-    suspend fun exportEverythingJson(): String = withContext(Dispatchers.IO) { graphRepository.exportEverything() }
-
     fun wipeCharacter() = viewModelScope.launch(Dispatchers.IO) {
         assistantId?.let { graphRepository.wipeCharacter(it) }
         refreshBookkeeping()
@@ -205,12 +205,7 @@ class MemoryCenterVM(
         refreshBookkeeping()
     }
 
-    // ---- settings (§11) ----
-
-    fun updateGlobalMemory(transform: (me.rerere.rikkahub.data.datastore.MemorySettings) -> me.rerere.rikkahub.data.datastore.MemorySettings) =
-        viewModelScope.launch {
-            settingsStore.update { it.copy(memory = transform(it.memory)) }
-        }
+    // ---- per-character settings ----
 
     fun updateAssistant(transform: (Assistant) -> Assistant) = viewModelScope.launch {
         val id = assistantId ?: return@launch

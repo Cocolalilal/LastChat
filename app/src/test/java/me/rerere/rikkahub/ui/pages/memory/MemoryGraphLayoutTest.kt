@@ -135,4 +135,32 @@ class MemoryGraphLayoutTest {
         val b = MemoryForceLayout(prepared).apply { repeat(60) { step() } }.snapshot()
         assertTrue(a.contentEquals(b))
     }
+
+    // ---------------- degree-based sizing ----------------
+
+    @Test
+    fun radiusGrowsWithDegree() {
+        val low = MemoryGraphBuilder.radiusFor(degree = 1, maxDegree = 10, retention = 3.0, pinned = false, isHub = false)
+        val mid = MemoryGraphBuilder.radiusFor(degree = 4, maxDegree = 10, retention = 3.0, pinned = false, isHub = false)
+        val high = MemoryGraphBuilder.radiusFor(degree = 10, maxDegree = 10, retention = 3.0, pinned = false, isHub = false)
+        assertTrue("more relations → larger", mid > low && high > mid)
+    }
+
+    @Test
+    fun radiusClampedToRange() {
+        val r = MemoryGraphBuilder.radiusFor(degree = 100, maxDegree = 100, retention = 8.0, pinned = true, isHub = true)
+        assertTrue(r >= MemoryGraphBuilder.MIN_RADIUS)
+        // Hub scale + pinned bump can exceed MAX_RADIUS slightly; guard against runaway only.
+        assertTrue(r < MemoryGraphBuilder.MAX_RADIUS * 2)
+    }
+
+    @Test
+    fun degreeDrivesSizeInBuiltGraph() {
+        // A hub with many facts must render larger than one of its leaf facts.
+        val prepared = MemoryGraphBuilder.build(largeStore(), now = now)
+        val hub = prepared.nodes.filter { it.isHub }.maxByOrNull { it.degree }!!
+        val leaf = prepared.nodes.filter { !it.isHub }.minByOrNull { it.degree }!!
+        assertTrue("hub degree should exceed leaf", hub.degree > leaf.degree)
+        assertTrue("hub radius should exceed leaf", hub.radius > leaf.radius)
+    }
 }

@@ -82,8 +82,8 @@ val viewModelModule = module {
             templateTransformer = get(),
         )
     }
-    viewModel<me.rerere.rikkahub.ui.pages.memory.MemoryCenterVM> { params ->
-        me.rerere.rikkahub.ui.pages.memory.MemoryCenterVM(
+    viewModel<me.rerere.rikkahub.ui.pages.memory.MemoryVM> { params ->
+        me.rerere.rikkahub.ui.pages.memory.MemoryVM(
             scopeAssistantId = params.get<String>(),
             settingsStore = get(),
             graphRepository = get(),

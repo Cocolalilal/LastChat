@@ -39,8 +39,10 @@ data class GraphVizNode(
     val type: Int,
     val status: Int,
     val label: String,
-    /** Rendered radius in world units, ∝ retention (pinned/important nodes are larger). */
+    /** Rendered radius in world units — primarily ∝ relation count (degree). */
     val radius: Float,
+    /** Relation count within the drawn neighborhood (drives [radius]; also the LOD label priority). */
+    val degree: Int,
     val pinned: Boolean,
     /** PROVISIONAL → drawn with a dashed ring. */
     val provisional: Boolean,
@@ -71,11 +73,11 @@ object MemoryGraphBuilder {
     /** Statuses the graph surfaces (live belief set + closed history; excludes SUPERSEDED/FORGOTTEN). */
     val GRAPH_STATUSES = intArrayOf(MemStatus.ACTIVE, MemStatus.PROVISIONAL, MemStatus.DORMANT, MemStatus.CLOSED)
 
-    private const val MIN_RADIUS = 7f
-    private const val MAX_RADIUS = 20f
-    private const val HUB_SCALE = 1.35f
+    const val MIN_RADIUS = 7f
+    const val MAX_RADIUS = 22f
+    private const val HUB_SCALE = 1.25f
 
-    // Retention maps to radius over this window; pinned nodes are pinned to the top.
+    // Retention modulates the degree-driven size over this window; pinned nodes at the top.
     private const val RETENTION_FLOOR = -1.0
     private const val RETENTION_CEIL = 8.0
     private const val PINNED_RETENTION = RETENTION_CEIL
@@ -92,10 +94,20 @@ object MemoryGraphBuilder {
             now = now,
         )
 
-    private fun radiusFor(retention: Double, isHub: Boolean): Float {
-        val t = ((retention - RETENTION_FLOOR) / (RETENTION_CEIL - RETENTION_FLOOR)).coerceIn(0.0, 1.0)
-        val base = MIN_RADIUS + t.toFloat() * (MAX_RADIUS - MIN_RADIUS)
-        return if (isHub) base * HUB_SCALE else base
+    /**
+     * Node radius: the PRIMARY driver is the relation count (degree, sub-linear via sqrt so hubs
+     * don't dwarf everything), so the graph shows what's well-connected at a glance; retention is a
+     * secondary ±15% modulation; hubs get a small extra scale; pinned adds a hair.
+     * Pure and unit-tested.
+     */
+    fun radiusFor(degree: Int, maxDegree: Int, retention: Double, pinned: Boolean, isHub: Boolean): Float {
+        val degT = if (maxDegree <= 0) 0f else sqrt(degree.coerceAtLeast(0).toFloat() / maxDegree)
+        val base = MIN_RADIUS + degT * (MAX_RADIUS - MIN_RADIUS)
+        val retT = ((retention - RETENTION_FLOOR) / (RETENTION_CEIL - RETENTION_FLOOR)).coerceIn(0.0, 1.0).toFloat()
+        var r = base * (0.85f + 0.3f * retT)
+        if (isHub) r *= HUB_SCALE
+        if (pinned) r += 1.5f
+        return r
     }
 
     /**
@@ -165,6 +177,13 @@ object MemoryGraphBuilder {
         val indexOf = HashMap<String, Int>(order.size * 2)
         order.forEachIndexed { i, id -> indexOf[id] = i }
 
+        // Degree within the SELECTED neighborhood drives node size (relation count is the point).
+        val selectedDegree = HashMap<String, Int>(order.size * 2)
+        for (id in order) {
+            selectedDegree[id] = adj[id]?.count { indexOf.containsKey(it) } ?: 0
+        }
+        val maxDegree = selectedDegree.values.maxOrNull() ?: 0
+
         // Strongest selected hub neighbor → cluster assignment (seeds the layout & tints members).
         fun clusterHubFor(id: String): Int {
             val self = byId.getValue(id)
@@ -186,7 +205,8 @@ object MemoryGraphBuilder {
                 label = (n.displayLabel?.takeIf { it.isNotBlank() } ?: n.content).trim().let { s ->
                     if (s.length <= GRAPH_LABEL_MAX) s else s.take(GRAPH_LABEL_MAX - 1).trimEnd() + "…"
                 },
-                radius = radiusFor(ret, hub),
+                radius = radiusFor(selectedDegree[id] ?: 0, maxDegree, ret, n.pinned, hub),
+                degree = selectedDegree[id] ?: 0,
                 pinned = n.pinned,
                 provisional = n.status == MemStatus.PROVISIONAL,
                 faded = n.status == MemStatus.DORMANT || n.status == MemStatus.CLOSED,

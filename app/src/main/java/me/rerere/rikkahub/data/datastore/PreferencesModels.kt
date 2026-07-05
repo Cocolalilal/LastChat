@@ -108,26 +108,23 @@ data class Settings(
 }
 
 /**
- * Global settings for the graph-based human-like memory system (v34). Per-character enable/disable
- * reuses `Assistant.enableMemory`; this controls the shared cross-character behaviour, cost preset,
- * and the model used for background memory calls.
- *
- * `enabled` is the master toggle. It defaults OFF so existing installs keep their current
- * (legacy) memory behaviour until the user opts in; when on, the new extraction + graph recall path
- * replaces the legacy per-message injection.
+ * Global settings for the graph-based human-like memory system. Only the model choices are global —
+ * everything behavioural (enable, preset, curiosity, …) lives per-character on [Assistant]. There is
+ * deliberately NO fallback to summarizer/chat models: a null model pauses the corresponding
+ * model-assisted work (deterministic stages and retrieval keep running) and the memory UI surfaces a
+ * "set up memory models" notice instead of silently spending the chat model's tokens.
  */
 @Serializable
 data class MemorySettings(
-    val enabled: Boolean = false,
-    /** One of [me.rerere.rikkahub.data.memory.MemoryPreset] names. */
-    val preset: String = "BALANCED",
-    val timeAwareness: Boolean = true,
-    val proactiveCuriosity: Boolean = false,
-    val curiosityWebLookups: Boolean = false,
-    val habitInduction: Boolean = true,
-    /** Model for background memory calls; falls back to the summarizer chain when null. */
-    val memoryModelId: Uuid? = null,
+    /** Extraction ("parser") model; null = extraction is paused (watermark holds, nothing lost). */
+    val parserModelId: Uuid? = null,
+    /** Sleep adjudication/compression, profile generation and curiosity; null = those stages pause. */
+    val consolidationModelId: Uuid? = null,
 )
+
+/** True when at least one character has memory enabled — the gate for all global memory machinery. */
+val Settings.anyMemoryEnabled: Boolean
+    get() = assistants.any { it.enableMemory }
 
 data class ConversationContext(
     val assistantId: Uuid,
@@ -320,30 +317,26 @@ internal fun Settings.normalizeThemeId(): Settings {
 }
 
 /**
- * §11/§12.3 memory-settings normalization (the "new `normalizeMemorySettings` stage" the plan calls
- * for). Keeps persisted [MemorySettings] internally consistent on every write:
- *  - coerces [MemorySettings.preset] to a canonical, known [MemoryPreset] name (unknown/hand-edited/
- *    downgraded-then-upgraded → the Balanced default), so the budget resolver never has to guess;
- *  - enforces the §11 dependent-toggle rule in *data*, not only in the UI: curiosity web lookups can
+ * §11 memory-settings normalization, now per-assistant (all behavioural memory settings live on
+ * [Assistant]). Keeps persisted state internally consistent on every write:
+ *  - coerces `Assistant.memoryPreset` to a canonical, known [MemoryPreset] name (unknown/hand-edited
+ *    → the Balanced default), so the budget resolver never has to guess;
+ *  - enforces the dependent-toggle rule in *data*, not only in the UI: curiosity web lookups can
  *    only be on when proactive curiosity is on (the child grays out under its parent).
- *
- * The one-time legacy migrations described in §12.3 are satisfied *by construction* and need no
- * forcing here — forcing a preset on every update would rob the user of the Eco/Rich choice:
- *  - `enableMemoryConsolidation` users land on the new **Balanced** default (the preset default);
- *  - `useRagMemoryRetrieval` is retired — retrieval is always hybrid, and the legacy RAG block is
- *    gated behind `!memory.enabled`, so the flag no longer drives the graph path;
- *  - the recent-episode strip is unconditional in `MemoryRecall`, so `enableRecentChatsReference`
- *    is always effectively on.
- * Those old per-assistant flags stay declared on [Assistant] with defaults so pre-v34 serialized
- * settings keep deserializing (the `PythonEngine`-style pattern) and a downgrade never crashes.
  */
-internal fun Settings.normalizeMemorySettings(): Settings {
-    val canonicalPreset = me.rerere.rikkahub.data.memory.MemoryPreset.fromNameOrDefault(memory.preset).name
-    val normalizedMemory = memory.copy(
-        preset = canonicalPreset,
-        curiosityWebLookups = memory.curiosityWebLookups && memory.proactiveCuriosity,
-    )
-    return if (normalizedMemory == memory) this else copy(memory = normalizedMemory)
+internal fun Settings.normalizeAssistantMemory(): Settings {
+    var changed = false
+    val normalizedAssistants = assistants.map { assistant ->
+        val canonicalPreset = me.rerere.rikkahub.data.memory.MemoryPreset.fromNameOrDefault(assistant.memoryPreset).name
+        val webLookups = assistant.memoryCuriosityWebLookups && assistant.memoryProactiveCuriosity
+        if (canonicalPreset == assistant.memoryPreset && webLookups == assistant.memoryCuriosityWebLookups) {
+            assistant
+        } else {
+            changed = true
+            assistant.copy(memoryPreset = canonicalPreset, memoryCuriosityWebLookups = webLookups)
+        }
+    }
+    return if (changed) copy(assistants = normalizedAssistants) else this
 }
 
 @Serializable

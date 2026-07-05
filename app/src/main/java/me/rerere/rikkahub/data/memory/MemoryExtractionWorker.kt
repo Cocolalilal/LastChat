@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.anyMemoryEnabled
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -37,7 +38,7 @@ class MemoryExtractionWorker(
                 ?: return@withContext Result.success()
 
             val settings = settingsStore.settingsFlow.value
-            if (!settings.memory.enabled) return@withContext Result.success()
+            if (!settings.anyMemoryEnabled) return@withContext Result.success()
 
             var iterations = 0
             while (iterations < MAX_ITERATIONS) {

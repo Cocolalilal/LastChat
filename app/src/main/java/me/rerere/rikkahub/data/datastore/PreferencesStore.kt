@@ -500,7 +500,7 @@ class SettingsStore(
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
-            .normalizeMemorySettings()
+            .normalizeAssistantMemory()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore

@@ -144,7 +144,7 @@ class CuriosityEngine(
      * web-fill draft. Safe to call unconditionally — it self-skips when the toggle is off.
      */
     suspend fun runSleepPass(assistant: Assistant, settings: Settings, caps: MemoryBudgetCaps, now: Long = clock()) {
-        if (!settings.memory.proactiveCuriosity) return
+        if (!assistant.memoryProactiveCuriosity) return
         val assistantId = assistant.id.toString()
 
         runCatching { escalateIgnoredGoals(assistantId, now) }
@@ -225,7 +225,7 @@ class CuriosityEngine(
         val goalId = result.goalsOpened.firstOrNull() ?: return
 
         // Optional web-fill (child toggle, off by default): one search to draft an unconfirmed answer.
-        val webDraft = if (settings.memory.curiosityWebLookups) runCatching { webFill(draft.question, settings) }.getOrNull() else null
+        val webDraft = if (assistant.memoryCuriosityWebLookups) runCatching { webFill(draft.question, settings) }.getOrNull() else null
 
         // Prime the goal (OPEN→PRIMED) + attach any draft, and log a GOAL_OPENED row.
         scopeLocks.withScope(assistantId) {
@@ -307,14 +307,7 @@ class CuriosityEngine(
         return response.choices.firstOrNull()?.message?.toContentText().orEmpty()
     }
 
-    private fun resolveModel(settings: Settings, assistant: Assistant): Pair<ProviderSetting, Model>? {
-        val modelId = assistant.memoryModelId
-            ?: settings.memory.memoryModelId
-            ?: settings.summarizerModelId
-            ?: assistant.backgroundModelId
-            ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: return null
-        val provider = model.findProvider(settings.providers) ?: return null
-        return provider to model
-    }
+    // No fallback chain: curiosity pauses when the consolidation model is unset.
+    private fun resolveModel(settings: Settings, assistant: Assistant): Pair<ProviderSetting, Model>? =
+        MemoryModels.resolveConsolidation(settings)
 }
