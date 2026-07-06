@@ -930,7 +930,7 @@ fun MinimalChatInput(
                                     start = 16.dp,
                                     top = 12.dp,
                                     end = androidx.compose.animation.core.animateDpAsState(
-                                        targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 42.dp,
+                                        targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 52.dp,
                                         animationSpec = tween(220),
                                         label = "input_padding"
                                     ).value,

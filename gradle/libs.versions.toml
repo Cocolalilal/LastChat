@@ -34,7 +34,6 @@ kotlin-coroutines-core = "1.10.2"
 kotlinx-datetime = "0.7.1"
 ksp = "2.2.21-2.0.4"
 paging = "3.3.6"
-lucide-icons = "1.1.0"
 image-viewer = "1.1.0-alpha.7"
 google-services = "4.4.4"
 firebase-bom = "34.6.0"
@@ -126,7 +125,6 @@ koin-androidx-workmanager = { group = "io.insert-koin", name = "koin-androidx-wo
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization-json" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlin-coroutines-core" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
-lucide-icons = { group = "com.composables", name = "icons-lucide", version.ref = "lucide-icons" }
 image-viewer = { group = "com.jvziyaoyao.scale", name = "image-viewer", version.ref = "image-viewer" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }

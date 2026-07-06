@@ -32,7 +32,7 @@ import me.rerere.rikkahub.data.ai.transformers.MessageTemplateContextFactory
 import me.rerere.rikkahub.data.ai.transformers.MessageTemplateRenderer
 import me.rerere.rikkahub.data.ai.transformers.PebbleMessageTemplateRenderer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
-import me.rerere.rikkahub.data.api.SponsorAPI
+
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.QuickSettingsCache
 import me.rerere.rikkahub.data.datastore.SecureStore
@@ -300,10 +300,6 @@ val dataSourceModule = module {
                     .build()
             }
         }
-    }
-
-    single {
-        SponsorAPI.create(get())
     }
 
     single<PlatformHttpClient> {

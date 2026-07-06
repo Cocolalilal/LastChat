@@ -69,8 +69,8 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - `data/datastore/` — `PreferencesStore.kt` (canonical `SettingsStore.update { ... }` API), `SecureStore.kt` (EncryptedSharedPreferences), `QuickSettingsCache.kt`, `SecretKeyManager.kt`, `DefaultProviders.kt`, `migration/PreferenceStoreV1Migration.kt`
 - `data/repository/` — 7 repos (Conversation with paging3, ChatAttachment with sha256-dedup + OCR, Memory with RAG, GenMedia, AppStorage, Workspace, ChatAttachmentManager)
 - `data/sync/` — `WebdavSync.kt` (dav4jvm + zip), `BackupArchiveFormat.kt`, `DatabaseSanitizer.kt`, importers (`ChatboxImporter`, `CherryStudioProviderImporter`)
-- `data/api/` — `SponsorAPI.kt` (live). `LastChatAPI.kt` and `RikkaHubAPI.kt` are EMPTY STUBS — don't add code to them.
-- `data/model/` — `Assistant.kt`, `Conversation.kt` (incl. `MessageNode`), `Lorebook.kt`, `Skill.kt`, `Mode.kt`, `Avatar.kt`, `Tag.kt`, `Sponsor.kt`, `Leaderboard.kt`, `ChatAttachment.kt`, `CharacterCard.kt`, `TextSelectionConfig.kt`, `AppStorage.kt`
+
+- `data/model/` — `Assistant.kt`, `Conversation.kt` (incl. `MessageNode`), `Lorebook.kt`, `Skill.kt`, `Mode.kt`, `Avatar.kt`, `Tag.kt`, `Leaderboard.kt`, `ChatAttachment.kt`, `CharacterCard.kt`, `TextSelectionConfig.kt`, `AppStorage.kt`
 - `data/provider/` — `WorkspaceDocumentsProvider.kt` (SAF)
 - `data/search/` — `AndroidBingSearchClient.kt`
 - `service/` — `ChatService.kt`, 4 WorkManager workers (`SpontaneousWorker`, `ScheduledMessageWorker`, `MemoryConsolidationWorker`, `ChatStorageMaintenanceWorker`), `WebServerService` (foreground, holds WifiLock), `AssistantNotificationListener` (NotificationListenerService), `ChatPersistenceMode.kt`, `ChatGenerationTransformers.kt`, `SpontaneousMessaging.kt`, `ScheduledMessageReceiver.kt`, `stt/ChatMultimodalASRController.kt`
@@ -88,7 +88,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - `GenerationHandler.generateText(...): Flow<GenerationChunk>` — orchestrator, max 256 tool-use steps
 - `ChatService` — Koin single, owns `Map<Uuid, MutableStateFlow<Conversation>>` + reference counts + generation jobs + `Map<Uuid, ChatPersistenceMode>` + error/generationDone SharedFlows
 - Transformers: input/output pipeline in `service/ChatGenerationTransformers.kt`. Output has 3 hooks: `transform` (every chunk), `visualTransform` (visual-only during streaming), `onGenerationFinish`. Built-ins: `TemplateTransformer` (Pebble), `PlaceholderTransformer`, `OcrTransformer`, `DocumentAsPromptTransformer` (uses `:document` PdfParser), `ThinkTagTransformer`, `RegexOutputTransformer`, `Base64ImageToLocalFileTransformer`, `UnsupportedFileTransformer`, `WorkspaceReminderTransformer`
-- Tools: `LocalTools.kt` (5 active options: JS via QuickJS, Notifications, TTS, ImageGeneration, CharacterQuestions/ask_user — plus a legacy `PythonEngine` enum entry kept ONLY for backwards-compatible settings deserialization; Python execution is now via the PRoot Linux workspace tools; `app/src/main/python/executor.py` is no longer wired up by any Kotlin source), `WorkspaceTools.kt` (read/write/edit/shell via PRoot), memory tools, `manage_skills`, MCP tools via `McpManager`
+- Tools: `LocalTools.kt` (5 active options: JS via QuickJS, Notifications, TTS, ImageGeneration, CharacterQuestions/ask_user — plus a legacy `PythonEngine` enum entry kept ONLY for backwards-compatible settings deserialization; Python execution is now via the PRoot Linux workspace tools), `WorkspaceTools.kt` (read/write/edit/shell via PRoot), memory tools, `manage_skills`, MCP tools via `McpManager`
 - RAG: `EmbeddingService`, `VectorEngine` (object), `MemoryChunker` (object), `VectorUtils`, `MemoryRepository.retrieveRelevantMemories` (function defaults: `limit=5, similarityThreshold=0.5f` — NOT 0.45/10; `ChatService` passes `limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit` at `ChatService.kt:1503`)
 - Catalog: `ModelCatalogService` downloads `lastchat_catalog.json` from `raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/...`, `CatalogSettingsMerger.kt` (top-level `mergeCatalogIntoSettings` function, NOT a class) + `ModelMetadataResolver` (class) resolve models against catalog + `ModelRegistry` (object in `:shared`)
 - MCP: `McpManager` reactively syncs clients when `settings.mcpServers` changes. Custom transports (NOT SDK built-ins) in `transport/` (`SseClientTransport`, `StreamableHttpClientTransport`), both built on `PlatformHttpClient`.
@@ -125,7 +125,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **`PremiumHaptics`** (`ui/hooks/PremiumHaptics.kt`) — 12 patterns: `Tick`, `Pop` (clicks/toggles), `Thud` (heavy), `Buildup`, `Success`, `Error`, `DragStart`, `DragEnd`, `Send` (whoosh), `ScrollEdge`, `Selection`, `Cancel`. Use `rememberPremiumHaptics()`. Respects `settings.displaySetting.enableUIHaptics`. **NEVER use `LocalHapticFeedback` directly.**
 - **`MotionPolicy`** (`ui/motion/MotionPolicy.kt`) — `LocalMotionPolicy` + `rememberSystemMotionPolicy()`. Respects system "reduce motion" (reads `Settings.Global.ANIMATOR_DURATION_SCALE` via ContentObserver). Top-level routes (Chat↔Menu) fade-only (120ms in / 90ms out). Other routes slide+fade (200ms slide with FastOutSlowInEasing, 150ms in / 100ms out; slide offset `it/2` forward-enter, `-it/4` forward-exit). `lateralEnterTransition`/`lateralExitTransition` for sibling-tab navigation. `hierarchicalEnterTransition`/`hierarchicalExitTransition` for parent→child. When `useWideSettingsLayout` AND both source+target are settings-pane routes, transitions are None. `BackButton` uses `spring(dampingRatio=0.6f, stiffness=300f)` and scales to 0.85f on press — golden standard for round/clicky elements.
 - **Animation specs**: Standard spring `spring(dampingRatio = 0.5f, stiffness = 400f)`. Bouncy/clicky `spring(dampingRatio = 0.6f, stiffness = 300f)`. Non-spring timing (incl. `tween`) acceptable where it improves UX.
-- **Icons**: `Icons.Rounded.XXX` (Material, `androidx.compose.material.icons.Icons.Rounded`) is the ONLY icon set actually in use (~680 occurrences across ~97 files). Lucide (`com.composables.icons.lucide`) is declared in `:app` deps but has ZERO usages — don't add new Lucide usages; either use `Icons.Rounded.XXX` or remove the dep.
+- **Icons**: `Icons.Rounded.XXX` (Material, `androidx.compose.material.icons.Icons.Rounded`) is the ONLY icon set actually in use (~680 occurrences across ~97 files).
 - **Toasts**: `LocalToaster.current` (`ui/context/ToasterContext.kt`). `ToastType.Normal/Success/Info/Warning/Error`. Activities outside `AppRoutes` must provide their own `LocalToaster`.
 - **Form rows**: `FormItem(label = {...}, description = {...}, tail = { HapticSwitch(...) })` (in `ui/components/ui/Form.kt`).
 - **How to add a screen**:
@@ -149,7 +149,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **`MessageNode` branching**: each node has `messages: List<UIMessage>` + `selectIndex`. Users can regenerate/edit to create branches. `selectConversationTurnVersion` switches versions.
 - **`ChatPersistenceMode`**: `NORMAL`/`TEMPORARY`/`PERSIST_ON_REPLY` (used by spontaneous "unrelated" messages).
 - **Streaming checkpoint**: `STREAMING_CHECKPOINT_INTERVAL_MS=1000` (saves to DB every 1s). `AUTO_RESUME_MAX_RETRIES=3`, `AUTO_RESUME_RETRY_DELAY_MS=700`.
-- **`MemoryItemEntity`/`MemoryItemFtsEntity` exist as files but are NOT in `@Database` yet** — WIP, don't assume queryable.
+
 - **`handleMessageChunk(messages, chunk, model)`** is the streaming-merge entry point in `:ai` `ui/MessageUtils.kt`. Don't write your own merger. `List<UIMessage>.limitContext(size)` walks backwards through tool-call→tool-result dependency chains — don't replace with `takeLast(size)`.
 - **`Model.providerOverwrite: ProviderSetting?`** — a model can carry its own `ProviderSetting` that overrides the user's selected provider. `GenerationHandler` consults this; if non-null, routes the request through the overwrite's provider. This is how the model catalog routes specific models to specific providers.
 
@@ -217,8 +217,8 @@ See `docs/ios-portability.md` for the full plan.
 - **Don't use `LocalHapticFeedback`** — use `PremiumHaptics` via `rememberPremiumHaptics()`.
 - **Don't persist plaintext API keys** in Settings — use `SecretKeyManager` + `SecureStore`.
 - **Don't call `dataStore.edit` directly** — use `SettingsStore.update { ... }`.
-- **Don't add code to `LastChatAPI`/`RikkaHubAPI`** — they're empty stubs. Use `PlatformHttpClient` or follow `SponsorAPI.create(...)` pattern.
-- **Don't assume `MemoryItemEntity`/`MemoryItemFtsEntity` are queryable** — not yet in `@Database`.
+- **Don't add Retrofit code** — use `PlatformHttpClient`.
+
 - **Don't add a Room migration without registering it** in `dataSourceModule.addMigrations(...)`.
 - **Don't add a `Screen` without `composable<Screen.X>` in `AppRoutes`** — and `SettingsDestination` for settings screens.
 - **Don't add a new ViewModel without registering it** in `di/ViewModelModule.kt`.
@@ -243,3 +243,16 @@ Use `feat:`, `fix:`, `chore:`, etc. (Conventional Commits spec).
 ## Editor config
 
 `.editorconfig`: 4-space indent for `kt`/`kts`, 2-space for `xml`/`json`/`md`/`yml`/`yaml`. Max line 120. Trim trailing whitespace (except `md`/`yml`/`yaml` — note `yaml` extension is ALSO excluded). Insert final newline. UTF-8.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

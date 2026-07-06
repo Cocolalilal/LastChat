@@ -19,17 +19,20 @@ class TextChunker(
                 paragraph
                     .split(punctuationRegex)
                     .asSequence()
-                    .map { it.trim() }
                     .filter { it.isNotEmpty() }
                     .fold(mutableListOf<StringBuilder>()) { acc, seg ->
                         if (acc.isEmpty() || acc.last().length + seg.length > maxChunkLength) {
-                            acc.add(StringBuilder(seg))
+                            val trimmed = seg.trimStart()
+                            if (trimmed.isNotEmpty()) {
+                                acc.add(StringBuilder(trimmed))
+                            }
                         } else {
                             acc.last().append(seg)
                         }
                         acc
                     }
-                    .map { it.toString() }
+                    .map { it.toString().trimEnd() }
+                    .filter { it.isNotEmpty() }
             }
         }
 
