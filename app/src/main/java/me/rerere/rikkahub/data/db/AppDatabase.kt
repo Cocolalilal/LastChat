@@ -21,6 +21,17 @@ import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemoryActivityDao
+import me.rerere.rikkahub.data.db.dao.MemoryBudgetDao
+import me.rerere.rikkahub.data.db.dao.MemoryConversationStateDao
+import me.rerere.rikkahub.data.db.dao.MemoryEpisodeDao
+import me.rerere.rikkahub.data.db.dao.MemoryFactDao
+import me.rerere.rikkahub.data.db.dao.MemoryFrameDao
+import me.rerere.rikkahub.data.db.dao.MemoryFtsDao
+import me.rerere.rikkahub.data.db.dao.MemoryGoalDao
+import me.rerere.rikkahub.data.db.dao.MemoryNodeDao
+import me.rerere.rikkahub.data.db.dao.MemoryProvenanceDao
+import me.rerere.rikkahub.data.db.dao.MemoryStoreMetaDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
@@ -30,6 +41,20 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemoryActivityEntity
+import me.rerere.rikkahub.data.db.entity.MemoryAliasEntity
+import me.rerere.rikkahub.data.db.entity.MemoryBudgetLedgerEntity
+import me.rerere.rikkahub.data.db.entity.MemoryConversationStateEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFactEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFactLinkEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFrameEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFtsEntity
+import me.rerere.rikkahub.data.db.entity.MemoryGoalEntity
+import me.rerere.rikkahub.data.db.entity.MemoryMentionEntity
+import me.rerere.rikkahub.data.db.entity.MemoryNodeEntity
+import me.rerere.rikkahub.data.db.entity.MemoryProvenanceEntity
+import me.rerere.rikkahub.data.db.entity.MemoryStoreMetaEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -44,8 +69,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class],
-    version = 33,
+    entities = [
+        ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class,
+        EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class,
+        ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class,
+        // Memory v2 graph store (plan §4) — additive in v34, legacy memory tables untouched
+        MemoryNodeEntity::class, MemoryAliasEntity::class, MemoryFactEntity::class,
+        MemoryFactLinkEntity::class, MemoryEpisodeEntity::class, MemoryMentionEntity::class,
+        MemoryFrameEntity::class, MemoryProvenanceEntity::class, MemoryFtsEntity::class,
+        MemoryGoalEntity::class, MemoryActivityEntity::class, MemoryBudgetLedgerEntity::class,
+        MemoryConversationStateEntity::class, MemoryStoreMetaEntity::class,
+    ],
+    version = 34,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -76,6 +111,7 @@ import kotlinx.serialization.json.put
         // 29->30 is manual migration (MIGRATION_29_30) - adds per-chat lorebook overrides
         // 31->32 is manual migration (MIGRATION_31_32) - adds embedding_blob columns
         // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
+        AutoMigration(from = 33, to = 34), // Memory v2 graph store tables (plan §4, §16.1) - purely additive
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -99,6 +135,30 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun usageStatsDao(): UsageStatsDAO
 
     abstract fun workspaceDao(): WorkspaceDAO
+
+    // --- Memory v2 graph store (plan §4) ---
+
+    abstract fun memoryNodeDao(): MemoryNodeDao
+
+    abstract fun memoryFactDao(): MemoryFactDao
+
+    abstract fun memoryEpisodeDao(): MemoryEpisodeDao
+
+    abstract fun memoryFrameDao(): MemoryFrameDao
+
+    abstract fun memoryProvenanceDao(): MemoryProvenanceDao
+
+    abstract fun memoryFtsDao(): MemoryFtsDao
+
+    abstract fun memoryGoalDao(): MemoryGoalDao
+
+    abstract fun memoryActivityDao(): MemoryActivityDao
+
+    abstract fun memoryBudgetDao(): MemoryBudgetDao
+
+    abstract fun memoryConversationStateDao(): MemoryConversationStateDao
+
+    abstract fun memoryStoreMetaDao(): MemoryStoreMetaDao
 
     companion object {
         const val TAG = "AppDatabase"
