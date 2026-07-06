@@ -1045,10 +1045,12 @@ private fun defaultRootfsUrl(nativeLibraryDir: String): String {
             ?: Build.SUPPORTED_ABIS.firstOrNull()
             ?: "arm64-v8a"
     }
+    if (abi == "armeabi-v7a" || abi == "armeabi") {
+        return "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armv7/alpine-minirootfs-3.19.9-armv7.tar.gz"
+    }
     val arch = when (abi) {
         "x86_64" -> "amd64"
         "arm64-v8a" -> "arm64"
-        "armeabi-v7a", "armeabi" -> "armhf"
         else -> "arm64"
     }
     return "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-$arch.tar.gz"
