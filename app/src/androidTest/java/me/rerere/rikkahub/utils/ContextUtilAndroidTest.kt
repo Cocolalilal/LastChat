@@ -1,29 +1,38 @@
 package me.rerere.rikkahub.utils
 
+import androidx.core.net.toUri
 import androidx.test.platform.app.InstrumentationRegistry
-import me.rerere.rikkahub.data.ai.tools.PythonSandbox
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import java.io.File
 import kotlin.uuid.Uuid
 
 class ContextUtilAndroidTest {
     @Test
-    fun openOwnedUriInputStreamReadsPythonSandboxFile() {
+    fun openOwnedUriInputStreamReadsOwnedFile() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val sandbox = PythonSandbox(context)
-        val conversationId = Uuid.random()
-        val file = sandbox.getFile(conversationId, "generated/result.txt").apply {
-            parentFile?.mkdirs()
-            writeText("hello from sandbox")
-        }
 
-        val uri = sandbox.getFileUri(conversationId, "generated/result.txt")
-        val content = context.openOwnedUriInputStream(uri)?.bufferedReader()?.use { reader ->
-            reader.readText()
+        // PythonSandbox has been removed; produce the app-owned file + URI through the
+        // current OwnedFileStorage import path instead. The behavior under test is the
+        // same: openOwnedUriInputStream must read back a file we own.
+        val source = File(context.cacheDir, "owned-source-${Uuid.random()}.txt").apply {
+            writeText("hello from owned storage")
         }
+        val ownedUri = context.importOwnedFile(
+            sourceUri = source.toUri(),
+            directory = OwnedFileDirectory.LOREBOOK_ATTACHMENT,
+            fileNameHint = "result.txt",
+            mimeHint = "text/plain",
+        )
+        assertNotNull(ownedUri)
 
-        assertNotNull(file)
-        assertEquals("hello from sandbox", content)
+        val content = context.openOwnedUriInputStream(requireNotNull(ownedUri))
+            ?.bufferedReader()
+            ?.use { reader -> reader.readText() }
+
+        assertEquals("hello from owned storage", content)
+        source.delete()
     }
 }
