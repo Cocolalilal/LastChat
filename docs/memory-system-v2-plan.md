@@ -157,7 +157,13 @@ Ids are `Uuid` strings. All JSON via `JsonInstant`. Hard length caps are applier
 (clamped at sentence boundary, full text preserved in provenance) — the schema never stores
 unbounded prose outside episode summaries and provenance excerpts.
 
-### 4.1 `memory_entity` — the nodes
+### 4.1 `memory_node` — the nodes
+
+> **Implemented as `memory_node`, not `memory_entity`** (P1a, commit `fecb53bd`). Room's
+> generated `AppDatabase_Impl` collapses `memory_entity` and the legacy `MemoryEntity` table to
+> the same identifier → compile error while legacy survives to v35. All P1b+ SQL targets
+> `memory_node`; the Kotlin type is `MemoryNodeEntity`/`MemoryNodeDao`. Domain concept
+> ("entity node") unchanged; every "entity table" reference below means this table.
 
 | column | notes |
 |---|---|
@@ -275,9 +281,10 @@ entire "why does this memory exist" story in the UI (§14 node sheet) and the so
 
 ### 4.9 `memory_fts` — the primary index
 
-Standalone FTS4 table (project already uses FTS4), manually synced by the applier (no Room
-triggers): `row_kind`, `row_id`, `text` = fact statement / episode title+summary / entity
-name+aliases. One unified table so a single MATCH query covers all recall paths.
+Standalone FTS4 table (the first FTS4 table in the project — the §4.9 "already uses FTS4" claim
+was inaccurate; AutoMigration creates the virtual table fine), manually synced by the applier
+(no Room triggers): `row_kind`, `row_id`, `text` = fact statement / episode title+summary /
+entity name+aliases. One unified table so a single MATCH query covers all recall paths.
 
 ### 4.10 `memory_goal` — curiosity state (deliberately *not* in the graph)
 
@@ -1129,7 +1136,8 @@ re-classification) that Room DDL can't express; the export format carries the sa
 ## 17. Implementation phases & test matrix
 
 Riskiest-first; each phase ships behind `Assistant.enableMemory` remaining functionally legacy
-until P2 completes, and leaves the app releasable. The attempt-1 branch
+until P2 completes, and leaves the app releasable. **Session-by-session breakdown with
+copy-paste starter prompts: `docs/memory-system-v2-sessions.md`.** The attempt-1 branch
 (`origin/LC_memory_system_attempt_1`) is a code-shape reference for workers, watermark, budget,
 canvas layout, and DI wiring — but entities/ops/dedup are new (facts-on-edges), so port
 patterns, not files.
@@ -1311,9 +1319,13 @@ The user demonstrably chats in EN/IT/RO; the app ships zh/ja/ko locales. Rules:
 
 - **Duplicate assistant**: dialog gains "Also copy memories" (default off) → clones
   CHARACTER-scope rows to the new owner id through the applier.
-- **Character card export/share never includes memories** — cards are the character's
-  definition; memories are the user's private history. Only the explicit §14.4 memory export
-  produces memory data.
+- **Assistant export/import** (`utils/AssistantExportImport.kt` — found via graphify; it already
+  has an opt-in `includeMemories` flag that bundles core+episodic memories and restores them via
+  `addMemory`): the opt-in survives, upgraded — when enabled it embeds the §14.4 graph-export
+  format (this character's scope only) and import feeds it through the applier
+  (`source=IMPORTED`, dedup gate absorbing collisions). Default stays **off**: sharing a card
+  shares the character, not your history. Legacy assistant exports containing old-format
+  memories import as legacy-note facts with the §16.2 amnesty.
 - Multi-character shared fiction worlds (two characters in one storyline) are **out of scope**
   for v2; the scope model (§10) makes cross-character reads impossible by design. Noted as the
   price of the privacy guarantee; a future opt-in "shared frame" concept would need its own
