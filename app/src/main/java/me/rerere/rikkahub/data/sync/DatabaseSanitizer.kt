@@ -71,24 +71,7 @@ object DatabaseSanitizer {
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
                 "daily_activity",
-                "usage_stats",
-                // Memory v2 graph store (plan §4). MUST list every new table or restore silently
-                // drops them (§11.3, verified footgun). memory_fts is a derived FTS4 index but is
-                // still copied so restored data stays searchable without waiting for re-extraction.
-                "memory_node",
-                "memory_alias",
-                "memory_fact",
-                "memory_fact_link",
-                "memory_episode",
-                "memory_mention",
-                "memory_frame",
-                "memory_provenance",
-                "memory_fts",
-                "memory_goal",
-                "memory_activity",
-                "memory_budget_ledger",
-                "memory_conversation_state",
-                "memory_store_meta"
+                "usage_stats"
             )
 
             for (table in tables) {

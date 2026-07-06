@@ -73,10 +73,6 @@ android {
             assets.srcDir("../web-ui/build/client")
             assets.srcDir(prepareBundledCatalogAssets.map { it.destinationDir })
         }
-        // Exported Room schemas so MigrationTestHelper can create/validate old DB versions.
-        getByName("androidTest") {
-            assets.srcDirs(files("$projectDir/schemas"))
-        }
     }
 
     defaultConfig {
@@ -409,7 +405,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation("io.ktor:ktor-server-sse:3.2.3")
