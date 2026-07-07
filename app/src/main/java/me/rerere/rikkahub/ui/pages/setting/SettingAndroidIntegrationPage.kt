@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings as AndroidSettings
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -87,6 +90,7 @@ import me.rerere.rikkahub.ui.components.textselection.QuickAskOuterShape
 import me.rerere.rikkahub.ui.components.textselection.quickAskGroupedButtonShape
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -172,6 +176,129 @@ fun SettingAndroidIntegrationPage(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                    }
+                }
+
+                // Digital Assistant Section
+                item {
+                    val overlayConfig = settings.assistantOverlayConfig
+                    val isDefaultAssistant = remember(settings) { isLastChatDefaultAssistant(context) }
+                    SettingsGroup(title = stringResource(R.string.assistant_overlay_section)) {
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_set_default),
+                            subtitle = if (isDefaultAssistant) {
+                                stringResource(R.string.assistant_overlay_is_default)
+                            } else {
+                                stringResource(R.string.assistant_overlay_set_default_desc)
+                            },
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(AndroidSettings.ACTION_VOICE_INPUT_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }.onFailure {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(AndroidSettings.ACTION_SETTINGS)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    }
+                                }
+                            }
+                        )
+
+                        val overlayDefaultAssistant = settings.assistants.find { it.name == "Generical" }
+                            ?: settings.assistants.firstOrNull()
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_assistant),
+                            subtitle = settings.assistants.find { it.id == overlayConfig.assistantId }?.name
+                                ?: overlayDefaultAssistant?.name ?: "None",
+                            trailing = {
+                                Select(
+                                    options = settings.assistants.map { it.id },
+                                    selectedOption = overlayConfig.assistantId ?: overlayDefaultAssistant?.id,
+                                    onOptionSelected = { selected ->
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(assistantOverlayConfig = it.assistantOverlayConfig.copy(assistantId = selected))
+                                            }
+                                        }
+                                    },
+                                    optionToString = { id ->
+                                        settings.assistants.find { it.id == id }?.name ?: "Unknown"
+                                    },
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_auto_stt),
+                            subtitle = stringResource(R.string.assistant_overlay_auto_stt_desc),
+                            trailing = {
+                                HapticSwitch(
+                                    checked = overlayConfig.autoStartStt,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(assistantOverlayConfig = it.assistantOverlayConfig.copy(autoStartStt = checked))
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_auto_send),
+                            subtitle = stringResource(R.string.assistant_overlay_auto_send_desc),
+                            trailing = {
+                                HapticSwitch(
+                                    checked = overlayConfig.autoSendOnSttFinish,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(assistantOverlayConfig = it.assistantOverlayConfig.copy(autoSendOnSttFinish = checked))
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_auto_read),
+                            subtitle = stringResource(R.string.assistant_overlay_auto_read_desc),
+                            trailing = {
+                                HapticSwitch(
+                                    checked = overlayConfig.autoReadReply,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(assistantOverlayConfig = it.assistantOverlayConfig.copy(autoReadReply = checked))
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = stringResource(R.string.assistant_overlay_attach_screenshot),
+                            subtitle = stringResource(R.string.assistant_overlay_attach_screenshot_desc),
+                            trailing = {
+                                HapticSwitch(
+                                    checked = overlayConfig.attachScreenshot,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            settingsStore.update {
+                                                it.copy(assistantOverlayConfig = it.assistantOverlayConfig.copy(attachScreenshot = checked))
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        )
                     }
                 }
 
@@ -673,6 +800,16 @@ private fun EditActionDialog(
             }
         }
     )
+}
+
+private fun isLastChatDefaultAssistant(context: Context): Boolean {
+    return runCatching {
+        val value = AndroidSettings.Secure.getString(
+            context.contentResolver,
+            "voice_interaction_service",
+        )
+        !value.isNullOrBlank() && value.contains(context.packageName)
+    }.getOrDefault(false)
 }
 
 private fun getIconForName(name: String): ImageVector {

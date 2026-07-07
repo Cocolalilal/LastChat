@@ -28,6 +28,8 @@ import me.rerere.locallm.LocalRuntimeState
 import me.rerere.locallm.MemoryGuard
 import me.rerere.locallm.ModelInstall
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
+import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
 import me.rerere.rikkahub.data.datastore.SettingsStore
 
 data class LocalLlmUiState(
@@ -48,7 +50,7 @@ class SettingLocalLlmViewModel(
     private val runtime: LiteRtRuntime,
     private val install: ModelInstall,
     private val settingsStore: SettingsStore,
-    modelCatalogService: ModelCatalogService,
+    private val modelCatalogService: ModelCatalogService,
 ) : ViewModel() {
     
     val catalogSnapshot = modelCatalogService.snapshotFlow
@@ -129,9 +131,10 @@ class SettingLocalLlmViewModel(
 
     private suspend fun syncModelsToSettings(installed: List<InstalledLocalModel>) {
         val settings = settingsStore.settingsFlow.value
+        val catalogSnapshot = modelCatalogService.snapshot.value
         val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
         val existingByModelId = local.models.associateBy { it.modelId }
-        val newModels = installed.map { it.toAiModel(existingByModelId[it.id]) }
+        val newModels = installed.map { it.toAiModel(existingByModelId[it.id], catalogSnapshot) }
         if (newModels == local.models) return
         val updatedProviders = settings.providers.map {
             if (it is ProviderSetting.LiteRtLocal) it.copy(models = newModels) else it
@@ -139,7 +142,7 @@ class SettingLocalLlmViewModel(
         settingsStore.update(settings.copy(providers = updatedProviders))
     }
 
-    private fun InstalledLocalModel.toAiModel(existing: Model?): Model {
+    private fun InstalledLocalModel.toAiModel(existing: Model?, catalogSnapshot: ModelCatalogSnapshot?): Model {
         val input = buildList {
             add(Modality.TEXT)
             if (supportsImage) add(Modality.IMAGE)
@@ -149,6 +152,7 @@ class SettingLocalLlmViewModel(
             add(ModelAbility.TOOL) // prompt-engineered tool calling for all local models
             if (supportsThinking) add(ModelAbility.REASONING)
         }
+        val iconUrl = catalogSnapshot?.inferFamilyEntry(displayName)?.iconUrl
         return (existing ?: Model()).copy(
             modelId = id,
             displayName = displayName,
@@ -156,6 +160,7 @@ class SettingLocalLlmViewModel(
             inputModalities = input,
             outputModalities = listOf(Modality.TEXT),
             abilities = abilities,
+            iconUrl = iconUrl,
             customIconUri = customIconUri,
         )
     }

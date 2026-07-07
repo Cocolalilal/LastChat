@@ -1183,6 +1183,24 @@
     <!-- Android Integration Settings -->
     <string name="setting_android_integration">Android Integration</string>
     <string name="setting_android_integration_desc">Text selection popup settings</string>
+    <!-- Digital assistant overlay -->
+    <string name="assistant_overlay_service_label">LastChat Assistant</string>
+    <string name="assistant_overlay_section">Digital Assistant</string>
+    <string name="assistant_overlay_set_default">Set as default assistant</string>
+    <string name="assistant_overlay_set_default_desc">Open Android settings to make LastChat your device assistant</string>
+    <string name="assistant_overlay_is_default">LastChat is your default assistant</string>
+    <string name="assistant_overlay_assistant">Assistant character</string>
+    <string name="assistant_overlay_auto_stt">Start listening on trigger</string>
+    <string name="assistant_overlay_auto_stt_desc">Begin speech‑to‑text as soon as the overlay opens</string>
+    <string name="assistant_overlay_auto_send">Send when speech ends</string>
+    <string name="assistant_overlay_auto_send_desc">Automatically send the message when transcription finishes</string>
+    <string name="assistant_overlay_auto_read">Read reply aloud</string>
+    <string name="assistant_overlay_auto_read_desc">Speak the assistant\'s reply with the selected TTS voice</string>
+    <string name="assistant_overlay_attach_screenshot">Attach current screen</string>
+    <string name="assistant_overlay_attach_screenshot_desc">Include a screenshot of the screen you were on when summoning the assistant</string>
+    <string name="assistant_overlay_open_in_app">Open in app</string>
+    <string name="assistant_overlay_hint">Ask %1$s</string>
+    <string name="assistant_overlay_listening">Listening…</string>
     <string name="text_selection_preview">Preview</string>
     <string name="text_selection_assistant">Character</string>
     <string name="text_selection_use_default">Use default character</string>

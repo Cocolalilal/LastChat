@@ -39,6 +39,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.model.AssistantOverlayConfig
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.utils.JsonInstant
@@ -157,6 +158,7 @@ class SettingsStore(
 
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
+        val ASSISTANT_OVERLAY_CONFIG = stringPreferencesKey("assistant_overlay_config")
 
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
@@ -279,6 +281,9 @@ class SettingsStore(
                     textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: TextSelectionConfig(),
+                    assistantOverlayConfig = preferences[ASSISTANT_OVERLAY_CONFIG]?.let {
+                        JsonInstant.decodeFromString(it)
+                    } ?: AssistantOverlayConfig(),
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -585,6 +590,7 @@ class SettingsStore(
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
+            preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
         }
     }
 

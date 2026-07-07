@@ -23,6 +23,7 @@ import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.model.TextSelectionAction
+import me.rerere.rikkahub.data.model.AssistantOverlayConfig
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.data.sync.BackupCleanupResult
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -100,6 +101,7 @@ data class Settings(
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
+    val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)
@@ -386,6 +388,11 @@ fun Settings.resolveTextSelectionAssistant(): Assistant {
         ?: getCurrentAssistant()
 }
 
+fun Settings.resolveAssistantOverlayAssistant(): Assistant {
+    return assistantOverlayConfig.assistantId?.let { getAssistantById(it) }
+        ?: getCurrentAssistant()
+}
+
 fun Settings.findTextSelectionAction(actionId: String): TextSelectionAction? {
     return textSelectionConfig.actions.find { it.id == actionId }
 }
@@ -590,6 +597,9 @@ internal fun Settings.clearMissingModelReferences(): Settings {
             actions = textSelectionConfig.actions.map { action ->
                 action.copy(modelId = action.modelId.ensureValidOrNull())
             }
+        ),
+        assistantOverlayConfig = assistantOverlayConfig.copy(
+            assistantId = assistantOverlayConfig.assistantId?.takeIf { id -> updatedAssistants.any { it.id == id } },
         ),
     )
 }

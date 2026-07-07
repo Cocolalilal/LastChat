@@ -82,6 +82,14 @@ val viewModelModule = module {
             templateTransformer = get(),
         )
     }
+    viewModel<me.rerere.rikkahub.ui.activity.AssistantOverlayVM> {
+        me.rerere.rikkahub.ui.activity.AssistantOverlayVM(
+            settingsStore = get(),
+            generationHandler = get(),
+            memoryRepository = get(),
+            templateTransformer = get(),
+        )
+    }
     viewModel {
         me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel(
             context = get(),

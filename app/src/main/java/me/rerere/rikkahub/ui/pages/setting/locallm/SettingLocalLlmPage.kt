@@ -142,9 +142,9 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                 itemsIndexed(state.installed, key = { _, it -> it.id }) { index, model ->
                     val shape = when {
                         state.installed.size == 1 -> RoundedCornerShape(24.dp)
-                        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-                        index == state.installed.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                        else -> RoundedCornerShape(4.dp)
+                        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                        index == state.installed.lastIndex -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                        else -> RoundedCornerShape(10.dp)
                     }
                     val iconUrl = remember(model.id, catalogSnapshot) {
                         catalogSnapshot?.inferFamilyEntry(model.displayName)?.iconUrl
@@ -189,9 +189,9 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
             itemsIndexed(state.downloadable, key = { _, it -> it.id }) { index, meta ->
                 val shape = when {
                     state.downloadable.size == 1 -> RoundedCornerShape(24.dp)
-                    index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-                    index == state.downloadable.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                    else -> RoundedCornerShape(4.dp)
+                    index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                    index == state.downloadable.lastIndex -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                    else -> RoundedCornerShape(10.dp)
                 }
                 val iconUrl = remember(meta.id, catalogSnapshot) {
                     catalogSnapshot?.inferFamilyEntry(meta.name)?.iconUrl
@@ -251,7 +251,7 @@ private fun InstalledModelCard(
     Card(
         onClick = onClick,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -296,7 +296,7 @@ private fun DownloadableModelCard(
     Card(
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {

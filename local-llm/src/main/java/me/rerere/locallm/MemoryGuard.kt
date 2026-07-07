@@ -39,8 +39,13 @@ object MemoryGuard {
         val modelMb = modelSizeBytes / (1024 * 1024)
         val requiredMb = modelMb + HEADROOM_MB
         val availableMb = info.availMem / (1024 * 1024)
+        val totalMb = info.totalMem / (1024 * 1024)
 
-        return if (availableMb >= requiredMb) {
+        // Assume Android OS needs ~2.5GB to be safe. If the device has enough physical RAM
+        // to hold the OS + the model + headroom, allow the load and let Android kill background tasks.
+        val maxAppRamMb = totalMb - 2500L
+
+        return if (availableMb >= requiredMb || maxAppRamMb >= requiredMb) {
             MemoryCheck.Ok
         } else {
             MemoryCheck.Insufficient(

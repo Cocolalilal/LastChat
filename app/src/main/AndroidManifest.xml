@@ -145,6 +145,47 @@
         </intent-filter>
     </service>
 
+    <!-- Digital Assistant: makes LastChat selectable as the default assistant app -->
+    <service
+        android:name=".service.assist.LastChatVoiceInteractionService"
+        android:label="@string/assistant_overlay_service_label"
+        android:permission="android.permission.BIND_VOICE_INTERACTION"
+        android:exported="true">
+        <meta-data
+            android:name="android.voice_interaction"
+            android:resource="@xml/lastchat_voice_interaction_service" />
+        <intent-filter>
+            <action android:name="android.service.voice.VoiceInteractionService" />
+        </intent-filter>
+    </service>
+
+    <service
+        android:name=".service.assist.LastChatVoiceInteractionSessionService"
+        android:permission="android.permission.BIND_VOICE_INTERACTION"
+        android:exported="true" />
+
+    <service
+        android:name=".service.assist.LastChatRecognitionService"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.speech.RecognitionService" />
+        </intent-filter>
+        <meta-data
+            android:name="android.speech"
+            android:resource="@xml/lastchat_recognition_service" />
+    </service>
+
+    <!-- Floating assistant overlay launched by the assist gesture -->
+    <activity
+        android:name=".ui.activity.AssistantOverlayActivity"
+        android:exported="false"
+        android:theme="@style/Theme.Rikkahub.Translucent"
+        android:excludeFromRecents="true"
+        android:launchMode="singleTask"
+        android:configChanges="keyboardHidden|orientation|screenSize"
+        android:windowSoftInputMode="adjustResize"
+        tools:ignore="Instantiatable" />
+
     <provider
       android:name="androidx.core.content.FileProvider"
       android:authorities="${applicationId}.fileprovider"
