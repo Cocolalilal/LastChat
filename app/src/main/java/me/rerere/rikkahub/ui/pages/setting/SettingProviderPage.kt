@@ -727,7 +727,11 @@ private fun ProviderListView(
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ProviderItemContent(
                             provider = localProvider,
-                            animatedShape = RoundedCornerShape(24.dp),
+                            animatedShape = if (reorderableProviders.isEmpty()) {
+                                RoundedCornerShape(24.dp)
+                            } else {
+                                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                            },
                             providerTags = settings.providerTags,
                             haptics = haptics,
                             dragHandle = {},
@@ -739,10 +743,16 @@ private fun ProviderListView(
 
             itemsIndexed(reorderableProviders, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
-                    reorderableProviders.size == 1 -> ItemPosition.ONLY
-                    index == 0 -> ItemPosition.FIRST
-                    index == reorderableProviders.lastIndex -> ItemPosition.LAST
-                    else -> ItemPosition.MIDDLE
+                    localProvider != null -> {
+                        if (index == reorderableProviders.lastIndex) ItemPosition.LAST
+                        else ItemPosition.MIDDLE
+                    }
+                    else -> {
+                        if (reorderableProviders.size == 1) ItemPosition.ONLY
+                        else if (index == 0) ItemPosition.FIRST
+                        else if (index == reorderableProviders.lastIndex) ItemPosition.LAST
+                        else ItemPosition.MIDDLE
+                    }
                 }
                 
                 // Calculate neighbor offset

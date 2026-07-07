@@ -144,8 +144,8 @@ class ModelInstall(private val context: Context) {
             }
         }
 
-        if (expectedSize > 0 && part.length() != expectedSize) {
-            // Size mismatch → corrupt/incomplete; drop the partial so a retry starts fresh.
+        if (expectedSize > 0 && Math.abs(part.length() - expectedSize) > 10L * 1024 * 1024) {
+            // Size mismatch by more than 10MB → corrupt/incomplete; drop the partial so a retry starts fresh.
             part.delete()
             throw IOException("size_mismatch")
         }

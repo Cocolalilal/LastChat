@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application>
         <!-- Required for LiteRT-LM GPU acceleration (OpenCL). Optional so CPU-only devices still install. -->
         <uses-native-library
@@ -9,6 +12,11 @@
         <uses-native-library
             android:name="libvndksupport.so"
             android:required="false" />
+
+        <service
+            android:name=".LocalModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

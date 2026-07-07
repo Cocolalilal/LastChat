@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
+import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.search.SearchServiceOptions
 import kotlin.uuid.Uuid
 
@@ -34,7 +35,7 @@ class OnboardingVM(
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
     fun providerPresets(snapshot: ModelCatalogSnapshot?): List<ProviderPreset> {
-        return snapshot?.toProviderPresets() ?: emptyList()
+        return (snapshot?.toProviderPresets() ?: emptyList()).withSpecialProviderPresets()
     }
 
     fun skipSetup(onDone: () -> Unit) {

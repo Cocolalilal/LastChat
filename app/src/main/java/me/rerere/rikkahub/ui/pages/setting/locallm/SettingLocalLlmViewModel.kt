@@ -27,12 +27,12 @@ import me.rerere.locallm.LocalModelStore
 import me.rerere.locallm.LocalRuntimeState
 import me.rerere.locallm.MemoryGuard
 import me.rerere.locallm.ModelInstall
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.datastore.SettingsStore
 
 data class LocalLlmUiState(
     val installed: List<InstalledLocalModel> = emptyList(),
     val downloadable: List<LocalModelMetadata> = emptyList(),
-    val recommendedId: String? = null,
     val deviceRamGb: Int = 0,
     val downloads: Map<String, LocalDownload> = emptyMap(),
     val runtime: LocalRuntimeState = LocalRuntimeState.Idle,
@@ -48,7 +48,10 @@ class SettingLocalLlmViewModel(
     private val runtime: LiteRtRuntime,
     private val install: ModelInstall,
     private val settingsStore: SettingsStore,
+    modelCatalogService: ModelCatalogService,
 ) : ViewModel() {
+    
+    val catalogSnapshot = modelCatalogService.snapshotFlow
 
     private val catalogFlow = MutableStateFlow(LocalModelCatalog())
     private val deviceRamGb = MemoryGuard.deviceTotalRamGb(context)
@@ -59,15 +62,9 @@ class SettingLocalLlmViewModel(
         downloadManager.downloads,
         runtime.state,
     ) { installed, cat, downloads, runtimeState ->
-        val fitting = cat.models.filter { it.minDeviceMemoryInGb <= deviceRamGb }
-        val recommended = fitting.maxWithOrNull(
-            compareBy({ if (it.supportsImage) 1 else 0 }, { if (it.supportsThinking) 1 else 0 }, { it.sizeInBytes })
-        ) ?: cat.models.minByOrNull { it.minDeviceMemoryInGb }
         val installedIds = installed.map { it.id }.toSet()
-        // Show recommended first, then the rest of the not-yet-installed catalog.
         val downloadable = cat.models
             .filter { it.id !in installedIds }
-            .sortedByDescending { it.id == recommended?.id }
         val updates = installed.filter { inst ->
             cat.models.firstOrNull { it.id == inst.id }?.let { it.commitHash != inst.commitHash } == true
         }.map { it.id }.toSet()
@@ -75,7 +72,6 @@ class SettingLocalLlmViewModel(
         LocalLlmUiState(
             installed = installed,
             downloadable = downloadable,
-            recommendedId = recommended?.id,
             deviceRamGb = deviceRamGb,
             downloads = downloads,
             runtime = runtimeState,

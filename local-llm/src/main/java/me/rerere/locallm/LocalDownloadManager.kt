@@ -53,6 +53,8 @@ class LocalDownloadManager(
     /** Downloads (or re-downloads, for updates) a curated model. No-op if already running. */
     fun download(meta: LocalModelMetadata, isUpdate: Boolean = false) {
         if (isDownloading(meta.id)) return
+        val intent = android.content.Intent(context, LocalModelDownloadService::class.java)
+        androidx.core.content.ContextCompat.startForegroundService(context, intent)
         val job = scope.launch {
             put(
                 LocalDownload.Running(
@@ -89,6 +91,8 @@ class LocalDownloadManager(
     /** Downloads a model from a pasted HuggingFace URL. */
     fun downloadFromUrl(url: String, spec: ImportSpec) {
         if (isDownloading(spec.id)) return
+        val intent = android.content.Intent(context, LocalModelDownloadService::class.java)
+        androidx.core.content.ContextCompat.startForegroundService(context, intent)
         val job = scope.launch {
             put(LocalDownload.Running(spec.id, spec.name, DownloadProgress(0, -1), false))
             runCatching {

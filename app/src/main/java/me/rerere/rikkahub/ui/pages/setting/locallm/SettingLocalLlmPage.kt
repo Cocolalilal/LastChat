@@ -63,8 +63,10 @@ import me.rerere.locallm.LocalModelConfig
 import me.rerere.locallm.LocalModelMetadata
 import me.rerere.locallm.LocalRuntimeState
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -77,6 +79,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val catalogSnapshot by vm.catalogSnapshot.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
     var editingModel by remember { mutableStateOf<InstalledLocalModel?>(null) }
 
@@ -107,7 +110,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                 .fillMaxSize()
                 .imePadding(),
             contentPadding = PaddingValues(16.dp) + padding,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // Runtime status (loading / generating / switched to CPU / error)
             runtimeStatusText(state.runtime)?.let { status ->
@@ -130,12 +133,26 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
             }
 
             if (state.installed.isNotEmpty()) {
-                item { SectionHeader(stringResource(R.string.local_llm_manage_files_title)) }
-                items(state.installed, key = { it.id }) { model ->
+                item { 
+                    Spacer(Modifier.height(8.dp))
+                    SectionHeader(stringResource(R.string.local_llm_manage_files_title)) 
+                }
+                itemsIndexed(state.installed, key = { _, it -> it.id }) { index, model ->
+                    val shape = when {
+                        state.installed.size == 1 -> RoundedCornerShape(24.dp)
+                        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                        index == state.installed.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                        else -> RoundedCornerShape(4.dp)
+                    }
+                    val iconUrl = remember(model.id, catalogSnapshot) {
+                        catalogSnapshot?.inferFamilyEntry(model.displayName)?.iconUrl
+                    }
                     InstalledModelCard(
                         model = model,
+                        iconUrl = iconUrl,
                         download = state.downloads[model.id],
                         hasUpdate = model.id in state.updates,
+                        shape = shape,
                         onClick = { editingModel = model },
                         onUpdate = { vm.update(model.id) },
                         onDismissError = { vm.dismissDownloadError(model.id) },
@@ -163,11 +180,24 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                 }
             }
 
-            item { SectionHeader(stringResource(R.string.local_llm_catalog_title)) }
-            items(state.downloadable, key = { it.id }) { meta ->
+            item { 
+                Spacer(Modifier.height(8.dp))
+                SectionHeader(stringResource(R.string.local_llm_catalog_title)) 
+            }
+            itemsIndexed(state.downloadable, key = { _, it -> it.id }) { index, meta ->
+                val shape = when {
+                    state.downloadable.size == 1 -> RoundedCornerShape(24.dp)
+                    index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                    index == state.downloadable.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                    else -> RoundedCornerShape(4.dp)
+                }
+                val iconUrl = remember(meta.id, catalogSnapshot) {
+                    catalogSnapshot?.inferFamilyEntry(meta.name)?.iconUrl
+                }
                 DownloadableModelCard(
                     meta = meta,
-                    recommended = meta.id == state.recommendedId,
+                    iconUrl = iconUrl,
+                    shape = shape,
                     download = state.downloads[meta.id],
                     onDownload = { vm.download(meta) },
                     onCancel = { vm.cancelDownload(meta.id) },
@@ -208,21 +238,27 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun InstalledModelCard(
     model: InstalledLocalModel,
+    iconUrl: String?,
     download: LocalDownload?,
     hasUpdate: Boolean,
+    shape: androidx.compose.ui.graphics.Shape = AppShapes.CardMedium,
     onClick: () -> Unit,
     onUpdate: () -> Unit,
     onDismissError: () -> Unit,
 ) {
     Card(
         onClick = onClick,
-        shape = AppShapes.CardMedium,
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                AutoAIIcon(name = model.displayName, modifier = Modifier.size(36.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (iconUrl != null) {
+                    AutoAIIconWithUrl(name = model.displayName, customIconUri = iconUrl, modifier = Modifier.size(36.dp))
+                } else {
+                    AutoAIIcon(name = model.displayName, modifier = Modifier.size(36.dp))
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(model.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
@@ -248,29 +284,30 @@ private fun InstalledModelCard(
 @Composable
 private fun DownloadableModelCard(
     meta: LocalModelMetadata,
-    recommended: Boolean,
+    iconUrl: String?,
+    shape: androidx.compose.ui.graphics.Shape = AppShapes.CardMedium,
     download: LocalDownload?,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDismissError: () -> Unit,
 ) {
     Card(
-        shape = AppShapes.CardMedium,
+        shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (recommended) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                AutoAIIcon(name = meta.name, modifier = Modifier.size(36.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (iconUrl != null) {
+                    AutoAIIconWithUrl(name = meta.name, customIconUri = iconUrl, modifier = Modifier.size(36.dp))
+                } else {
+                    AutoAIIcon(name = meta.name, modifier = Modifier.size(36.dp))
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(meta.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (recommended) {
-                            Tag(type = TagType.SUCCESS) { Text(stringResource(R.string.local_llm_catalog_recommended)) }
-                        }
                     }
                     Text(
                         stringResource(R.string.local_llm_catalog_size_format, meta.sizeInGb, meta.minDeviceMemoryInGb),
@@ -278,7 +315,12 @@ private fun DownloadableModelCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (download == null) {
+            }
+            CapabilityTags(meta.supportsImage, meta.supportsAudio, meta.supportsThinking, meta.supportsSpeculativeDecoding)
+            DownloadStatus(download, onDismissError, onCancel)
+            
+            if (download == null) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     Button(onClick = onDownload) {
                         Icon(Icons.Rounded.DownloadForOffline, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -286,8 +328,6 @@ private fun DownloadableModelCard(
                     }
                 }
             }
-            CapabilityTags(meta.supportsImage, meta.supportsAudio, meta.supportsThinking, meta.supportsSpeculativeDecoding)
-            DownloadStatus(download, onDismissError, onCancel)
         }
     }
 }

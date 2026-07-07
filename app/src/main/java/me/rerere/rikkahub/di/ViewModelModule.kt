@@ -91,6 +91,7 @@ val viewModelModule = module {
             runtime = get(),
             install = get(),
             settingsStore = get(),
+            modelCatalogService = get(),
         )
     }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
