@@ -600,6 +600,7 @@ internal fun Settings.clearMissingModelReferences(): Settings {
         ),
         assistantOverlayConfig = assistantOverlayConfig.copy(
             assistantId = assistantOverlayConfig.assistantId?.takeIf { id -> updatedAssistants.any { it.id == id } },
+            modelId = assistantOverlayConfig.modelId.ensureValidOrNull(),
         ),
     )
 }

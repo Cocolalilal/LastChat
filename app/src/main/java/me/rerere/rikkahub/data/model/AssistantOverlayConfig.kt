@@ -13,6 +13,8 @@ import kotlin.uuid.Uuid
 data class AssistantOverlayConfig(
     /** Assistant used by the overlay. null = use the app's default assistant. */
     val assistantId: Uuid? = null,
+    /** Model override picked from the overlay's model picker. null = assistant's chat model. */
+    val modelId: Uuid? = null,
     /** Start speech-to-text immediately when the overlay opens. */
     val autoStartStt: Boolean = true,
     /** Automatically send the message once STT finishes transcribing. */

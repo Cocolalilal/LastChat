@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getChatModelForAssistant
 import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
 import me.rerere.rikkahub.data.model.Assistant
@@ -66,13 +67,19 @@ class AssistantOverlayVM(
     private var currentJob: Job? = null
     private var lastUserText: String = ""
     private var lastAssistantId: String? = null
+    private var lastAttachments: List<QuickAskAttachment> = emptyList()
 
-    fun send(userText: String, screenshotDataUrl: String?) {
+    internal fun send(
+        userText: String,
+        screenshotDataUrl: String?,
+        attachments: List<QuickAskAttachment> = emptyList(),
+    ) {
         val text = userText.trim()
-        if (text.isBlank() && screenshotDataUrl == null) return
+        if (text.isBlank() && screenshotDataUrl == null && attachments.isEmpty()) return
         currentJob?.cancel()
         state = OverlayState.Generating
         lastUserText = text
+        lastAttachments = attachments
 
         currentJob = viewModelScope.launch {
             try {
@@ -81,14 +88,15 @@ class AssistantOverlayVM(
                 lastAssistantId = assistant.id.toString()
                 assistantName = assistant.name
 
-                val model = settings.getChatModelForAssistant(assistant)
+                val model = settings.assistantOverlayConfig.modelId?.let { settings.findModelById(it) }
+                    ?: settings.getChatModelForAssistant(assistant)
                 if (model == null) {
                     state = OverlayState.Error("No chat model is configured for this assistant.")
                     return@launch
                 }
 
                 val parts = buildList {
-                    if (text.isNotBlank()) add(UIMessagePart.Text(text))
+                    addAll(buildQuickAskMessageParts(text = text, attachments = attachments))
                     if (screenshotDataUrl != null) add(UIMessagePart.Image(url = screenshotDataUrl))
                 }
                 if (parts.isEmpty()) {
@@ -143,6 +151,7 @@ class AssistantOverlayVM(
         if (lastUserText.isBlank() && result.responseText.isBlank()) return null
         return QuickAskContinuationData(
             text = lastUserText,
+            attachments = lastAttachments,
             aiResponse = result.responseText.takeIf { it.isNotBlank() },
             userPrompt = null,
             assistantId = lastAssistantId,
