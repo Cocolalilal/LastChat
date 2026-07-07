@@ -9,6 +9,7 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
 import androidx.room.migration.Migration
+import androidx.room.DeleteTable
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
@@ -45,7 +46,7 @@ import kotlinx.serialization.json.put
 
 @Database(
     entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class],
-    version = 33,
+    version = 35,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -76,6 +77,8 @@ import kotlinx.serialization.json.put
         // 29->30 is manual migration (MIGRATION_29_30) - adds per-chat lorebook overrides
         // 31->32 is manual migration (MIGRATION_31_32) - adds embedding_blob columns
         // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
+        AutoMigration(from = 33, to = 35),
+        AutoMigration(from = 34, to = 35, spec = Migration_34_35::class),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -602,3 +605,20 @@ val Migration_6_7 = object : Migration(6, 7) {
 
 @DeleteColumn(tableName = "ConversationEntity", columnName = "usage")
 class Migration_8_9 : AutoMigrationSpec
+
+@DeleteTable(tableName = "memory_node")
+@DeleteTable(tableName = "memory_alias")
+@DeleteTable(tableName = "memory_fact")
+@DeleteTable(tableName = "memory_fact_link")
+@DeleteTable(tableName = "memory_episode")
+@DeleteTable(tableName = "memory_mention")
+@DeleteTable(tableName = "memory_frame")
+@DeleteTable(tableName = "memory_provenance")
+@DeleteTable(tableName = "memory_fts")
+@DeleteTable(tableName = "memory_goal")
+@DeleteTable(tableName = "memory_activity")
+@DeleteTable(tableName = "memory_budget_ledger")
+@DeleteTable(tableName = "memory_conversation_state")
+@DeleteTable(tableName = "memory_store_meta")
+@DeleteColumn(tableName = "ConversationEntity", columnName = "extracted_up_to_index")
+class Migration_34_35 : AutoMigrationSpec
