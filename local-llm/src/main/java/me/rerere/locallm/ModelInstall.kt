@@ -34,7 +34,10 @@ data class ImportSpec(
  * Downloads `.litertlm` model files to app-private storage with resume support, and resolves pasted
  * HuggingFace URLs into installable specs.
  */
-class ModelInstall(private val context: Context) {
+class ModelInstall(
+    private val context: Context,
+    private val huggingFaceTokenProvider: () -> String? = { null },
+) {
 
     private val http by lazy {
         OkHttpClient.Builder()
@@ -52,18 +55,28 @@ class ModelInstall(private val context: Context) {
         meta: LocalModelMetadata,
         onProgress: (DownloadProgress) -> Unit,
     ): InstalledLocalModel {
+        // Embedding models ship a small SentencePiece tokenizer alongside the .tflite; fetch it first
+        // (it's tiny, so we don't fold it into the reported progress of the large model file).
+        val tokenizerPath = meta.tokenizerDownloadUrl?.let { url ->
+            val file = modelFile(meta.tokenizerFile!!)
+            downloadTo(url, file, -1) { /* no progress for the tokenizer */ }
+            file.absolutePath
+        }
         val target = modelFile(meta.modelFile)
         downloadTo(meta.downloadUrl, target, meta.sizeInBytes, onProgress)
         return InstalledLocalModel(
             id = meta.id,
             displayName = meta.name,
+            kind = meta.kind,
             filePath = target.absolutePath,
+            tokenizerPath = tokenizerPath,
             commitHash = meta.commitHash,
             sizeInBytes = target.length(),
             supportsImage = meta.supportsImage,
             supportsAudio = meta.supportsAudio,
             supportsThinking = meta.supportsThinking,
             supportsSpeculativeDecoding = meta.supportsSpeculativeDecoding,
+            embeddingDimension = meta.embeddingDimension,
             defaultConfig = meta.defaultConfig,
             imported = false,
         )
@@ -90,6 +103,7 @@ class ModelInstall(private val context: Context) {
     fun delete(installed: InstalledLocalModel) {
         runCatching { File(installed.filePath).delete() }
         runCatching { File(installed.filePath + PART_SUFFIX).delete() }
+        installed.tokenizerPath?.let { runCatching { File(it).delete() } }
     }
 
     private suspend fun downloadTo(
@@ -102,10 +116,15 @@ class ModelInstall(private val context: Context) {
         val part = File(target.absolutePath + PART_SUFFIX)
         var existing = if (part.exists()) part.length() else 0L
 
-        val builder = Request.Builder().url(url)
-        if (existing > 0) builder.header("Range", "bytes=$existing-")
+        val reqBuilder = Request.Builder().url(url)
+        if (url.startsWith("https://huggingface.co/")) {
+            huggingFaceTokenProvider()?.takeIf { it.isNotBlank() }?.let { token ->
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+        }
+        if (existing > 0) reqBuilder.header("Range", "bytes=$existing-")
 
-        http.newCall(builder.build()).execute().use { resp ->
+        http.newCall(reqBuilder.build()).execute().use { resp ->
             // If the server ignored the Range (or the partial is stale), restart cleanly.
             if (existing > 0 && resp.code != 206) {
                 part.delete()

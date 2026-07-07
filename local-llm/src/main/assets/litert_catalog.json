@@ -3,6 +3,20 @@
   "allowlist_version": "1_0_15",
   "models": [
     {
+      "id": "EmbeddingGemma-300M",
+      "name": "EmbeddingGemma 300M",
+      "description": "Google's on-device text embedding model (768-dim). Runs semantic memory & RAG fully offline. Requires an arm64 device.",
+      "kind": "embedding",
+      "hfRepo": "litert-community/embeddinggemma-300m",
+      "modelFile": "embeddinggemma-300M_seq512_mixed-precision.tflite",
+      "tokenizerFile": "sentencepiece.model",
+      "commitHash": "870cbe05ef460385363c6b574c851ae5d8989ce3",
+      "sizeInBytes": 179132472,
+      "minDeviceMemoryInGb": 4,
+      "embeddingDimension": 768,
+      "updateInfo": null
+    },
+    {
       "id": "Gemma-4-E2B-it",
       "name": "Gemma 4 E2B",
       "description": "Gemma 4 E2B for on-device use. Multimodal (text, image, audio) with up to 32K context and thinking.",

@@ -62,6 +62,7 @@ import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LocalAccelerator
 import me.rerere.locallm.LocalDownload
 import me.rerere.locallm.LocalModelConfig
+import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalModelMetadata
 import me.rerere.locallm.LocalRuntimeState
 import me.rerere.rikkahub.R
@@ -84,6 +85,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
     val catalogSnapshot by vm.catalogSnapshot.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
     var editingModel by remember { mutableStateOf<InstalledLocalModel?>(null) }
+    val huggingFaceToken by vm.huggingFaceToken.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -207,6 +209,36 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                 )
             }
 
+            item {
+                Spacer(Modifier.height(16.dp))
+                SectionHeader("HuggingFace Configuration")
+                Card(
+                    shape = AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Set a HuggingFace token to download gated models like Gemma 3.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = huggingFaceToken,
+                            onValueChange = { vm.updateHuggingFaceToken(it) },
+                            label = { Text("HuggingFace Token") },
+                            placeholder = { Text("hf_...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = AppShapes.InputField,
+                        )
+                    }
+                }
+            }
+
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
@@ -277,7 +309,7 @@ private fun InstalledModelCard(
                     }
                 }
             }
-            CapabilityTags(model.supportsImage, model.supportsAudio, model.supportsThinking, model.supportsSpeculativeDecoding)
+            CapabilityTags(model.supportsImage, model.supportsAudio, model.supportsThinking, model.supportsSpeculativeDecoding, model.isEmbedding)
             DownloadStatus(download, onDismissError)
         }
     }
@@ -318,7 +350,7 @@ private fun DownloadableModelCard(
                     )
                 }
             }
-            CapabilityTags(meta.supportsImage, meta.supportsAudio, meta.supportsThinking, meta.supportsSpeculativeDecoding)
+            CapabilityTags(meta.supportsImage, meta.supportsAudio, meta.supportsThinking, meta.supportsSpeculativeDecoding, meta.kind == LocalModelKind.EMBEDDING)
             DownloadStatus(download, onDismissError, onCancel)
             
             if (download == null) {
@@ -384,8 +416,9 @@ private fun DownloadStatus(
 }
 
 @Composable
-private fun CapabilityTags(image: Boolean, audio: Boolean, thinking: Boolean, speculative: Boolean) {
+private fun CapabilityTags(image: Boolean, audio: Boolean, thinking: Boolean, speculative: Boolean, embedding: Boolean = false) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (embedding) Tag(type = TagType.SUCCESS) { Text(stringResource(R.string.local_llm_catalog_tag_embedding)) }
         if (image || audio) Tag(type = TagType.INFO) { Text(stringResource(R.string.local_llm_catalog_tag_multimodal)) }
         if (thinking) Tag(type = TagType.INFO) { Text(stringResource(R.string.local_llm_catalog_tag_thinking)) }
         if (speculative) Tag(type = TagType.INFO) { Text(stringResource(R.string.local_llm_catalog_tag_speculative)) }
@@ -506,38 +539,41 @@ private fun ModelSettingsSheet(
                 )
             }
 
-            SliderRow(
-                label = stringResource(R.string.local_llm_max_tokens_label),
-                value = (config.contextLength ?: default.effectiveContextLength).toFloat(),
-                valueRange = 512f..default.effectiveContextLength.toFloat().coerceAtLeast(512f),
-                steps = 0,
-                valueText = (config.contextLength ?: default.effectiveContextLength).toString(),
-                onChange = { push(config.copy(contextLength = it.toInt())) },
-            )
-            SliderRow(
-                label = "Top-K",
-                value = (config.topK ?: default.topK).toFloat(),
-                valueRange = 1f..128f,
-                steps = 0,
-                valueText = (config.topK ?: default.topK).toString(),
-                onChange = { push(config.copy(topK = it.toInt())) },
-            )
-            SliderRow(
-                label = "Top-P",
-                value = config.topP ?: default.topP,
-                valueRange = 0f..1f,
-                steps = 0,
-                valueText = "%.2f".format(config.topP ?: default.topP),
-                onChange = { push(config.copy(topP = it)) },
-            )
-            SliderRow(
-                label = "Temperature",
-                value = config.temperature ?: default.temperature,
-                valueRange = 0f..2f,
-                steps = 0,
-                valueText = "%.2f".format(config.temperature ?: default.temperature),
-                onChange = { push(config.copy(temperature = it)) },
-            )
+            // Generation sampling controls are meaningless for an embedding model.
+            if (!model.isEmbedding) {
+                SliderRow(
+                    label = stringResource(R.string.local_llm_max_tokens_label),
+                    value = (config.contextLength ?: default.effectiveContextLength).toFloat(),
+                    valueRange = 512f..default.effectiveContextLength.toFloat().coerceAtLeast(512f),
+                    steps = 0,
+                    valueText = (config.contextLength ?: default.effectiveContextLength).toString(),
+                    onChange = { push(config.copy(contextLength = it.toInt())) },
+                )
+                SliderRow(
+                    label = "Top-K",
+                    value = (config.topK ?: default.topK).toFloat(),
+                    valueRange = 1f..128f,
+                    steps = 0,
+                    valueText = (config.topK ?: default.topK).toString(),
+                    onChange = { push(config.copy(topK = it.toInt())) },
+                )
+                SliderRow(
+                    label = "Top-P",
+                    value = config.topP ?: default.topP,
+                    valueRange = 0f..1f,
+                    steps = 0,
+                    valueText = "%.2f".format(config.topP ?: default.topP),
+                    onChange = { push(config.copy(topP = it)) },
+                )
+                SliderRow(
+                    label = "Temperature",
+                    value = config.temperature ?: default.temperature,
+                    valueRange = 0f..2f,
+                    steps = 0,
+                    valueText = "%.2f".format(config.temperature ?: default.temperature),
+                    onChange = { push(config.copy(temperature = it)) },
+                )
+            }
 
             Text("Accelerator", style = MaterialTheme.typography.labelLarge)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {

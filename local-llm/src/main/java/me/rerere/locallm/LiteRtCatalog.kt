@@ -74,8 +74,9 @@ class LiteRtCatalog(private val context: Context) {
      * requirement fits, preferring multimodal + thinking models, then larger models.
      */
     suspend fun recommendedModel(deviceRamGb: Int): LocalModelMetadata? {
-        val fitting = catalog().models.filter { it.minDeviceMemoryInGb <= deviceRamGb }
-        if (fitting.isEmpty()) return catalog().models.minByOrNull { it.minDeviceMemoryInGb }
+        val chatModels = catalog().models.filter { it.kind == LocalModelKind.LLM }
+        val fitting = chatModels.filter { it.minDeviceMemoryInGb <= deviceRamGb }
+        if (fitting.isEmpty()) return chatModels.minByOrNull { it.minDeviceMemoryInGb }
         return fitting.maxWithOrNull(
             compareBy(
                 { if (it.supportsImage) 1 else 0 },

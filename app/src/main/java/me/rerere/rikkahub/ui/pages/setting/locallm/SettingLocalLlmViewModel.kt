@@ -17,7 +17,9 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LiteRtCatalog
+import me.rerere.locallm.LiteRtEmbedder
 import me.rerere.locallm.LiteRtRuntime
+import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalDownload
 import me.rerere.locallm.LocalDownloadManager
 import me.rerere.locallm.LocalModelCatalog
@@ -49,14 +51,23 @@ class SettingLocalLlmViewModel(
     private val downloadManager: LocalDownloadManager,
     private val runtime: LiteRtRuntime,
     private val install: ModelInstall,
+    private val embedder: LiteRtEmbedder,
     private val settingsStore: SettingsStore,
     private val modelCatalogService: ModelCatalogService,
+    private val secretKeyManager: me.rerere.rikkahub.data.datastore.SecretKeyManager,
 ) : ViewModel() {
     
     val catalogSnapshot = modelCatalogService.snapshotFlow
 
     private val catalogFlow = MutableStateFlow(LocalModelCatalog())
     private val deviceRamGb = MemoryGuard.deviceTotalRamGb(context)
+    
+    val huggingFaceToken = MutableStateFlow(secretKeyManager.getHuggingFaceToken() ?: "")
+
+    fun updateHuggingFaceToken(token: String) {
+        huggingFaceToken.value = token
+        secretKeyManager.setHuggingFaceToken(token)
+    }
 
     val uiState: StateFlow<LocalLlmUiState> = combine(
         store.models,
@@ -65,8 +76,11 @@ class SettingLocalLlmViewModel(
         runtime.state,
     ) { installed, cat, downloads, runtimeState ->
         val installedIds = installed.map { it.id }.toSet()
+        // Hide on-device embedding models where the device ABI can't run the RAG native libraries.
+        val embeddingSupported = embedder.isSupported
         val downloadable = cat.models
             .filter { it.id !in installedIds }
+            .filter { embeddingSupported || it.kind != LocalModelKind.EMBEDDING }
         val updates = installed.filter { inst ->
             cat.models.firstOrNull { it.id == inst.id }?.let { it.commitHash != inst.commitHash } == true
         }.map { it.id }.toSet()
@@ -131,7 +145,7 @@ class SettingLocalLlmViewModel(
 
     private suspend fun syncModelsToSettings(installed: List<InstalledLocalModel>) {
         val settings = settingsStore.settingsFlow.value
-        val catalogSnapshot = modelCatalogService.snapshot.value
+        val catalogSnapshot = modelCatalogService.snapshotFlow.value
         val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
         val existingByModelId = local.models.associateBy { it.modelId }
         val newModels = installed.map { it.toAiModel(existingByModelId[it.id], catalogSnapshot) }
@@ -143,6 +157,20 @@ class SettingLocalLlmViewModel(
     }
 
     private fun InstalledLocalModel.toAiModel(existing: Model?, catalogSnapshot: ModelCatalogSnapshot?): Model {
+        val iconUrl = catalogSnapshot?.inferFamilyEntry(displayName)?.iconUrl
+        if (isEmbedding) {
+            // Embedding models: TEXT→TEXT, no tool/reasoning abilities; selectable as an EMBEDDING model.
+            return (existing ?: Model()).copy(
+                modelId = id,
+                displayName = displayName,
+                type = ModelType.EMBEDDING,
+                inputModalities = listOf(Modality.TEXT),
+                outputModalities = listOf(Modality.TEXT),
+                abilities = emptyList(),
+                iconUrl = iconUrl,
+                customIconUri = customIconUri,
+            )
+        }
         val input = buildList {
             add(Modality.TEXT)
             if (supportsImage) add(Modality.IMAGE)
@@ -152,7 +180,6 @@ class SettingLocalLlmViewModel(
             add(ModelAbility.TOOL) // prompt-engineered tool calling for all local models
             if (supportsThinking) add(ModelAbility.REASONING)
         }
-        val iconUrl = catalogSnapshot?.inferFamilyEntry(displayName)?.iconUrl
         return (existing ?: Model()).copy(
             modelId = id,
             displayName = displayName,

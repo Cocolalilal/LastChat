@@ -24,7 +24,9 @@ import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.platform.PlatformLog
 import me.rerere.locallm.InstalledLocalModel
+import me.rerere.locallm.LiteRtEmbedder
 import me.rerere.locallm.LiteRtRuntime
+import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalModelStore
 import kotlin.uuid.Uuid
 
@@ -37,6 +39,7 @@ class LiteRtProvider(
     private val context: Context,
     private val runtime: LiteRtRuntime,
     private val store: LocalModelStore,
+    private val embedder: LiteRtEmbedder,
 ) : Provider<ProviderSetting.LiteRtLocal> {
 
     private val gson = Gson()
@@ -176,6 +179,22 @@ class LiteRtProvider(
         params: me.rerere.ai.provider.ImageGenerationParams,
     ): me.rerere.ai.ui.ImageGenerationResult {
         error("Local provider does not support image generation")
+    }
+
+    /**
+     * On-device embeddings via [LiteRtEmbedder] (EmbeddingGemma). Routed here by [EmbeddingService]
+     * whenever the selected embedding model belongs to this local provider.
+     */
+    override suspend fun createEmbedding(
+        providerSetting: ProviderSetting.LiteRtLocal,
+        input: List<String>,
+        model: Model,
+    ): List<List<Float>> {
+        if (input.isEmpty()) return emptyList()
+        val installed = store.get(model.modelId)
+            ?: throw IllegalStateException("model_not_installed:${model.modelId}")
+        check(installed.kind == LocalModelKind.EMBEDDING) { "not_embedding_model:${model.modelId}" }
+        return embedder.embed(installed, input)
     }
 
     private suspend fun requireInstalled(params: TextGenerationParams): InstalledLocalModel {

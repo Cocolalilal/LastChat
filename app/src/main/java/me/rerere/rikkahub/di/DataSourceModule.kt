@@ -341,7 +341,12 @@ val dataSourceModule = module {
     // On-device (LiteRT-LM) provider stack
     single { me.rerere.locallm.LocalModelStore(get()) }
     single { me.rerere.locallm.LiteRtCatalog(get()) }
-    single { me.rerere.locallm.ModelInstall(get()) }
+    single { 
+        me.rerere.locallm.ModelInstall(
+            context = get(),
+            huggingFaceTokenProvider = { get<me.rerere.rikkahub.data.datastore.SecretKeyManager>().getHuggingFaceToken() }
+        ) 
+    }
     single {
         me.rerere.locallm.LocalDownloadManager(
             context = get(),
@@ -351,7 +356,15 @@ val dataSourceModule = module {
         )
     }
     single { me.rerere.locallm.LiteRtRuntime(context = get(), store = get()) }
-    single { me.rerere.locallm.litert.LiteRtProvider(context = get(), runtime = get(), store = get()) }
+    single { me.rerere.locallm.LiteRtEmbedder(context = get()) }
+    single {
+        me.rerere.locallm.litert.LiteRtProvider(
+            context = get(),
+            runtime = get(),
+            store = get(),
+            embedder = get(),
+        )
+    }
 
     single {
         ProviderManager(

@@ -1377,6 +1377,7 @@
   <string name="local_llm_catalog_tag_multimodal">Multimodal</string>
   <string name="local_llm_catalog_tag_thinking">Thinking</string>
   <string name="local_llm_catalog_tag_speculative">Speculative decoding</string>
+  <string name="local_llm_catalog_tag_embedding">Embedding</string>
   <string name="workspace_detail_reinstall_rootfs">Reinstall Rootfs</string>
   <string name="workspace_detail_install_rootfs">Install Rootfs</string>
   <string name="workspace_detail_workspace_info">Workspace</string>

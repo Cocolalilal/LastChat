@@ -98,8 +98,10 @@ val viewModelModule = module {
             downloadManager = get(),
             runtime = get(),
             install = get(),
+            embedder = get(),
             settingsStore = get(),
             modelCatalogService = get(),
+            secretKeyManager = get(),
         )
     }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }

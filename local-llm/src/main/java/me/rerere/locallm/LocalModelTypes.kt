@@ -4,6 +4,21 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
+ * What kind of on-device model this is. [LLM] models run text generation through the LiteRT-LM
+ * [me.rerere.locallm.LiteRtRuntime] engine; [EMBEDDING] models produce text embeddings through the
+ * AI Edge RAG [me.rerere.locallm.LiteRtEmbedder] (a separate runtime — the generation engine has no
+ * embedding API).
+ */
+@Serializable
+enum class LocalModelKind {
+    @SerialName("llm")
+    LLM,
+
+    @SerialName("embedding")
+    EMBEDDING,
+}
+
+/**
  * Which on-device accelerator to run inference on.
  *
  * [AUTO] resolves at load time from the model's curated accelerator preference (GPU-first when the
@@ -83,10 +98,17 @@ data class LocalModelMetadata(
     val id: String,
     val name: String,
     val description: String = "",
+    val kind: LocalModelKind = LocalModelKind.LLM,
     /** HuggingFace repo, e.g. "litert-community/Qwen2.5-1.5B-Instruct". */
     val hfRepo: String,
-    /** The .litertlm file name inside the repo. */
+    /** The .litertlm (LLM) or .tflite (embedding) file name inside the repo. */
     val modelFile: String,
+    /**
+     * For [LocalModelKind.EMBEDDING] models: the SentencePiece tokenizer file name in the same repo
+     * revision (downloaded alongside [modelFile]). Null for LLMs, whose tokenizer is bundled in the
+     * .litertlm.
+     */
+    val tokenizerFile: String? = null,
     /** HuggingFace commit hash pinning the exact file revision (also drives update detection). */
     val commitHash: String,
     val sizeInBytes: Long,
@@ -95,6 +117,8 @@ data class LocalModelMetadata(
     val supportsAudio: Boolean = false,
     val supportsThinking: Boolean = false,
     val supportsSpeculativeDecoding: Boolean = false,
+    /** Output vector dimension for [LocalModelKind.EMBEDDING] models (informational). */
+    val embeddingDimension: Int? = null,
     val defaultConfig: LocalModelDefaultConfig = LocalModelDefaultConfig(),
     /** Human-readable note describing the latest update, shown on the Update button. */
     val updateInfo: String? = null,
@@ -102,6 +126,10 @@ data class LocalModelMetadata(
     /** Direct, resumable download URL for the pinned revision (public litert-community mirror). */
     val downloadUrl: String
         get() = "https://huggingface.co/$hfRepo/resolve/$commitHash/$modelFile"
+
+    /** Download URL of the [tokenizerFile] (embedding models only), pinned to the same revision. */
+    val tokenizerDownloadUrl: String?
+        get() = tokenizerFile?.let { "https://huggingface.co/$hfRepo/resolve/$commitHash/$it" }
 
     val sizeInGb: Float
         get() = sizeInBytes / 1_000_000_000f
@@ -124,8 +152,11 @@ data class LocalModelCatalog(
 data class InstalledLocalModel(
     val id: String,
     val displayName: String,
-    /** Absolute path of the .litertlm file on disk. */
+    val kind: LocalModelKind = LocalModelKind.LLM,
+    /** Absolute path of the .litertlm (LLM) or .tflite (embedding) file on disk. */
     val filePath: String,
+    /** Absolute path of the SentencePiece tokenizer on disk (embedding models only). */
+    val tokenizerPath: String? = null,
     /** Commit hash of the installed file — compared against the catalog to detect updates. */
     val commitHash: String,
     val sizeInBytes: Long,
@@ -133,6 +164,8 @@ data class InstalledLocalModel(
     val supportsAudio: Boolean = false,
     val supportsThinking: Boolean = false,
     val supportsSpeculativeDecoding: Boolean = false,
+    /** Output vector dimension for embedding models (informational). */
+    val embeddingDimension: Int? = null,
     val defaultConfig: LocalModelDefaultConfig = LocalModelDefaultConfig(),
     val config: LocalModelConfig = LocalModelConfig(),
     val runtimeFlags: LocalModelRuntimeFlags = LocalModelRuntimeFlags(),
@@ -140,4 +173,6 @@ data class InstalledLocalModel(
     val customIconUri: String? = null,
     /** True for models installed from a pasted URL rather than the curated catalog. */
     val imported: Boolean = false,
-)
+) {
+    val isEmbedding: Boolean get() = kind == LocalModelKind.EMBEDDING
+}
