@@ -26,6 +26,7 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this
 | `:highlight` | Android lib (Compose) | QuickJS + PrismJS syntax highlighter (single-threaded, max 4096 chars per block) |
 | `:document` | Android lib | PDF (MuPDF) + DOCX (XmlPullParser → Markdown) parsing |
 | `:workspace` | Android lib + CMake | On-device Linux sandbox via PRoot for AI tool use |
+| `:local-llm` | Android lib | On-device LLM inference via LiteRT-LM; `LiteRtProvider` (5th provider, `ProviderSetting.LiteRtLocal`), `LiteRtEmbedder` (on-device embeddings via EmbeddingGemma) |
 | `:app:baselineprofile` | `com.android.test` | Baseline Profile generator |
 | `web-ui/` | (non-Gradle) React Router 7 SPA | Embedded web frontend, built via `npm run build`, served by Ktor |
 
@@ -41,16 +42,16 @@ Dependency graph: `:app` → all other modules. `:common` →(`api`)→ `:shared
 - APK output naming: `LastChat_${versionName}_${variantName}.apk`.
 - CI (`.github/workflows/release.yml`): `workflow_dispatch` only, builds APK only (no AAB, no Play Store upload).
 - `./gradlew iosPortabilityReport` — non-failing report of Android/JVM-only imports in shared-candidate packages.
-- `./gradlew :app:generateReleaseBaselineProfile` — regenerates `app/src/release/baseline-prof.txt`.
+- `./gradlew :app:generateReleaseBaselineProfile` — regenerates `app/src/main/baseline-prof.txt`.
 - `./gradlew :app:buildAll` — `assembleRelease` + `bundleRelease` (local use; CI only does APK).
 - `prepareBundledCatalogAssets` Sync task copies `catalog/lastchat_catalog.json` + `catalog/icons/**` into `build/generated/assets/catalog/`, skipping files already in `app/src/main/assets/` (per-app overrides win).
 
 ## App Architecture (`:app`)
 
-Single-activity: `RouteActivity` is the only Compose host. All other activities are thin trampolines that route to `RouteActivity`: `ShareWithCharacterActivity`, `TextSelectionActivity`, `ShortcutHandlerActivity`, `AskLastChatShareActivity` (in `ui/activity/`), plus `WidgetConfigActivity` (in `widget/`, not `ui/activity/`).
+Single-activity: `RouteActivity` is the primary Compose host. `AssistantOverlayActivity` (in `ui/activity/`) is a second `ComponentActivity` with its own Compose screen for the digital assistant overlay. All other activities are thin trampolines that route to `RouteActivity`: `ShareWithCharacterActivity`, `TextSelectionActivity`, `ShortcutHandlerActivity`, `AskLastChatShareActivity` (in `ui/activity/`), plus `WidgetConfigActivity` (in `widget/`, not `ui/activity/`).
 
 ### Navigation
-- Compose Navigation 2 (NOT Nav 3 — Nav3 entries are declared in `gradle/libs.versions.toml` but the `implementation` calls are commented out in `app/build.gradle.kts`). Type-safe routes via `@Serializable` subclasses of the `Screen` sealed interface defined inline in `RouteActivity.kt` (~line 1282).
+- Compose Navigation 2 (NOT Nav 3 — Nav3 entries are declared in `gradle/libs.versions.toml` but the `implementation` calls are commented out in `app/build.gradle.kts`). Type-safe routes via `@Serializable` subclasses of the `Screen` sealed interface defined inline in `RouteActivity.kt` (~line 1284).
 - Settings screens also register a `SettingsDestination` enum entry + `SettingsPaneEntry` in `SettingsAdaptiveScaffold.kt`. Adaptive layout: `AdaptiveSettingsScaffold` switches compact↔wide at `width ≥ 840.dp AND height ≥ 600.dp`.
 - Use `navigateToChatPage(...)` (in `utils/ChatUtil.kt`) — never call `navController.navigate(Screen.Chat(...))` directly. To update an existing chat route in place, set `CHAT_ROUTE_TARGET_KEY` in `savedStateHandle`.
 
@@ -65,15 +66,15 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ### Package layout (`me.rerere.rikkahub.*`)
 - `data/ai/` — `GenerationHandler` (orchestrator, ~1768 lines), `MemorySearchService`, `AILogging`, `AIRequestInterceptor`, `BuiltInToolResolution.kt` (top-level functions, NOT a class), transformers (`transformers/`), tools (`tools/`), MCP (`mcp/`), RAG (`rag/`), model catalog (`models/`). (`ChatService` lives in `service/`, NOT here.)
-- `data/db/` — Room v33, 10 entities, 10 DAOs, schemas at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/{1..33}.json`
+- `data/db/` — Room v35, 10 entities, 10 DAOs, schemas at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/{1..35}.json`
 - `data/datastore/` — `PreferencesStore.kt` (canonical `SettingsStore.update { ... }` API), `SecureStore.kt` (EncryptedSharedPreferences), `QuickSettingsCache.kt`, `SecretKeyManager.kt`, `DefaultProviders.kt`, `migration/PreferenceStoreV1Migration.kt`
 - `data/repository/` — 7 repos (Conversation with paging3, ChatAttachment with sha256-dedup + OCR, Memory with RAG, GenMedia, AppStorage, Workspace, ChatAttachmentManager)
-- `data/sync/` — `WebdavSync.kt` (dav4jvm + zip), `BackupArchiveFormat.kt`, `DatabaseSanitizer.kt`, importers (`ChatboxImporter`, `CherryStudioProviderImporter`)
+- `data/sync/` — `WebdavSync.kt` (dav4jvm + zip), `BackupArchiveFormat.kt`, `DatabaseSanitizer.kt`, importer (`ChatboxImporter`, `CherryStudioProviderImporter`)
 
 - `data/model/` — `Assistant.kt`, `Conversation.kt` (incl. `MessageNode`), `Lorebook.kt`, `Skill.kt`, `Mode.kt`, `Avatar.kt`, `Tag.kt`, `Leaderboard.kt`, `ChatAttachment.kt`, `CharacterCard.kt`, `TextSelectionConfig.kt`, `AppStorage.kt`
 - `data/provider/` — `WorkspaceDocumentsProvider.kt` (SAF)
 - `data/search/` — `AndroidBingSearchClient.kt`
-- `service/` — `ChatService.kt`, 4 WorkManager workers (`SpontaneousWorker`, `ScheduledMessageWorker`, `MemoryConsolidationWorker`, `ChatStorageMaintenanceWorker`), `WebServerService` (foreground, holds WifiLock), `AssistantNotificationListener` (NotificationListenerService), `ChatPersistenceMode.kt`, `ChatGenerationTransformers.kt`, `SpontaneousMessaging.kt`, `ScheduledMessageReceiver.kt`, `stt/ChatMultimodalASRController.kt`
+- `service/` — `ChatService.kt`, 4 WorkManager workers (`SpontaneousWorker`, `ScheduledMessageWorker`, `MemoryConsolidationWorker`, `ChatStorageMaintenanceWorker`), `WebServerService` (foreground, holds WifiLock), `AssistantNotificationListener` (NotificationListenerService), `ChatPersistenceMode.kt`, `ChatGenerationTransformers.kt`, `SpontaneousMessaging.kt`, `ScheduledMessageReceiver.kt`, `stt/ChatMultimodalASRController.kt`, `assist/` (5 files for voice interaction / digital assistant overlay)
 - `web/` — Ktor server: `Entry.kt` (`startWebServer`), `WebServerManager.kt` (lifecycle + NSD/mDNS `_http._tcp.local.`), `WebApi.kt` (~1636 lines, JWT HMAC-SHA256 + REST + SSE + static assets), `WebDtos.kt` (plural), `WebMedia.kt` (server-side URI→`/api/files/content?uri=...` resolver for `file://`/`content://`/`android.resource://` only; relative-path handling is web-ui client-side — see Web UI Integration), `WebUploadRegistry.kt`, `NsdServiceRegistrar.kt`, `Exceptions.kt`
 - `widget/` — `AssistantWidget.kt` (Glance) + `AssistantWidgetReceiver` + `WidgetConfigActivity` + `WidgetPrefs`
 - `share/` — `ShareIntentResolver.kt` for ACTION_SEND/SEND_MULTIPLE
@@ -105,7 +106,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - 429 retry: all providers use `retryWhen` up to 3 attempts with linear backoff `1000ms * (attempt + 1)`.
 
 ### Adding a new provider
-1. Add `ProviderSetting` subtype in `ai/src/main/java/me/rerere/ai/provider/ProviderSetting.kt` (with `@SerialName`). Implement the 4 abstract model mutators (`addModel`, `editModel`, `delModel`, `moveMove` — **note: source spelling, NOT `moveModel`; appears to be a typo in the source itself**) and `copyProvider(...)`.
+1. Add `ProviderSetting` subtype in `ai/src/main/java/me/rerere/ai/provider/ProviderSetting.kt` (with `@SerialName`). Implement the 4 abstract model mutators (`addModel`, `editModel`, `delModel`, `moveModel`) and `copyProvider(...)`.
 2. Create provider class at `ai/src/main/java/me/rerere/ai/provider/providers/YourNameProvider.kt` implementing `Provider<ProviderSetting.YourName>`. Use `me.rerere.ai.util.json`, `PlatformLog`, `PlatformHttpClient`. Copy the `callbackFlow { ... }.retryWhen { ... 429 ... }` SSE pattern from `ClaudeProvider.streamText`.
 3. Register in `ProviderManager.init {}` + add `when` branch in `getProviderByType`.
 4. Add model-ability patterns to `ModelRegistry` in `:shared` (`shared/src/commonMain/kotlin/me/rerere/ai/registry/ModelRegistry.kt`) if model IDs need pattern-based ability inference.
@@ -125,11 +126,11 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **`PremiumHaptics`** (`ui/hooks/PremiumHaptics.kt`) — 12 patterns: `Tick`, `Pop` (clicks/toggles), `Thud` (heavy), `Buildup`, `Success`, `Error`, `DragStart`, `DragEnd`, `Send` (whoosh), `ScrollEdge`, `Selection`, `Cancel`. Use `rememberPremiumHaptics()`. Respects `settings.displaySetting.enableUIHaptics`. **NEVER use `LocalHapticFeedback` directly.**
 - **`MotionPolicy`** (`ui/motion/MotionPolicy.kt`) — `LocalMotionPolicy` + `rememberSystemMotionPolicy()`. Respects system "reduce motion" (reads `Settings.Global.ANIMATOR_DURATION_SCALE` via ContentObserver). Top-level routes (Chat↔Menu) fade-only (120ms in / 90ms out). Other routes slide+fade (200ms slide with FastOutSlowInEasing, 150ms in / 100ms out; slide offset `it/2` forward-enter, `-it/4` forward-exit). `lateralEnterTransition`/`lateralExitTransition` for sibling-tab navigation. `hierarchicalEnterTransition`/`hierarchicalExitTransition` for parent→child. When `useWideSettingsLayout` AND both source+target are settings-pane routes, transitions are None. `BackButton` uses `spring(dampingRatio=0.6f, stiffness=300f)` and scales to 0.85f on press — golden standard for round/clicky elements.
 - **Animation specs**: Standard spring `spring(dampingRatio = 0.5f, stiffness = 400f)`. Bouncy/clicky `spring(dampingRatio = 0.6f, stiffness = 300f)`. Non-spring timing (incl. `tween`) acceptable where it improves UX.
-- **Icons**: `Icons.Rounded.XXX` (Material, `androidx.compose.material.icons.Icons.Rounded`) is the ONLY icon set actually in use (~680 occurrences across ~97 files).
+- **Icons**: `Icons.Rounded.XXX` (Material, `androidx.compose.material.icons.Icons.Rounded`) is the ONLY icon set in use (~690 occurrences across ~100 files). Single exception: `AppToast.kt` uses `Icons.Default` for toast action icons.
 - **Toasts**: `LocalToaster.current` (`ui/context/ToasterContext.kt`). `ToastType.Normal/Success/Info/Warning/Error`. Activities outside `AppRoutes` must provide their own `LocalToaster`.
 - **Form rows**: `FormItem(label = {...}, description = {...}, tail = { HapticSwitch(...) })` (in `ui/components/ui/Form.kt`).
 - **How to add a screen**:
-  1. Add `@Serializable data class`/`data object` to `Screen` sealed interface in `RouteActivity.kt` (~line 1282).
+  1. Add `@Serializable data class`/`data object` to `Screen` sealed interface in `RouteActivity.kt` (~line 1284).
   2. Register `composable<Screen.X> { backStackEntry -> ... }` in `AppRoutes`'s `NavHost`.
   3. For settings: add `SettingsDestination` enum entry + `SettingsPaneEntry`; wrap page in `AdaptiveSettingsScaffold(selected = SettingsDestination.Yours) { ... }`.
   4. Create `<Feature>VM : ViewModel()`. Register in `di/ViewModelModule.kt` with `viewModel<FeatureVM> { ... }` or `viewModelOf(::FeatureVM)`.
@@ -140,7 +141,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **`AppScope`** defaults to `Dispatchers.Default` — MUST switch to `Dispatchers.IO` for I/O. (`CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineName("AppScope") + CoroutineExceptionHandler)` in `LastChatApp.kt`.)
 - **`!!` STRICTLY PROHIBITED on JSON elements** — use `is JsonArray`, `jsonObjectOrNull`, `jsonArrayOrNull`, `jsonPrimitiveOrNull` (custom helpers in `:common` `me.rerere.common.http`); `contentOrNull`/`intOrNull`/`longOrNull`/etc. come from kotlinx.serialization stdlib (`JsonPrimitive.contentOrNull` extension).
 - **Snapshot rule for `StateFlow` in services** — always snapshot current value into local val before complex transformations: `val current = stateFlow.value; stateFlow.value = current.copy(...)`. Critical for concurrent writes in `ChatService` and `GenerationHandler`.
-- **`SettingsStore.update { ... }` is canonical** — normalizes (5 stages in main block: `normalizeWebServerSettings`, `migrateLegacyModesToSkills`, `normalizeFontSettings`, `normalizeThemeId`, `normalizeTtsSettings` — see `PreferencesStore.kt:491-496`; plus a re-normalize after secret migration), migrates secrets, updates in-memory state, persists. **Never call `dataStore.edit` directly** (bypasses normalization + secret migration + in-memory state).
+- **`SettingsStore.update { ... }` is canonical** — normalizes (6 stages in main block: `normalizeWebServerSettings`, `migrateLegacyModesToSkills`, `normalizeFontSettings`, `normalizeThemeId`, `normalizeTtsSettings`, `normalizeLocalProvider` — see `PreferencesStore.kt:500-506`; plus a re-normalize after secret migration), migrates secrets, updates in-memory state, persists. **Never call `dataStore.edit` directly** (bypasses normalization + secret migration + in-memory state).
 - **`JsonInstant`** (`utils/Json.kt`): `ignoreUnknownKeys=true, encodeDefaults=true, coerceInputValues=true` — **NO `explicitNulls=false`** (defaults to `true`). NO snake_case strategy — field mapping for external APIs must be manual via `@SerialName`. `JsonInstantPretty` = same MINUS `coerceInputValues` PLUS `prettyPrint=true` (i.e., NOT exactly the same). Only `JsonInstant` is registered as Koin `single<Json>` (`AppModule.kt:22`); `JsonInstantPretty` is NOT. Provider code in `:ai` uses its own `me.rerere.ai.util.json` with config `ignoreUnknownKeys=true, encodeDefaults=true, explicitNulls=false` — **different from `JsonInstant`** (has `explicitNulls=false`, lacks `coerceInputValues`). Don't construct a local `Json { ... }` in provider code.
 - **`derivedStateOf` rule for `LazyColumn`** — never pass mutable collections (`SnapshotStateList`) to `items(...)`; use `derivedStateOf` to pass simple immutable values (e.g., `Boolean`) to prevent unnecessary recompositions.
 - **Secrets MUST go through `SecretKeyManager`** (uses `SecureStore` = EncryptedSharedPreferences). Key naming: `provider_apikey_<id>`, `provider_privatekey_<id>`, `tts_provider_apikey_<id>`, `stt_provider_apikey_<id>`, `webdav_password`. **Never persist plaintext API keys in Settings.**
@@ -155,7 +156,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ## Database
 
-- Room v33. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`. 10 entities, 10 DAOs.
+- Room v35. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`. 10 entities, 10 DAOs.
 - **Adding a migration**:
   1. Bump `version = N` in `@Database`.
   2. Prefer `AutoMigration(from=N-1, to=N)` (no spec) → `AutoMigration(..., spec=...)` (@DeleteColumn/@RenameColumn/@RenameTable/@DeleteTable) → manual `val MIGRATION_X_Y = object : Migration(X, Y) { ... }` in companion object of `AppDatabase`.
@@ -168,7 +169,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 ## i18n
 
 - **7 locales** (default `values/` = English): `values-ar` (Arabic, RTL), `values-b+zh+Hans` (Simplified Chinese — BCP-47 form, NOT `values-zh-rCN`), `values-zh-rTW`, `values-ja`, `values-ko-rKR`, `values-ru`.
-- String files per locale: `strings.xml` (~1402 strings in default), `strings_rtl_followup.xml` (RTL-specific — default + ar + zh-Hans), `strings_ui_locale.xml` (UI locale — default + ar only).
+- String files per locale: `strings.xml` (~1421 strings in default), `strings_rtl_followup.xml` (RTL-specific — default + ar + zh-Hans), `strings_ui_locale.xml` (UI locale — default + ar only).
 - String key naming: snake_case. Top prefixes: `setting_*`, `assistant_*`, `activity_*`, `chat_*`, `local_llm_*`, `workspace_*`, `backup_*`, `context_*`, `skills_*`, `lorebook*`. Page-specific use page prefix (`setting_page_*`, `assistant_page_*`).
 - `generateLocaleConfig = true` — locale config auto-generated from `values-*`.
 - `app/src/main/res/resources.properties` present (likely `unqualifiedResLocale=en-US`).
