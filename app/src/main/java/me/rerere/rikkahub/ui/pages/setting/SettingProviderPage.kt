@@ -416,7 +416,11 @@ fun SettingProviderPage(
                 contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
                 searchQuery = searchQuery,
                 onNavigateToDetail = { provider ->
-                    navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
+                    if (provider is ProviderSetting.LiteRtLocal) {
+                        navController.navigate(Screen.SettingLocalLlm)
+                    } else {
+                        navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
+                    }
                 },
                 onDeleteRequest = { provider ->
                     providerToDelete = provider
@@ -615,10 +619,16 @@ private fun ProviderListView(
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
-    
+
+    // The pinned on-device provider is rendered as a fixed top item (no drag/delete); everything else
+    // is reorderable beneath it.
+    val localProvider = providers.firstOrNull { it is ProviderSetting.LiteRtLocal }
+    val reorderableProviders = providers.filterNot { it is ProviderSetting.LiteRtLocal }
+    val headerCount = if (localProvider != null) 1 else 0
+
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromProvider = providers.getOrNull(from.index)
-        val toProvider = providers.getOrNull(to.index)
+        val fromProvider = reorderableProviders.getOrNull(from.index - headerCount)
+        val toProvider = reorderableProviders.getOrNull(to.index - headerCount)
         if (fromProvider != null && toProvider != null) {
             onReorder(fromProvider, toProvider)
         }
@@ -711,11 +721,27 @@ private fun ProviderListView(
                 }
             }
 
-            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+            // Pinned on-device provider: always first, no drag handle, no swipe-to-delete.
+            if (localProvider != null) {
+                item(key = "pinned_local_provider") {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        ProviderItemContent(
+                            provider = localProvider,
+                            animatedShape = RoundedCornerShape(24.dp),
+                            providerTags = settings.providerTags,
+                            haptics = haptics,
+                            dragHandle = {},
+                            onClick = { onNavigateToDetail(localProvider) }
+                        )
+                    }
+                }
+            }
+
+            itemsIndexed(reorderableProviders, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
-                    providers.size == 1 -> ItemPosition.ONLY
+                    reorderableProviders.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == providers.lastIndex -> ItemPosition.LAST
+                    index == reorderableProviders.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 

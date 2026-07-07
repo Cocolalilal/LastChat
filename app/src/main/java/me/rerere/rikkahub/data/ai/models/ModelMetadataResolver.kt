@@ -301,6 +301,8 @@ private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?
 
         is ProviderSetting.ComfyUI -> emptySet()
 
+        is ProviderSetting.LiteRtLocal -> emptySet()
+
         null -> emptySet()
     }
     if (allowedProviders.isEmpty()) return false

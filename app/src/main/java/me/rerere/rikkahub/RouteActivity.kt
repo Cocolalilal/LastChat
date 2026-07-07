@@ -877,9 +877,11 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    // // composable(Route.SETTING_LOCAL_LLM) {
-                    // //     SettingLocalLlmPage(navBackStack)
-                    // // }
+                    composable<Screen.SettingLocalLlm> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Providers) {
+                            me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmPage()
+                        }
+                    }
 
                     composable<Screen.ImageGen> {
                         ImageGenPage()
@@ -1337,6 +1339,9 @@ sealed interface Screen {
 
     @Serializable
     data class SettingProviderDetail(val providerId: String) : Screen
+
+    @Serializable
+    data object SettingLocalLlm : Screen
 
     @Serializable
     data class SettingTTSProviderDetail(val providerId: String) : Screen

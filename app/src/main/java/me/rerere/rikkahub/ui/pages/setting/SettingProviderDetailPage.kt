@@ -293,6 +293,12 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             workflowJson.hashCode().toString(),
         )
+
+        is ProviderSetting.LiteRtLocal -> listOf(
+            "litert_local",
+            id.toString(),
+            models.size.toString(),
+        )
     }.joinToString("|")
 }
 
@@ -306,6 +312,7 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
         }
         is ProviderSetting.Claude -> apiKey.isNotBlank()
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
+        is ProviderSetting.LiteRtLocal -> false // on-device: no remote model list
     }
 }
 
@@ -1568,6 +1575,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
+                                is ProviderSetting.LiteRtLocal -> true
                             }
                             
                             Column(
@@ -1913,6 +1921,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
+                                is ProviderSetting.LiteRtLocal -> true
                             }
                             
                             Column(
@@ -2079,6 +2088,7 @@ private suspend fun probeModelCapabilities(
         )
 
         is ProviderSetting.ComfyUI -> null
+        is ProviderSetting.LiteRtLocal -> null
     }
 }
 
@@ -2313,6 +2323,7 @@ private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBo
         )
 
         is ProviderSetting.ComfyUI -> emptyList()
+        is ProviderSetting.LiteRtLocal -> emptyList()
     }
 }
 

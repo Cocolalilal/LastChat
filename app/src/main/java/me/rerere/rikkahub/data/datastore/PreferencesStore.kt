@@ -316,7 +316,7 @@ class SettingsStore(
                 assistants = assistants,
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
-            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings().normalizeLocalProvider()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -341,6 +341,10 @@ class SettingsStore(
                         is ProviderSetting.ComfyUI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                                 .map { model -> model.withComfyDefaults() }
+                        )
+
+                        is ProviderSetting.LiteRtLocal -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
                         )
                     }
                 },
@@ -494,6 +498,7 @@ class SettingsStore(
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
+            .normalizeLocalProvider()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore

@@ -950,6 +950,7 @@ private fun ProviderSetting.toWebProviderDto(
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
             is ProviderSetting.ComfyUI -> "comfyui"
+            is ProviderSetting.LiteRtLocal -> "litert_local"
         },
         enabled = enabled,
         name = name,

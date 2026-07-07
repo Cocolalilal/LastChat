@@ -82,6 +82,17 @@ val viewModelModule = module {
             templateTransformer = get(),
         )
     }
+    viewModel {
+        me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel(
+            context = get(),
+            store = get(),
+            catalog = get(),
+            downloadManager = get(),
+            runtime = get(),
+            install = get(),
+            settingsStore = get(),
+        )
+    }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
     viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
         me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(

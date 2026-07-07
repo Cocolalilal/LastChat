@@ -278,6 +278,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider // on-device, no secrets
         }
     }
 
@@ -437,6 +438,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider // on-device, no secrets
         }
     }
 

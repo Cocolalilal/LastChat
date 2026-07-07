@@ -1,0 +1,143 @@
+package me.rerere.locallm
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/**
+ * Which on-device accelerator to run inference on.
+ *
+ * [AUTO] resolves at load time from the model's curated accelerator preference (GPU-first when the
+ * model advertises GPU support), automatically falling back to CPU if the GPU backend has crashed
+ * before on this device (see [LocalModelRuntimeFlags.gpuCrashed]).
+ */
+@Serializable
+enum class LocalAccelerator {
+    @SerialName("auto")
+    AUTO,
+
+    @SerialName("cpu")
+    CPU,
+
+    @SerialName("gpu")
+    GPU,
+}
+
+/**
+ * Per-model, user-tunable runtime configuration. All fields are nullable "overrides" — when null the
+ * curated [LocalModelMetadata.defaultConfig] value is used. This keeps a downloaded model working with
+ * sensible official defaults until the user deliberately changes something.
+ */
+@Serializable
+data class LocalModelConfig(
+    val temperature: Float? = null,
+    val topP: Float? = null,
+    val topK: Int? = null,
+    /** Max tokens to generate (decode budget). */
+    val maxTokens: Int? = null,
+    /** Total context window (prefill + decode). Fed to EngineConfig.maxNumTokens. */
+    val contextLength: Int? = null,
+    val accelerator: LocalAccelerator = LocalAccelerator.AUTO,
+)
+
+/**
+ * Non-user-facing runtime flags persisted per installed model — e.g. remembering that the GPU backend
+ * crashed so [LocalAccelerator.AUTO] transparently drops to CPU next time.
+ */
+@Serializable
+data class LocalModelRuntimeFlags(
+    val gpuCrashed: Boolean = false,
+    /** Vision failed to initialize on this device; run the model text-only. */
+    val visionUnavailable: Boolean = false,
+)
+
+/**
+ * Curated default generation config for a model, sourced from Google AI Edge Gallery's
+ * `model_allowlist` `defaultConfig`.
+ */
+@Serializable
+data class LocalModelDefaultConfig(
+    val topK: Int = 64,
+    val topP: Float = 0.95f,
+    val temperature: Float = 1.0f,
+    /** Total context window the model file supports (KV cache ceiling). Null → derive from [maxTokens]. */
+    val maxContextLength: Int? = null,
+    /** Curated max output tokens. */
+    val maxTokens: Int = 4096,
+    /** Ordered accelerator preference, e.g. ["gpu", "cpu"]. First entry is tried first under AUTO. */
+    val accelerators: List<String> = listOf("gpu", "cpu"),
+    /** Preferred accelerator for the vision encoder. */
+    val visionAccelerator: String? = null,
+) {
+    /** Effective context window: explicit ceiling if given, otherwise the decode budget. */
+    val effectiveContextLength: Int
+        get() = maxContextLength ?: maxTokens
+}
+
+/**
+ * A curated / importable on-device model description. Mirrors one entry of the Gallery allowlist plus
+ * the fields LastChat needs to download, run and update it.
+ */
+@Serializable
+data class LocalModelMetadata(
+    /** Stable identifier used as the [me.rerere.ai.provider.Model.modelId] for the local provider. */
+    val id: String,
+    val name: String,
+    val description: String = "",
+    /** HuggingFace repo, e.g. "litert-community/Qwen2.5-1.5B-Instruct". */
+    val hfRepo: String,
+    /** The .litertlm file name inside the repo. */
+    val modelFile: String,
+    /** HuggingFace commit hash pinning the exact file revision (also drives update detection). */
+    val commitHash: String,
+    val sizeInBytes: Long,
+    val minDeviceMemoryInGb: Int,
+    val supportsImage: Boolean = false,
+    val supportsAudio: Boolean = false,
+    val supportsThinking: Boolean = false,
+    val supportsSpeculativeDecoding: Boolean = false,
+    val defaultConfig: LocalModelDefaultConfig = LocalModelDefaultConfig(),
+    /** Human-readable note describing the latest update, shown on the Update button. */
+    val updateInfo: String? = null,
+) {
+    /** Direct, resumable download URL for the pinned revision (public litert-community mirror). */
+    val downloadUrl: String
+        get() = "https://huggingface.co/$hfRepo/resolve/$commitHash/$modelFile"
+
+    val sizeInGb: Float
+        get() = sizeInBytes / 1_000_000_000f
+}
+
+/** Root of the bundled/remote curated catalog. */
+@Serializable
+data class LocalModelCatalog(
+    @SerialName("schema_version")
+    val schemaVersion: Int = 1,
+    /** Allowlist version this snapshot was generated from (e.g. "1_0_15"). */
+    val allowlistVersion: String = "",
+    val models: List<LocalModelMetadata> = emptyList(),
+)
+
+/**
+ * A model that is downloaded and available on this device. Persisted by [LocalModelStore].
+ */
+@Serializable
+data class InstalledLocalModel(
+    val id: String,
+    val displayName: String,
+    /** Absolute path of the .litertlm file on disk. */
+    val filePath: String,
+    /** Commit hash of the installed file — compared against the catalog to detect updates. */
+    val commitHash: String,
+    val sizeInBytes: Long,
+    val supportsImage: Boolean = false,
+    val supportsAudio: Boolean = false,
+    val supportsThinking: Boolean = false,
+    val supportsSpeculativeDecoding: Boolean = false,
+    val defaultConfig: LocalModelDefaultConfig = LocalModelDefaultConfig(),
+    val config: LocalModelConfig = LocalModelConfig(),
+    val runtimeFlags: LocalModelRuntimeFlags = LocalModelRuntimeFlags(),
+    /** Optional custom icon uri chosen by the user. */
+    val customIconUri: String? = null,
+    /** True for models installed from a pasted URL rather than the curated catalog. */
+    val imported: Boolean = false,
+)

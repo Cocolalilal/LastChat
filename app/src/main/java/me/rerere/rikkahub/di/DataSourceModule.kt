@@ -338,12 +338,33 @@ val dataSourceModule = module {
         }
     }
 
+    // On-device (LiteRT-LM) provider stack
+    single { me.rerere.locallm.LocalModelStore(get()) }
+    single { me.rerere.locallm.LiteRtCatalog(get()) }
+    single { me.rerere.locallm.ModelInstall(get()) }
+    single {
+        me.rerere.locallm.LocalDownloadManager(
+            context = get(),
+            install = get(),
+            store = get(),
+            catalog = get(),
+        )
+    }
+    single { me.rerere.locallm.LiteRtRuntime(context = get(), store = get()) }
+    single { me.rerere.locallm.litert.LiteRtProvider(context = get(), runtime = get(), store = get()) }
+
     single {
         ProviderManager(
             platformHttpClient = get(),
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
             platformJwtSigner = AndroidPlatformJwtSigner(),
-        )
+        ).apply {
+            // The on-device provider lives in :local-llm, so register it here (see ProviderManager).
+            registerProvider(
+                me.rerere.locallm.litert.LiteRtProvider.NAME,
+                get<me.rerere.locallm.litert.LiteRtProvider>(),
+            )
+        }
     }
 
     single {

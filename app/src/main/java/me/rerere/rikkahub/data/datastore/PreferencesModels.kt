@@ -296,6 +296,19 @@ internal fun Settings.normalizeThemeId(): Settings {
     }
 }
 
+/**
+ * Guarantees exactly one pinned on-device provider ([ProviderSetting.LiteRtLocal]), always at index 0.
+ * Re-inserts it if the user somehow removed it and de-duplicates any extras, preserving the installed
+ * models of the surviving instance.
+ */
+internal fun Settings.normalizeLocalProvider(): Settings {
+    val local = providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+        ?: ProviderSetting.LiteRtLocal()
+    val others = providers.filterNot { it is ProviderSetting.LiteRtLocal }
+    val normalized = listOf(local) + others
+    return if (normalized == providers) this else copy(providers = normalized)
+}
+
 @Serializable
 enum class ProviderViewMode {
     LIST,

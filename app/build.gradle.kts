@@ -388,6 +388,7 @@ dependencies {
     implementation(project(":speech"))
     implementation(project(":common"))
     implementation(project(":workspace"))
+    implementation(project(":local-llm"))
     implementation(libs.jsoup)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))

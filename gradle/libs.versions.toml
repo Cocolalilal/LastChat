@@ -62,6 +62,7 @@ ktor = "3.3.2"
 glance = "1.1.1"
 security-crypto = "1.1.0-alpha06"
 jmdns = "3.6.3"
+litertlm = "0.13.1"
 
 [libraries]
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
@@ -167,6 +168,7 @@ androidx-glance-material3 = { group = "androidx.glance", name = "glance-material
 xz = { module = "org.tukaani:xz", version = "1.12" }
 termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version.ref = "termux" }
 termux-terminal-emulator = { module = "com.termux.termux-app:terminal-emulator", version.ref = "termux" }
+litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

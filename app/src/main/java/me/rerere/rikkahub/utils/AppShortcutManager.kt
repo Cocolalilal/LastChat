@@ -234,52 +234,71 @@ class AppShortcutManager(
     }
 
     /**
-     * Loads an image from URL and creates an icon.
+     * Loads an avatar image and creates a circular adaptive icon.
+     *
+     * Assistant/user avatars are stored as local URIs (`file://` or `content://`) far more
+     * often than as remote URLs, so those must be resolved through the ContentResolver.
+     * Only http(s) URLs are fetched over the network.
      */
     private suspend fun loadImageIcon(url: String): Icon? = withContext(Dispatchers.IO) {
         try {
-            val response = withTimeout(5_000L) {
-                GlobalContext.get().get<PlatformHttpClient>().execute(
-                    PlatformHttpRequest(
-                        method = "GET",
-                        url = url,
-                    )
-                )
-            }
-            if (response.statusCode != 200) return@withContext null
-            val body = response.body
-            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
-            options.inJustDecodeBounds = false
-            options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, 108, 108)
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
-            
-            if (bitmap != null) {
-                // Create circular adaptive icon
-                val size = 108
-                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, size, size, true)
-                val circularBitmap = createBitmap(size, size)
-                val canvas = Canvas(circularBitmap)
-                
-                val paint = Paint().apply {
-                    isAntiAlias = true
-                    shader = android.graphics.BitmapShader(
-                        scaledBitmap,
-                        android.graphics.Shader.TileMode.CLAMP,
-                        android.graphics.Shader.TileMode.CLAMP
-                    )
-                }
-                canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
-                
-                bitmap.recycle()
-                scaledBitmap.recycle()
-                
-                Icon.createWithAdaptiveBitmap(circularBitmap)
-            } else null
+            val body = loadAvatarBytes(url) ?: return@withContext null
+            decodeCircularAdaptiveIcon(body)
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
+    }
+
+    private suspend fun loadAvatarBytes(url: String): ByteArray? {
+        val uri = url.toUri()
+        return when (uri.scheme?.lowercase()) {
+            "http", "https" -> {
+                val response = withTimeout(5_000L) {
+                    GlobalContext.get().get<PlatformHttpClient>().execute(
+                        PlatformHttpRequest(
+                            method = "GET",
+                            url = url,
+                        )
+                    )
+                }
+                if (response.statusCode != 200) null else response.body
+            }
+            // file://, content://, android.resource:// — the common case for saved avatars
+            else -> context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }
+    }
+
+    private fun decodeCircularAdaptiveIcon(body: ByteArray): Icon? {
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
+        options.inJustDecodeBounds = false
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, 108, 108)
+        val bitmap = android.graphics.BitmapFactory.decodeByteArray(body, 0, body.size, options)
+            ?: return null
+
+        // Create circular adaptive icon
+        val size = 108
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, size, size, true)
+        val circularBitmap = createBitmap(size, size)
+        val canvas = Canvas(circularBitmap)
+
+        val paint = Paint().apply {
+            isAntiAlias = true
+            shader = android.graphics.BitmapShader(
+                scaledBitmap,
+                android.graphics.Shader.TileMode.CLAMP,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+
+        if (scaledBitmap != bitmap) {
+            scaledBitmap.recycle()
+        }
+        bitmap.recycle()
+
+        return Icon.createWithAdaptiveBitmap(circularBitmap)
     }
 
     /**

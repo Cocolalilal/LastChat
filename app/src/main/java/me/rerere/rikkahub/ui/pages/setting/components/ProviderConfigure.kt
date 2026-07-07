@@ -161,6 +161,7 @@ fun ProviderConfigure(
                             is ProviderSetting.Google -> provider.copy(enabled = enabled)
                             is ProviderSetting.Claude -> provider.copy(enabled = enabled)
                             is ProviderSetting.ComfyUI -> provider.copy(enabled = enabled)
+                            is ProviderSetting.LiteRtLocal -> provider.copy(enabled = enabled)
                         }
                         onEdit(updated)
                     }
@@ -211,6 +212,7 @@ fun ProviderConfigure(
                         is ProviderSetting.Google -> provider.copy(name = newName)
                         is ProviderSetting.Claude -> provider.copy(name = newName)
                         is ProviderSetting.ComfyUI -> provider.copy(name = newName)
+                        is ProviderSetting.LiteRtLocal -> provider.copy(name = newName)
                     }
                     onEdit(updated)
                 },
@@ -238,6 +240,8 @@ fun ProviderConfigure(
             is ProviderSetting.ComfyUI -> {
                 ProviderConfigureComfyUI(provider, onEdit)
             }
+
+            is ProviderSetting.LiteRtLocal -> Unit // configured via the dedicated on-device screen
         }
     }
 }
@@ -350,6 +354,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey
         is ProviderSetting.ComfyUI -> ""
+        is ProviderSetting.LiteRtLocal -> ""
     }
 
     val sourceBaseUrl = when (this) {
