@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.localagents.rag) {
         exclude(group = "org.json", module = "json")
     }
+    implementation(libs.protobuf.javalite)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material3.AlertDialog
@@ -57,6 +58,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.utils.plus
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LocalAccelerator
@@ -86,6 +88,8 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
     val haptics = rememberPremiumHaptics()
     var editingModel by remember { mutableStateOf<InstalledLocalModel?>(null) }
     val huggingFaceToken by vm.huggingFaceToken.collectAsStateWithLifecycle()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -110,6 +114,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
@@ -203,9 +208,15 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                     iconUrl = iconUrl,
                     shape = shape,
                     download = state.downloads[meta.id],
+                    huggingFaceToken = huggingFaceToken,
                     onDownload = { vm.download(meta) },
                     onCancel = { vm.cancelDownload(meta.id) },
                     onDismissError = { vm.dismissDownloadError(meta.id) },
+                    onFocusTokenField = {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+                        }
+                    }
                 )
             }
 
@@ -310,7 +321,7 @@ private fun InstalledModelCard(
                 }
             }
             CapabilityTags(model.supportsImage, model.supportsAudio, model.supportsThinking, model.supportsSpeculativeDecoding, model.isEmbedding)
-            DownloadStatus(download, onDismissError)
+            DownloadStatus(download, meta = null, onDismissError = onDismissError)
         }
     }
 }
@@ -321,10 +332,13 @@ private fun DownloadableModelCard(
     iconUrl: String?,
     shape: androidx.compose.ui.graphics.Shape = AppShapes.CardMedium,
     download: LocalDownload?,
+    huggingFaceToken: String,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDismissError: () -> Unit,
+    onFocusTokenField: () -> Unit,
 ) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     Card(
         shape = shape,
         colors = CardDefaults.cardColors(
@@ -351,14 +365,28 @@ private fun DownloadableModelCard(
                 }
             }
             CapabilityTags(meta.supportsImage, meta.supportsAudio, meta.supportsThinking, meta.supportsSpeculativeDecoding, meta.kind == LocalModelKind.EMBEDDING)
-            DownloadStatus(download, onDismissError, onCancel)
+            DownloadStatus(download, meta, onDismissError, onCancel)
             
             if (download == null) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = onDownload) {
-                        Icon(Icons.Rounded.DownloadForOffline, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.local_llm_catalog_install))
+                    if (meta.requiresLicense && huggingFaceToken.isBlank()) {
+                        Button(onClick = onFocusTokenField) {
+                            Icon(Icons.Rounded.Lock, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Needs HF Token")
+                        }
+                    } else {
+                        Button(onClick = onDownload) {
+                            Icon(Icons.Rounded.DownloadForOffline, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.local_llm_catalog_install))
+                        }
+                    }
+                }
+            } else if (download is LocalDownload.Failed && meta.requiresLicense && download.message.contains("403")) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = { uriHandler.openUri("https://huggingface.co/${meta.hfRepo}") }) {
+                        Text("Accept License")
                     }
                 }
             }
@@ -369,6 +397,7 @@ private fun DownloadableModelCard(
 @Composable
 private fun DownloadStatus(
     download: LocalDownload?,
+    meta: LocalModelMetadata? = null,
     onDismissError: () -> Unit,
     onCancel: (() -> Unit)? = null,
 ) {

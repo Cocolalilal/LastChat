@@ -26,3 +26,4 @@ __pycache__/
 *.keystore
 Thumbs.db
 graphify-out/
+temp_aar/

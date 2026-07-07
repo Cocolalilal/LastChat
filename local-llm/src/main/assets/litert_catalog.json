@@ -14,7 +14,8 @@
       "sizeInBytes": 179132472,
       "minDeviceMemoryInGb": 4,
       "embeddingDimension": 768,
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Gemma-4-E2B-it",
@@ -38,7 +39,8 @@
         "accelerators": ["gpu", "cpu"],
         "visionAccelerator": "gpu"
       },
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Gemma-4-E4B-it",
@@ -62,7 +64,8 @@
         "accelerators": ["gpu", "cpu"],
         "visionAccelerator": "gpu"
       },
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Gemma-3n-E2B-it",
@@ -86,7 +89,8 @@
         "accelerators": ["cpu", "gpu"],
         "visionAccelerator": null
       },
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Gemma-3n-E4B-it",
@@ -110,7 +114,8 @@
         "accelerators": ["cpu", "gpu"],
         "visionAccelerator": null
       },
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Gemma3-1B-IT",
@@ -134,7 +139,8 @@
         "accelerators": ["gpu", "cpu"],
         "visionAccelerator": null
       },
-      "updateInfo": null
+      "updateInfo": null,
+      "requiresLicense": true
     },
     {
       "id": "Qwen2.5-1.5B-Instruct",

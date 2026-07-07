@@ -64,6 +64,7 @@ security-crypto = "1.1.0-alpha06"
 jmdns = "3.6.3"
 litertlm = "0.13.1"
 localagentsRag = "0.3.0"
+protobufJavalite = "3.25.1"
 
 [libraries]
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
@@ -171,6 +172,7 @@ termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version
 termux-terminal-emulator = { module = "com.termux.termux-app:terminal-emulator", version.ref = "termux" }
 litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 localagents-rag = { module = "com.google.ai.edge.localagents:localagents-rag", version.ref = "localagentsRag" }
+protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobufJavalite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

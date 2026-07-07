@@ -120,8 +120,9 @@ data class LocalModelMetadata(
     /** Output vector dimension for [LocalModelKind.EMBEDDING] models (informational). */
     val embeddingDimension: Int? = null,
     val defaultConfig: LocalModelDefaultConfig = LocalModelDefaultConfig(),
-    /** Human-readable note describing the latest update, shown on the Update button. */
     val updateInfo: String? = null,
+    /** Whether this model is gated on HuggingFace and requires a token + license acceptance. */
+    val requiresLicense: Boolean = false,
 ) {
     /** Direct, resumable download URL for the pinned revision (public litert-community mirror). */
     val downloadUrl: String
