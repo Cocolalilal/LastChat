@@ -889,11 +889,18 @@ fun MinimalChatInput(
                                 isToolApprovalActive -> toolApprovalTextState
                                 else -> state.textContent
                             }
+                            var visualLineCount by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(1) }
                             val lineCount = androidx.compose.runtime.derivedStateOf {
-                                activeTextState.text.toString().lines().size
+                                maxOf(activeTextState.text.toString().lines().size, visualLineCount)
                             }
                             TextField(
                                 state = activeTextState,
+                                onTextLayout = { getResult ->
+                                    val result = getResult()
+                                    if (result != null) {
+                                        visualLineCount = result.lineCount
+                                    }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)

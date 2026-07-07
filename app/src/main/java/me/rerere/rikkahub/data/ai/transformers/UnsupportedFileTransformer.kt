@@ -29,43 +29,39 @@ object UnsupportedFileTransformer : InputMessageTransformer {
         val modelSupportsImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         return messages.map { msg ->
-            if (msg.role == me.rerere.ai.core.MessageRole.USER) {
-                msg.copy(parts = msg.parts.map { part ->
-                    when (part) {
-                        is UIMessagePart.Document -> {
-                            // Supported native types (Images/Video/Audio/Text/PDF)
-                            val isNative = part.mime.startsWith("image/") ||
-                                part.mime.startsWith("text/") ||
-                                part.mime.startsWith("video/") ||
-                                part.mime.startsWith("audio/") ||
-                                part.mime == "application/pdf"
+            msg.copy(parts = msg.parts.map { part ->
+                when (part) {
+                    is UIMessagePart.Document -> {
+                        // Supported native types (Images/Video/Audio/Text/PDF)
+                        val isNative = part.mime.startsWith("image/") ||
+                            part.mime.startsWith("text/") ||
+                            part.mime.startsWith("video/") ||
+                            part.mime.startsWith("audio/") ||
+                            part.mime == "application/pdf"
 
-                            if (!isNative && isWorkspaceEnabled) {
-                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
-                            } else {
-                                part
-                            }
+                        if (!isNative && isWorkspaceEnabled) {
+                            UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
+                        } else {
+                            part
                         }
-                        is UIMessagePart.Image -> {
-                            if (!modelSupportsImages) {
-                                val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
-                                UIMessagePart.Text(
-                                    buildResidualImageFallbackText(
-                                        fileName = filename,
-                                        sourceUrl = part.url,
-                                        workspaceEnabled = isWorkspaceEnabled,
-                                    )
-                                )
-                            } else {
-                                part
-                            }
-                        }
-                        else -> part
                     }
-                })
-            } else {
-                msg
-            }
+                    is UIMessagePart.Image -> {
+                        if (!modelSupportsImages) {
+                            val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
+                            UIMessagePart.Text(
+                                buildResidualImageFallbackText(
+                                    fileName = filename,
+                                    sourceUrl = part.url,
+                                    workspaceEnabled = isWorkspaceEnabled,
+                                )
+                            )
+                        } else {
+                            part
+                        }
+                    }
+                    else -> part
+                }
+            })
         }
     }
 }
