@@ -838,16 +838,19 @@ fun MinimalChatInput(
                                     .zIndex(10f)
                             ) {
                                 Surface(
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    modifier = Modifier.fillMaxSize().clickable(
-                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        if (sttRecording || sttFinalizing) {
-                                            haptics.perform(HapticPattern.Pop)
-                                            stopSttRecording(accept = true)
+                                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape)
+                                        .clickable(
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            if (sttRecording || sttFinalizing) {
+                                                haptics.perform(HapticPattern.Pop)
+                                                stopSttRecording(accept = true)
+                                            }
                                         }
-                                    }
                                 ) {
                                     Box(
                                         modifier = Modifier.fillMaxSize().padding(
