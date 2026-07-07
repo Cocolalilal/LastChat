@@ -53,7 +53,7 @@ class LocalModelDownloadService : Service() {
             for (r in running) {
                 if (r.progress.totalBytes > 0) {
                     totalBytes += r.progress.totalBytes
-                    downloadedBytes += r.progress.downloadedBytes
+                    downloadedBytes += r.progress.bytesDownloaded
                 }
             }
             val titles = running.joinToString { it.displayName }
