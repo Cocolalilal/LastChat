@@ -69,17 +69,19 @@ class AssistantOverlayVM(
     private var lastAssistantId: String? = null
     private var lastAttachments: List<QuickAskAttachment> = emptyList()
 
+    /** [parts] comes straight from ChatInputState.getContents(). */
     internal fun send(
-        userText: String,
+        parts: List<UIMessagePart>,
         screenshotDataUrl: String?,
-        attachments: List<QuickAskAttachment> = emptyList(),
     ) {
-        val text = userText.trim()
-        if (text.isBlank() && screenshotDataUrl == null && attachments.isEmpty()) return
+        val cleanedParts = parts.filterNot { it is UIMessagePart.Text && it.text.isBlank() }
+        if (cleanedParts.isEmpty() && screenshotDataUrl == null) return
+        val text = cleanedParts.filterIsInstance<UIMessagePart.Text>()
+            .joinToString("\n") { it.text }.trim()
         currentJob?.cancel()
         state = OverlayState.Generating
         lastUserText = text
-        lastAttachments = attachments
+        lastAttachments = cleanedParts.toContinuationAttachments()
 
         currentJob = viewModelScope.launch {
             try {
@@ -95,11 +97,11 @@ class AssistantOverlayVM(
                     return@launch
                 }
 
-                val parts = buildList {
-                    addAll(buildQuickAskMessageParts(text = text, attachments = attachments))
+                val messageParts = buildList {
+                    addAll(cleanedParts)
                     if (screenshotDataUrl != null) add(UIMessagePart.Image(url = screenshotDataUrl))
                 }
-                if (parts.isEmpty()) {
+                if (messageParts.isEmpty()) {
                     state = OverlayState.Error("Nothing to ask.")
                     return@launch
                 }
@@ -109,7 +111,7 @@ class AssistantOverlayVM(
                 generationHandler.generateText(
                     settings = settings,
                     model = model,
-                    messages = listOf(UIMessage(role = MessageRole.USER, parts = parts)),
+                    messages = listOf(UIMessage(role = MessageRole.USER, parts = messageParts)),
                     inputTransformers = buildList {
                         addAll(defaultChatInputTransformers)
                         add(templateTransformer)
@@ -193,5 +195,37 @@ class AssistantOverlayVM(
     override fun onCleared() {
         super.onCleared()
         currentJob?.cancel()
+    }
+}
+
+private fun List<UIMessagePart>.toContinuationAttachments(): List<QuickAskAttachment> {
+    return mapNotNull { part ->
+        when (part) {
+            is UIMessagePart.Image -> QuickAskAttachment(
+                uri = part.url,
+                fileName = part.url.substringAfterLast('/'),
+                mimeType = "image/*",
+            )
+
+            is UIMessagePart.Video -> QuickAskAttachment(
+                uri = part.url,
+                fileName = part.url.substringAfterLast('/'),
+                mimeType = "video/*",
+            )
+
+            is UIMessagePart.Audio -> QuickAskAttachment(
+                uri = part.url,
+                fileName = part.url.substringAfterLast('/'),
+                mimeType = "audio/*",
+            )
+
+            is UIMessagePart.Document -> QuickAskAttachment(
+                uri = part.url,
+                fileName = part.fileName,
+                mimeType = part.mime,
+            )
+
+            else -> null
+        }
     }
 }

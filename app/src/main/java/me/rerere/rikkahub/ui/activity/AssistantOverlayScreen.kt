@@ -20,8 +20,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,25 +41,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,49 +61,62 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
-import me.rerere.ai.provider.ModelType
 import me.rerere.asr.ASRStatus
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
+import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.assist.AssistScreenHolder
-import me.rerere.rikkahub.ui.components.ai.ModelSelector
+import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.context.LocalSTTState
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberCustomSttState
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.ui.modifier.LastChatBlur
+import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import org.koin.compose.koinInject
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The digital-assistant overlay, matching the issue-#177 sketches:
- * the underlying screen stays visible, an organic Material You glow hugs the screen
- * edges (revealed bottom→top on entrance, reacting to voice), and a floating "+" button
- * plus a dark pill input rise from the bottom. Replies appear in a dark translucent
- * panel with the assistant avatar, an activity pill, an "Open in app" chip, a top text
- * fade, and drag-to-expand.
+ * The digital-assistant overlay (issue #177 sketches):
+ * - the underlying screen stays crisp (drawn from the summon-time capture so the app's
+ *   haze blur can sample it),
+ * - a vivid Material You glow hugs the screen edges under a drifting "silk" dot grid,
+ *   revealed bottom→top and swelling with the assistant's voice,
+ * - the app's real [MinimalChatInput] floats at the bottom (blur, pickers, STT and all),
+ * - replies appear in a blurred panel with avatar, activity pill, "Open in app",
+ *   a top text fade and drag-to-expand.
  */
 @Composable
 fun AssistantOverlayScreen(
@@ -119,6 +126,7 @@ fun AssistantOverlayScreen(
 ) {
     val settings = LocalSettings.current
     val settingsStore = koinInject<SettingsStore>()
+    val mcpManager = koinInject<McpManager>()
     val config = settings.assistantOverlayConfig
     val assistant = remember(settings) { settings.resolveAssistantOverlayAssistant() }
     val context = LocalContext.current
@@ -130,51 +138,49 @@ fun AssistantOverlayScreen(
     val sttState by stt.state.collectAsStateWithLifecycle()
     val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
 
-    var inputText by remember { mutableStateOf("") }
-    var showPlusSheet by remember { mutableStateOf(false) }
-    val attachments = remember { mutableStateListOf<QuickAskAttachment>() }
+    val inputState = rememberChatInputState()
     val overlayState = viewModel.state
 
-    // Screenshot captured at summon time, attached to the message when enabled.
+    // Same blur system as the rest of the app; the backdrop below is the haze source.
+    val hazeState = rememberHazeState()
+    val blur = remember(settings.displaySetting.enableBlurEffect, hazeState) {
+        LastChatBlur(
+            enabled = settings.displaySetting.enableBlurEffect,
+            hazeState = hazeState,
+        )
+    }
+
+    // Summon-time capture: crisp backdrop (so blur has something to sample) + model attachment.
+    val backdrop = remember { AssistScreenHolder.bitmapOrNull()?.asImageBitmap() }
     val screenshotDataUrl = remember {
         if (config.attachScreenshot) AssistScreenHolder.dataUrlOrNull() else null
+    }
+
+    val conversation = remember(assistant.id) {
+        Conversation(assistantId = assistant.id, messageNodes = emptyList())
+    }
+
+    fun doSend() {
+        if (sttState.isRecording) stt.stop()
+        if (inputState.isEmpty() && screenshotDataUrl == null) return
+        haptics.perform(HapticPattern.Send)
+        viewModel.send(inputState.getContents(), screenshotDataUrl)
+        inputState.clearInput()
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) stt.start { inputText = it }
+        if (granted) stt.start { inputState.setMessageText(it) }
     }
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            attachments += QuickAskAttachment(
-                uri = uri.toString(),
-                fileName = uri.lastPathSegment ?: "file",
-                mimeType = context.contentResolver.getType(uri),
-            )
-        }
-    }
-
-    fun startListening() {
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) stt.start { inputText = it }
-        else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-    }
-
-    fun doSend() {
-        if (sttState.isRecording) stt.stop()
-        val text = inputText.trim()
-        if (text.isBlank() && screenshotDataUrl == null && attachments.isEmpty()) return
-        haptics.perform(HapticPattern.Send)
-        viewModel.send(text, screenshotDataUrl, attachments.toList())
-    }
-
     LaunchedEffect(Unit) {
-        if (config.autoStartStt) startListening()
+        if (config.autoStartStt) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) stt.start { inputState.setMessageText(it) }
+            else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     // Auto-send when transcription settles.
@@ -185,7 +191,7 @@ fun AssistantOverlayScreen(
         } else if (sttState.status == ASRStatus.Idle && wasRecording) {
             wasRecording = false
             if (config.autoSendOnSttFinish &&
-                inputText.isNotBlank() &&
+                !inputState.isEmpty() &&
                 overlayState is AssistantOverlayVM.OverlayState.Idle
             ) {
                 doSend()
@@ -193,9 +199,11 @@ fun AssistantOverlayScreen(
         }
     }
 
-    // Read the reply aloud once streaming completes.
+    // Read the reply aloud once streaming completes; keep the input's loading state in sync.
     LaunchedEffect(overlayState) {
         val s = overlayState
+        inputState.loading = s is AssistantOverlayVM.OverlayState.Generating ||
+            (s is AssistantOverlayVM.OverlayState.Result && s.isStreaming)
         if (s is AssistantOverlayVM.OverlayState.Result && !s.isStreaming &&
             config.autoReadReply && s.responseText.isNotBlank()
         ) {
@@ -205,334 +213,118 @@ fun AssistantOverlayScreen(
 
     val voiceActive = isSpeaking || sttState.isRecording
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // The screen behind stays visible — only a light scrim + tap-to-dismiss catcher.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.22f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onDismiss() },
-        )
-
-        // Organic edge glow, revealed from the bottom of the screen to the top.
-        EdgeGlow(
-            active = voiceActive,
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
-                .imePadding()
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.Bottom,
-        ) {
-            AnimatedVisibility(
-                visible = overlayState !is AssistantOverlayVM.OverlayState.Idle,
-                enter = slideInVertically(
-                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
-                    initialOffsetY = { it / 2 },
-                ) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
+    CompositionLocalProvider(
+        LocalSTTState provides stt,
+        LocalLastChatBlur provides blur,
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Backdrop = haze source: crisp capture of the summoning screen + scrim + glow.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lastChatBlurSource()
             ) {
-                ReplyPanel(
-                    assistantName = assistant.name,
-                    assistantAvatar = { modifier ->
-                        UIAvatar(name = assistant.name, value = assistant.avatar, modifier = modifier)
-                    },
-                    state = overlayState,
-                    onOpenInApp = onOpenInApp,
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            if (attachments.isNotEmpty()) {
-                AttachmentChips(
-                    attachments = attachments,
-                    onRemove = { attachments.remove(it) },
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // Input row rises from the bottom with spring physics.
-            val inputVisible = remember {
-                MutableTransitionState(false).apply { targetState = true }
-            }
-            AnimatedVisibility(
-                visibleState = inputVisible,
-                enter = slideInVertically(
-                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
-                    initialOffsetY = { it * 2 },
-                ) + fadeIn(),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Separate round "+" button, left of the pill (as sketched).
-                    Surface(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            showPlusSheet = true
-                        },
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f),
-                        modifier = Modifier.size(56.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Rounded.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(26.dp),
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.width(10.dp))
-
-                    // Dark pill input with the assistant avatar as the voice button.
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f),
-                        modifier = Modifier.weight(1f).height(56.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 20.dp, end = 8.dp),
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                if (inputText.isEmpty()) {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.assistant_overlay_hint, assistant.name
-                                        ),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                BasicTextField(
-                                    value = inputText,
-                                    onValueChange = { inputText = it },
-                                    textStyle = TextStyle(
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                                    ),
-                                    cursorBrush = Brush.verticalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.primary,
-                                            MaterialTheme.colorScheme.primary,
-                                        )
-                                    ),
-                                    maxLines = 4,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            if (inputText.isNotBlank()) {
-                                Surface(
-                                    onClick = { doSend() },
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(42.dp),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Rounded.ArrowUpward,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(22.dp),
-                                        )
-                                    }
-                                }
-                            } else {
-                                // Assistant avatar = voice button (pulsing ring while listening).
-                                val listenPulse by rememberInfiniteTransition(label = "listen")
-                                    .animateFloat(
-                                        initialValue = 0.35f,
-                                        targetValue = 1f,
-                                        animationSpec = infiniteRepeatable(
-                                            animation = tween(900, easing = FastOutSlowInEasing),
-                                            repeatMode = RepeatMode.Reverse,
-                                        ),
-                                        label = "listenPulse",
-                                    )
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .then(
-                                            if (sttState.isRecording) Modifier.border(
-                                                width = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary
-                                                    .copy(alpha = listenPulse),
-                                                shape = CircleShape,
-                                            ) else Modifier
-                                        )
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                        ) {
-                                            haptics.perform(HapticPattern.Pop)
-                                            if (sttState.isRecording) stt.stop() else startListening()
-                                        },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    UIAvatar(
-                                        name = assistant.name,
-                                        value = assistant.avatar,
-                                        modifier = Modifier.size(38.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                if (backdrop != null) {
+                    Image(
+                        bitmap = backdrop,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
+                val scrimAlpha by animateFloatAsState(
+                    targetValue = 0.28f,
+                    animationSpec = tween(500, easing = FastOutSlowInEasing),
+                    label = "scrim",
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = scrimAlpha))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onDismiss() },
+                )
+                SilkGlowLayer(
+                    active = voiceActive,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
 
-            Spacer(Modifier.height(14.dp))
-        }
-    }
-
-    if (showPlusSheet) {
-        ModalBottomSheet(onDismissRequest = { showPlusSheet = false }) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                verticalArrangement = Arrangement.Bottom,
             ) {
-                // Model picker
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                AnimatedVisibility(
+                    visible = overlayState !is AssistantOverlayVM.OverlayState.Idle,
+                    enter = slideInVertically(
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+                        initialOffsetY = { it / 2 },
+                    ) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
+                    modifier = Modifier.padding(horizontal = 12.dp),
                 ) {
-                    Text(
-                        text = "Model",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ModelSelector(
-                        modelId = config.modelId,
-                        providers = settings.providers,
-                        type = ModelType.CHAT,
-                        allowClear = true,
-                        onClear = {
-                            scope.launch {
-                                settingsStore.update {
-                                    it.copy(
-                                        assistantOverlayConfig = it.assistantOverlayConfig
-                                            .copy(modelId = null)
-                                    )
-                                }
-                            }
+                    ReplyPanel(
+                        assistantName = assistant.name,
+                        assistantAvatar = { modifier ->
+                            UIAvatar(name = assistant.name, value = assistant.avatar, modifier = modifier)
                         },
-                        onSelect = { model ->
-                            scope.launch {
-                                settingsStore.update {
-                                    it.copy(
-                                        assistantOverlayConfig = it.assistantOverlayConfig
-                                            .copy(modelId = model.id)
-                                    )
-                                }
-                            }
-                        },
+                        state = overlayState,
+                        onOpenInApp = onOpenInApp,
                     )
                 }
-                // File picker
-                Surface(
-                    onClick = {
-                        showPlusSheet = false
-                        filePickerLauncher.launch("*/*")
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(16.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.AttachFile,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = "Attach file",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-                // Open in app
-                Surface(
-                    onClick = {
-                        showPlusSheet = false
-                        onOpenInApp()
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(16.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.OpenInNew,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.assistant_overlay_open_in_app),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun AttachmentChips(
-    attachments: List<QuickAskAttachment>,
-    onRemove: (QuickAskAttachment) -> Unit,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        attachments.forEach { attachment ->
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                Spacer(Modifier.height(4.dp))
+
+                // The app's real input bar, rising from the bottom with physics.
+                val inputVisible = remember {
+                    MutableTransitionState(false).apply { targetState = true }
+                }
+                AnimatedVisibility(
+                    visibleState = inputVisible,
+                    enter = slideInVertically(
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+                        initialOffsetY = { it * 2 },
+                    ) + fadeIn(),
                 ) {
-                    Text(
-                        text = attachment.fileName,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.width(120.dp),
-                    )
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clickable { onRemove(attachment) },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    MinimalChatInput(
+                        modifier = Modifier.fillMaxWidth(),
+                        state = inputState,
+                        conversation = conversation,
+                        settings = settings,
+                        mcpManager = mcpManager,
+                        enableSearch = false,
+                        onToggleSearch = {},
+                        onUpdateChatModel = { model ->
+                            scope.launch {
+                                settingsStore.update { s ->
+                                    s.copy(assistants = s.assistants.map { a ->
+                                        if (a.id == assistant.id) a.copy(chatModelId = model.id) else a
+                                    })
+                                }
+                            }
+                        },
+                        onUpdateAssistant = { updated ->
+                            scope.launch {
+                                settingsStore.update { s ->
+                                    s.copy(assistants = s.assistants.map { a ->
+                                        if (a.id == updated.id) updated else a
+                                    })
+                                }
+                            }
+                        },
+                        onUpdateConversation = {},
+                        onToolApproval = { _, _, _, _ -> },
+                        onUpdateSearchService = {},
+                        onClearContext = {},
+                        onCancelClick = { viewModel.cancel() },
+                        onSendClick = { doSend() },
+                        onLongSendClick = { doSend() },
+                        bottomPadding = 16.dp,
                     )
                 }
             }
@@ -555,10 +347,20 @@ private fun ReplyPanel(
     val panelHeight = remember { Animatable(minHeight) }
     val scroll = rememberScrollState()
 
+    val blur = LocalLastChatBlur.current
+    val panelShape = RoundedCornerShape(28.dp)
+    val containerColor = if (blur.enabled && blur.hazeState != null) {
+        blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.9f)
+    }
+
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
-        shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.fillMaxWidth(),
+        color = containerColor,
+        shape = panelShape,
+        modifier = Modifier
+            .fillMaxWidth()
+            .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             // Drag handle — drag up/down to expand/collapse the panel.
@@ -737,96 +539,71 @@ private fun ActivityPill(state: AssistantOverlayVM.OverlayState) {
 }
 
 /**
- * Organic Material You glow hugging the screen edges. Colored blobs drift slowly along
- * each edge; the whole glow is revealed from the bottom of the screen to the top on
- * entrance, and swells while the assistant is listening or speaking.
+ * The "wavey AI light": a vivid Material You vignette hugging the screen edges (never
+ * washing out the middle), overlaid with a dot grid that undulates slowly like a silk
+ * cover. Per the reference design, the dots are MASKED BY THE GLOW ITSELF: each dot's
+ * alpha/color comes from evaluating the same blob field at its position, drawn crisp
+ * and slightly stronger than the blurred glow beneath — so the dots sparkle at the
+ * edges and vanish toward the middle. Both layers are revealed bottom→top on entrance,
+ * and the glow swells while the assistant is listening or speaking.
  */
 @Composable
-private fun EdgeGlow(
+private fun SilkGlowLayer(
     active: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "edgeGlow")
+    val transition = rememberInfiniteTransition(label = "silkGlow")
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(12000, easing = LinearEasing),
+            animation = tween(14000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "glowPhase",
     )
     val breath by transition.animateFloat(
-        initialValue = 0.72f,
+        initialValue = 0.8f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(3400, easing = FastOutSlowInEasing),
+            animation = tween(3600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "glowBreath",
     )
     val boost by animateFloatAsState(
-        targetValue = if (active) 1f else 0.55f,
+        targetValue = if (active) 1f else 0.62f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 120f),
         label = "glowBoost",
     )
-    // Entrance: the glow rises from the bottom of the screen to the top.
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         entrance.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
 
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
-    val tertiary = MaterialTheme.colorScheme.tertiary
+    val scheme = MaterialTheme.colorScheme
+    // Wider Material You range than just primary/tertiary — vivid but not neon.
+    val edgeColors = remember(scheme) {
+        listOf(
+            scheme.primary,
+            scheme.tertiary,
+            scheme.secondary,
+            scheme.inversePrimary,
+            scheme.primary,
+            scheme.tertiary,
+        )
+    }
+    val density = LocalDensity.current
+    val dotSpacingPx = with(density) { 18.dp.toPx() }
+    val dotRadiusPx = with(density) { 1.3.dp.toPx() }
+    val dotDriftPx = with(density) { 2.5.dp.toPx() }
 
     Box(
         modifier = modifier
-            .blur(40.dp)
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
-                val w = size.width
-                val h = size.height
-                val alpha = (0.55f * breath * boost).coerceIn(0f, 1f)
-                val twoPi = (2.0 * PI).toFloat()
-
-                fun blob(center: Offset, radius: Float, color: Color) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(color.copy(alpha = alpha), Color.Transparent),
-                            center = center,
-                            radius = radius,
-                        ),
-                        radius = radius,
-                        center = center,
-                    )
-                }
-
-                // Blobs drifting along each edge (positions slide organically with phase).
-                blob(
-                    center = Offset(-0.04f * w, h * (0.35f + 0.22f * sin(twoPi * phase))),
-                    radius = 0.42f * h,
-                    color = primary,
-                )
-                blob(
-                    center = Offset(w * (0.55f + 0.25f * sin(twoPi * phase + 1.7f)), -0.04f * h),
-                    radius = 0.38f * h,
-                    color = tertiary,
-                )
-                blob(
-                    center = Offset(1.04f * w, h * (0.55f + 0.22f * sin(twoPi * phase + 3.4f))),
-                    radius = 0.42f * h,
-                    color = secondary,
-                )
-                blob(
-                    center = Offset(w * (0.45f + 0.28f * sin(twoPi * phase + 5.1f)), 1.04f * h),
-                    radius = 0.46f * h,
-                    color = primary,
-                )
-
                 drawContent()
-
-                // Bottom→top reveal mask for the entrance animation.
+                // Bottom→top reveal for the entrance ("appears from the bottom to the top").
                 val p = entrance.value
                 if (p < 1f) {
                     drawRect(
@@ -839,5 +616,110 @@ private fun EdgeGlow(
                     )
                 }
             },
+    ) {
+        // Edge glow: soft blobs pinned to the perimeter, blurred into a vignette.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(26.dp)
+                .drawBehind {
+                    val alpha = (0.75f * breath * boost).coerceIn(0f, 1f)
+                    glowBlobs(size.width, size.height, phase, edgeColors).forEach { blob ->
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(blob.color.copy(alpha = alpha), Color.Transparent),
+                                center = blob.center,
+                                radius = blob.radius,
+                            ),
+                            radius = blob.radius,
+                            center = blob.center,
+                        )
+                    }
+                },
+        )
+
+        // Silk dot grid, masked by the glow field itself (per the reference design):
+        // each dot samples the same blob field — brighter/more saturated than the
+        // blurred glow beneath, fading to nothing toward the middle of the screen.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val w = size.width
+                    val h = size.height
+                    val t = phase * (2.0 * PI).toFloat()
+                    val blobs = glowBlobs(w, h, phase, edgeColors)
+                    // Dots reach slightly further inward than the glow, so they read
+                    // as the stronger layer on top of it.
+                    val maskReach = 1.15f
+                    val dotStrength = (0.95f * breath * boost).coerceIn(0f, 1f)
+
+                    var y = dotSpacingPx / 2f
+                    while (y < h) {
+                        var x = dotSpacingPx / 2f
+                        while (x < w) {
+                            var weight = 0f
+                            var rSum = 0f
+                            var gSum = 0f
+                            var bSum = 0f
+                            for (blob in blobs) {
+                                val dx = x - blob.center.x
+                                val dy = y - blob.center.y
+                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                val falloff =
+                                    (1f - dist / (blob.radius * maskReach)).coerceAtLeast(0f)
+                                if (falloff > 0f) {
+                                    val wgt = falloff * falloff
+                                    weight += wgt
+                                    rSum += blob.color.red * wgt
+                                    gSum += blob.color.green * wgt
+                                    bSum += blob.color.blue * wgt
+                                }
+                            }
+                            if (weight > 0.02f) {
+                                val intensity = weight.coerceAtMost(1f)
+                                val dotColor = Color(
+                                    red = (rSum / weight).coerceIn(0f, 1f),
+                                    green = (gSum / weight).coerceIn(0f, 1f),
+                                    blue = (bSum / weight).coerceIn(0f, 1f),
+                                )
+                                val driftX = dotDriftPx * sin(t + y * 0.006f + x * 0.003f)
+                                val driftY = dotDriftPx * cos(t * 0.8f + x * 0.005f + y * 0.002f)
+                                val shimmer = 0.9f + 0.1f * sin(t * 1.3f + x * 0.01f + y * 0.008f)
+                                drawCircle(
+                                    color = dotColor.copy(
+                                        alpha = (dotStrength * intensity * shimmer).coerceIn(0f, 1f)
+                                    ),
+                                    radius = dotRadiusPx,
+                                    center = Offset(x + driftX, y + driftY),
+                                )
+                            }
+                            x += dotSpacingPx
+                        }
+                        y += dotSpacingPx
+                    }
+                },
+        )
+    }
+}
+
+private class GlowBlob(val center: Offset, val radius: Float, val color: Color)
+
+/**
+ * The shared blob field driving BOTH the blurred edge glow and the dot mask — keeping
+ * the two layers perfectly in sync as the blobs drift (the Figma construction: the dot
+ * layer is the same fade, masked and intensified).
+ */
+private fun glowBlobs(w: Float, h: Float, phase: Float, colors: List<Color>): List<GlowBlob> {
+    val twoPi = (2.0 * PI).toFloat()
+    // Tight radius so the glow hugs the edges and never floods the middle.
+    val r = 0.24f * h
+    return listOf(
+        GlowBlob(Offset(-0.02f * w, h * (0.22f + 0.14f * sin(twoPi * phase))), r, colors[0]),
+        GlowBlob(Offset(-0.02f * w, h * (0.72f + 0.12f * sin(twoPi * phase + 2.1f))), r, colors[1]),
+        GlowBlob(Offset(w * (0.5f + 0.3f * sin(twoPi * phase + 1.2f)), -0.02f * h), r * 0.9f, colors[2]),
+        GlowBlob(Offset(1.02f * w, h * (0.3f + 0.14f * sin(twoPi * phase + 3.5f))), r, colors[3]),
+        GlowBlob(Offset(1.02f * w, h * (0.78f + 0.12f * sin(twoPi * phase + 4.6f))), r, colors[4]),
+        GlowBlob(Offset(w * (0.45f + 0.3f * sin(twoPi * phase + 5.4f)), 1.02f * h), r * 1.1f, colors[5]),
     )
 }
