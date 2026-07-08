@@ -605,8 +605,11 @@ class RouteActivity : ComponentActivity() {
                                 messages = messages
                             )
                             chatService.saveConversation(conversationId, conversation)
-                            navigateToChatPage(navBackStack, chatId = conversationId)
                         }
+                        // Even with no exchange yet (e.g. "Open in app" tapped before a reply),
+                        // still open a fresh chat with the selected assistant so we land on the
+                        // right character instead of the default one.
+                        navigateToChatPage(navBackStack, chatId = conversationId)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()

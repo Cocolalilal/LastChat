@@ -72,6 +72,42 @@ private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
 
+/**
+ * Reserved key a tool may put in its (JSON object) result to hand the model one or more
+ * images that providers can't carry inside a tool result. The value is a JSON array of
+ * image URLs / data-URLs. [extractInjectedImageParts] strips the key from the tool result
+ * (so the raw base64 never reaches the provider — which would 400) and re-delivers the
+ * images as a synthetic USER message right after the tool results, where every provider
+ * accepts them. Used by the assistant-overlay `look_at_screen` tool.
+ */
+internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_image_parts"
+
+/**
+ * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] payloads out of [results], returning
+ * the sanitized tool results (key removed) plus the image parts to inject as a follow-up
+ * USER message. Non-injecting results pass through untouched.
+ */
+private fun extractInjectedImageParts(
+    results: List<UIMessagePart.ToolResult>,
+): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
+    val images = mutableListOf<UIMessagePart.Image>()
+    val sanitized = results.map { result ->
+        val content = result.content
+        if (content is JsonObject && content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)) {
+            val urls = (content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf { url -> url.isNotBlank() } }
+                .orEmpty()
+            urls.forEach { images += UIMessagePart.Image(url = it) }
+            result.copy(
+                content = JsonObject(content - TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)
+            )
+        } else {
+            result
+        }
+    }
+    return sanitized to images
+}
+
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
     return assistant.enableMemory && assistant.enableMemorySearchTool
 }
@@ -608,10 +644,17 @@ class GenerationHandler(
                 messages = messages.markPendingToolCalls(pendingToolCallIds)
                 send(GenerationChunk.Messages(messages))
                 if (results.isNotEmpty()) {
+                    val (sanitized, injectedImages) = extractInjectedImageParts(results)
                     messages = messages + UIMessage(
                         role = MessageRole.TOOL,
-                        parts = results
+                        parts = sanitized
                     )
+                    if (injectedImages.isNotEmpty()) {
+                        messages = messages + UIMessage(
+                            role = MessageRole.USER,
+                            parts = injectedImages,
+                        )
+                    }
                     send(
                         GenerationChunk.Messages(
                             messages.transforms(
@@ -625,10 +668,19 @@ class GenerationHandler(
                 }
                 break
             }
+            val (sanitizedResults, injectedImages) = extractInjectedImageParts(results)
             messages = messages + UIMessage(
                 role = MessageRole.TOOL,
-                parts = results
+                parts = sanitizedResults
             )
+            // Re-deliver any tool-provided images (e.g. the overlay screenshot) as a USER
+            // message the provider accepts, instead of stuffing base64 into a tool result.
+            if (injectedImages.isNotEmpty()) {
+                messages = messages + UIMessage(
+                    role = MessageRole.USER,
+                    parts = injectedImages,
+                )
+            }
             send(
                 GenerationChunk.Messages(
                     messages.transforms(

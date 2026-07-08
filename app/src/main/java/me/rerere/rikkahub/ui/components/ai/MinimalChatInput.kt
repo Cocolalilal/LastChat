@@ -710,7 +710,7 @@ fun MinimalChatInput(
                     Surface(
                         shape = CircleShape,
                         color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
                             .size(48.dp)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
@@ -752,7 +752,7 @@ fun MinimalChatInput(
                 Surface(
                     shape = inputShape,  // Fixed radius - correct per user
                     color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
@@ -1443,7 +1443,7 @@ private fun CharacterQuestionsCard(
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -1546,7 +1546,7 @@ private fun CharacterQuestionOptionRow(
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-            else MaterialTheme.colorScheme.background
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
         ),
         interactionSource = interactionSource,
         modifier = modifier
@@ -1613,7 +1613,7 @@ private fun ToolApprovalCard(
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -1660,7 +1660,7 @@ private fun ToolApprovalCard(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -1733,7 +1733,7 @@ private fun ToolApprovalActionRow(
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-            else MaterialTheme.colorScheme.background
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
         ),
         interactionSource = interactionSource,
         modifier = modifier
@@ -2973,7 +2973,7 @@ private fun ChatScrollToBottomButton(
     Surface(
         shape = CircleShape,
         color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier
             .size(36.dp)
             .graphicsLayer {
@@ -3116,7 +3116,7 @@ private fun ChatSuggestionsRow(
                 Surface(
                     shape = suggestionShape,
                     color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     modifier = Modifier
                         .graphicsLayer {
                             scaleX = scale

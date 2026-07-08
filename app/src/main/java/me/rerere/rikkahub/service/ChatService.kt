@@ -43,9 +43,12 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.withContext
+import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
@@ -58,6 +61,9 @@ import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.truncate
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY
+import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
+import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
@@ -1765,8 +1771,59 @@ class ChatService(
                     )
                 )
             }
+
+            // look_at_screen: available whenever a fresh assist screenshot was captured (i.e.
+            // the assistant overlay was just summoned) and screenshot-attach is enabled. Vision
+            // models get the image (injected as a follow-up USER message via
+            // TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY so it isn't stuffed into a tool result);
+            // non-vision models get OCR text.
+            if (settings.assistantOverlayConfig.attachScreenshot && AssistScreenHolder.hasFreshScreenshot()) {
+                add(createLookAtScreenTool(model))
+            }
         }
     }
+
+    private fun createLookAtScreenTool(model: Model): Tool = Tool(
+        name = "look_at_screen",
+        description = "Look at a screenshot of the user's current screen, captured when the " +
+            "assistant was summoned. Use this when you need visual context about what the user " +
+            "is looking at.",
+        parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+        approvalMode = ToolApprovalMode.Auto,
+        execute = {
+            AssistScreenHolder.notifyScreenRead()
+            val dataUrl = AssistScreenHolder.dataUrlOrNull()
+            if (dataUrl.isNullOrBlank()) {
+                buildJsonObject {
+                    put("note", JsonPrimitive("No screenshot is available."))
+                }
+            } else if (model.inputModalities.contains(Modality.IMAGE)) {
+                // Vision model: hand the image over as a follow-up USER message (providers can't
+                // carry images inside a tool result — doing so 400s).
+                buildJsonObject {
+                    put("note", JsonPrimitive("Screenshot of the user's screen is attached below."))
+                    put(
+                        TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                        JsonArray(listOf(JsonPrimitive(dataUrl))),
+                    )
+                }
+            } else {
+                // Non-vision model: OCR fallback.
+                val ocrText = runCatching {
+                    OcrTransformer.performOcr(UIMessagePart.Image(url = dataUrl))
+                }.getOrNull()
+                buildJsonObject {
+                    put("type", JsonPrimitive("ocr_text"))
+                    if (ocrText.isNullOrBlank()) {
+                        put("text", JsonPrimitive(""))
+                        put("note", JsonPrimitive("OCR could not extract text from the screenshot."))
+                    } else {
+                        put("text", JsonPrimitive(ocrText))
+                    }
+                }
+            }
+        },
+    )
 
     private suspend fun createToolApprovalResolution(
         toolCall: UIMessagePart.ToolCall,

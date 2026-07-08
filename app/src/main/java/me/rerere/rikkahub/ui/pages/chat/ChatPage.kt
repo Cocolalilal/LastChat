@@ -2082,7 +2082,7 @@ private fun ChatSearchModeBar(
             .lastChatBlurEffect(containerColor, searchFieldShape),
         shape = searchFieldShape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     ) {
         OutlinedTextField(
             value = query,
@@ -2136,7 +2136,7 @@ private fun ChatShareSelectionModeBar(
     Surface(
         shape = shape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
@@ -2229,7 +2229,7 @@ private fun ChatToolbarOverflowMenu(
     val scrimInteractionSource = remember { MutableInteractionSource() }
     val menuShape = RoundedCornerShape(24.dp)
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     val menuTopPadding = if (placement == ChatToolbarPlacement.Top) 64.dp else 0.dp
     val menuBottomPadding = if (placement == ChatToolbarPlacement.Bottom) 72.dp else 0.dp
     val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -2657,7 +2657,7 @@ fun UpdatePill(
         shape = pillShape,
         color = blurredContainerColor(containerColor),
         contentColor = contentColor,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = Modifier
             .height(height)
             .lastChatBlurEffect(containerColor, pillShape)
@@ -2718,7 +2718,7 @@ private fun ChatToolbar(
 ) {
     val scope = rememberCoroutineScope()
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
+    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp
     // State for assistant picker - must be at function level for proper recomposition

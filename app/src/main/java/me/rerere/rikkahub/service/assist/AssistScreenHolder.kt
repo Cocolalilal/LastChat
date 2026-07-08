@@ -3,6 +3,9 @@ package me.rerere.rikkahub.service.assist
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.ByteArrayOutputStream
 
 /**
@@ -26,6 +29,15 @@ object AssistScreenHolder {
     @Volatile
     var capturedAtMillis: Long = 0L
         private set
+
+    // Bumped every time the model actually reads the screen (look_at_screen). The overlay
+    // observes this to re-trigger the glow "wave" so the user sees it look.
+    private val _screenReadSignal = MutableStateFlow(0L)
+    val screenReadSignal: StateFlow<Long> = _screenReadSignal.asStateFlow()
+
+    fun notifyScreenRead() {
+        _screenReadSignal.value = System.currentTimeMillis()
+    }
 
     @Synchronized
     fun store(bitmap: Bitmap) {

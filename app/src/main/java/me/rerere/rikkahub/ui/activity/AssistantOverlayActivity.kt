@@ -63,12 +63,28 @@ class AssistantOverlayActivity : ComponentActivity() {
                         viewModel = viewModel,
                         onDismiss = { finish() },
                         onOpenInApp = {
-                            val data = viewModel.buildContinuationData()
-                            val routeIntent = Intent(this, RouteActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                if (data != null) putQuickAskContinuationData(data)
+                            // Deep-link straight to the overlay's OWN conversation so the app
+                            // opens the exact chat you were having (ChatService keeps a
+                            // reference alive across the hand-off; it's also persisted).
+                            val convId = viewModel.conversationId.value
+                            runCatching {
+                                val routeIntent = Intent(this, RouteActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    if (convId != null) putExtra("conversationId", convId.toString())
+                                }
+                                startActivity(routeIntent)
+                            }.onFailure {
+                                // Never let a hand-off failure crash the overlay; fall back to a
+                                // bare launch so the user at least lands in the app.
+                                runCatching {
+                                    startActivity(
+                                        Intent(this, RouteActivity::class.java)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
                             }
-                            startActivity(routeIntent)
                             finish()
                         },
                     )
@@ -78,8 +94,7 @@ class AssistantOverlayActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        AssistScreenHolder.clear()
-    }
+    // NOTE: we intentionally do NOT clear AssistScreenHolder here. After "Open in app" the
+    // in-app chat can still call look_at_screen, and the 5-minute freshness window (plus the
+    // next summon overwriting it) is enough to keep it from going stale.
 }
