@@ -72,6 +72,7 @@ class ModelInstall(
             tokenizerPath = tokenizerPath,
             commitHash = meta.commitHash,
             sizeInBytes = target.length(),
+            minDeviceMemoryGb = meta.minDeviceMemoryInGb,
             supportsImage = meta.supportsImage,
             supportsAudio = meta.supportsAudio,
             supportsThinking = meta.supportsThinking,

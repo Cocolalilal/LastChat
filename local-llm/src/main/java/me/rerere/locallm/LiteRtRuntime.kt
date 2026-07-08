@@ -3,6 +3,8 @@ package me.rerere.locallm
 import android.content.Context
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,7 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** An engine that is loaded and ready, together with the model + backends it was loaded with. */
 class LoadedEngine internal constructor(
@@ -46,11 +47,14 @@ class LiteRtRuntime(
 
     init {
         // Detect a GPU load that crashed the process last session and pin that model to CPU.
+        // This must complete before any acquire() call so the gpuCrashed flag is set before
+        // AcceleratorProbe.resolve() reads it.
         val pending = crashPrefs.getString(KEY_PENDING_GPU, null)
         if (pending != null) {
-            crashPrefs.edit().remove(KEY_PENDING_GPU).apply()
-            // Flag the model so AUTO avoids the GPU next time.
-            markGpuCrashedBlocking(pending)
+            crashPrefs.edit().remove(KEY_PENDING_GPU).commit()
+            // Flag the model so AUTO avoids the GPU next time — synchronous so it's visible
+            // to the next acquire() call on the same LiteRtRuntime instance.
+            runCatching { markGpuCrashedBlocking(pending) }
         }
     }
 
@@ -81,7 +85,7 @@ class LiteRtRuntime(
         // A different model/config is requested: dispose the old engine first to free RAM.
         disposeLocked()
 
-        when (val mem = MemoryGuard.check(context, model.sizeInBytes, kvCacheTokens)) {
+        when (val mem = MemoryGuard.check(context, model.sizeInBytes, kvCacheTokens, model.minDeviceMemoryGb)) {
             is MemoryCheck.Insufficient -> {
                 _state.value = LocalRuntimeState.Error(model.id, "insufficient_memory")
                 throw InsufficientMemoryException(mem)
@@ -122,19 +126,40 @@ class LiteRtRuntime(
         backends: ResolvedBackends,
         kvCacheTokens: Int,
     ): Engine {
-        val cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }
+        // Match Google Edge Gallery's EngineConfig exactly:
+        // - No maxNumImages (let the model use its default)
+        // - cacheDir only set when model is in /data/local/tmp (test path); null otherwise
+        // - speculative decoding explicitly disabled by default (Gallery checks Capabilities)
+        val modelPath = model.filePath
+        val cacheDir: String? = if (modelPath.startsWith("/data/local/tmp")) {
+            context.getExternalFilesDir(null)?.absolutePath
+        } else {
+            null
+        }
+
         val config = EngineConfig(
-            /* modelPath = */ model.filePath,
+            /* modelPath = */ modelPath,
             /* backend = */ backends.main,
             /* visionBackend = */ backends.vision,
             /* audioBackend = */ backends.audio,
             /* maxNumTokens = */ kvCacheTokens,
-            /* maxNumImages = */ if (model.supportsImage) MAX_IMAGES else null,
-            /* cacheDir = */ cacheDir.absolutePath,
+            /* maxNumImages = */ null,
+            /* cacheDir = */ cacheDir,
         )
         if (backends.usingGpu) armGpuCrashMarker(model.id)
         return try {
-            Engine(config).also { it.initialize() }
+            // Disable speculative decoding by default — it allocates extra memory for the draft
+            // model. Gallery only enables it after checking Capabilities and user setting.
+            @OptIn(ExperimentalApi::class)
+            ExperimentalFlags.enableSpeculativeDecoding = false
+
+            Engine(config).also { engine ->
+                engine.initialize()
+                // Reset the flag after init (matches Gallery — the flag is only consumed during
+                // initialize(), leaving it set could affect later operations).
+                @OptIn(ExperimentalApi::class)
+                ExperimentalFlags.enableSpeculativeDecoding = false
+            }
         } finally {
             if (backends.usingGpu) disarmGpuCrashMarker()
         }
@@ -170,12 +195,12 @@ class LiteRtRuntime(
     }
 
     private fun markGpuCrashedBlocking(modelId: String) {
-        // Fire-and-forget flag update; done on a background thread to avoid blocking init.
-        Thread {
-            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                runCatching { store.updateRuntimeFlags(modelId) { it.copy(gpuCrashed = true) } }
-            }
-        }.start()
+        // Must be synchronous — called from init{} before any acquire() can read the flag,
+        // and from the catchable-GPU-exception fallback path where the flag must be persisted
+        // before a retry.
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            store.updateRuntimeFlags(modelId) { it.copy(gpuCrashed = true) }
+        }
     }
 
     class InsufficientMemoryException(val info: MemoryCheck.Insufficient) : Exception("insufficient_memory")
@@ -183,7 +208,6 @@ class LiteRtRuntime(
     companion object {
         private const val TAG = "LiteRtRuntime"
         private const val KEY_PENDING_GPU = "pending_gpu_model"
-        private const val MAX_IMAGES = 8
 
         /**
          * Resolves the KV cache size (maxNumTokens) to pass to EngineConfig.

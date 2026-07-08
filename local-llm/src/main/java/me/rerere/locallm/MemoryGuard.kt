@@ -16,26 +16,16 @@ sealed interface MemoryCheck {
 }
 
 /**
- * Guards against loading a model that won't fit in available RAM. LiteRT-LM roughly needs the model
- * file size plus runtime headroom (KV cache, activations, framework) resident; loading past that
- * causes a hard native OOM/crash, so we block with a helpful message instead.
+ * Guards against loading a model that won't fit on the device. Uses the same strategy as Google's
+ * Edge Gallery app: check the device's **total** RAM against the model's [minDeviceMemoryInGb]
+ * threshold from the curated allowlist. Gallery does NOT check available RAM — it shows a warning
+ * and lets the user proceed, because available RAM fluctuates with background processes and is not
+ * a reliable indicator of whether a model will load successfully.
  *
- * The [kvCacheTokens] parameter lets us estimate the KV cache cost — each token in the KV cache
- * consumes memory proportional to the model's layer count and hidden size.
+ * We also keep a secondary safety check: if the model file size alone exceeds 80% of total RAM,
+ * block the load (the model literally cannot fit regardless of what the allowlist says).
  */
 object MemoryGuard {
-
-    /** Runtime headroom on top of the raw model file size (activations, framework, JIT). */
-    private const val HEADROOM_MB = 1024L
-
-    /**
-     * Estimated memory per KV cache token in KB.
-     *
-     * For int4-quantized models with ~20–40 layers, each token in the KV cache costs roughly
-     * 0.5–2 KB per layer. We use a conservative average of ~1 KB/token/layer × ~40 layers ≈ 40 KB
-     * per token, then round up to 64 KB to be safe across model sizes.
-     */
-    private const val KV_CACHE_KB_PER_TOKEN = 64L
 
     fun deviceTotalRamGb(context: Context): Int {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -50,35 +40,41 @@ object MemoryGuard {
         return Math.round(memBytes / 1_000_000_000.0).toInt().coerceAtLeast(1)
     }
 
-    fun check(context: Context, modelSizeBytes: Long, kvCacheTokens: Int = 4096): MemoryCheck {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val info = ActivityManager.MemoryInfo()
-        am.getMemoryInfo(info)
+    /**
+     * @param minDeviceMemoryGb The minimum device RAM in GB (from the model's allowlist entry).
+     *   When null, defaults to [DEFAULT_MIN_DEVICE_MEMORY_GB].
+     */
+    fun check(
+        context: Context,
+        modelSizeBytes: Long,
+        @Suppress("UNUSED_PARAMETER") kvCacheTokens: Int = 4096,
+        minDeviceMemoryGb: Int? = null,
+    ): MemoryCheck {
+        val totalRamGb = deviceTotalRamGb(context)
+        val requiredGb = minDeviceMemoryGb ?: DEFAULT_MIN_DEVICE_MEMORY_GB
 
-        val modelMb = modelSizeBytes / (1024 * 1024)
-        val kvCacheMb = (kvCacheTokens.toLong() * KV_CACHE_KB_PER_TOKEN) / 1024
-        val requiredMb = modelMb + kvCacheMb + HEADROOM_MB
-        val availableMb = info.availMem / (1024 * 1024)
-        val totalMb = info.totalMem / (1024 * 1024)
-
-        // Maximum heap the OS is likely to grant the app.
-        // With largeHeap=true, Android typically allows up to totalMem - ~1.5GB (OS overhead).
-        // Without largeHeap, the cap is much lower (~256–512MB depending on device).
-        val osOverheadMb = 1500L
-        val maxAppRamMb = totalMb - osOverheadMb
-
-        // Both conditions must be met: the device must have enough total RAM *and* enough
-        // currently-available RAM. The old code used || (OR), which allowed loading when total RAM
-        // was sufficient but available RAM was far too low — the OS would then kill the process
-        // during model loading.
-        return if (availableMb >= requiredMb && maxAppRamMb >= requiredMb) {
-            MemoryCheck.Ok
-        } else {
-            MemoryCheck.Insufficient(
-                requiredMb = requiredMb,
-                modelMb = modelMb,
-                availableMb = availableMb,
+        // Primary check: device total RAM must meet the model's minimum (same as Edge Gallery).
+        if (totalRamGb < requiredGb) {
+            return MemoryCheck.Insufficient(
+                requiredMb = requiredGb.toLong() * 1024,
+                modelMb = modelSizeBytes / (1024 * 1024),
+                availableMb = totalRamGb.toLong() * 1024,
             )
         }
+
+        // Secondary safety: if the model file alone is >80% of total RAM, it physically cannot fit.
+        val totalRamBytes = totalRamGb.toLong() * 1_000_000_000L
+        if (modelSizeBytes > totalRamBytes * 8 / 10) {
+            return MemoryCheck.Insufficient(
+                requiredMb = modelSizeBytes / (1024 * 1024),
+                modelMb = modelSizeBytes / (1024 * 1024),
+                availableMb = totalRamGb.toLong() * 1024,
+            )
+        }
+
+        return MemoryCheck.Ok
     }
+
+    /** Default minimum device RAM when the model's allowlist entry doesn't specify one. */
+    private const val DEFAULT_MIN_DEVICE_MEMORY_GB = 6
 }

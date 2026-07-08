@@ -161,6 +161,8 @@ data class InstalledLocalModel(
     /** Commit hash of the installed file — compared against the catalog to detect updates. */
     val commitHash: String,
     val sizeInBytes: Long,
+    /** Minimum device RAM in GB required to run this model (from the allowlist). */
+    val minDeviceMemoryGb: Int = 6,
     val supportsImage: Boolean = false,
     val supportsAudio: Boolean = false,
     val supportsThinking: Boolean = false,
