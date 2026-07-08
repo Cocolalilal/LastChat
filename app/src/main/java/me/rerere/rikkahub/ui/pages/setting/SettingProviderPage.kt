@@ -731,7 +731,7 @@ private fun ProviderListView(
                             animatedShape = if (reorderableProviders.isEmpty()) {
                                 RoundedCornerShape(24.dp)
                             } else {
-                                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
                             },
                             providerTags = settings.providerTags,
                             haptics = haptics,
