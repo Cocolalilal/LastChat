@@ -62,7 +62,7 @@ ktor = "3.3.2"
 glance = "1.1.1"
 security-crypto = "1.1.0-alpha06"
 jmdns = "3.6.3"
-litertlm = "0.13.1"
+litertlm = "0.11.0"
 localagentsRag = "0.3.0"
 protobufJavalite = "3.25.1"
 
