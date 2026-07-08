@@ -33,7 +33,7 @@ class LastChatVoiceInteractionSession(context: Context) : VoiceInteractionSessio
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         val intent = Intent(context, AssistantOverlayActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
         }
         runCatching { context.startActivity(intent) }
         // Dismiss the (empty) system session window; the activity owns the UX now.

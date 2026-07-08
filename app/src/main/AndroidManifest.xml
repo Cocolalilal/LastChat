@@ -182,6 +182,7 @@
         android:theme="@style/Theme.Rikkahub.Translucent"
         android:excludeFromRecents="true"
         android:launchMode="singleTask"
+        android:taskAffinity="lastchat.rikkafork.cocolal.assistant"
         android:configChanges="keyboardHidden|orientation|screenSize"
         android:windowSoftInputMode="adjustResize"
         tools:ignore="Instantiatable" />
