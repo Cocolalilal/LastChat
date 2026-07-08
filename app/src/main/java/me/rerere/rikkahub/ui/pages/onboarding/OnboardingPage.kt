@@ -22,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -177,7 +178,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
         }
     }
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalDarkMode.current
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -479,7 +480,7 @@ private fun IntroPage(
 
 @Composable
 private fun IntroRipple(progress: Float) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalDarkMode.current
     val blendColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     val colors = listOf(
         lerp(MaterialTheme.colorScheme.primary, blendColor, 0.34f),
@@ -981,7 +982,7 @@ private fun SetupScaffold(
     bottom: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalDarkMode.current
     val bgColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     Box(modifier = Modifier.fillMaxSize()) {
         content()
@@ -1153,8 +1154,8 @@ private fun SetupButton(
             border = BorderStroke(3.dp, setupCardColor()),
             contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onSurface,
-                containerColor = if (isSystemInDarkTheme()) Color.Black else MaterialTheme.colorScheme.surface,
+                contentColor = if (LocalDarkMode.current) Color.White else MaterialTheme.colorScheme.onSurface,
+                containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surface,
             ),
             modifier = modifier
                 .height(52.dp)
@@ -1363,7 +1364,7 @@ private fun SetupModelSelectableRow(
             provider = provider,
             modifier = Modifier.size(38.dp),
             color = Color.Transparent,
-            contentColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.onSurface,
+            contentColor = if (LocalDarkMode.current) Color.White else MaterialTheme.colorScheme.onSurface,
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -1463,7 +1464,7 @@ private fun SetupModelFeatureCard(
 
 @Composable
 private fun FadingLazyColumn(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalDarkMode.current
     val bgColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
     Box(
         modifier = Modifier

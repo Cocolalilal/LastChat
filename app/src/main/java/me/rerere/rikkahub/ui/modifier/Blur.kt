@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.modifier
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.clip
@@ -13,6 +12,7 @@ import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.blur.materials.HazeMaterials
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 data class LastChatBlur(
     val enabled: Boolean = false,
@@ -71,7 +71,7 @@ fun blurredContainerColor(
         return fallback
     }
 
-    val minimumAlpha = if (isSystemInDarkTheme()) 0.34f else 0.28f
+    val minimumAlpha = if (LocalDarkMode.current) 0.34f else 0.28f
     val glassAlpha = if (fallback.alpha < 1f) {
         fallback.alpha.coerceAtLeast(minimumAlpha)
     } else {
