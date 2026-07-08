@@ -35,6 +35,12 @@ class WorkspaceDetailVM(
     private val _installError = MutableStateFlow<String?>(null)
     val installError = _installError.asStateFlow()
 
+    private val _pythonInstalling = MutableStateFlow(false)
+    val pythonInstalling = _pythonInstalling.asStateFlow()
+
+    private val _pythonInstallError = MutableStateFlow<String?>(null)
+    val pythonInstallError = _pythonInstallError.asStateFlow()
+
     init {
         loadWorkspace()
         refresh()
@@ -208,6 +214,27 @@ class WorkspaceDetailVM(
 
     fun dismissInstallError() {
         _installError.value = null
+    }
+
+    fun installPython() {
+        viewModelScope.launch {
+            _pythonInstallError.value = null
+            val workspace = state.value.workspace ?: return@launch
+            _pythonInstalling.value = true
+            try {
+                repository.installPython(workspace.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (error: Throwable) {
+                _pythonInstallError.value = error.message ?: "Python installation failed"
+            } finally {
+                _pythonInstalling.value = false
+            }
+        }
+    }
+
+    fun dismissPythonInstallError() {
+        _pythonInstallError.value = null
     }
 
     fun executeTerminalCommand(command: String) {

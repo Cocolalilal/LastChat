@@ -1395,7 +1395,13 @@
   <string name="workspace_detail_tool_delete_file">Delete File</string>
   <string name="workspace_detail_tool_move_file">Move File</string>
   <string name="workspace_detail_tool_shell">Execute Command</string>
-  <string name="workspace_detail_install_rootfs_desc">Will download Ubuntu, verify proot, and install Python + pip for %s.</string>
+  <string name="workspace_detail_install_rootfs_desc">Will download and extract a Linux rootfs for %s.</string>
+  <string name="workspace_detail_install_python">Install Python</string>
+  <string name="workspace_detail_reinstall_python">Reinstall Python</string>
+  <string name="workspace_detail_install_python_desc">Installs Python 3 and pip into the workspace rootfs using apt-get.</string>
+  <string name="workspace_detail_python_installing">Installing Python…</string>
+  <string name="workspace_detail_python_install_failed">Python installation failed</string>
+  <string name="workspace_detail_python_not_ready">Install Rootfs first</string>
   <string name="workspace_detail_download_url">tar.gz download URL</string>
   <string name="workspace_detail_area_files">Files</string>
   <string name="workspace_detail_area_rootfs">Rootfs</string>
@@ -1407,7 +1413,7 @@
   <string name="workspace_detail_downloading">Downloading %1$s%2$s</string>
   <string name="workspace_detail_extracting">Extracting %1$d items%2$s</string>
   <string name="workspace_detail_install_complete">Installation complete</string>
-  <string name="workspace_detail_configuring">Configuring Python and pip…</string>
+  <string name="workspace_detail_configuring">Configuring rootfs…</string>
   <string name="workspace_terminal_title">Terminal</string>
   <string name="workspace_terminal_title_with_name">%s · Terminal</string>
   <string name="workspace_terminal_not_installed">Please install Rootfs first</string>

@@ -118,7 +118,7 @@ class WorkspaceRepository(
             runInterruptible(Dispatchers.IO) {
                 rootfsInstaller.install(workspace.root, url, onProgress)
                 onProgress(RootfsInstallProgress(stage = RootfsInstallStage.CONFIGURING))
-                bootstrapRootfs(workspace.root)
+                smokeTestRootfs(workspace.root)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
             return true
@@ -287,7 +287,7 @@ class WorkspaceRepository(
         )
     }
 
-    private fun bootstrapRootfs(root: String) {
+    private fun smokeTestRootfs(root: String) {
         val smoke = manager.executeCommand(
             root = root,
             command = "printf '%s' workspace-ready && test -d /workspace",
@@ -296,7 +296,9 @@ class WorkspaceRepository(
         require(smoke.exitCode == 0 && !smoke.timedOut && !smoke.isFatalProotFailure()) {
             "Rootfs smoke test failed: ${smoke.failureText()}"
         }
+    }
 
+    private fun installPythonInternal(root: String) {
         val python = manager.executeCommand(
             root = root,
             command = PYTHON_BOOTSTRAP_COMMAND,
@@ -305,6 +307,14 @@ class WorkspaceRepository(
         require(python.exitCode == 0 && !python.timedOut && !python.isFatalProotFailure()) {
             "Python setup failed: ${python.failureText()}"
         }
+    }
+
+    suspend fun installPython(id: String): Boolean {
+        val workspace = dao.getById(id) ?: return false
+        runInterruptible(Dispatchers.IO) {
+            installPythonInternal(workspace.root)
+        }
+        return true
     }
 
     companion object {
