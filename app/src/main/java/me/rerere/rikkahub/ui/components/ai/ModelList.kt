@@ -1036,7 +1036,9 @@ private fun ModelItem(
                 .fillMaxWidth()
                 .clip(groupedItemShape)
                 .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = if (select) MaterialTheme.colorScheme.primaryContainer
+                    else if (LocalDarkMode.current) Color.Black
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
                 )
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
@@ -1099,7 +1101,9 @@ private fun ModelItem(
             modifier = modifier,
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
             colors = CardDefaults.cardColors(
-                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer
+                    else if (LocalDarkMode.current) Color.Black
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             )
         ) {

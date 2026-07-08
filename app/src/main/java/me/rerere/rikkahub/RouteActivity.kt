@@ -545,50 +545,68 @@ class RouteActivity : ComponentActivity() {
             if (data != null) {
                 pendingTextSelection = null
                 try {
-                    // Create a new conversation with pre-existing messages
-                    val conversationId = Uuid.random()
-                    
-                    val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
-
                     val userParts = buildQuickAskMessageParts(
                         text = data.text,
                         attachments = data.attachments,
                         customPrompt = data.userPrompt
                     )
 
-                    if (userParts.isNotEmpty()) {
-                        val userMessage = me.rerere.ai.ui.UIMessage(
+                    val userMessage = if (userParts.isNotEmpty()) {
+                        me.rerere.ai.ui.UIMessage(
                             role = me.rerere.ai.core.MessageRole.USER,
                             parts = userParts
                         )
-                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
-                    }
-                    
-                    // Add AI response message if available
+                    } else null
+
                     val aiResponse = data.aiResponse
-                    if (!aiResponse.isNullOrBlank()) {
-                        val assistantMessage = me.rerere.ai.ui.UIMessage.assistant(aiResponse)
-                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
-                    }
-                    
-                    if (messages.isNotEmpty()) {
-                        // Use the assistant from text selection config if available
-                        val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
-                            try { Uuid.parse(it) } catch (e: Exception) { null }
-                        } ?: settings.assistantId
-                        
-                        // Create the conversation with messages
-                        val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
-                            id = conversationId,
-                            assistantId = assistantId,
-                            messages = messages
-                        )
-                        
-                        // Save to database
-                        chatService.saveConversation(conversationId, conversation)
-                        
-                        // Navigate to the conversation
-                        navigateToChatPage(navBackStack, chatId = conversationId)
+                    val assistantMessage = if (!aiResponse.isNullOrBlank()) {
+                        me.rerere.ai.ui.UIMessage.assistant(aiResponse)
+                    } else null
+
+                    // Resolve the assistant ID from continuation data or fall back to current
+                    val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
+                        try { Uuid.parse(it) } catch (e: Exception) { null }
+                    } ?: settings.assistantId
+
+                    // Select the right assistant and mark it as used
+                    settingsStore.updateAssistant(assistantId)
+                    settingsStore.markAssistantUsed(assistantId)
+
+                    // Search for a recent existing conversation with this assistant to append to
+                    val existingConvos = conversationRepo.getRecentConversations(assistantId, limit = 1)
+                    val targetConvo = existingConvos.firstOrNull()
+
+                    if (targetConvo != null) {
+                        // Append to existing conversation
+                        val updatedMessages = targetConvo.messageNodes.toMutableList()
+                        if (userMessage != null) {
+                            updatedMessages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                        }
+                        if (assistantMessage != null) {
+                            updatedMessages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                        }
+                        val updated = targetConvo.copy(messageNodes = updatedMessages)
+                        chatService.saveConversation(targetConvo.id, updated)
+                        navigateToChatPage(navBackStack, chatId = targetConvo.id)
+                    } else {
+                        // No existing conversation — create a new one
+                        val conversationId = Uuid.random()
+                        val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
+                        if (userMessage != null) {
+                            messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                        }
+                        if (assistantMessage != null) {
+                            messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                        }
+                        if (messages.isNotEmpty()) {
+                            val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
+                                id = conversationId,
+                                assistantId = assistantId,
+                                messages = messages
+                            )
+                            chatService.saveConversation(conversationId, conversation)
+                            navigateToChatPage(navBackStack, chatId = conversationId)
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()

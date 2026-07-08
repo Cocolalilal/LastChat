@@ -88,6 +88,9 @@ val viewModelModule = module {
             generationHandler = get(),
             memoryRepository = get(),
             templateTransformer = get(),
+            localTools = get(),
+            workspaceRepository = get(),
+            mcpManager = get(),
         )
     }
     viewModel {

@@ -9,22 +9,45 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.Tool
+import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
+import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getChatModelForAssistant
 import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.service.defaultChatInputTransformers
 import me.rerere.rikkahub.service.defaultChatOutputTransformers
+import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import me.rerere.ai.core.InputSchema
+import me.rerere.search.SearchServiceOptions
+import me.rerere.search.SearchService
+import me.rerere.workspace.WorkspaceShellStatus
+import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantOverlayVM"
 
@@ -41,6 +64,9 @@ class AssistantOverlayVM(
     private val generationHandler: GenerationHandler,
     private val memoryRepository: MemoryRepository,
     private val templateTransformer: TemplateTransformer,
+    private val localTools: LocalTools,
+    private val workspaceRepository: WorkspaceRepository,
+    private val mcpManager: McpManager,
 ) : ViewModel() {
 
     sealed interface OverlayState {
@@ -97,16 +123,23 @@ class AssistantOverlayVM(
                     return@launch
                 }
 
-                val messageParts = buildList {
-                    addAll(cleanedParts)
-                    if (screenshotDataUrl != null) add(UIMessagePart.Image(url = screenshotDataUrl))
-                }
-                if (messageParts.isEmpty()) {
+                // Screenshot is no longer auto-attached as an image part.
+                // It is available to the model via the look_at_screen tool.
+                val messageParts = cleanedParts
+                if (messageParts.isEmpty() && screenshotDataUrl == null) {
                     state = OverlayState.Error("Nothing to ask.")
                     return@launch
                 }
 
                 val memories = resolveMemories(settings, assistant, text)
+
+                // Build tools — mirrors ChatService.buildConversationTools()
+                val tools = buildOverlayTools(
+                    settings = settings,
+                    assistant = assistant,
+                    model = model,
+                    screenshotDataUrl = screenshotDataUrl,
+                )
 
                 generationHandler.generateText(
                     settings = settings,
@@ -119,6 +152,7 @@ class AssistantOverlayVM(
                     outputTransformers = defaultChatOutputTransformers,
                     assistant = assistant,
                     memories = memories,
+                    tools = tools,
                 ).catch { error ->
                     Log.e(TAG, "Stream error", error)
                     state = OverlayState.Error(error.message ?: "Unknown error")
@@ -192,11 +226,168 @@ class AssistantOverlayVM(
         )
     }
 
+    /**
+     * Build the tool list for the overlay — mirrors [me.rerere.rikkahub.service.ChatService.buildConversationTools].
+     * Additionally adds a `look_at_screen` tool when a screenshot is available.
+     */
+    private suspend fun buildOverlayTools(
+        settings: Settings,
+        assistant: Assistant,
+        model: me.rerere.ai.provider.Model,
+        screenshotDataUrl: String?,
+    ): List<Tool> {
+        return buildList {
+            // Search tools (if assistant searchMode is Provider and not using built-in search)
+            val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
+            when (val searchMode = assistant.searchMode) {
+                is AssistantSearchMode.Provider -> {
+                    if (!useBuiltInSearch) {
+                        addAll(createSearchTool(settings, searchMode.index))
+                    }
+                }
+
+                is AssistantSearchMode.BuiltIn -> Unit
+                is AssistantSearchMode.Off -> Unit
+            }
+
+            // Local tools
+            addAll(
+                localTools.getTools(
+                    options = assistant.localTools,
+                    assistantId = assistant.id,
+                    conversationId = Uuid.random(), // overlay has no real conversation
+                )
+            )
+
+            // Workspace tools (if model supports TOOL ability and workspace is ready)
+            val workspaceId = assistant.workspaceId?.toString()
+            val workspace = workspaceId?.let { workspaceRepository.getById(it) }
+            if (
+                model.abilities.contains(ModelAbility.TOOL) &&
+                workspace != null &&
+                workspace.shellStatus == WorkspaceShellStatus.READY.name
+            ) {
+                addAll(
+                    createWorkspaceTools(
+                        workspaceId = workspaceId,
+                        workspaceRepository = workspaceRepository,
+                    )
+                )
+            }
+
+            // MCP tools
+            mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
+                add(
+                    Tool(
+                        name = tool.name,
+                        description = tool.description ?: "",
+                        parameters = { tool.inputSchema },
+                        execute = {
+                            mcpManager.callTool(serverId, tool.name, it.jsonObject)
+                        },
+                    )
+                )
+            }
+
+            // look_at_screen tool (overlay-specific)
+            if (screenshotDataUrl != null) {
+                add(createLookAtScreenTool(screenshotDataUrl, model, settings))
+            }
+        }
+    }
+
+    /**
+     * Search tool — mirrors ChatService.createSearchTool but simplified.
+     */
+    private fun createSearchTool(settings: Settings, providerIndex: Int?): Set<Tool> {
+        val effectiveIndex = providerIndex ?: settings.searchServiceSelected
+        return setOf(
+            Tool(
+                name = "search_web",
+                description = "search web for latest information",
+                parameters = {
+                    val options = settings.searchServices.getOrElse(
+                        index = effectiveIndex,
+                        defaultValue = { SearchServiceOptions.DEFAULT },
+                    )
+                    val service = SearchService.getService(options)
+                    service.parameters
+                },
+                execute = {
+                    val options = settings.searchServices.getOrElse(
+                        index = effectiveIndex,
+                        defaultValue = { SearchServiceOptions.DEFAULT },
+                    )
+                    val service = SearchService.getService(options)
+                    val result = service.search(
+                        params = it.jsonObject,
+                        commonOptions = settings.searchCommonOptions,
+                        serviceOptions = options,
+                    )
+                    kotlinx.serialization.json.Json.encodeToJsonElement(
+                        me.rerere.search.SearchResult.serializer(),
+                        result.getOrThrow()
+                    )
+                },
+            ),
+        )
+    }
+
     override fun onCleared() {
         super.onCleared()
         currentJob?.cancel()
     }
 }
+
+/**
+ * `look_at_screen` tool: lets the model inspect the screenshot captured when the
+ * assistant was summoned.
+ *
+ * - If the model supports image input ([Modality.IMAGE]), returns the screenshot as
+ *   an image data URL the model can see directly.
+ * - If the model doesn't support image input, falls back to OCR using the configured
+ *   OCR model (settings.ocrModelId) and returns the extracted text.
+ */
+private fun createLookAtScreenTool(
+    screenshotDataUrl: String,
+    model: me.rerere.ai.provider.Model,
+    settings: Settings,
+): Tool = Tool(
+    name = "look_at_screen",
+    description = "Look at a screenshot of the user's current screen captured when " +
+        "the assistant was summoned. Use this when you need visual context about " +
+        "what the user is looking at.",
+    parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+    approvalMode = me.rerere.ai.core.ToolApprovalMode.Auto,
+    execute = {
+        if (model.inputModalities.contains(Modality.IMAGE)) {
+            // Model supports vision — return the image data URL
+            buildJsonObject {
+                put("type", JsonPrimitive("image"))
+                put("image", JsonPrimitive(screenshotDataUrl))
+                put("description", JsonPrimitive("Screenshot of the user's screen at summon time"))
+            }
+        } else {
+            // Model doesn't support images — use OCR fallback
+            val ocrText = try {
+                OcrTransformer.performOcr(
+                    UIMessagePart.Image(url = screenshotDataUrl),
+                )
+            } catch (e: Throwable) {
+                null
+            }
+            buildJsonObject {
+                put("type", JsonPrimitive("ocr_text"))
+                if (ocrText.isNullOrBlank()) {
+                    put("text", JsonPrimitive(""))
+                    put("note", JsonPrimitive("OCR could not extract text from the screenshot."))
+                } else {
+                    put("text", JsonPrimitive(ocrText))
+                }
+            }
+        }
+    },
+)
 
 private fun List<UIMessagePart>.toContinuationAttachments(): List<QuickAskAttachment> {
     return mapNotNull { part ->

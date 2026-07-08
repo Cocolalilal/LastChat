@@ -2,7 +2,9 @@ package me.rerere.rikkahub.ui.activity
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -20,6 +22,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,8 +48,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -89,6 +92,8 @@ import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
+import me.rerere.rikkahub.ui.components.chat.ActivityPillRow
+import me.rerere.rikkahub.ui.components.chat.ActivityState
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalSTTState
@@ -132,6 +137,27 @@ fun AssistantOverlayScreen(
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
     val scope = rememberCoroutineScope()
+
+    // Dismissal animation: smooth slide-down + fade-out before calling finish().
+    val dismissProgress = remember { Animatable(0f) }
+    val isDismissing = remember { mutableStateOf(false) }
+    fun dismissWithAnimation() {
+        if (isDismissing.value) return
+        isDismissing.value = true
+        scope.launch {
+            dismissProgress.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 200f))
+            onDismiss()
+        }
+    }
+
+    // Predictive back: smoothly scale-fade the overlay as user swipes back.
+    val predictiveBackProgress = remember { Animatable(1f) }
+    PredictiveBackHandler(enabled = !isDismissing.value) { backFlow ->
+        backFlow.collect { event ->
+            predictiveBackProgress.snapTo(1f - event.progress)
+        }
+    }
+    BackHandler(enabled = !isDismissing.value) { dismissWithAnimation() }
 
     val stt = rememberCustomSttState()
     val tts = rememberCustomTtsState()
@@ -217,7 +243,19 @@ fun AssistantOverlayScreen(
         LocalSTTState provides stt,
         LocalLastChatBlur provides blur,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val dismissVal = dismissProgress.value
+                    val backVal = predictiveBackProgress.value
+                    val combined = dismissVal + (1f - backVal).coerceIn(0f, 1f)
+                    alpha = (1f - combined).coerceIn(0f, 1f)
+                    translationY = dismissVal * 200f
+                    scaleX = backVal
+                    scaleY = backVal
+                }
+        ) {
             // Backdrop = haze source: crisp capture of the summoning screen + scrim + glow.
             Box(
                 modifier = Modifier
@@ -244,7 +282,7 @@ fun AssistantOverlayScreen(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                        ) { onDismiss() },
+                        ) { dismissWithAnimation() },
                 )
                 SilkGlowLayer(
                     active = voiceActive,
@@ -264,8 +302,11 @@ fun AssistantOverlayScreen(
                     enter = slideInVertically(
                         animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
                         initialOffsetY = { it / 2 },
-                    ) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
+                    ) + fadeIn(animationSpec = tween(400, easing = FastOutSlowInEasing)),
+                    exit = slideOutVertically(
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+                        targetOffsetY = { it / 2 },
+                    ) + fadeOut(animationSpec = tween(300, easing = FastOutSlowInEasing)),
                     modifier = Modifier.padding(horizontal = 12.dp),
                 ) {
                     ReplyPanel(
@@ -287,9 +328,12 @@ fun AssistantOverlayScreen(
                 AnimatedVisibility(
                     visibleState = inputVisible,
                     enter = slideInVertically(
-                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
-                        initialOffsetY = { it * 2 },
-                    ) + fadeIn(),
+                        animationSpec = spring(
+                            dampingRatio = 0.85f,
+                            stiffness = 220f,
+                        ),
+                        initialOffsetY = { it / 3 },
+                    ) + fadeIn(animationSpec = tween(450, easing = FastOutSlowInEasing)),
                 ) {
                     MinimalChatInput(
                         modifier = Modifier.fillMaxWidth(),
@@ -358,6 +402,7 @@ private fun ReplyPanel(
     Surface(
         color = containerColor,
         shape = panelShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.background),
         modifier = Modifier
             .fillMaxWidth()
             .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
@@ -373,18 +418,19 @@ private fun ReplyPanel(
                                 val deltaDp = dragAmount / density.density
                                 scope.launch {
                                     panelHeight.snapTo(
-                                        (panelHeight.value - deltaDp).coerceIn(minHeight, maxHeight)
+                                        (panelHeight.value - deltaDp * 0.85f).coerceIn(minHeight, maxHeight)
                                     )
                                 }
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    val target = if (
-                                        panelHeight.value > (minHeight + maxHeight) / 2
-                                    ) maxHeight else minHeight
+                                    // Easy expand: 30% from min triggers expansion.
+                                    val expandThreshold = minHeight + (maxHeight - minHeight) * 0.3f
+                                    val target = if (panelHeight.value > expandThreshold) maxHeight
+                                    else minHeight
                                     panelHeight.animateTo(
                                         target,
-                                        spring(dampingRatio = 0.7f, stiffness = 300f),
+                                        spring(dampingRatio = 0.9f, stiffness = 180f),
                                     )
                                 }
                             },
@@ -406,37 +452,35 @@ private fun ReplyPanel(
 
             Spacer(Modifier.height(8.dp))
 
-            // Header: avatar + activity pill (right of avatar) ... "Open in app" chip.
+            // Header: avatar + activity pill (right of avatar) ... "Open in app" icon.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                assistantAvatar(Modifier.size(40.dp))
+                assistantAvatar(Modifier.size(32.dp))
                 Spacer(Modifier.width(10.dp))
-                ActivityPill(state = state)
-                Spacer(Modifier.weight(1f))
-                Surface(
-                    onClick = onOpenInApp,
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                Box(
+                    modifier = Modifier.height(32.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.assistant_overlay_open_in_app),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            Icons.Rounded.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
+                    ActivityPillRow(
+                        state = state.toActivityState(),
+                        onClick = { },
+                        connectsToBubbleBelow = false,
+                        timelineOpen = false,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = onOpenInApp,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.OpenInNew,
+                        contentDescription = stringResource(R.string.assistant_overlay_open_in_app),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -477,23 +521,13 @@ private fun ReplyPanel(
                             MarkdownBlock(
                                 content = state.responseText.ifBlank { "…" },
                                 style = MaterialTheme.typography.bodyLarge,
+                                streamingTextReveal = state.isStreaming,
                             )
                         }
                     }
 
                     else -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = "Thinking…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Spacer(Modifier.height(1.dp))
                     }
                 }
             }
@@ -508,34 +542,24 @@ private fun ReplyPanel(
     }
 }
 
-@Composable
-private fun ActivityPill(state: AssistantOverlayVM.OverlayState) {
-    val label = when (state) {
-        is AssistantOverlayVM.OverlayState.Generating -> "Thinking"
-        is AssistantOverlayVM.OverlayState.Result -> if (state.isStreaming) "Writing" else null
-        is AssistantOverlayVM.OverlayState.Error -> "Error"
-        else -> null
-    } ?: return
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(11.dp),
-                strokeWidth = 1.5.dp,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+/**
+ * Maps [AssistantOverlayVM.OverlayState] to [ActivityState] for the real ActivityPillRow.
+ * - Generating → Waiting (or Reasoning if isReasoning)
+ * - Result(isStreaming=true) → Replying
+ * - Result(isStreaming=false) → Hidden (completed)
+ * - Error / Idle → Hidden
+ */
+private fun AssistantOverlayVM.OverlayState.toActivityState(): ActivityState = when (this) {
+    is AssistantOverlayVM.OverlayState.Generating -> ActivityState.Waiting
+    is AssistantOverlayVM.OverlayState.Result -> {
+        if (isStreaming) {
+            if (isReasoning) ActivityState.Reasoning() else ActivityState.Replying
+        } else {
+            ActivityState.Hidden
         }
     }
+    is AssistantOverlayVM.OverlayState.Error -> ActivityState.Hidden
+    is AssistantOverlayVM.OverlayState.Idle -> ActivityState.Hidden
 }
 
 /**
@@ -558,7 +582,7 @@ private fun SilkGlowLayer(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(14000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+            repeatMode = RepeatMode.Reverse,
         ),
         label = "glowPhase",
     )
@@ -578,7 +602,7 @@ private fun SilkGlowLayer(
     )
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        entrance.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
+        entrance.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))
     }
 
     val scheme = MaterialTheme.colorScheme
@@ -594,25 +618,38 @@ private fun SilkGlowLayer(
         )
     }
     val density = LocalDensity.current
-    val dotSpacingPx = with(density) { 18.dp.toPx() }
-    val dotRadiusPx = with(density) { 1.3.dp.toPx() }
-    val dotDriftPx = with(density) { 2.5.dp.toPx() }
+    val dotSpacingPx = with(density) { 20.dp.toPx() }
+    val dotRadiusPx = with(density) { 1.4.dp.toPx() }
+    val dotDriftPx = with(density) { 2.dp.toPx() }
 
     Box(
         modifier = modifier
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
                 drawContent()
-                // Bottom→top reveal for the entrance ("appears from the bottom to the top").
+                // Wave entrance: bottom→top with a soft leading edge and trailing fade.
                 val p = entrance.value
                 if (p < 1f) {
+                    val waveFront = 1f - p
+                    val waveWidth = 0.3f
                     drawRect(
                         brush = Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = p * p),
-                            (1f - p).coerceIn(0f, 1f) to Color.Black,
-                            1f to Color.Black,
+                            (waveFront - waveWidth).coerceIn(0f, 1f) to Color.Black.copy(alpha = p * p),
+                            waveFront.coerceIn(0f, 1f) to Color.Black,
+                            (waveFront + waveWidth * 0.5f).coerceIn(0f, 1f) to Color.Black.copy(alpha = 0.3f),
+                            1f to Color.Transparent,
                         ),
                         blendMode = BlendMode.DstIn,
+                    )
+                    // Brightness pulse traveling with the wave front.
+                    val waveY = waveFront * size.height
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            (waveY - 40f) to Color.Transparent,
+                            waveY to Color.White.copy(alpha = 0.08f * (1f - p)),
+                            (waveY + 40f) to Color.Transparent,
+                        ),
                     )
                 }
             },
@@ -712,14 +749,23 @@ private class GlowBlob(val center: Offset, val radius: Float, val color: Color)
  */
 private fun glowBlobs(w: Float, h: Float, phase: Float, colors: List<Color>): List<GlowBlob> {
     val twoPi = (2.0 * PI).toFloat()
-    // Tight radius so the glow hugs the edges and never floods the middle.
-    val r = 0.24f * h
+    // Larger radius + further offset for liquid, stretching glow at edges.
+    val r = 0.34f * h
     return listOf(
-        GlowBlob(Offset(-0.02f * w, h * (0.22f + 0.14f * sin(twoPi * phase))), r, colors[0]),
-        GlowBlob(Offset(-0.02f * w, h * (0.72f + 0.12f * sin(twoPi * phase + 2.1f))), r, colors[1]),
-        GlowBlob(Offset(w * (0.5f + 0.3f * sin(twoPi * phase + 1.2f)), -0.02f * h), r * 0.9f, colors[2]),
-        GlowBlob(Offset(1.02f * w, h * (0.3f + 0.14f * sin(twoPi * phase + 3.5f))), r, colors[3]),
-        GlowBlob(Offset(1.02f * w, h * (0.78f + 0.12f * sin(twoPi * phase + 4.6f))), r, colors[4]),
-        GlowBlob(Offset(w * (0.45f + 0.3f * sin(twoPi * phase + 5.4f)), 1.02f * h), r * 1.1f, colors[5]),
+        // Left edge — pushed further out for stretch
+        GlowBlob(Offset(-0.06f * w, h * (0.22f + 0.14f * sin(twoPi * phase))), r, colors[0]),
+        GlowBlob(Offset(-0.06f * w, h * (0.72f + 0.12f * sin(twoPi * phase + 2.1f))), r, colors[1]),
+        // Top edge
+        GlowBlob(Offset(w * (0.5f + 0.3f * sin(twoPi * phase + 1.2f)), -0.06f * h), r * 0.95f, colors[2]),
+        // Right edge
+        GlowBlob(Offset(1.06f * w, h * (0.3f + 0.14f * sin(twoPi * phase + 3.5f))), r, colors[3]),
+        GlowBlob(Offset(1.06f * w, h * (0.78f + 0.12f * sin(twoPi * phase + 4.6f))), r, colors[4]),
+        // Bottom edge
+        GlowBlob(Offset(w * (0.45f + 0.3f * sin(twoPi * phase + 5.4f)), 1.06f * h), r * 1.15f, colors[5]),
+        // Corner connectors — larger for seamless liquid bridges
+        GlowBlob(Offset(-0.03f * w, -0.03f * h), r * 0.75f, colors[0]),
+        GlowBlob(Offset(1.03f * w, -0.03f * h), r * 0.75f, colors[3]),
+        GlowBlob(Offset(-0.03f * w, 1.03f * h), r * 0.75f, colors[1]),
+        GlowBlob(Offset(1.03f * w, 1.03f * h), r * 0.75f, colors[4]),
     )
 }
