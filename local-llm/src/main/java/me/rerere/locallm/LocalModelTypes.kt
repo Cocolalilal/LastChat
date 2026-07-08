@@ -49,7 +49,7 @@ data class LocalModelConfig(
     val topK: Int? = null,
     /** Max tokens to generate (decode budget). */
     val maxTokens: Int? = null,
-    /** Total context window (prefill + decode). Fed to EngineConfig.maxNumTokens. */
+    /** Total context window (prefill + decode). Overrides the default KV cache size when set; capped at the model's maxContextLength. */
     val contextLength: Int? = null,
     val accelerator: LocalAccelerator = LocalAccelerator.AUTO,
 )

@@ -62,15 +62,26 @@ class LiteRtRuntime(
      */
     suspend fun acquire(model: InstalledLocalModel): LoadedEngine = mutex.withLock {
         val backends = AcceleratorProbe.resolve(model)
-        val contextLength = model.config.contextLength ?: model.defaultConfig.effectiveContextLength
-        val key = loadKey(model, backends, contextLength)
+
+        // KV cache size (maxNumTokens in EngineConfig) — this is the total number of tokens
+        // (input + output) the engine will cache, and it directly determines memory consumption.
+        //
+        // The model's maxContextLength is the ceiling the model *could* support, NOT what should be
+        // allocated by default. Allocating a 32K-token KV cache (as the old code did) consumes
+        // gigabytes of RAM and causes OOM crashes on devices that run the same model fine in Google's
+        // Edge Gallery app (which passes maxTokens = 1024–4096).
+        //
+        // Default to maxTokens (the decode/output budget). If the user explicitly sets contextLength,
+        // honor it but cap at the model's maxContextLength ceiling.
+        val kvCacheTokens = resolveKvCacheSize(model)
+        val key = loadKey(model, backends, kvCacheTokens)
 
         loaded?.let { if (it.loadKey == key) return@withLock it }
 
         // A different model/config is requested: dispose the old engine first to free RAM.
         disposeLocked()
 
-        when (val mem = MemoryGuard.check(context, model.sizeInBytes)) {
+        when (val mem = MemoryGuard.check(context, model.sizeInBytes, kvCacheTokens)) {
             is MemoryCheck.Insufficient -> {
                 _state.value = LocalRuntimeState.Error(model.id, "insufficient_memory")
                 throw InsufficientMemoryException(mem)
@@ -81,7 +92,7 @@ class LiteRtRuntime(
         _state.value = LocalRuntimeState.LoadingModel(model.id, model.displayName)
 
         val engine = try {
-            loadEngine(model, backends, contextLength)
+            loadEngine(model, backends, kvCacheTokens)
         } catch (t: Throwable) {
             if (t is InsufficientMemoryException) throw t
             // A catchable GPU/JNI failure: fall back to CPU once.
@@ -90,8 +101,8 @@ class LiteRtRuntime(
                 val cpuModel = model.copy(runtimeFlags = model.runtimeFlags.copy(gpuCrashed = true))
                 val cpuBackends = AcceleratorProbe.resolve(cpuModel)
                 _state.value = LocalRuntimeState.SwitchedToCpu(model.id, model.displayName)
-                val cpuEngine = loadEngine(cpuModel, cpuBackends, contextLength)
-                val result = LoadedEngine(cpuEngine, cpuModel, cpuBackends, loadKey(cpuModel, cpuBackends, contextLength))
+                val cpuEngine = loadEngine(cpuModel, cpuBackends, kvCacheTokens)
+                val result = LoadedEngine(cpuEngine, cpuModel, cpuBackends, loadKey(cpuModel, cpuBackends, kvCacheTokens))
                 loaded = result
                 _state.value = LocalRuntimeState.Ready(model.id, model.displayName, cpuBackends.effective)
                 return@withLock result
@@ -109,7 +120,7 @@ class LiteRtRuntime(
     private fun loadEngine(
         model: InstalledLocalModel,
         backends: ResolvedBackends,
-        contextLength: Int,
+        kvCacheTokens: Int,
     ): Engine {
         val cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }
         val config = EngineConfig(
@@ -117,7 +128,7 @@ class LiteRtRuntime(
             /* backend = */ backends.main,
             /* visionBackend = */ backends.vision,
             /* audioBackend = */ backends.audio,
-            /* maxNumTokens = */ contextLength,
+            /* maxNumTokens = */ kvCacheTokens,
             /* maxNumImages = */ if (model.supportsImage) MAX_IMAGES else null,
             /* cacheDir = */ cacheDir.absolutePath,
         )
@@ -170,10 +181,39 @@ class LiteRtRuntime(
     class InsufficientMemoryException(val info: MemoryCheck.Insufficient) : Exception("insufficient_memory")
 
     companion object {
+        private const val TAG = "LiteRtRuntime"
         private const val KEY_PENDING_GPU = "pending_gpu_model"
         private const val MAX_IMAGES = 8
 
-        private fun loadKey(model: InstalledLocalModel, backends: ResolvedBackends, contextLength: Int): String =
-            listOf(model.filePath, backends.effective.name, contextLength.toString()).joinToString("|")
+        /**
+         * Resolves the KV cache size (maxNumTokens) to pass to EngineConfig.
+         *
+         * LiteRT-LM's `maxNumTokens` controls the KV cache allocation — it is the total number of
+         * tokens (prefill + decode) the engine will hold. A larger value means more memory consumed
+         * even before generation starts. For reference, Google's Edge Gallery app passes
+         * `maxTokens` (1024–4096) as this value, NOT the model's full context window.
+         *
+         * Priority:
+         * 1. User-explicit `contextLength` override (capped at the model's maxContextLength ceiling)
+         * 2. The model's curated `maxTokens` (the decode budget — same as Gallery)
+         */
+        private fun resolveKvCacheSize(model: InstalledLocalModel): Int {
+            val maxTokens = model.config.maxTokens ?: model.defaultConfig.maxTokens
+            val userContextLength = model.config.contextLength
+            val modelMaxContext = model.defaultConfig.maxContextLength
+
+            return when {
+                // User explicitly set a context length — honor it but cap at the model's ceiling.
+                userContextLength != null -> {
+                    val capped = modelMaxContext?.let { minOf(userContextLength, it) } ?: userContextLength
+                    maxOf(capped, maxTokens) // never go below maxTokens (decode budget)
+                }
+                // Default: use maxTokens (matches Google Edge Gallery behavior).
+                else -> maxTokens
+            }
+        }
+
+        private fun loadKey(model: InstalledLocalModel, backends: ResolvedBackends, kvCacheTokens: Int): String =
+            listOf(model.filePath, backends.effective.name, kvCacheTokens.toString()).joinToString("|")
     }
 }
