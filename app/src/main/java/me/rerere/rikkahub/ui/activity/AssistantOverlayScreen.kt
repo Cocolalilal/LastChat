@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,7 +65,6 @@ import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -82,9 +80,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -103,7 +99,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -116,6 +111,7 @@ import me.rerere.asr.ASRStatus
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.service.assist.AssistScreenHolder
@@ -138,6 +134,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.modifier.LastChatBlur
 import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.shimmer
@@ -186,7 +183,10 @@ fun AssistantOverlayScreen(
         appear.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = 260f))
     }
     val dismiss = remember { Animatable(0f) }
-    val back = remember { Animatable(1f) }
+    // Custom predictive-back: 0 = open, 1 = fully swiped. Follows the finger (shrink + drift
+    // toward the swipe edge + fade), commits to a dismiss on release, springs back on cancel.
+    val backProgress = remember { Animatable(0f) }
+    var backSwipeEdge by remember { mutableIntStateOf(0) }
     val isDismissing = remember { mutableStateOf(false) }
     fun dismissWithAnimation() {
         if (isDismissing.value) return
@@ -198,10 +198,13 @@ fun AssistantOverlayScreen(
     }
     PredictiveBackHandler(enabled = !isDismissing.value) { backFlow ->
         try {
-            backFlow.collect { event -> back.snapTo(1f - event.progress * 0.12f) }
+            backFlow.collect { event ->
+                backSwipeEdge = event.swipeEdge
+                backProgress.snapTo(event.progress)
+            }
             dismissWithAnimation()
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            back.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = 300f))
+            backProgress.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 300f))
         }
     }
     BackHandler(enabled = !isDismissing.value) { dismissWithAnimation() }
@@ -266,14 +269,22 @@ fun AssistantOverlayScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    // Whole-overlay fade + predictive-back scale. NO translation here, so the
-                    // backdrop never slides.
-                    alpha = ((1f - dismiss.value) * back.value).coerceIn(0f, 1f)
-                    scaleX = back.value
-                    scaleY = back.value
+                    // Whole-overlay fade + custom predictive-back transform. NO translationY, so
+                    // the backdrop never slides.
+                    val bp = backProgress.value
+                    val scale = androidx.compose.ui.util.lerp(1f, 0.85f, bp)
+                    scaleX = scale
+                    scaleY = scale
+                    // Pivot + drift toward the swipe edge (EDGE_RIGHT == 1).
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                        if (backSwipeEdge == 1) 1f else 0f, 0.5f,
+                    )
+                    translationX = (if (backSwipeEdge == 1) -1f else 1f) * bp * size.width * 0.05f
+                    alpha = ((1f - dismiss.value) * (1f - bp * 0.2f)).coerceIn(0f, 1f)
                 }
         ) {
-            // Backdrop = haze source: crisp still capture of the summoning screen + scrim + glow.
+            // Backdrop = haze source: crisp still capture of the summoning screen + glow. NOT
+            // dimmed — opening the assistant should not darken the screen behind it.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -287,15 +298,10 @@ fun AssistantOverlayScreen(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
-                val scrimAlpha by animateFloatAsState(
-                    targetValue = 0.30f,
-                    animationSpec = tween(500, easing = FastOutSlowInEasing),
-                    label = "scrim",
-                )
+                // Transparent tap-to-dismiss layer (no scrim).
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = scrimAlpha))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -317,6 +323,9 @@ fun AssistantOverlayScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    // unbounded so the column can be TALLER than the screen: the panel overflows
+                    // off the top and the input bar stays pinned above the keyboard.
+                    .wrapContentHeight(align = Alignment.Bottom, unbounded = true)
                     .graphicsLayer {
                         alpha = appear.value
                         translationY = (1f - appear.value) * 48.dp.toPx() +
@@ -338,7 +347,9 @@ fun AssistantOverlayScreen(
                             val text = conversation.currentMessages
                                 .lastOrNull { it.role == MessageRole.ASSISTANT }
                                 ?.toContentText().orEmpty()
-                            if (text.isNotBlank()) tts.speak(text)
+                            if (text.isNotBlank()) {
+                                tts.speak(text, overrideSetting = settings.getEffectiveTTSProvider(assistant))
+                            }
                         }
                         wasGenerating = isGenerating
                     }
@@ -403,7 +414,14 @@ fun AssistantOverlayScreen(
                             onCopy = { message -> context.copyMessageToClipboard(message) },
                             onRegenerate = { message -> viewModel.regenerate(message) },
                             onToggleTts = { message ->
-                                if (isSpeaking) tts.stop() else tts.speak(message.toContentText())
+                                if (isSpeaking) {
+                                    tts.stop()
+                                } else {
+                                    tts.speak(
+                                        message.toContentText(),
+                                        overrideSetting = settings.getEffectiveTTSProvider(assistant),
+                                    )
+                                }
                             },
                         )
                     }
@@ -487,18 +505,12 @@ private fun TranscriptPanel(
 
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val headerHeightDp = with(density) { headerHeightPx.toDp() }
-    // Height of the fade / progressive-blur band under the header.
-    val fadeHeightDp = headerHeightDp + 28.dp
-    val fadeHeightPx = with(density) { fadeHeightDp.toPx() }
-
     val lastAssistantId = remember(messages) {
         messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
     }
     var expandedIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
 
-    // The transcript, rendered twice: once sharp + interactive (with actions), and once as a
-    // non-interactive blurred duplicate that shows only through the top band → progressive blur.
-    val transcriptColumn: @Composable (interactive: Boolean) -> Unit = { interactive ->
+    val transcriptColumn: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -509,11 +521,11 @@ private fun TranscriptPanel(
             Spacer(Modifier.height(headerHeightDp))
             messages.forEach { message ->
                 val isAssistant = message.role == MessageRole.ASSISTANT
-                val actionsVisible = interactive && isAssistant && !isGenerating &&
+                val actionsVisible = isAssistant && !isGenerating &&
                     (message.id == lastAssistantId || message.id in expandedIds)
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = if (interactive && isAssistant) {
+                    modifier = if (isAssistant) {
                         Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -527,7 +539,7 @@ private fun TranscriptPanel(
                     } else Modifier,
                 ) {
                     MessageRowContent(message = message, contentColor = contentColor)
-                    if (interactive && isAssistant) {
+                    if (isAssistant) {
                         AnimatedVisibility(visible = actionsVisible) {
                             AssistantActionsRow(
                                 isSpeaking = isSpeaking,
@@ -553,94 +565,21 @@ private fun TranscriptPanel(
             .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            // Scrolling transcript. heightIn lets the panel grow with content up to the cap,
-            // then scroll. A leading spacer keeps the first line clear of the header.
-            val scrolled = scroll.value > 0
-            // Sharp, interactive transcript. When scrolled, its top band is erased (DstOut) so
-            // the blurred duplicate shows through there.
+            // Scrolling transcript with a chat-style top fade — as text scrolls up under the
+            // header it fades to TRANSPARENT (revealing the panel behind, not a solid colour or
+            // black), exactly like the chat page's edge fade.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = dragFloor.value.dp, max = maxHeight.dp)
-                    .verticalScroll(scroll)
-                    .then(
-                        if (scrolled) {
-                            Modifier
-                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                                .drawWithContent {
-                                    drawContent()
-                                    drawRect(
-                                        brush = Brush.verticalGradient(
-                                            0f to Color.Black,
-                                            (fadeHeightPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
-                                        ),
-                                        blendMode = BlendMode.DstOut,
-                                    )
-                                }
-                        } else Modifier
-                    ),
+                    .fadeEdges(
+                        fadeTop = true,
+                        fadeBottom = false,
+                        fadeHeight = headerHeightPx.toFloat(),
+                    )
+                    .verticalScroll(scroll),
             ) {
-                transcriptColumn(true)
-            }
-
-            // Blurred duplicate — shown only through the top band, giving a true progressive blur
-            // of text that scrolls up under the header. Only rendered while there's overflow.
-            if (scrolled) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clipToBounds()
-                        .blur(10.dp)
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0f to Color.Black,
-                                    (fadeHeightPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                        },
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .offset { IntOffset(0, -scroll.value) },
-                    ) {
-                        transcriptColumn(false)
-                    }
-                }
-            }
-
-            // Stronger colour fade dissolving the very top into the (haze-blurred) panel.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(fadeHeightDp)
-                    .background(
-                        Brush.verticalGradient(
-                            0f to containerColor,
-                            0.45f to containerColor.copy(alpha = 0.9f),
-                            1f to Color.Transparent,
-                        )
-                    ),
-            )
-
-            // "Open in app" pinned to the TOP-RIGHT of the panel.
-            IconButton(
-                onClick = onOpenInApp,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 6.dp, end = 6.dp)
-                    .size(36.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.OpenInNew,
-                    contentDescription = stringResource(R.string.assistant_overlay_open_in_app),
-                    modifier = Modifier.size(20.dp),
-                    tint = contentColor.copy(alpha = 0.75f),
-                )
+                transcriptColumn()
             }
 
             // Floating header (drag handle + avatar + compact activity pill + open-in-app).
@@ -685,13 +624,32 @@ private fun TranscriptPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        // Reserve space on the right for the top-right "open in app" button.
-                        .padding(start = 16.dp, end = 48.dp)
+                        .padding(horizontal = 16.dp)
                         .padding(bottom = 8.dp),
                 ) {
                     assistantAvatar(Modifier.size(32.dp))
                     Spacer(Modifier.width(10.dp))
-                    CompactActivityPill(state = activityState, modifier = Modifier.weight(1f, fill = false))
+                    // Weighted box fills the leftover width so the button sits at the far right.
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        CompactActivityPill(state = activityState)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // "Open in app" — same size as the avatar, right-aligned, level with it.
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .clickable { onOpenInApp() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.OpenInNew,
+                            contentDescription = stringResource(R.string.assistant_overlay_open_in_app),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -703,9 +661,10 @@ private fun TranscriptPanel(
     }
 }
 
-private fun UIMessage.hasDisplayableContent(): Boolean =
-    toContentText().isNotBlank() ||
-        parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.Reasoning || it is UIMessagePart.Image }
+// Only messages with actual text are shown: tool-call-only assistant turns (which would
+// render as "…") and the injected screenshot USER image message are hidden — tool activity is
+// conveyed by the header pill instead.
+private fun UIMessage.hasDisplayableContent(): Boolean = toContentText().isNotBlank()
 
 @Composable
 private fun MessageRowContent(message: UIMessage, contentColor: Color) {

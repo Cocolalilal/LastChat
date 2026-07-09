@@ -2433,7 +2433,7 @@ class ChatService(
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
             
-            val messagesToKeep = 2 // Keep last user+assistant exchange
+            val messagesToKeep = 4 // Keep last 2 user+assistant exchanges
             val messagesToSummarizeCount = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 // Messages after last summary, minus the ones we keep
                 (messages.size - lastSummaryIndex - 1 - messagesToKeep).coerceAtLeast(0)
@@ -2488,11 +2488,11 @@ class ChatService(
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
             
-            // Keep the last 2 messages (user + assistant exchange) so the AI remembers what was just said
-            val messagesToKeep = 2
+            // Keep the last 4 messages (2 user + assistant exchanges) so the AI remembers what was just said
+            val messagesToKeep = 4
             val lastIndexToSummarize = (messages.size - messagesToKeep - 1).coerceAtLeast(0)
             
-            // Only get messages AFTER the last summary index, but before the last 2 messages
+            // Only get messages AFTER the last summary index, but before the last 4 messages
             val startIndex = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 (lastSummaryIndex + 1).coerceAtMost(messages.size)
             } else {
