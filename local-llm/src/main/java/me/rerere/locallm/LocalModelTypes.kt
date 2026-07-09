@@ -179,3 +179,19 @@ data class InstalledLocalModel(
 ) {
     val isEmbedding: Boolean get() = kind == LocalModelKind.EMBEDDING
 }
+
+internal fun InstalledLocalModel.withCatalogMetadata(
+    meta: LocalModelMetadata,
+    tokenizerPath: String? = this.tokenizerPath,
+): InstalledLocalModel = copy(
+    displayName = displayName.ifBlank { meta.name },
+    kind = meta.kind,
+    tokenizerPath = if (meta.kind == LocalModelKind.EMBEDDING) tokenizerPath else null,
+    minDeviceMemoryGb = meta.minDeviceMemoryInGb,
+    supportsImage = meta.supportsImage,
+    supportsAudio = meta.supportsAudio,
+    supportsThinking = meta.supportsThinking,
+    supportsSpeculativeDecoding = meta.supportsSpeculativeDecoding,
+    embeddingDimension = meta.embeddingDimension,
+    defaultConfig = meta.defaultConfig,
+)

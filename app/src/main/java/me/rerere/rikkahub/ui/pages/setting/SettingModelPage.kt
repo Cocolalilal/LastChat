@@ -317,6 +317,7 @@ private fun DefaultTranslationModelSetting(
                 ModelSelector(
                     modelId = settings.translateModeId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -417,6 +418,7 @@ private fun DefaultSuggestionModelSetting(
                 ModelSelector(
                     modelId = settings.suggestionModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -532,6 +534,7 @@ private fun DefaultTitleModelSetting(
                 ModelSelector(
                     modelId = settings.titleModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -638,6 +641,7 @@ private fun DefaultSummarizerModelSetting(
                 ModelSelector(
                     modelId = settings.summarizerModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = { selectedModel ->
                         vm.updateSettings(
                             settings.copy(
@@ -717,6 +721,7 @@ private fun DefaultSubagentModelSetting(
                 ModelSelector(
                     modelId = settings.subagentModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = { selectedModel ->
                         vm.updateSettings(
                             settings.copy(
@@ -835,6 +840,7 @@ private fun DefaultOcrModelSetting(
                 ModelSelector(
                     modelId = settings.ocrModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     modelFilter = { model -> model.inputModalities.contains(Modality.IMAGE) },
                     onSelect = {
                         vm.updateSettings(

@@ -12,16 +12,8 @@ data class ResolvedBackends(
     val usingGpu: Boolean,
 )
 
-/**
- * Picks the LiteRT-LM [Backend]s for a load, honoring the user's per-model choice, the model's curated
- * accelerator preference, and a remembered GPU-crash flag (so [LocalAccelerator.AUTO] transparently
- * drops to CPU on devices where the GPU backend has crashed before).
- */
 object AcceleratorProbe {
-
-    fun resolve(
-        model: InstalledLocalModel,
-    ): ResolvedBackends {
+    fun resolve(model: InstalledLocalModel): ResolvedBackends {
         val prefersGpu = model.defaultConfig.accelerators.firstOrNull()?.equals("gpu", ignoreCase = true) == true
         val gpuBlocked = model.runtimeFlags.gpuCrashed
 
@@ -32,14 +24,11 @@ object AcceleratorProbe {
         }
 
         val main: Backend = if (useGpu) Backend.GPU() else Backend.CPU()
-
         val vision: Backend? = if (model.supportsImage && !model.runtimeFlags.visionUnavailable) {
             val visionPrefersGpu =
                 model.defaultConfig.visionAccelerator?.equals("gpu", ignoreCase = true) == true
-            // Never run the vision encoder on GPU if the main graph is on CPU (mismatch is unsupported).
             if (useGpu && visionPrefersGpu) Backend.GPU() else Backend.CPU()
         } else null
-
         val audio: Backend? = if (model.supportsAudio) {
             if (useGpu) Backend.GPU() else Backend.CPU()
         } else null

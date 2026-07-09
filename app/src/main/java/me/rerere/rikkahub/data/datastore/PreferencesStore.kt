@@ -331,6 +331,9 @@ class SettingsStore(
                     .distinctBy { it.id }
                     .map { provider ->
                     when (provider) {
+                        is ProviderSetting.Codex -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
+                        )
                         is ProviderSetting.OpenAI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                         )

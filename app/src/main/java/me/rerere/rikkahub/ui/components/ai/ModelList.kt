@@ -131,6 +131,7 @@ fun ModelSelector(
     modifier: Modifier = Modifier,
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
+    allowBackendModels: Boolean = false,
     modelFilter: (Model) -> Boolean = { true },
     onClear: (() -> Unit)? = null,
     onSelect: (Model) -> Unit
@@ -138,6 +139,10 @@ fun ModelSelector(
     var popup by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val model = providers.findModelById(modelId ?: Uuid.random())
+    // Backend models are hidden from user-facing pickers unless explicitly allowed.
+    val effectiveModelFilter: (Model) -> Boolean = { m ->
+        (allowBackendModels || !m.backend) && modelFilter(m)
+    }
 
     if (!onlyIcon) {
         Row(
@@ -241,14 +246,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         } else {
                             model.type == type
                         }
-                        isTypeMatch && modelFilter(model)
+                        isTypeMatch && effectiveModelFilter(model)
                     }
                 }
                 ModelList(
                     currentModel = modelId,
                     providers = filteredProviderSettings,
                     modelType = type,
-                    modelFilter = modelFilter,
+                    modelFilter = effectiveModelFilter,
                     onSelect = {
                         onSelect(it)
                         scope.launch {
@@ -1173,6 +1178,14 @@ private fun ModelItem(
 
 @Composable
 fun ModelTypeTag(model: Model) {
+    if (model.backend) {
+        Tag(
+            type = TagType.INFO
+        ) {
+            Text(text = stringResource(R.string.setting_provider_page_backend_model))
+        }
+        return
+    }
     Tag(
         type = TagType.INFO
     ) {

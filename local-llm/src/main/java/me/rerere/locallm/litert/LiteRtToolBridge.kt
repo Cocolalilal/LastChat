@@ -12,22 +12,12 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 
-/**
- * Bridges LastChat [Tool]s into LiteRT-LM tool declarations.
- *
- * Execution stays in LastChat's own tool loop (`automaticToolCalling = false`): we only hand the model
- * the tool *schema* so it knows what it can call; the model's tool calls come back on
- * `Message.toolCalls` and are executed by [me.rerere.rikkahub.data.ai.GenerationHandler] exactly like
- * network providers. Hence [OpenApiTool.execute] here is never invoked.
- */
 internal object LiteRtToolBridge {
-
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     fun toToolProviders(tools: List<Tool>): List<ToolProvider> =
         tools.map { tool(LastChatOpenApiTool(it)) }
 
-    /** Builds the `{name, description, parameters:{type:object, properties, required}}` schema. */
     fun describe(tool: Tool): String {
         val schema = tool.parameters()
         val parameters: JsonObject = when (schema) {
@@ -54,7 +44,6 @@ internal object LiteRtToolBridge {
     private class LastChatOpenApiTool(private val tool: Tool) : OpenApiTool {
         override fun getToolDescriptionJsonString(): String = describe(tool)
 
-        // Never called: LastChat executes tools itself (automaticToolCalling = false).
-        override fun execute(argumentsJson: String): String = "{}"
+        override fun execute(paramsJsonString: String): String = "{}"
     }
 }

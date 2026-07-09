@@ -157,6 +157,7 @@ fun ProviderConfigure(
                     checked = provider.enabled,
                     onCheckedChange = { enabled ->
                         val updated = when (provider) {
+                            is ProviderSetting.Codex -> provider.copy(enabled = enabled)
                             is ProviderSetting.OpenAI -> provider.copy(enabled = enabled)
                             is ProviderSetting.Google -> provider.copy(enabled = enabled)
                             is ProviderSetting.Claude -> provider.copy(enabled = enabled)
@@ -208,6 +209,7 @@ fun ProviderConfigure(
                 value = provider.name,
                 onValueChange = { newName ->
                     val updated = when (provider) {
+                        is ProviderSetting.Codex -> provider.copy(name = newName)
                         is ProviderSetting.OpenAI -> provider.copy(name = newName)
                         is ProviderSetting.Google -> provider.copy(name = newName)
                         is ProviderSetting.Claude -> provider.copy(name = newName)
@@ -225,6 +227,7 @@ fun ProviderConfigure(
 
         // 4. Provider-specific configuration
         when (provider) {
+            is ProviderSetting.Codex -> {}
             is ProviderSetting.OpenAI -> {
                 ProviderConfigureOpenAI(provider, onEdit)
             }
@@ -350,6 +353,7 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
 
     val convertedName = convertProviderNameTo(type)
     val apiKey = when (this) {
+        is ProviderSetting.Codex -> ""
         is ProviderSetting.OpenAI -> this.apiKey
         is ProviderSetting.Google -> this.apiKey
         is ProviderSetting.Claude -> this.apiKey

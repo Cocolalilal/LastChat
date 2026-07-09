@@ -175,6 +175,9 @@ data class CatalogSetupDefaults(
 
 @Serializable
 enum class CatalogProviderType {
+    @SerialName("codex")
+    CODEX,
+
     @SerialName("openai")
     OPENAI,
 
@@ -1067,6 +1070,7 @@ private fun String.matchesCatalogPattern(pattern: String): Boolean {
 
 private fun ProviderSetting.catalogBaseUrl(): String {
     return when (this) {
+        is ProviderSetting.Codex -> "https://chatgpt.com/backend-api/codex"
         is ProviderSetting.Claude -> baseUrl
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.OpenAI -> baseUrl
@@ -1077,6 +1081,7 @@ private fun ProviderSetting.catalogBaseUrl(): String {
 
 private fun ProviderSetting.catalogProviderTokens(): Set<String> {
     return when (this) {
+        is ProviderSetting.Codex -> setOf("openai")
         is ProviderSetting.Claude -> setOf("anthropic", "claude")
         is ProviderSetting.Google -> {
             if (vertexAI) {

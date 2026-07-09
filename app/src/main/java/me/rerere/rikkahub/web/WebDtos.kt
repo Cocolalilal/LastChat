@@ -946,6 +946,7 @@ private fun ProviderSetting.toWebProviderDto(
     return WebProviderDto(
         id = id.toString(),
         type = when (this) {
+            is ProviderSetting.Codex -> "codex"
             is ProviderSetting.OpenAI -> "openai"
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
@@ -954,7 +955,8 @@ private fun ProviderSetting.toWebProviderDto(
         },
         enabled = enabled,
         name = name,
-        models = models.map { model ->
+        // Backend models are hidden from the (user-facing) web chat picker.
+        models = models.filter { !it.backend }.map { model ->
             model.toWebProviderModelDto(
                 isSelected = model.id == selectedModelId,
                 builtInSearchEnabled = builtInSearchEnabled,

@@ -154,7 +154,7 @@ class ResponseAPI(
         }
     }
 
-    private fun buildRequestBody(
+    fun buildRequestBody(
         messages: List<UIMessage>,
         params: TextGenerationParams,
         stream: Boolean
@@ -167,7 +167,7 @@ class ResponseAPI(
         )
     }
 
-    private fun buildRequestBody(
+    fun buildRequestBody(
         messages: List<UIMessage>,
         params: TextGenerationParams,
         stream: Boolean,
@@ -339,7 +339,7 @@ class ResponseAPI(
         }
     }
 
-    private fun parseResponseDelta(jsonObject: JsonObject): MessageChunk? {
+    fun parseResponseDelta(jsonObject: JsonObject): MessageChunk? {
         val chunkType = jsonObject["type"]?.jsonPrimitive?.content ?: error("chunk type not found")
 
         when (chunkType) {

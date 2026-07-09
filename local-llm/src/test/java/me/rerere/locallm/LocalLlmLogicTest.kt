@@ -80,11 +80,78 @@ class AcceleratorProbeTest {
     }
 
     @Test
-    fun `vision backend only when image supported`() {
-        assertNull(AcceleratorProbe.resolve(model(supportsImage = false)).vision)
+    fun `accelerator resolves independently of vision support`() {
+        assertEquals(
+            LocalAccelerator.GPU,
+            AcceleratorProbe.resolve(model(supportsImage = false)).effective,
+        )
         assertEquals(
             LocalAccelerator.GPU,
             AcceleratorProbe.resolve(model()).effective,
         )
+    }
+}
+
+class InstalledLocalModelMetadataTest {
+    @Test
+    fun `catalog metadata restores embedding kind for older installed records`() {
+        val installed = InstalledLocalModel(
+            id = "EmbeddingGemma-300M",
+            displayName = "EmbeddingGemma 300M",
+            filePath = "/tmp/embedding.tflite",
+            commitHash = "old",
+            sizeInBytes = 1,
+        )
+        val meta = LocalModelMetadata(
+            id = "EmbeddingGemma-300M",
+            name = "EmbeddingGemma 300M",
+            kind = LocalModelKind.EMBEDDING,
+            hfRepo = "litert-community/embeddinggemma-300m",
+            modelFile = "embedding.tflite",
+            tokenizerFile = "sentencepiece.model",
+            commitHash = "new",
+            sizeInBytes = 1,
+            minDeviceMemoryInGb = 4,
+            embeddingDimension = 768,
+        )
+
+        val reconciled = installed.withCatalogMetadata(meta, "/tmp/sentencepiece.model")
+
+        assertTrue(reconciled.isEmbedding)
+        assertEquals("/tmp/sentencepiece.model", reconciled.tokenizerPath)
+        assertEquals(768, reconciled.embeddingDimension)
+        assertEquals("old", reconciled.commitHash)
+    }
+
+    @Test
+    fun `catalog metadata preserves user config and runtime flags`() {
+        val installed = InstalledLocalModel(
+            id = "Gemma3-1B-IT",
+            displayName = "My Gemma",
+            filePath = "/tmp/model.litertlm",
+            commitHash = "old",
+            sizeInBytes = 1,
+            config = LocalModelConfig(temperature = 0.2f, accelerator = LocalAccelerator.CPU),
+            runtimeFlags = LocalModelRuntimeFlags(gpuCrashed = true),
+            customIconUri = "content://icon",
+        )
+        val meta = LocalModelMetadata(
+            id = "Gemma3-1B-IT",
+            name = "Gemma 3 1B",
+            hfRepo = "litert-community/Gemma3-1B-IT",
+            modelFile = "model.litertlm",
+            commitHash = "new",
+            sizeInBytes = 1,
+            minDeviceMemoryInGb = 6,
+            supportsThinking = true,
+        )
+
+        val reconciled = installed.withCatalogMetadata(meta)
+
+        assertEquals("My Gemma", reconciled.displayName)
+        assertEquals(installed.config, reconciled.config)
+        assertEquals(installed.runtimeFlags, reconciled.runtimeFlags)
+        assertEquals("content://icon", reconciled.customIconUri)
+        assertTrue(reconciled.supportsThinking)
     }
 }

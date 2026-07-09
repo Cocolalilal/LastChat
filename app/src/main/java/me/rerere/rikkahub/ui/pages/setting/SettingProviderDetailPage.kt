@@ -174,6 +174,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
+import me.rerere.rikkahub.ui.pages.setting.components.CodexProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
@@ -261,6 +262,7 @@ private fun String.normalizeModelMatchToken(): String {
 
 private fun ProviderSetting.apiModelCacheKey(): String {
     return when (this) {
+        is ProviderSetting.Codex -> listOf("codex", id.toString())
         is ProviderSetting.OpenAI -> listOf(
             "openai",
             id.toString(),
@@ -304,6 +306,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
 
 private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
+        is ProviderSetting.Codex -> true
         is ProviderSetting.OpenAI -> apiKey.isNotBlank()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
@@ -569,16 +572,28 @@ private fun SettingProviderConfigPage(
                     containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             ) {
-                ProviderConfigure(
-                    provider = internalProvider,
-                    modifier = Modifier.padding(16.dp),
-                    showSavingIndicator = isSaving,
-                    onEdit = {
-                        internalProvider = it
-                        // Auto-save immediately
-                        onEdit(it)
-                    }
-                )
+                val currentProvider = internalProvider
+                if (currentProvider is ProviderSetting.Codex) {
+                    CodexProviderConfigure(
+                        provider = currentProvider,
+                        onEdit = {
+                            internalProvider = it
+                            // Auto-save immediately
+                            onEdit(it)
+                        }
+                    )
+                } else {
+                    ProviderConfigure(
+                        provider = internalProvider,
+                        modifier = Modifier.padding(16.dp),
+                        showSavingIndicator = isSaving,
+                        onEdit = {
+                            internalProvider = it
+                            // Auto-save immediately
+                            onEdit(it)
+                        }
+                    )
+                }
             }
             
             // Tags section
@@ -1401,6 +1416,13 @@ private fun ModelSettingsForm(
                                 }
                             )
                         }
+
+                        BackendModelToggle(
+                            backend = model.backend,
+                            onBackendChange = {
+                                onModelChange(model.copy(backend = it))
+                            }
+                        )
                     }
                 }
 
@@ -1571,6 +1593,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     if (filteredModels.isEmpty()) {
                         item {
                             val hasApiKey = when (parentProvider) {
+                                is ProviderSetting.Codex -> true
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
@@ -1917,6 +1940,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         item {
                             // Check if provider has an API key
                             val hasApiKey = when (parentProvider) {
+                                is ProviderSetting.Codex -> true
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
@@ -2069,6 +2093,11 @@ private suspend fun probeModelCapabilities(
     model: Model,
 ): ProbedModelCapabilities? {
     return when (provider) {
+        is ProviderSetting.Codex -> probeModelCapabilities(
+            providerInstance = providerManager.getProviderByType(provider),
+            provider = provider,
+            model = model,
+        )
         is ProviderSetting.OpenAI -> probeModelCapabilities(
             providerInstance = providerManager.getProviderByType(provider),
             provider = provider,
@@ -2295,6 +2324,12 @@ private fun MessageChunk.primaryMessage() = choices.firstOrNull()?.message ?: ch
 
 private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBody> {
     return when (provider) {
+        is ProviderSetting.Codex -> listOf(
+            CustomBody(
+                key = "tool_choice",
+                value = JsonPrimitive("required"),
+            )
+        )
         is ProviderSetting.OpenAI -> listOf(
             CustomBody(
                 key = "tool_choice",
@@ -2400,6 +2435,39 @@ private fun ModelCapabilityProbeButton(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun BackendModelToggle(
+    backend: Boolean,
+    onBackendChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                stringResource(R.string.setting_provider_page_backend_model),
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                stringResource(R.string.setting_provider_page_backend_model_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        HapticSwitch(
+            checked = backend,
+            onCheckedChange = onBackendChange
+        )
     }
 }
 
@@ -3093,10 +3161,18 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        ProviderConfigure(
-                            provider = internalProvider,
-                            onEdit = { internalProvider = it }
-                        )
+                        val currentProvider = internalProvider
+                        if (currentProvider is ProviderSetting.Codex) {
+                            CodexProviderConfigure(
+                                provider = currentProvider,
+                                onEdit = { internalProvider = it }
+                            )
+                        } else {
+                            ProviderConfigure(
+                                provider = internalProvider,
+                                onEdit = { internalProvider = it }
+                            )
+                        }
                     }
 
                     Row(

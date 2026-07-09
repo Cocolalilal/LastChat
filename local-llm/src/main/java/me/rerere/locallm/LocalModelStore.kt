@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
+import java.io.File
 
 private val Context.localModelDataStore: DataStore<Preferences> by preferencesDataStore(name = "local_llm_models")
 
@@ -39,6 +40,17 @@ class LocalModelStore(private val context: Context) {
         val idx = list.indexOfFirst { it.id == model.id }
         if (idx >= 0) list.toMutableList().apply { this[idx] = model }
         else list + model
+    }
+
+    suspend fun reconcileWithCatalog(catalog: LocalModelCatalog) = mutate { list ->
+        val byId = catalog.models.associateBy { it.id }
+        list.map { installed ->
+            val meta = byId[installed.id] ?: return@map installed
+            val tokenizerPath = installed.tokenizerPath ?: meta.tokenizerFile
+                ?.let { File(context.filesDir, "local_models/$it").absolutePath }
+                ?.takeIf { File(it).exists() }
+            installed.withCatalogMetadata(meta, tokenizerPath)
+        }
     }
 
     suspend fun remove(id: String) = mutate { list -> list.filterNot { it.id == id } }

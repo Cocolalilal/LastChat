@@ -96,8 +96,16 @@ class SettingLocalLlmViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocalLlmUiState(deviceRamGb = deviceRamGb))
 
     init {
-        viewModelScope.launch { catalogFlow.value = catalog.catalog() }
-        viewModelScope.launch { catalogFlow.value = catalog.refresh() }
+        viewModelScope.launch {
+            val currentCatalog = catalog.catalog()
+            catalogFlow.value = currentCatalog
+            store.reconcileWithCatalog(currentCatalog)
+        }
+        viewModelScope.launch {
+            val refreshedCatalog = catalog.refresh()
+            catalogFlow.value = refreshedCatalog
+            store.reconcileWithCatalog(refreshedCatalog)
+        }
         // Keep the pinned provider's model list in sync with what's installed on disk.
         viewModelScope.launch {
             store.models.collectLatest { syncModelsToSettings(it) }

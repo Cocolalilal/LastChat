@@ -109,6 +109,21 @@
         </intent-filter>
     </activity>
 
+    <activity
+        android:name=".ui.activity.CodexOAuthRedirectActivity"
+        android:exported="true"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data
+                android:host="codex"
+                android:path="/oauth"
+                android:scheme="lastchat" />
+        </intent-filter>
+    </activity>
+
     <!-- Text Selection Integration - "Ask LastChat" in system text selection menu -->
     <activity
         android:name=".ui.activity.TextSelectionActivity"

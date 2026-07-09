@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -319,18 +318,19 @@ fun AssistantOverlayScreen(
             // Foreground: transcript panel + input. Bottom-anchored and wrapping its content, so
             // when the keyboard opens with the panel fully expanded the input still rises to the
             // keyboard and the panel simply overflows off the top of the screen.
+            // fillMaxSize + Arrangement.Bottom: the input sits at the bottom (above the keyboard
+            // via its own imePadding) and, when the panel is tall, the panel overflows off the
+            // TOP of the screen. We must NOT use unbounded height here — MinimalChatInput has an
+            // internal verticalScroll and an infinite height constraint crashes it.
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    // unbounded so the column can be TALLER than the screen: the panel overflows
-                    // off the top and the input bar stays pinned above the keyboard.
-                    .wrapContentHeight(align = Alignment.Bottom, unbounded = true)
+                    .fillMaxSize()
                     .graphicsLayer {
                         alpha = appear.value
                         translationY = (1f - appear.value) * 48.dp.toPx() +
                             dismiss.value * 80.dp.toPx()
                     },
+                verticalArrangement = Arrangement.Bottom,
             ) {
                 val convId = conversationId
                 if (convId != null) {

@@ -685,6 +685,8 @@
     <string name="setting_provider_page_basic_settings">Basic Settings</string>
     <string name="setting_provider_page_chat_model">Chat</string>
     <string name="setting_provider_page_stt_model">STT</string>
+    <string name="setting_provider_page_backend_model">Backend</string>
+    <string name="setting_provider_page_backend_model_desc">Hide this model from chat pickers. It will only appear in backend pickers (title, summary, subagent, suggestions, translate, OCR).</string>
     <string name="setting_provider_page_configuration">Configuration</string>
     <string name="setting_provider_page_configure_provider_override">Configure Override</string>
     <string name="setting_provider_page_delete_dialog_text">Are you sure you want to delete this provider? This cannot be undone.</string>
@@ -1482,4 +1484,32 @@
   <string name="local_llm_catalog_note">Gallery-compatible</string>
   <string name="local_llm_error_title">Local model issue</string>
   <string name="local_llm_device_fit_format">%1$.1f GB download - %2$d GB RAM minimum</string>
+  
+  <string name="codex_oauth_success">Codex sign-in successful</string>
+  <string name="codex_oauth_ports_unavailable">Local port unavailable for OAuth redirect</string>
+  <string name="codex_provider_description">Official Codex integration for advanced completions.</string>
+  <string name="codex_sign_in">Sign In</string>
+  <string name="codex_enable">Enable Codex</string>
+  <string name="codex_round_robin_description">Requests are balanced across enabled accounts.</string>
+  <string name="codex_sign_in_required">Sign in required to enable</string>
+  <string name="codex_accounts_count">Accounts: %1$d</string>
+  <string name="codex_check_status">Check Status</string>
+  <string name="codex_no_accounts">No accounts yet. Sign in to add one.</string>
+  <string name="codex_refresh_failed">Refresh Failed</string>
+  <string name="codex_remove_account_title">Remove Account</string>
+  <string name="codex_remove_account_message">Are you sure you want to remove this Codex account?</string>
+  <string name="codex_remove">Remove</string>
+  <string name="codex_token_available">Available</string>
+  <string name="codex_token_expired">Expired</string>
+  <string name="codex_token_unavailable">Unavailable</string>
+  <string name="codex_token_not_checked">Not Checked</string>
+  <string name="codex_five_hour_limit">5-Hour Limit</string>
+  <string name="codex_weekly_limit">Weekly Limit</string>
+  <string name="codex_monthly_limit">Monthly Limit</string>
+  <string name="codex_minute_limit">%1$d Minute Limit</string>
+  <string name="codex_refresh">Refresh</string>
+  <string name="codex_reauthenticate">Reauthenticate</string>
+  <string name="codex_percent_remaining">%1$d%%</string>
+  <string name="codex_resets_at">Resets: %1$s</string>
+  <string name="codex_response_failed">Codex generation failed</string>
 </resources>

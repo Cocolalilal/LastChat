@@ -30,11 +30,6 @@ import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalModelStore
 import kotlin.uuid.Uuid
 
-/**
- * [Provider] implementation for on-device models. Bridges LiteRT-LM's streaming [Message] flow into
- * LastChat's [MessageChunk] pipeline so local models flow through the exact same tool loop, reasoning
- * rendering and streaming merge as network providers.
- */
 class LiteRtProvider(
     private val context: Context,
     private val runtime: LiteRtRuntime,
@@ -102,7 +97,6 @@ class LiteRtProvider(
 
         return callbackFlow {
             runtime.setGenerating(effective)
-            // Accumulated raw model text (handles both delta and cumulative callback styles).
             var accumulated = ""
             var emittedReasoning = ""
             var emittedText = ""
@@ -132,8 +126,8 @@ class LiteRtProvider(
                         val raw = msg.textString()
                         accumulated = when {
                             raw.isEmpty() -> accumulated
-                            raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw // cumulative
-                            else -> accumulated + raw // delta
+                            raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw
+                            else -> accumulated + raw
                         }
                         if (msg.toolCalls.isNotEmpty()) lastToolCalls = msg.toolCalls
 
@@ -145,7 +139,6 @@ class LiteRtProvider(
                         emitTextChunk(reasoningDelta, textDelta)
                     }
 
-                // Terminal chunk: surface any tool calls + finish reason.
                 val toolParts = lastToolCalls.toUiToolCalls(gson)
                 trySend(
                     MessageChunk(
@@ -181,10 +174,6 @@ class LiteRtProvider(
         error("Local provider does not support image generation")
     }
 
-    /**
-     * On-device embeddings via [LiteRtEmbedder] (EmbeddingGemma). Routed here by [EmbeddingService]
-     * whenever the selected embedding model belongs to this local provider.
-     */
     override suspend fun createEmbedding(
         providerSetting: ProviderSetting.LiteRtLocal,
         input: List<String>,
@@ -198,8 +187,10 @@ class LiteRtProvider(
     }
 
     private suspend fun requireInstalled(params: TextGenerationParams): InstalledLocalModel {
-        return store.get(params.model.modelId)
+        val installed = store.get(params.model.modelId)
             ?: throw IllegalStateException("model_not_installed:${params.model.modelId}")
+        check(installed.kind == LocalModelKind.LLM) { "not_llm_model:${params.model.modelId}" }
+        return installed
     }
 
     private fun buildConversationConfig(
@@ -217,31 +208,26 @@ class LiteRtProvider(
             .mapNotNull { toLiteMessage(model, it) }
 
         val sampler = SamplerConfig(
-            /* topK = */ model.config.topK ?: params.topK ?: model.defaultConfig.topK,
-            /* topP = */ (model.config.topP ?: params.topP ?: model.defaultConfig.topP).toDouble(),
-            /* temperature = */ (model.config.temperature ?: params.temperature ?: model.defaultConfig.temperature).toDouble(),
-            /* seed = */ 0,
+            model.config.topK ?: params.topK ?: model.defaultConfig.topK,
+            (model.config.topP ?: params.topP ?: model.defaultConfig.topP).toDouble(),
+            (model.config.temperature ?: params.temperature ?: model.defaultConfig.temperature).toDouble(),
+            0,
         )
 
         val tools = if (params.tools.isNotEmpty()) LiteRtToolBridge.toToolProviders(params.tools) else emptyList()
 
         return ConversationConfig(
-            /* systemInstruction = */ if (system != null) Contents.of(system) else Contents.of(""),
-            /* initialMessages = */ history,
-            /* tools = */ tools,
-            /* samplerConfig = */ sampler,
-            /* automaticToolCalling = */ false,
+            systemInstruction = if (system != null) Contents.of(system) else Contents.of(""),
+            initialMessages = history,
+            tools = tools,
+            samplerConfig = sampler,
+            automaticToolCalling = false,
         )
     }
 
-    /**
-     * The final message to send this turn, with its role preserved (a tool-continuation turn sends a
-     * TOOL message carrying the tool responses, not a bare user message).
-     */
     private fun toSendableMessage(model: InstalledLocalModel, message: UIMessage): Message =
         toLiteMessage(model, message) ?: Message.user(contentsFor(model, message))
 
-    /** Maps a LastChat [UIMessage] into a LiteRT-LM [Message] for conversation history replay. */
     private fun toLiteMessage(model: InstalledLocalModel, message: UIMessage): Message? {
         return when (message.role) {
             MessageRole.USER -> Message.user(contentsFor(model, message))
@@ -261,7 +247,6 @@ class LiteRtProvider(
         }
     }
 
-    /** Builds LiteRT [Contents] from a message's parts, honoring the model's modality support. */
     private fun contentsFor(model: InstalledLocalModel, message: UIMessage): Contents {
         val contents = mutableListOf<Content>()
         message.parts.forEach { part ->
@@ -314,11 +299,6 @@ private fun List<ToolCall>.toUiToolCalls(gson: Gson): List<UIMessagePart.ToolCal
 private fun List<UIMessage>.lastNonSystem(): UIMessage? =
     lastOrNull { it.role != MessageRole.SYSTEM }
 
-/**
- * Splits a raw model text stream into (reasoning, answer) by `<think>...</think>` markers used by
- * reasoning models (DeepSeek-R1, Qwen, Gemma thinking). An unclosed `<think>` keeps subsequent text in
- * the reasoning bucket until it closes.
- */
 internal fun splitThink(raw: String): Pair<String, String> {
     if (!raw.contains("<think>")) return "" to raw
     val reasoning = StringBuilder()
