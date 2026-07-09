@@ -1261,11 +1261,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            Text(
-                                text = "Add any TTS that supports the OpenAI /audio/speech protocol.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
                         }
                     }
                 }
@@ -1350,13 +1345,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         Text(
                                             text = preset.name,
                                             style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Text(
-                                            text = preset.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
