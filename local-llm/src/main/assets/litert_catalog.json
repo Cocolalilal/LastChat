@@ -40,7 +40,7 @@
         "visionAccelerator": "gpu"
       },
       "updateInfo": null,
-      "requiresLicense": true
+      "requiresLicense": false
     },
     {
       "id": "Gemma-4-E4B-it",
@@ -65,7 +65,7 @@
         "visionAccelerator": "gpu"
       },
       "updateInfo": null,
-      "requiresLicense": true
+      "requiresLicense": false
     },
     {
       "id": "Gemma-3n-E2B-it",

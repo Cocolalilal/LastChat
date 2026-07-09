@@ -119,7 +119,7 @@ class ModelInstall(
 
         val reqBuilder = Request.Builder().url(url)
         if (url.startsWith("https://huggingface.co/")) {
-            huggingFaceTokenProvider()?.takeIf { it.isNotBlank() }?.let { token ->
+            huggingFaceTokenProvider()?.trim()?.takeIf { it.isNotBlank() }?.let { token ->
                 reqBuilder.header("Authorization", "Bearer $token")
             }
         }

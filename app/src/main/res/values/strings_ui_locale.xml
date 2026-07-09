@@ -230,8 +230,8 @@
     <string name="setting_ui_show_avatar_header_global_desc">When disabled, avatar moves to top-right corner</string>
     <string name="setting_ui_move_toolbar_bottom_title">Move Chat Toolbar to Bottom</string>
     <string name="setting_ui_move_toolbar_bottom_desc">Place the chat toolbar below the minimal message input bar</string>
-    <string name="setting_ui_show_character_avatar_title">Show Character Avatar</string>
-    <string name="setting_ui_show_character_avatar_desc">Show the character\'s avatar before messages</string>
+    <string name="setting_ui_show_character_avatar_title">Show Character Avatar and Name</string>
+    <string name="setting_ui_show_character_avatar_desc">Show the character\'s avatar and name before messages</string>
     <string name="setting_ui_show_context_stacks_title">Show Context Stacks</string>
     <string name="setting_ui_show_context_stacks_desc">Show context sources (skills, memories, lorebooks) in message toolbar</string>
     <string name="setting_ui_message_jumper_group">Message Jumper</string>

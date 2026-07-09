@@ -299,15 +299,24 @@ internal fun Settings.normalizeThemeId(): Settings {
 }
 
 /**
- * Guarantees exactly one pinned on-device provider ([ProviderSetting.LiteRtLocal]), always at index 0.
- * Re-inserts it if the user somehow removed it and de-duplicates any extras, preserving the installed
- * models of the surviving instance.
+ * The on-device ([ProviderSetting.LiteRtLocal]) provider is an ordinary, user-managed provider: it is
+ * NOT seeded by default and may be reordered or deleted like any other. This normalization only
+ * collapses accidental duplicates (all [ProviderSetting.LiteRtLocal] share one stable id) into the
+ * first occurrence, preserving its position and installed models. It never inserts one that is absent.
  */
 internal fun Settings.normalizeLocalProvider(): Settings {
-    val local = providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
-        ?: ProviderSetting.LiteRtLocal()
-    val others = providers.filterNot { it is ProviderSetting.LiteRtLocal }
-    val normalized = listOf(local) + others
+    val locals = providers.filterIsInstance<ProviderSetting.LiteRtLocal>()
+    if (locals.size <= 1) return this
+    val kept = locals.first()
+    var seen = false
+    val normalized = providers.mapNotNull { provider ->
+        if (provider is ProviderSetting.LiteRtLocal) {
+            if (seen) null else {
+                seen = true
+                kept
+            }
+        } else provider
+    }
     return if (normalized == providers) this else copy(providers = normalized)
 }
 
@@ -433,9 +442,13 @@ fun Settings.getAssistantById(id: Uuid): Assistant? {
 
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings
+    val effectiveShowModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon
     return displaySetting.copy(
         showUserAvatar = ui.showUserAvatar ?: displaySetting.showUserAvatar,
-        showModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon,
+        showModelIcon = effectiveShowModelIcon,
+        // The "Show character avatar and name" toggle controls both the avatar and the name;
+        // hiding the avatar also hides the character name.
+        showModelName = effectiveShowModelIcon && displaySetting.showModelName,
         showAssistantBubbles = ui.showAssistantBubbles ?: displaySetting.showAssistantBubbles,
         showTokenUsage = ui.showTokenUsage ?: displaySetting.showTokenUsage,
         autoCloseThinking = ui.autoCloseThinking ?: displaySetting.autoCloseThinking,
