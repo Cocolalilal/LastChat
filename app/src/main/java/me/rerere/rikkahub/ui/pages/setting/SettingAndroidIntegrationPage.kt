@@ -121,6 +121,28 @@ fun SettingAndroidIntegrationPage(
     val config = settings.textSelectionConfig
     var editingAction by remember { mutableStateOf<TextSelectionAction?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showWaveOriginPicker by remember { mutableStateOf(false) }
+
+    if (showWaveOriginPicker) {
+        me.rerere.rikkahub.ui.pages.setting.components.WaveOriginPickerDialog(
+            initialX = settings.assistantOverlayConfig.waveOriginX,
+            initialY = settings.assistantOverlayConfig.waveOriginY,
+            onDismiss = { showWaveOriginPicker = false },
+            onSave = { x, y ->
+                showWaveOriginPicker = false
+                scope.launch {
+                    settingsStore.update {
+                        it.copy(
+                            assistantOverlayConfig = it.assistantOverlayConfig.copy(
+                                waveOriginX = x,
+                                waveOriginY = y,
+                            )
+                        )
+                    }
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -299,10 +321,16 @@ fun SettingAndroidIntegrationPage(
                                 )
                             }
                         )
+
+                        SettingGroupItem(
+                            title = "Wave origin",
+                            subtitle = "Choose where the glow wave comes from",
+                            onClick = { showWaveOriginPicker = true },
+                        )
                     }
                 }
 
-                // Settings Section
+            // Settings Section
                 item {
                     SettingsGroup(title = stringResource(R.string.settings)) {
                         // Assistant picker - default to Generical

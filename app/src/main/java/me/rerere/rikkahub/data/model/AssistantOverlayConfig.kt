@@ -23,4 +23,10 @@ data class AssistantOverlayConfig(
     val autoReadReply: Boolean = true,
     /** Attach a screenshot of the screen present when the assistant was summoned. */
     val attachScreenshot: Boolean = true,
+    /**
+     * Where the glow "wave" radiates from, as fractions of the screen (0..1). The picker
+     * constrains this to a screen edge. Default = bottom-middle.
+     */
+    val waveOriginX: Float = 0.5f,
+    val waveOriginY: Float = 1.0f,
 )

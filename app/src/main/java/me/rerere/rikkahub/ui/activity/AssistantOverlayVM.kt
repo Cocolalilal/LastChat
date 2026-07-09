@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
@@ -55,6 +56,12 @@ class AssistantOverlayVM(
     fun send(parts: List<UIMessagePart>) {
         val id = _conversationId.value ?: return
         chatService.sendMessage(conversationId = id, content = parts)
+    }
+
+    /** Regenerate the assistant reply for [message] (re-runs that turn). */
+    fun regenerate(message: UIMessage) {
+        val id = _conversationId.value ?: return
+        chatService.regenerateAtMessage(id, message, true, false)
     }
 
     fun handleToolApproval(

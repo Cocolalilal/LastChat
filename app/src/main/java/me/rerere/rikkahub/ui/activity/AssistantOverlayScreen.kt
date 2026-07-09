@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,13 +52,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
@@ -77,6 +82,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -95,6 +103,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -132,6 +141,7 @@ import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.shimmer
+import me.rerere.rikkahub.utils.copyMessageToClipboard
 import org.koin.compose.koinInject
 import kotlin.math.PI
 import kotlin.math.cos
@@ -294,20 +304,24 @@ fun AssistantOverlayScreen(
                 SilkGlowLayer(
                     active = voiceActive,
                     waveSignal = screenReadSignal,
+                    originX = config.waveOriginX,
+                    originY = config.waveOriginY,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
 
-            // Foreground: transcript panel + input, fading/sliding in on enter, out on exit.
+            // Foreground: transcript panel + input. Bottom-anchored and wrapping its content, so
+            // when the keyboard opens with the panel fully expanded the input still rises to the
+            // keyboard and the panel simply overflows off the top of the screen.
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
                     .graphicsLayer {
                         alpha = appear.value
                         translationY = (1f - appear.value) * 48.dp.toPx() +
                             dismiss.value * 80.dp.toPx()
                     },
-                verticalArrangement = Arrangement.Bottom,
             ) {
                 val convId = conversationId
                 if (convId != null) {
@@ -384,7 +398,13 @@ fun AssistantOverlayScreen(
                             messages = transcript,
                             activityState = activityState,
                             isGenerating = isGenerating,
+                            isSpeaking = isSpeaking,
                             onOpenInApp = onOpenInApp,
+                            onCopy = { message -> context.copyMessageToClipboard(message) },
+                            onRegenerate = { message -> viewModel.regenerate(message) },
+                            onToggleTts = { message ->
+                                if (isSpeaking) tts.stop() else tts.speak(message.toContentText())
+                            },
                         )
                     }
 
@@ -442,7 +462,11 @@ private fun TranscriptPanel(
     messages: List<UIMessage>,
     activityState: ActivityState,
     isGenerating: Boolean,
+    isSpeaking: Boolean,
     onOpenInApp: () -> Unit,
+    onCopy: (UIMessage) -> Unit,
+    onRegenerate: (UIMessage) -> Unit,
+    onToggleTts: (UIMessage) -> Unit,
 ) {
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -463,6 +487,61 @@ private fun TranscriptPanel(
 
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val headerHeightDp = with(density) { headerHeightPx.toDp() }
+    // Height of the fade / progressive-blur band under the header.
+    val fadeHeightDp = headerHeightDp + 28.dp
+    val fadeHeightPx = with(density) { fadeHeightDp.toPx() }
+
+    val lastAssistantId = remember(messages) {
+        messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
+    }
+    var expandedIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
+
+    // The transcript, rendered twice: once sharp + interactive (with actions), and once as a
+    // non-interactive blurred duplicate that shows only through the top band → progressive blur.
+    val transcriptColumn: @Composable (interactive: Boolean) -> Unit = { interactive ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Spacer(Modifier.height(headerHeightDp))
+            messages.forEach { message ->
+                val isAssistant = message.role == MessageRole.ASSISTANT
+                val actionsVisible = interactive && isAssistant && !isGenerating &&
+                    (message.id == lastAssistantId || message.id in expandedIds)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = if (interactive && isAssistant) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            expandedIds = if (message.id in expandedIds) {
+                                expandedIds - message.id
+                            } else {
+                                expandedIds + message.id
+                            }
+                        }
+                    } else Modifier,
+                ) {
+                    MessageRowContent(message = message, contentColor = contentColor)
+                    if (interactive && isAssistant) {
+                        AnimatedVisibility(visible = actionsVisible) {
+                            AssistantActionsRow(
+                                isSpeaking = isSpeaking,
+                                showRegenerate = message.id == lastAssistantId,
+                                onCopy = { onCopy(message) },
+                                onRegenerate = { onRegenerate(message) },
+                                onToggleTts = { onToggleTts(message) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Surface(
         color = containerColor,
@@ -476,40 +555,93 @@ private fun TranscriptPanel(
         Box(modifier = Modifier.fillMaxWidth()) {
             // Scrolling transcript. heightIn lets the panel grow with content up to the cap,
             // then scroll. A leading spacer keeps the first line clear of the header.
+            val scrolled = scroll.value > 0
+            // Sharp, interactive transcript. When scrolled, its top band is erased (DstOut) so
+            // the blurred duplicate shows through there.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = dragFloor.value.dp, max = maxHeight.dp)
-                    .verticalScroll(scroll),
+                    .verticalScroll(scroll)
+                    .then(
+                        if (scrolled) {
+                            Modifier
+                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRect(
+                                        brush = Brush.verticalGradient(
+                                            0f to Color.Black,
+                                            (fadeHeightPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                        ),
+                                        blendMode = BlendMode.DstOut,
+                                    )
+                                }
+                        } else Modifier
+                    ),
             ) {
-                Column(
+                transcriptColumn(true)
+            }
+
+            // Blurred duplicate — shown only through the top band, giving a true progressive blur
+            // of text that scrolls up under the header. Only rendered while there's overflow.
+            if (scrolled) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                        .matchParentSize()
+                        .clipToBounds()
+                        .blur(10.dp)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    0f to Color.Black,
+                                    (fadeHeightPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        },
                 ) {
-                    Spacer(Modifier.height(headerHeightDp))
-                    messages.forEach { message ->
-                        MessageRowContent(message = message, contentColor = contentColor)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset { IntOffset(0, -scroll.value) },
+                    ) {
+                        transcriptColumn(false)
                     }
                 }
             }
 
-            // Top fade: text dissolves into the (haze-blurred) panel colour as it scrolls up
-            // under the header, extending a little past it so nothing reads as a hard cut.
+            // Stronger colour fade dissolving the very top into the (haze-blurred) panel.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(headerHeightDp + 20.dp)
+                    .height(fadeHeightDp)
                     .background(
                         Brush.verticalGradient(
                             0f to containerColor,
-                            0.6f to containerColor,
+                            0.45f to containerColor.copy(alpha = 0.9f),
                             1f to Color.Transparent,
                         )
                     ),
             )
+
+            // "Open in app" pinned to the TOP-RIGHT of the panel.
+            IconButton(
+                onClick = onOpenInApp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 6.dp)
+                    .size(36.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.OpenInNew,
+                    contentDescription = stringResource(R.string.assistant_overlay_open_in_app),
+                    modifier = Modifier.size(20.dp),
+                    tint = contentColor.copy(alpha = 0.75f),
+                )
+            }
 
             // Floating header (drag handle + avatar + compact activity pill + open-in-app).
             Column(
@@ -553,21 +685,13 @@ private fun TranscriptPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        // Reserve space on the right for the top-right "open in app" button.
+                        .padding(start = 16.dp, end = 48.dp)
                         .padding(bottom = 8.dp),
                 ) {
                     assistantAvatar(Modifier.size(32.dp))
                     Spacer(Modifier.width(10.dp))
                     CompactActivityPill(state = activityState, modifier = Modifier.weight(1f, fill = false))
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = onOpenInApp, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Rounded.OpenInNew,
-                            contentDescription = stringResource(R.string.assistant_overlay_open_in_app),
-                            modifier = Modifier.size(20.dp),
-                            tint = contentColor.copy(alpha = 0.75f),
-                        )
-                    }
                 }
             }
         }
@@ -591,7 +715,7 @@ private fun MessageRowContent(message: UIMessage, contentColor: Color) {
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp),
+                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.widthIn(max = 300.dp),
             ) {
                 Text(
@@ -611,6 +735,49 @@ private fun MessageRowContent(message: UIMessage, contentColor: Color) {
             )
         }
     }
+}
+
+/** Minimal action bar under assistant messages — copy, regenerate, TTS (chat-style icons). */
+@Composable
+private fun AssistantActionsRow(
+    isSpeaking: Boolean,
+    showRegenerate: Boolean,
+    onCopy: () -> Unit,
+    onRegenerate: () -> Unit,
+    onToggleTts: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ActionIcon(Icons.Rounded.ContentCopy, stringResource(R.string.copy), onCopy)
+        if (showRegenerate) {
+            ActionIcon(Icons.Rounded.Refresh, stringResource(R.string.regenerate), onRegenerate)
+        }
+        ActionIcon(
+            if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
+            stringResource(R.string.tts),
+            onToggleTts,
+        )
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Icon(
+        imageVector = icon,
+        contentDescription = contentDescription,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable { onClick() }
+            .padding(7.dp)
+            .size(16.dp),
+    )
 }
 
 /**
@@ -722,6 +889,8 @@ private fun toolCategoryContent(type: ActivityType, live: Boolean): CompactConte
 private fun SilkGlowLayer(
     active: Boolean,
     waveSignal: Long,
+    originX: Float,
+    originY: Float,
     modifier: Modifier = Modifier,
 ) {
     val transition = rememberInfiniteTransition(label = "silkGlow")
@@ -780,8 +949,8 @@ private fun SilkGlowLayer(
                 drawContent()
                 val p = entrance.value
                 if (p < 1f) {
-                    // Soft, rounded reveal sweeping out from the bottom-right corner.
-                    val maxR = hypot(size.width.toDouble(), size.height.toDouble()).toFloat() * 1.18f
+                    // Soft, rounded reveal sweeping out from the chosen origin.
+                    val maxR = hypot(size.width.toDouble(), size.height.toDouble()).toFloat() * 1.25f
                     val r = (p * maxR).coerceAtLeast(1f)
                     drawRect(
                         brush = Brush.radialGradient(
@@ -789,7 +958,7 @@ private fun SilkGlowLayer(
                             0.62f to Color.Black,
                             0.9f to Color.Black.copy(alpha = 0.35f),
                             1f to Color.Transparent,
-                            center = Offset(size.width * 0.98f, size.height),
+                            center = Offset(size.width * originX, size.height * originY),
                             radius = r,
                         ),
                         blendMode = BlendMode.DstIn,
@@ -797,15 +966,15 @@ private fun SilkGlowLayer(
                 }
             },
     ) {
-        val reveal = smoothstep(entrance.value)
-
         // Edge glow.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { }
                 .drawBehind {
-                    val alpha = (1.0f * breath * boost * reveal).coerceIn(0f, 1f)
+                    // Steady strength matches the level during the wave (no end-of-wave flick):
+                    // the reveal is purely geometric (DstIn mask above), not an alpha ramp.
+                    val alpha = (0.62f * breath * boost).coerceIn(0f, 1f)
                     glowBlobs(size.width, size.height, phase, edgeColors).forEach { blob ->
                         drawCircle(
                             brush = Brush.radialGradient(
@@ -833,7 +1002,7 @@ private fun SilkGlowLayer(
                     val h = size.height
                     val t = phase * (2.0 * PI).toFloat()
                     val blobs = glowBlobs(w, h, phase, edgeColors)
-                    val dotStrength = (1.0f * breath * boost * reveal).coerceIn(0f, 1f)
+                    val dotStrength = (0.62f * breath * boost).coerceIn(0f, 1f)
 
                     var y = dotSpacingPx / 2f
                     while (y < h) {
@@ -890,33 +1059,29 @@ private fun SilkGlowLayer(
                         entrance.value < 1f -> entrance.value
                         else -> return@drawBehind
                     }
-                    // Bell curve so the band brightens then fades as it crosses.
+                    // Bell curve so the wash brightens then fades as it expands.
                     val bell = run { val d = (p - 0.5f) / 0.5f; (1f - d * d).coerceIn(0f, 1f) }
-                    // Sweeps from bottom-right (p=0) diagonally to top-left (p=1).
-                    val cx = size.width * (1.15f - 1.3f * p)
-                    val cy = size.height * (1.15f - 1.3f * p)
-                    val radius = hypot(size.width.toDouble(), size.height.toDouble()).toFloat() * 0.7f
+                    // Expands outward FROM the chosen origin (e.g. the side button).
+                    val ox = size.width * originX
+                    val oy = size.height * originY
+                    val maxR = hypot(size.width.toDouble(), size.height.toDouble()).toFloat() * 1.2f
+                    val radius = (p * maxR).coerceAtLeast(1f)
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                waveColor.copy(alpha = 0.5f * bell),
-                                waveColor.copy(alpha = 0.18f * bell),
+                                waveColor.copy(alpha = 0.42f * bell),
+                                waveColor.copy(alpha = 0.14f * bell),
                                 Color.Transparent,
                             ),
-                            center = Offset(cx, cy),
+                            center = Offset(ox, oy),
                             radius = radius,
                         ),
                         radius = radius,
-                        center = Offset(cx, cy),
+                        center = Offset(ox, oy),
                     )
                 },
         )
     }
-}
-
-private fun smoothstep(x: Float): Float {
-    val t = x.coerceIn(0f, 1f)
-    return t * t * (3f - 2f * t)
 }
 
 private fun Color.vivid(satMul: Float = 1.5f, minSat: Float = 0.6f): Color {
