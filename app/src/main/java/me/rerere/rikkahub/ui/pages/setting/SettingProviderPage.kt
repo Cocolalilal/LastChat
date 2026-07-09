@@ -1467,11 +1467,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
-                                    Text(
-                                        text = stringResource(R.string.setting_provider_page_add_custom_provider_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                    )
                                 }
                             }
                         }
