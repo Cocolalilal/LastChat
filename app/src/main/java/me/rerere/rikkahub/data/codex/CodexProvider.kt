@@ -181,6 +181,9 @@ class CodexProvider(
             for ((key, value) in baseRequestBody) {
                 put(key, value)
             }
+            // ChatGPT's Codex backend rejects persisted Responses API requests.
+            // This must override the shared OpenAI request default for every request.
+            put("store", false)
             if (baseRequestBody["instructions"]?.jsonPrimitive?.contentOrNull.isNullOrBlank()) {
                 put("instructions", DEFAULT_INSTRUCTIONS)
             }

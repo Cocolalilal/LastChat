@@ -75,6 +75,12 @@ val FALLBACK_PROVIDER_PRESETS = listOf(
 
 val SPECIAL_PROVIDER_PRESETS = listOf(
     ProviderPreset(
+        name = "Local · LiteRT",
+        description = "Run downloaded LiteRT language models directly on this device",
+        type = ProviderSetting.LiteRtLocal::class,
+        baseUrl = "",
+    ),
+    ProviderPreset(
         name = "Codex",
         description = "Use ChatGPT Codex OAuth accounts as a model provider",
         type = ProviderSetting.Codex::class,
@@ -189,6 +195,11 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
                     displayName = "ComfyUI model",
                 ).withComfyDefaults()
             ),
+        )
+
+        ProviderSetting.LiteRtLocal::class -> ProviderSetting.LiteRtLocal(
+            name = name,
+            customIconUri = customIconUri,
         )
 
         else -> ProviderSetting.OpenAI(

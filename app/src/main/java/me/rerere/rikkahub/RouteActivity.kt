@@ -126,6 +126,9 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
 
+private fun String?.toUuidOrNull(): Uuid? =
+    this?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+
 internal data class SpontaneousNotificationData(
     val assistantId: String,
     val conversationId: String?,
@@ -328,12 +331,29 @@ class RouteActivity : ComponentActivity() {
             }
             
             val spontaneousNotification = intent.toSpontaneousNotificationData()
-            val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
-            val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
+            val intentAssistantId = if (spontaneousNotification == null) {
+                intent?.getStringExtra(EXTRA_ASSISTANT_ID)
+            } else {
+                null
+            }
+            val intentConversationId = if (spontaneousNotification == null) {
+                intent?.getStringExtra(EXTRA_CONVERSATION_ID)
+            } else {
+                null
+            }
             val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
             pendingTextSelection = intent?.readQuickAskContinuationData()
             pendingShareIntent = intent?.readResolvedSharePayload()
             lifecycleScope.launch {
+                // A conversation hand-off from the assistant overlay must select its
+                // character before ChatVM initializes. This also covers the short window
+                // where the in-memory conversation is released while the app task resumes.
+                if (!intentConversationId.isNullOrBlank()) {
+                    intentAssistantId.toUuidOrNull()?.let { assistantId ->
+                        settingsStore.updateAssistant(assistantId)
+                        settingsStore.markAssistantUsed(assistantId)
+                    }
+                }
                 initialChatScreen = determineInitialChatScreen(
                     defaultScreen = defaultStartScreen(),
                     deepLinkedConversationId = intentConversationId,
@@ -370,7 +390,7 @@ class RouteActivity : ComponentActivity() {
             }
             
             // Handle assistant shortcut - navigate directly by waiting for navStack to be ready
-            if (intentAssistantId != null) {
+            if (intentAssistantId != null && intentConversationId.isNullOrBlank()) {
                 lifecycleScope.launch {
                     // Wait for navStack to be ready (set in composition)
                     while (navStack == null) {
@@ -418,6 +438,20 @@ class RouteActivity : ComponentActivity() {
                 ) ?: Uuid.random().toString()
             }
         )
+    }
+
+    private fun navigateToIncomingConversation(conversationIdText: String) {
+        conversationIdText.toUuidOrNull()?.let { conversationId ->
+            val controller = navStack
+            if (controller == null || initialChatScreen == null) {
+                // A NavHostController is created before AppRoutes installs its graph. An
+                // incoming intent in that window would make navigate() throw, so defer it
+                // until NotificationHandler is composed with the real chat NavHost.
+                pendingConversationId = conversationId.toString()
+            } else {
+                navigateToChatPage(controller, chatId = conversationId)
+            }
+        }
     }
 
     private fun Intent?.toSpontaneousNotificationData(): SpontaneousNotificationData? {
@@ -622,7 +656,9 @@ class RouteActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         android.util.Log.d(TAG, "onNewIntent called")
-        android.util.Log.d(TAG, "Intent extras: conversationId=${intent.getStringExtra("conversationId")}, assistantId=${intent.getStringExtra("assistantId")}")
+        val conversationIdText = intent.getStringExtra(EXTRA_CONVERSATION_ID)
+        val assistantIdText = intent.getStringExtra(EXTRA_ASSISTANT_ID)
+        android.util.Log.d(TAG, "Intent extras: conversationId=$conversationIdText, assistantId=$assistantIdText")
         pendingShareIntent = intent.readResolvedSharePayload()
         pendingTextSelection = intent.readQuickAskContinuationData() ?: pendingTextSelection
 
@@ -643,18 +679,27 @@ class RouteActivity : ComponentActivity() {
             return
         }
         
-        // Navigate to the chat screen if a conversation ID is provided
-        intent.getStringExtra("conversationId")?.let { text ->
-            android.util.Log.d(TAG, "Navigating to conversation: $text")
-            runCatching { Uuid.parse(text) }
-                .getOrNull()
-                ?.let { conversationId ->
-                    navStack?.let { navigateToChatPage(it, chatId = conversationId) }
+        // Overlay hand-offs include both IDs. Select the character first, then navigate so a
+        // cold/recreated ChatService state cannot fall back to the previous character.
+        if (!conversationIdText.isNullOrBlank() && !assistantIdText.isNullOrBlank()) {
+            lifecycleScope.launch {
+                assistantIdText.toUuidOrNull()?.let { assistantId ->
+                    settingsStore.updateAssistant(assistantId)
+                    settingsStore.markAssistantUsed(assistantId)
                 }
+                navigateToIncomingConversation(conversationIdText)
+            }
+            return
+        }
+
+        // Navigate to the chat screen if a conversation ID is provided.
+        conversationIdText?.let { text ->
+            android.util.Log.d(TAG, "Navigating to conversation: $text")
+            navigateToIncomingConversation(text)
         }
         
         // Handle assistant shortcut - navigate directly instead of using state
-        intent.getStringExtra("assistantId")?.let { assistantIdStr ->
+        assistantIdText?.let { assistantIdStr ->
             android.util.Log.d(TAG, "Handling assistant shortcut directly: $assistantIdStr")
             lifecycleScope.launch {
                 try {
@@ -675,6 +720,11 @@ class RouteActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_CONVERSATION_ID = "conversationId"
+        const val EXTRA_ASSISTANT_ID = "assistantId"
     }
 
     @Composable

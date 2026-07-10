@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -102,6 +103,9 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.codex.CodexAccountRepository
+import me.rerere.rikkahub.data.codex.CodexTokenStatus
+import me.rerere.rikkahub.data.codex.CodexUsageWindow
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
@@ -116,6 +120,7 @@ import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -139,9 +144,10 @@ fun ModelSelector(
     var popup by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val model = providers.findModelById(modelId ?: Uuid.random())
-    // Backend models are hidden from user-facing pickers unless explicitly allowed.
+    // Backend visibility only applies to chat models. Embedding, STT, and image models are chosen
+    // from feature-specific settings rather than the chat picker.
     val effectiveModelFilter: (Model) -> Boolean = { m ->
-        (allowBackendModels || !m.backend) && modelFilter(m)
+        (type != ModelType.CHAT || allowBackendModels || !m.backend) && modelFilter(m)
     }
 
     if (!onlyIcon) {
@@ -606,11 +612,15 @@ internal fun ColumnScope.ModelList(
                             ModelSectionHeader(
                                 title = item.provider.name
                             ) {
-                                ProviderBalanceText(
-                                    providerSetting = item.provider,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                                if (item.provider is ProviderSetting.Codex) {
+                                    CodexUsageLimits(item.provider)
+                                } else {
+                                    ProviderBalanceText(
+                                        providerSetting = item.provider,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                         is ProviderListItem.ModelEntry -> {
@@ -1013,6 +1023,80 @@ private fun ModelSectionHeader(
     }
 }
 
+/** Displays the active Codex account's rolling request limits in the model picker. */
+@Composable
+private fun CodexUsageLimits(provider: ProviderSetting.Codex) {
+    val repository = koinInject<CodexAccountRepository>()
+    val accounts by repository.accounts.collectAsStateWithLifecycle()
+    LaunchedEffect(provider.id) {
+        repository.refreshAll()
+    }
+    val account = accounts.firstOrNull {
+        it.enabled && it.tokenStatus != CodexTokenStatus.INVALID && it.usage != null
+    } ?: return
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        account.usage?.primary?.let { window ->
+            CodexUsageLimitIndicator(
+                window = window,
+                fallbackName = stringResource(R.string.codex_five_hour_limit),
+            )
+        }
+        account.usage?.secondary?.let { window ->
+            CodexUsageLimitIndicator(
+                window = window,
+                fallbackName = stringResource(R.string.codex_weekly_limit),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CodexUsageLimitIndicator(
+    window: CodexUsageWindow,
+    fallbackName: String,
+) {
+    val usedPercent = window.usedPercent.coerceIn(0.0, 100.0)
+    val name = when (window.windowMinutes) {
+        300L -> stringResource(R.string.codex_five_hour_limit)
+        10_080L -> stringResource(R.string.codex_weekly_limit)
+        43_200L -> stringResource(R.string.codex_monthly_limit)
+        null -> fallbackName
+        else -> stringResource(R.string.codex_minute_limit, window.windowMinutes)
+    }
+    val indicatorColor = if (usedPercent >= 90.0) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        CircularProgressIndicator(
+            progress = { (usedPercent / 100.0).toFloat() },
+            modifier = Modifier.size(22.dp),
+            color = indicatorColor,
+            strokeWidth = 3.dp,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "${usedPercent.roundToInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = indicatorColor,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ModelItem(
     model: Model,
@@ -1178,7 +1262,7 @@ private fun ModelItem(
 
 @Composable
 fun ModelTypeTag(model: Model) {
-    if (model.backend) {
+    if (model.type == ModelType.CHAT && model.backend) {
         Tag(
             type = TagType.INFO
         ) {

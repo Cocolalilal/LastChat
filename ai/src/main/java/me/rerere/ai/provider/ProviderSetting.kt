@@ -305,8 +305,8 @@ sealed class ProviderSetting {
 
     /**
      * On-device inference via LiteRT-LM. Unlike network providers this has no API key / base URL —
-     * its [models] are the models the user has downloaded onto the device. It is a pinned, built-in
-     * provider (always present, always first, never deleted); see the app's settings normalization.
+     * its [models] are the models the user has downloaded onto the device. It is user-managed and
+     * can be reordered or deleted like any other provider; see the app's settings normalization.
      */
     @Serializable
     @SerialName("litert_local")
@@ -356,7 +356,7 @@ sealed class ProviderSetting {
     }
 
     companion object {
-        /** Stable id of the single pinned on-device provider. */
+        /** Stable id of the single on-device provider. */
         val LOCAL_PROVIDER_ID: Uuid = Uuid.parse("10ca110c-0ca1-4b0c-a10c-10ca110c10ca")
 
         val Types by lazy {

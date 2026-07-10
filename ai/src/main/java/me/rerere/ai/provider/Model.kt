@@ -23,9 +23,10 @@ data class Model(
     val imageGenerationMethod: ImageGenerationMethod? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
     val sttOptions: SttOptions? = null,
-    // When true, this model is hidden from user-facing pickers (chat interface, assistant model, etc.)
-    // and shown only in backend/background-task pickers (title, summarizer, subagent, suggestions,
-    // translate, OCR). See ModelSelector's allowBackendModels flag.
+    // For CHAT models, when true this model is hidden from user-facing pickers (chat interface,
+    // assistant model, etc.) and shown only in backend/background-task pickers (title, summarizer,
+    // subagent, suggestions, translate, OCR). Non-chat models are always selected from their
+    // feature-specific settings, so this flag is intentionally ignored for them.
     val backend: Boolean = false,
 )
 

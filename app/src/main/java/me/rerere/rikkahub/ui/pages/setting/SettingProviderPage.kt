@@ -200,10 +200,13 @@ fun SettingProviderPage(
     
     var showSearchCommonOptions by remember { mutableStateOf(false) }
     var showTtsFilterSettings by remember { mutableStateOf(false) }
-    val providerPresets = remember(catalogSnapshot) {
+    val providerPresets = remember(catalogSnapshot, settings.providers) {
         (catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
             ?: FALLBACK_PROVIDER_PRESETS
-        ).withSpecialProviderPresets()
+        ).withSpecialProviderPresets().filterNot { preset ->
+            preset.type == ProviderSetting.LiteRtLocal::class &&
+                settings.providers.any { it is ProviderSetting.LiteRtLocal }
+        }
     }
     
     // Search query state
@@ -240,6 +243,9 @@ fun SettingProviderPage(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val httpClient = koinInject<PlatformHttpClient>()
     fun addProvider(provider: ProviderSetting) {
+        if (provider is ProviderSetting.LiteRtLocal && settings.providers.any { it is ProviderSetting.LiteRtLocal }) {
+            return
+        }
         val providerToAdd = provider.withUniqueId(settings.providers)
         vm.updateSettings(
             settings.copy(
@@ -621,15 +627,9 @@ private fun ProviderListView(
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
 
-    // The pinned on-device provider is rendered as a fixed top item (no drag/delete); everything else
-    // is reorderable beneath it.
-    val localProvider = providers.firstOrNull { it is ProviderSetting.LiteRtLocal }
-    val reorderableProviders = providers.filterNot { it is ProviderSetting.LiteRtLocal }
-    val headerCount = if (localProvider != null) 1 else 0
-
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromProvider = reorderableProviders.getOrNull(from.index - headerCount)
-        val toProvider = reorderableProviders.getOrNull(to.index - headerCount)
+        val fromProvider = providers.getOrNull(from.index)
+        val toProvider = providers.getOrNull(to.index)
         if (fromProvider != null && toProvider != null) {
             onReorder(fromProvider, toProvider)
         }
@@ -722,38 +722,12 @@ private fun ProviderListView(
                 }
             }
 
-            // Pinned on-device provider: always first, no drag handle, no swipe-to-delete.
-            if (localProvider != null) {
-                item(key = "pinned_local_provider") {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        ProviderItemContent(
-                            provider = localProvider,
-                            animatedShape = if (reorderableProviders.isEmpty()) {
-                                RoundedCornerShape(24.dp)
-                            } else {
-                                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                            },
-                            providerTags = settings.providerTags,
-                            haptics = haptics,
-                            dragHandle = {},
-                            onClick = { onNavigateToDetail(localProvider) }
-                        )
-                    }
-                }
-            }
-
-            itemsIndexed(reorderableProviders, key = { _, it -> it.id }) { index, provider ->
+            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
-                    localProvider != null -> {
-                        if (index == reorderableProviders.lastIndex) ItemPosition.LAST
-                        else ItemPosition.MIDDLE
-                    }
-                    else -> {
-                        if (reorderableProviders.size == 1) ItemPosition.ONLY
-                        else if (index == 0) ItemPosition.FIRST
-                        else if (index == reorderableProviders.lastIndex) ItemPosition.LAST
-                        else ItemPosition.MIDDLE
-                    }
+                    providers.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == providers.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
                 }
                 
                 // Calculate neighbor offset

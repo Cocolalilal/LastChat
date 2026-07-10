@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Upgrade
@@ -55,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,9 @@ import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -81,6 +86,8 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
@@ -88,9 +95,26 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
     val catalogSnapshot by vm.catalogSnapshot.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
     var editingModel by remember { mutableStateOf<InstalledLocalModel?>(null) }
+    var modelPendingDelete by remember { mutableStateOf<InstalledLocalModel?>(null) }
     val huggingFaceToken by vm.huggingFaceToken.collectAsStateWithLifecycle()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val runtimeStatus = runtimeStatusText(state.runtime)
+    val installedModelsStartIndex = (if (runtimeStatus != null) 1 else 0) + 1
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromIndex = from.index - installedModelsStartIndex
+        val toIndex = to.index - installedModelsStartIndex
+        if (fromIndex in state.installed.indices && toIndex in state.installed.indices) {
+            vm.moveInstalledModel(fromIndex, toIndex)
+        }
+    }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var isUnlocked by remember { mutableStateOf(false) }
+    var neighborsUnlocked by remember { mutableStateOf(false) }
+    if (dragOffset == 0f && neighborsUnlocked) {
+        neighborsUnlocked = false
+    }
 
     Scaffold(
         topBar = {
@@ -123,7 +147,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // Runtime status (loading / generating / switched to CPU / error)
-            runtimeStatusText(state.runtime)?.let { status ->
+            runtimeStatus?.let { status ->
                 item {
                     Surface(
                         shape = AppShapes.CardMedium,
@@ -148,25 +172,73 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                     SectionHeader(stringResource(R.string.local_llm_manage_files_title)) 
                 }
                 itemsIndexed(state.installed, key = { _, it -> it.id }) { index, model ->
-                    val shape = when {
-                        state.installed.size == 1 -> RoundedCornerShape(24.dp)
-                        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                        index == state.installed.lastIndex -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                        else -> RoundedCornerShape(10.dp)
+                    val position = when {
+                        state.installed.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == state.installed.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    }
+                    val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
+                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
+                        neighborsUnlocked = true
+                    }
+                    val neighborOffset = if (
+                        draggingIndex >= 0 && draggingIndex != index && !isUnlocked && !neighborsUnlocked
+                    ) {
+                        when (kotlin.math.abs(index - draggingIndex)) {
+                            1 -> dragOffset * 0.35f
+                            2 -> dragOffset * 0.12f
+                            else -> 0f
+                        }
+                    } else {
+                        0f
                     }
                     val iconUrl = remember(model.id, catalogSnapshot) {
                         catalogSnapshot?.inferFamilyEntry(model.displayName)?.iconUrl
                     }
-                    InstalledModelCard(
-                        model = model,
-                        iconUrl = iconUrl,
-                        download = state.downloads[model.id],
-                        hasUpdate = model.id in state.updates,
-                        shape = shape,
-                        onClick = { editingModel = model },
-                        onUpdate = { vm.update(model.id) },
-                        onDismissError = { vm.dismissDownloadError(model.id) },
-                    )
+                    ReorderableItem(state = reorderableState, key = model.id) { isDragging ->
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked ->
+                                draggingIndex = index
+                                dragOffset = offset
+                                isUnlocked = unlocked
+                            },
+                            onDragEnd = {
+                                if (draggingIndex == index) {
+                                    draggingIndex = -1
+                                    dragOffset = 0f
+                                }
+                            },
+                            onDelete = { modelPendingDelete = model },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .scale(if (isDragging) 0.95f else 1f),
+                        ) { shape ->
+                            InstalledModelCard(
+                                model = model,
+                                iconUrl = iconUrl,
+                                download = state.downloads[model.id],
+                                hasUpdate = model.id in state.updates,
+                                shape = shape,
+                                onClick = { editingModel = model },
+                                onUpdate = { vm.update(model.id) },
+                                onDismissError = { vm.dismissDownloadError(model.id) },
+                                dragHandle = {
+                                    androidx.compose.material3.IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                            onDragStopped = { haptics.perform(HapticPattern.Thud) },
+                                        ),
+                                    ) {
+                                        Icon(Icons.Rounded.DragIndicator, contentDescription = null)
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             } else if (state.runtime is LocalRuntimeState.Idle) {
                 item {
@@ -187,6 +259,20 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+
+            if (state.importedDownloads.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    SectionHeader("Downloads")
+                }
+                items(state.importedDownloads, key = { it.modelId }) { download ->
+                    ImportedDownloadCard(
+                        download = download,
+                        onCancel = { vm.cancelDownload(download.modelId) },
+                        onDismissError = { vm.dismissDownloadError(download.modelId) },
+                    )
                 }
             }
 
@@ -263,9 +349,28 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
             onDismiss = { editingModel = null },
             onRename = { vm.rename(live.id, it) },
             onConfigChange = { vm.updateConfig(live.id, it) },
+            backend = live.id in state.backendModelIds,
+            onBackendChange = { vm.setChatModelBackend(live.id, it) },
             onDelete = {
                 vm.delete(live)
                 editingModel = null
+            },
+        )
+    }
+
+    modelPendingDelete?.let { model ->
+        AlertDialog(
+            onDismissRequest = { modelPendingDelete = null },
+            title = { Text(stringResource(R.string.local_llm_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.local_llm_delete_confirm_message, model.displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.delete(model)
+                    modelPendingDelete = null
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { modelPendingDelete = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -291,6 +396,7 @@ private fun InstalledModelCard(
     onClick: () -> Unit,
     onUpdate: () -> Unit,
     onDismissError: () -> Unit,
+    dragHandle: @Composable () -> Unit,
 ) {
     Card(
         onClick = onClick,
@@ -320,9 +426,63 @@ private fun InstalledModelCard(
                         Text(stringResource(R.string.local_llm_update))
                     }
                 }
+                dragHandle()
             }
             CapabilityTags(model.supportsImage, model.supportsAudio, model.supportsThinking, model.supportsSpeculativeDecoding, model.isEmbedding)
             DownloadStatus(download, meta = null, onDismissError = onDismissError)
+        }
+    }
+}
+
+@Composable
+private fun ImportedDownloadCard(
+    download: LocalDownload,
+    onCancel: () -> Unit,
+    onDismissError: () -> Unit,
+) {
+    Card(
+        shape = AppShapes.CardMedium,
+        colors = CardDefaults.cardColors(
+            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DownloadForOffline,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        download.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stringResource(R.string.local_llm_install_url_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            DownloadStatus(
+                download = download,
+                onDismissError = onDismissError,
+                onCancel = onCancel,
+            )
         }
     }
 }
@@ -528,6 +688,8 @@ private fun ModelSettingsSheet(
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
     onConfigChange: (LocalModelConfig) -> Unit,
+    backend: Boolean,
+    onBackendChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     var name by remember(model.id) { mutableStateOf(model.displayName) }
@@ -604,6 +766,11 @@ private fun ModelSettingsSheet(
                     valueText = "%.2f".format(config.temperature ?: default.temperature),
                     onChange = { push(config.copy(temperature = it)) },
                 )
+
+                LocalChatBackendToggle(
+                    backend = backend,
+                    onBackendChange = onBackendChange,
+                )
             }
 
             Text("Accelerator", style = MaterialTheme.typography.labelLarge)
@@ -650,6 +817,39 @@ private fun ModelSettingsSheet(
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
             },
+        )
+    }
+}
+
+@Composable
+private fun LocalChatBackendToggle(
+    backend: Boolean,
+    onBackendChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                stringResource(R.string.setting_provider_page_backend_model),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                stringResource(R.string.setting_provider_page_backend_model_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        HapticSwitch(
+            checked = backend,
+            onCheckedChange = onBackendChange,
         )
     }
 }

@@ -14,18 +14,23 @@ import kotlinx.coroutines.launch
 /** UI state of an in-flight (or recently failed) download, keyed by model id. */
 sealed interface LocalDownload {
     val modelId: String
+    val displayName: String
+    /** True when this download was started from a pasted Hugging Face URL. */
+    val isImported: Boolean
 
     data class Running(
         override val modelId: String,
-        val displayName: String,
+        override val displayName: String,
         val progress: DownloadProgress,
         val isUpdate: Boolean,
+        override val isImported: Boolean,
     ) : LocalDownload
 
     data class Failed(
         override val modelId: String,
-        val displayName: String,
+        override val displayName: String,
         val message: String,
+        override val isImported: Boolean,
     ) : LocalDownload
 }
 
@@ -62,11 +67,12 @@ class LocalDownloadManager(
                     meta.name,
                     DownloadProgress(0, meta.sizeInBytes),
                     isUpdate,
+                    isImported = false,
                 )
             )
             runCatching {
                 install.download(meta) { progress ->
-                    put(LocalDownload.Running(meta.id, meta.name, progress, isUpdate))
+                    put(LocalDownload.Running(meta.id, meta.name, progress, isUpdate, isImported = false))
                 }
             }.onSuccess { installed ->
                 // Preserve any prior user config/icon/name across an update.
@@ -81,7 +87,7 @@ class LocalDownloadManager(
                 runCatching { catalog.refresh() }
                 remove(meta.id)
             }.onFailure { error ->
-                put(LocalDownload.Failed(meta.id, meta.name, error.message ?: "download_failed"))
+                put(LocalDownload.Failed(meta.id, meta.name, error.message ?: "download_failed", isImported = false))
             }
             jobs.remove(meta.id)
         }
@@ -94,16 +100,16 @@ class LocalDownloadManager(
         val intent = android.content.Intent(context, LocalModelDownloadService::class.java)
         androidx.core.content.ContextCompat.startForegroundService(context, intent)
         val job = scope.launch {
-            put(LocalDownload.Running(spec.id, spec.name, DownloadProgress(0, -1), false))
+            put(LocalDownload.Running(spec.id, spec.name, DownloadProgress(0, -1), false, isImported = true))
             runCatching {
                 install.downloadFromUrl(url) { progress ->
-                    put(LocalDownload.Running(spec.id, spec.name, progress, false))
+                    put(LocalDownload.Running(spec.id, spec.name, progress, false, isImported = true))
                 }
             }.onSuccess { installed ->
                 store.upsert(installed)
                 remove(spec.id)
             }.onFailure { error ->
-                put(LocalDownload.Failed(spec.id, spec.name, error.message ?: "download_failed"))
+                put(LocalDownload.Failed(spec.id, spec.name, error.message ?: "download_failed", isImported = true))
             }
             jobs.remove(spec.id)
         }

@@ -67,6 +67,14 @@ class LocalModelStore(private val context: Context) {
     suspend fun setIcon(id: String, customIconUri: String?) =
         update(id) { it.copy(customIconUri = customIconUri) }
 
+    suspend fun move(from: Int, to: Int) = mutate { list ->
+        if (from !in list.indices || to !in list.indices || from == to) {
+            list
+        } else {
+            list.toMutableList().apply { add(to, removeAt(from)) }
+        }
+    }
+
     suspend fun get(id: String): InstalledLocalModel? = current().firstOrNull { it.id == id }
 
     private suspend fun update(id: String, transform: (InstalledLocalModel) -> InstalledLocalModel) =

@@ -1417,12 +1417,14 @@ private fun ModelSettingsForm(
                             )
                         }
 
-                        BackendModelToggle(
-                            backend = model.backend,
-                            onBackendChange = {
-                                onModelChange(model.copy(backend = it))
-                            }
-                        )
+                        if (model.type == ModelType.CHAT) {
+                            BackendModelToggle(
+                                backend = model.backend,
+                                onBackendChange = {
+                                    onModelChange(model.copy(backend = it))
+                                }
+                            )
+                        }
                     }
                 }
 

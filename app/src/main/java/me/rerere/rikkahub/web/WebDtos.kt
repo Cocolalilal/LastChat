@@ -955,8 +955,9 @@ private fun ProviderSetting.toWebProviderDto(
         },
         enabled = enabled,
         name = name,
-        // Backend models are hidden from the (user-facing) web chat picker.
-        models = models.filter { !it.backend }.map { model ->
+        // Backend visibility is a chat-model concern. Other model types are configured in their
+        // respective feature settings and must remain available to the web client.
+        models = models.filter { it.type != ModelType.CHAT || !it.backend }.map { model ->
             model.toWebProviderModelDto(
                 isSelected = model.id == selectedModelId,
                 builtInSearchEnabled = builtInSearchEnabled,

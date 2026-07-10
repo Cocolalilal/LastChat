@@ -39,7 +39,11 @@ data class LocalLlmUiState(
     val downloadable: List<LocalModelMetadata> = emptyList(),
     val deviceRamGb: Int = 0,
     val downloads: Map<String, LocalDownload> = emptyMap(),
+    /** In-flight or failed downloads started from the manual Hugging Face URL installer. */
+    val importedDownloads: List<LocalDownload> = emptyList(),
     val runtime: LocalRuntimeState = LocalRuntimeState.Idle,
+    /** Local chat model ids currently reserved for background tasks. */
+    val backendModelIds: Set<String> = emptySet(),
     /** Installed model ids that have a newer revision available. */
     val updates: Set<String> = emptySet(),
 )
@@ -74,7 +78,8 @@ class SettingLocalLlmViewModel(
         catalogFlow,
         downloadManager.downloads,
         runtime.state,
-    ) { installed, cat, downloads, runtimeState ->
+        settingsStore.settingsFlow,
+    ) { installed, cat, downloads, runtimeState, settings ->
         val installedIds = installed.map { it.id }.toSet()
         // Hide on-device embedding models where the device ABI can't run the RAG native libraries.
         val embeddingSupported = embedder.isSupported
@@ -90,7 +95,14 @@ class SettingLocalLlmViewModel(
             downloadable = downloadable,
             deviceRamGb = deviceRamGb,
             downloads = downloads,
+            importedDownloads = downloads.values.filter { it.isImported },
             runtime = runtimeState,
+            backendModelIds = settings.providers
+                .filterIsInstance<ProviderSetting.LiteRtLocal>()
+                .flatMap { it.models }
+                .filter { it.type == ModelType.CHAT && it.backend }
+                .map { it.modelId }
+                .toSet(),
             updates = updates,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocalLlmUiState(deviceRamGb = deviceRamGb))
@@ -106,9 +118,12 @@ class SettingLocalLlmViewModel(
             catalogFlow.value = refreshedCatalog
             store.reconcileWithCatalog(refreshedCatalog)
         }
-        // Keep the pinned provider's model list in sync with what's installed on disk.
+        // Keep the user-managed local provider's model list in sync with what's installed on disk.
+        // Including settings in this flow lets a re-added local provider immediately regain the
+        // already installed files.
         viewModelScope.launch {
-            store.models.collectLatest { syncModelsToSettings(it) }
+            combine(store.models, settingsStore.settingsFlow) { installed, _ -> installed }
+                .collectLatest { syncModelsToSettings(it) }
         }
     }
 
@@ -149,6 +164,34 @@ class SettingLocalLlmViewModel(
 
     fun updateConfig(id: String, config: LocalModelConfig) {
         viewModelScope.launch { store.updateConfig(id, config) }
+    }
+
+    fun moveInstalledModel(from: Int, to: Int) {
+        viewModelScope.launch { store.move(from, to) }
+    }
+
+    fun setChatModelBackend(id: String, backend: Boolean) {
+        viewModelScope.launch {
+            val settings = settingsStore.settingsFlow.value
+            val updatedProviders = settings.providers.map { provider ->
+                if (provider is ProviderSetting.LiteRtLocal) {
+                    provider.copy(
+                        models = provider.models.map { model ->
+                            if (model.modelId == id && model.type == ModelType.CHAT) {
+                                model.copy(backend = backend)
+                            } else {
+                                model
+                            }
+                        }
+                    )
+                } else {
+                    provider
+                }
+            }
+            if (updatedProviders != settings.providers) {
+                settingsStore.update(settings.copy(providers = updatedProviders))
+            }
+        }
     }
 
     private suspend fun syncModelsToSettings(installed: List<InstalledLocalModel>) {
