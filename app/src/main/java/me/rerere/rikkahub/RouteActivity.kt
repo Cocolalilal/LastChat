@@ -288,10 +288,6 @@ private fun me.rerere.rikkahub.data.datastore.ConsumedSpontaneousEventRecord.toR
 }
 
 class RouteActivity : ComponentActivity() {
-    companion object {
-        const val EXTRA_OPEN_CODEX_SETTINGS = "open_codex_settings"
-    }
-
     private val highlighter by inject<Highlighter>()
     private val imageLoaderFactory by inject<AppImageLoaderFactory>()
     private val settingsStore by inject<SettingsStore>()
@@ -335,7 +331,6 @@ class RouteActivity : ComponentActivity() {
             val intentAssistantId = if (spontaneousNotification == null) intent?.getStringExtra("assistantId") else null
             val intentConversationId = if (spontaneousNotification == null) intent?.getStringExtra("conversationId") else null
             val intentWebServerSettings = intent?.getBooleanExtra("webServerSettings", false) == true
-            val intentCodexSettings = intent?.getBooleanExtra(EXTRA_OPEN_CODEX_SETTINGS, false) == true
             pendingTextSelection = intent?.readQuickAskContinuationData()
             pendingShareIntent = intent?.readResolvedSharePayload()
             lifecycleScope.launch {
@@ -368,12 +363,6 @@ class RouteActivity : ComponentActivity() {
                         LaunchedEffect(intentWebServerSettings) {
                             if (intentWebServerSettings) {
                                 navStack.navigate(Screen.SettingWeb)
-                            }
-                        }
-                        LaunchedEffect(intentCodexSettings) {
-                            if (intentCodexSettings) {
-                                navStack.navigate(Screen.SettingProviderDetail("codex"))
-                                intent?.removeExtra(EXTRA_OPEN_CODEX_SETTINGS)
                             }
                         }
                     }
@@ -641,12 +630,6 @@ class RouteActivity : ComponentActivity() {
             navStack?.navigate(Screen.SettingWeb)
             return
         }
-        if (intent.getBooleanExtra(EXTRA_OPEN_CODEX_SETTINGS, false)) {
-            navStack?.navigate(Screen.SettingProviderDetail("codex"))
-            intent.removeExtra(EXTRA_OPEN_CODEX_SETTINGS)
-            return
-        }
-
         intent.toSpontaneousNotificationData()?.let { notification ->
             lifecycleScope.launch {
                 resolveSpontaneousChatTarget(notification)?.let { target ->

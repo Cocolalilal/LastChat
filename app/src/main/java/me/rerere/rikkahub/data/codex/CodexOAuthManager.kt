@@ -2,10 +2,7 @@ package me.rerere.rikkahub.data.codex
 
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.Network
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import io.ktor.http.ContentType
 import io.ktor.server.application.call
@@ -21,7 +18,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import me.rerere.common.platform.android.await
 import me.rerere.rikkahub.R
 import okhttp3.FormBody
@@ -32,7 +28,6 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.resume
 
 class CodexOAuthManager(
     private val context: Context,
@@ -127,7 +122,6 @@ class CodexOAuthManager(
                                     call.respondText(callbackPage(true), ContentType.Text.Html)
                                     scope.launch {
                                         try {
-                                            awaitNetworkUnblocked()
                                             val account = exchangeCode(code, session)
                                             _status.value = CodexOAuthStatus.Success(account.id)
                                             runCatching { repository.refreshAccount(account.id) }
@@ -157,26 +151,6 @@ class CodexOAuthManager(
         throw IllegalStateException(CALLBACK_PORTS_UNAVAILABLE, lastError)
     }
 
-    private suspend fun awaitNetworkUnblocked() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
-        suspendCancellableCoroutine { continuation ->
-            lateinit var callback: ConnectivityManager.NetworkCallback
-            callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
-                    if (!blocked && continuation.isActive) {
-                        runCatching { connectivityManager.unregisterNetworkCallback(callback) }
-                        continuation.resume(Unit)
-                    }
-                }
-            }
-            continuation.invokeOnCancellation {
-                runCatching { connectivityManager.unregisterNetworkCallback(callback) }
-            }
-            connectivityManager.registerDefaultNetworkCallback(callback)
-        }
-    }
-
     private suspend fun exchangeCode(code: String, session: OAuthSession): CodexAccount {
         val response = client.newCall(
             Request.Builder()
@@ -202,21 +176,26 @@ class CodexOAuthManager(
     private fun callbackPage(success: Boolean): String {
         val status = if (success) "success" else "error"
         val deepLink = "lastchat://codex/oauth?status=${URLEncoder.encode(status, Charsets.UTF_8.name())}"
+        val heading = if (success) "Sign-in complete" else "Sign-in failed"
+        val message = if (success) {
+            "Returning to LastChat…"
+        } else {
+            "Return to LastChat to try again."
+        }
         return """
             <!doctype html>
             <html>
               <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <meta http-equiv="refresh" content="0; url=$deepLink">
-                <title>RikkaHub Codex OAuth</title>
+                <title>LastChat Codex sign-in</title>
               </head>
               <body>
-                <p>${if (success) "Returning to RikkaHub..." else "Sign-in failed."}</p>
-                <p><a href="$deepLink">Return to RikkaHub</a></p>
+                <p>$heading</p>
+                <p>$message</p>
+                <p><a href="$deepLink">Return to LastChat</a></p>
                 <script>
                   window.location.replace("$deepLink");
-                  setTimeout(function () { window.location.href = "$deepLink"; }, 500);
                 </script>
               </body>
             </html>
