@@ -82,7 +82,7 @@ val SPECIAL_PROVIDER_PRESETS = listOf(
     ),
     ProviderPreset(
         name = "Codex",
-        description = "Use ChatGPT Codex OAuth accounts as a model provider",
+        description = "Connect your own OpenAI account to use Codex models. Usage limits apply",
         type = ProviderSetting.Codex::class,
         baseUrl = "https://chatgpt.com/backend-api/codex",
         customIconUri = "icons/codex.svg".toCatalogIconUrl(),
@@ -97,8 +97,17 @@ val SPECIAL_PROVIDER_PRESETS = listOf(
 )
 
 fun List<ProviderPreset>.withSpecialProviderPresets(): List<ProviderPreset> {
-    val existingNames = map { it.name.lowercase() }.toSet()
-    return this + SPECIAL_PROVIDER_PRESETS.filter { it.name.lowercase() !in existingNames }
+    val localPreset = firstOrNull { it.type == ProviderSetting.LiteRtLocal::class }
+        ?: SPECIAL_PROVIDER_PRESETS.first { it.type == ProviderSetting.LiteRtLocal::class }
+    val presetsWithoutLocal = filterNot { it.type == ProviderSetting.LiteRtLocal::class }
+    val existingNames = (listOf(localPreset) + presetsWithoutLocal)
+        .map { it.name.lowercase() }
+        .toSet()
+
+    return listOf(localPreset) + presetsWithoutLocal + SPECIAL_PROVIDER_PRESETS.filter { preset ->
+        preset.type != ProviderSetting.LiteRtLocal::class &&
+            preset.name.lowercase() !in existingNames
+    }
 }
 
 fun ModelCatalogSnapshot.toProviderPresets(): List<ProviderPreset> {
@@ -163,6 +172,7 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
 
         ProviderSetting.Codex::class -> ProviderSetting.Codex(
             id = parsedId ?: Uuid.random(),
+            enabled = false,
             name = name,
             customIconUri = customIconUri,
             customUrl = baseUrl,

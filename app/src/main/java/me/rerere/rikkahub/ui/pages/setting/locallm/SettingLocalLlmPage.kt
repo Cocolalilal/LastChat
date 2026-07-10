@@ -90,7 +90,11 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
-fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
+fun SettingLocalLlmPage(
+    vm: SettingLocalLlmViewModel = koinViewModel(),
+    navigationIcon: @Composable () -> Unit = { BackButton() },
+    setupBottomBar: @Composable (LocalLlmUiState) -> Unit = {},
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val catalogSnapshot by vm.catalogSnapshot.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
@@ -119,7 +123,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
     Scaffold(
         topBar = {
             TopAppBar(
-                navigationIcon = { BackButton() },
+                navigationIcon = navigationIcon,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(
@@ -132,6 +136,7 @@ fun SettingLocalLlmPage(vm: SettingLocalLlmViewModel = koinViewModel()) {
                 },
             )
         },
+        bottomBar = { setupBottomBar(state) },
         floatingActionButton = {
             ImportModelFab(onInstallUrl = { url ->
                 vm.installFromUrl(url)

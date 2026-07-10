@@ -398,6 +398,19 @@ val dataSourceModule = module {
         )
     }
 
+    // On-device speech recognition (sherpa-onnx) stack
+    single { me.rerere.asr.local.SherpaModelStore(get()) }
+    single { me.rerere.asr.local.SherpaCatalog(get()) }
+    single { me.rerere.asr.local.SherpaModelInstall(get()) }
+    single {
+        me.rerere.asr.local.SherpaDownloadManager(
+            context = get(),
+            install = get(),
+            store = get(),
+        )
+    }
+    single { me.rerere.asr.local.SherpaSttRuntime() }
+
     single {
         ProviderManager(
             platformHttpClient = get(),

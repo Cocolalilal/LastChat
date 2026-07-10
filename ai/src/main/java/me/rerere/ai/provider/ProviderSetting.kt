@@ -259,7 +259,7 @@ sealed class ProviderSetting {
     @SerialName("codex")
     data class Codex(
         override val id: Uuid = Uuid.random(),
-        override val enabled: Boolean = true,
+        override val enabled: Boolean = false,
         override val name: String = "Codex",
         override val models: List<Model> = emptyList(),
         override val proxy: ProviderProxy = ProviderProxy.None,

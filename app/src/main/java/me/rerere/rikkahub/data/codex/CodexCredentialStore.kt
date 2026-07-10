@@ -74,5 +74,4 @@ internal class CodexCredentialStore(
 @Serializable
 internal data class CodexAccountState(
     val accounts: List<CodexAccount> = emptyList(),
-    val nextAccountIndex: Int = 0,
 )

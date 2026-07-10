@@ -22,20 +22,7 @@ class CodexAccountRepository internal constructor(
     private val json: Json,
 ) {
     private val mutex = Mutex()
-    private var state = store.read().let { stored ->
-        stored.copy(
-            accounts = stored.accounts.map { account ->
-                if (
-                    account.tokenStatus != CodexTokenStatus.INVALID &&
-                    account.expiresAt <= System.currentTimeMillis()
-                ) {
-                    account.copy(tokenStatus = CodexTokenStatus.EXPIRED)
-                } else {
-                    account
-                }
-            }
-        )
-    }
+    private var state = normalizeCodexAccountState(store.read())
     private val _accounts = MutableStateFlow(state.accounts)
     val accounts: StateFlow<List<CodexAccount>> = _accounts.asStateFlow()
 
@@ -69,40 +56,32 @@ class CodexAccountRepository internal constructor(
             expiresAt = now + (
                 token["expires_in"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 3600L
                 ) * 1000,
-            enabled = existing?.enabled ?: true,
+            enabled = true,
             tokenStatus = CodexTokenStatus.AVAILABLE,
             usage = existing?.usage,
         )
         updateState(
             state.copy(
-                accounts = state.accounts.filterNot { it.id == account.id } + account
+                accounts = listOf(account)
             )
         )
         account
     }
 
     suspend fun acquireAccount(): CodexAccount = mutex.withLock {
-        if (state.accounts.isEmpty()) error("No Codex account is signed in")
-        repeat(state.accounts.size) {
-            val index = selectCodexAccountIndex(
-                accounts = state.accounts,
-                startIndex = state.nextAccountIndex,
-            ) ?: error("No available Codex account")
-            val candidate = state.accounts[index]
-            if (!candidate.isAvailable()) return@repeat
-            updateState(state.copy(nextAccountIndex = (index + 1) % state.accounts.size))
-            val fresh = runCatching { ensureFreshLocked(candidate) }.getOrNull() ?: return@repeat
-            return fresh
+        val account = state.accounts.singleOrNull()
+            ?: error("No Codex account is signed in")
+        if (account.tokenStatus == CodexTokenStatus.INVALID) {
+            error("The signed-in Codex account needs to be authenticated again")
         }
-        error("No available Codex account")
+        if (!account.isAvailable()) {
+            error("The signed-in Codex account has reached its current usage limit")
+        }
+        ensureFreshLocked(account)
     }
 
     suspend fun updateUsage(accountId: String, usage: CodexUsageSnapshot) = mutex.withLock {
         replaceAccount(accountId) { it.copy(usage = usage) }
-    }
-
-    suspend fun setEnabled(accountId: String, enabled: Boolean) = mutex.withLock {
-        replaceAccount(accountId) { it.copy(enabled = enabled) }
     }
 
     suspend fun markInvalid(accountId: String) = mutex.withLock {
@@ -113,7 +92,6 @@ class CodexAccountRepository internal constructor(
         updateState(
             state.copy(
                 accounts = state.accounts.filterNot { it.id == accountId },
-                nextAccountIndex = 0,
             )
         )
     }
@@ -123,12 +101,6 @@ class CodexAccountRepository internal constructor(
             ?: error("Codex account not found")
         val fresh = ensureFreshLocked(account)
         fetchUsageLocked(fresh)
-    }
-
-    suspend fun refreshAll() {
-        accounts.value.forEach { account ->
-            runCatching { refreshAccount(account.id) }
-        }
     }
 
     private suspend fun ensureFreshLocked(
@@ -244,15 +216,22 @@ internal fun isCodexRefreshAuthenticationFailure(
     return errorCode == "invalid_grant" || errorCode == "invalid_token"
 }
 
-internal fun selectCodexAccountIndex(
-    accounts: List<CodexAccount>,
-    startIndex: Int,
+internal fun normalizeCodexAccountState(
+    stored: CodexAccountState,
     nowMillis: Long = System.currentTimeMillis(),
-): Int? {
-    if (accounts.isEmpty()) return null
-    repeat(accounts.size) { offset ->
-        val index = (startIndex + offset).mod(accounts.size)
-        if (accounts[index].isAvailable(nowMillis)) return index
+): CodexAccountState {
+    val selected = stored.accounts.lastOrNull { it.enabled }
+        ?: stored.accounts.lastOrNull()
+        ?: return CodexAccountState()
+    val tokenStatus = if (
+        selected.tokenStatus != CodexTokenStatus.INVALID &&
+        selected.expiresAt <= nowMillis
+    ) {
+        CodexTokenStatus.EXPIRED
+    } else {
+        selected.tokenStatus
     }
-    return null
+    return CodexAccountState(
+        accounts = listOf(selected.copy(enabled = true, tokenStatus = tokenStatus)),
+    )
 }

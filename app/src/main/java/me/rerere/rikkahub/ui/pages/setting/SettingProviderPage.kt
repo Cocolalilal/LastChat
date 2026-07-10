@@ -77,6 +77,7 @@ import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewList
@@ -244,17 +245,23 @@ fun SettingProviderPage(
     val httpClient = koinInject<PlatformHttpClient>()
     fun addProvider(provider: ProviderSetting) {
         if (provider is ProviderSetting.LiteRtLocal && settings.providers.any { it is ProviderSetting.LiteRtLocal }) {
+            navController.navigate(Screen.SettingLocalLlm)
             return
         }
         val providerToAdd = provider.withUniqueId(settings.providers)
         vm.updateSettings(
             settings.copy(
                 providers = listOf(providerToAdd) + settings.providers
-            )
+            ),
+            afterPersist = if (providerToAdd is ProviderSetting.LiteRtLocal) {
+                { navController.navigate(Screen.SettingLocalLlm) }
+            } else {
+                null
+            },
         )
         
         // Asynchronously check if we can query LobeHub for a monochrome icon
-        if (providerToAdd.customIconUri.isNullOrBlank()) {
+        if (providerToAdd !is ProviderSetting.LiteRtLocal && providerToAdd.customIconUri.isNullOrBlank()) {
             val providerName = providerToAdd.name
             val hasLocalIcon = computeAIIconByName(providerName) != null || 
                     getProviderSlugFromName(providerName) != null
@@ -698,11 +705,19 @@ private fun ProviderListView(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AutoAIIconWithUrl(
-                                name = matchingPreset.name,
-                                customIconUri = matchingPreset.customIconUri,
-                                modifier = Modifier.size(40.dp)
-                            )
+                            if (matchingPreset.type == ProviderSetting.LiteRtLocal::class) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PhoneAndroid,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                )
+                            } else {
+                                AutoAIIconWithUrl(
+                                    name = matchingPreset.name,
+                                    customIconUri = matchingPreset.customIconUri,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = matchingPreset.name,
@@ -1382,6 +1397,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                     }
                 }
+                val localPreset = filteredPresets.firstOrNull {
+                    it.type == ProviderSetting.LiteRtLocal::class
+                }
+                val remotePresets = filteredPresets.filterNot {
+                    it.type == ProviderSetting.LiteRtLocal::class
+                }
                 
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
@@ -1408,7 +1429,48 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
-                    // Add Custom Provider card at the top
+                    // The on-device option is deliberately first and opens its dedicated manager.
+                    localPreset?.let { preset ->
+                        item {
+                            Surface(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onAdd(preset.toProviderSetting())
+                                    showBottomSheet = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PhoneAndroid,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp),
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = preset.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            text = preset.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+
+                    // Custom remote provider setup follows the dedicated local option.
                     item {
                         Card(
                             onClick = {
@@ -1448,11 +1510,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     }
                     
                     // Provider presets
-                    itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
+                    itemsIndexed(remotePresets, key = { _, preset -> preset.name }) { index, preset ->
                         val position = when {
-                            filteredPresets.size == 1 -> ItemPosition.ONLY
+                            remotePresets.size == 1 -> ItemPosition.ONLY
                             index == 0 -> ItemPosition.FIRST
-                            index == filteredPresets.lastIndex -> ItemPosition.LAST
+                            index == remotePresets.lastIndex -> ItemPosition.LAST
                             else -> ItemPosition.MIDDLE
                         }
                         

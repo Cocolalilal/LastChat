@@ -953,6 +953,12 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingLocalStt> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.LocalStt) {
+                            me.rerere.rikkahub.ui.pages.setting.localstt.SettingLocalSttPage()
+                        }
+                    }
+
                     composable<Screen.ImageGen> {
                         ImageGenPage()
                     }
@@ -1412,6 +1418,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingLocalLlm : Screen
+
+    @Serializable
+    data object SettingLocalStt : Screen
 
     @Serializable
     data class SettingTTSProviderDetail(val providerId: String) : Screen

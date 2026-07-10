@@ -1028,12 +1028,11 @@ private fun ModelSectionHeader(
 private fun CodexUsageLimits(provider: ProviderSetting.Codex) {
     val repository = koinInject<CodexAccountRepository>()
     val accounts by repository.accounts.collectAsStateWithLifecycle()
-    LaunchedEffect(provider.id) {
-        repository.refreshAll()
+    val account = accounts.singleOrNull()
+    LaunchedEffect(provider.id, account?.id) {
+        account?.let { runCatching { repository.refreshAccount(it.id) } }
     }
-    val account = accounts.firstOrNull {
-        it.enabled && it.tokenStatus != CodexTokenStatus.INVALID && it.usage != null
-    } ?: return
+    if (account?.tokenStatus == CodexTokenStatus.INVALID || account?.usage == null) return
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         account.usage?.primary?.let { window ->
@@ -1056,7 +1055,7 @@ private fun CodexUsageLimitIndicator(
     window: CodexUsageWindow,
     fallbackName: String,
 ) {
-    val usedPercent = window.usedPercent.coerceIn(0.0, 100.0)
+    val remainingPercent = (100.0 - window.usedPercent).coerceIn(0.0, 100.0)
     val name = when (window.windowMinutes) {
         300L -> stringResource(R.string.codex_five_hour_limit)
         10_080L -> stringResource(R.string.codex_weekly_limit)
@@ -1064,20 +1063,14 @@ private fun CodexUsageLimitIndicator(
         null -> fallbackName
         else -> stringResource(R.string.codex_minute_limit, window.windowMinutes)
     }
-    val indicatorColor = if (usedPercent >= 90.0) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         CircularProgressIndicator(
-            progress = { (usedPercent / 100.0).toFloat() },
+            progress = { (remainingPercent / 100.0).toFloat() },
             modifier = Modifier.size(22.dp),
-            color = indicatorColor,
+            color = MaterialTheme.colorScheme.primary,
             strokeWidth = 3.dp,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
@@ -1089,9 +1082,11 @@ private fun CodexUsageLimitIndicator(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${usedPercent.roundToInt()}%",
+                text = stringResource(
+                    R.string.codex_percent_remaining,
+                    remainingPercent.roundToInt(),
+                ),
                 style = MaterialTheme.typography.labelSmall,
-                color = indicatorColor,
             )
         }
     }

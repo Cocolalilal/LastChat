@@ -102,6 +102,16 @@ val viewModelModule = module {
             secretKeyManager = get(),
         )
     }
+    viewModel {
+        me.rerere.rikkahub.ui.pages.setting.localstt.SettingLocalSttViewModel(
+            store = get(),
+            catalog = get(),
+            downloadManager = get(),
+            install = get(),
+            runtime = get(),
+            settingsStore = get(),
+        )
+    }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }
     viewModel<me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM> { params ->
         me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(

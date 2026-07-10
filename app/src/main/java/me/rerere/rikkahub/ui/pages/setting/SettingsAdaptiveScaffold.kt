@@ -111,6 +111,7 @@ enum class SettingsDestination {
     ProviderModels,
     Search,
     Tts,
+    LocalStt,
     Mcp,
     Web,
     AndroidIntegration,
@@ -654,7 +655,8 @@ private fun SettingsDestination.mainDestination(): SettingsDestination {
         SettingsDestination.BackupLocal -> SettingsDestination.Backup
         SettingsDestination.ProviderModels,
         SettingsDestination.Search,
-        SettingsDestination.Tts -> SettingsDestination.Providers
+        SettingsDestination.Tts,
+        SettingsDestination.LocalStt -> SettingsDestination.Providers
         SettingsDestination.Skills,
         SettingsDestination.Lorebooks -> SettingsDestination.PromptInjections
         else -> this
@@ -671,6 +673,7 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
         SettingsPaneEntry(SettingsDestination.ProviderModels, R.string.setting_provider_page_title, null, Icons.Rounded.Cloud, Screen.SettingProvider),
         SettingsPaneEntry(SettingsDestination.Search, R.string.setting_page_search_service, null, Icons.Rounded.Public, Screen.SettingSearch),
         SettingsPaneEntry(SettingsDestination.Tts, R.string.setting_page_tts_service, null, Icons.AutoMirrored.Rounded.VolumeUp, Screen.SettingTTS),
+        SettingsPaneEntry(SettingsDestination.LocalStt, R.string.setting_page_stt_service, null, Icons.Rounded.Mic, Screen.SettingLocalStt),
     )
     val promptChildren = listOf(
         SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, null, Icons.Rounded.Code, Screen.SettingSkills()),

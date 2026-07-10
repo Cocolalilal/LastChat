@@ -7,6 +7,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.models.toCatalogIconUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -148,6 +149,7 @@ class ProviderConfigureConvertToTest {
         assertTrue(provider is ProviderSetting.Codex)
         val codex = provider as ProviderSetting.Codex
         assertEquals("Codex", codex.name)
+        assertFalse(codex.enabled)
         assertEquals("https://chatgpt.com/backend-api/codex", codex.customUrl)
         assertEquals("icons/codex.svg".toCatalogIconUrl(), codex.customIconUri)
     }

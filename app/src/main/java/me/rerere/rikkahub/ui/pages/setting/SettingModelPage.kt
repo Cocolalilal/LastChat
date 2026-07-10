@@ -75,10 +75,12 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DownloadForOffline
 
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.VoiceSelector
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
@@ -173,6 +175,7 @@ private fun DefaultSTTModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    val navController = LocalNavController.current
     var showModal by remember { mutableStateOf(false) }
     var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
@@ -200,6 +203,11 @@ private fun DefaultSTTModelSetting(
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
                 )
+            }
+            IconButton(
+                onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingLocalStt) }
+            ) {
+                Icon(Icons.Rounded.DownloadForOffline, "Manage local speech models")
             }
             IconButton(
                 onClick = {

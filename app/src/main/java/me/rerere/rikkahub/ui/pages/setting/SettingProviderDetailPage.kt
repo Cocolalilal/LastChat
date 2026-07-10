@@ -176,6 +176,8 @@ import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.CodexProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
+import me.rerere.rikkahub.data.codex.CodexAccountRepository
+import me.rerere.rikkahub.data.codex.CodexTokenStatus
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.ImageUtils
@@ -260,9 +262,17 @@ private fun String.normalizeModelMatchToken(): String {
         .replace('.', '-')
 }
 
-private fun ProviderSetting.apiModelCacheKey(): String {
+private fun ProviderSetting.apiModelCacheKey(
+    codexAccountId: String? = null,
+    codexAuthExpiresAt: Long? = null,
+): String {
     return when (this) {
-        is ProviderSetting.Codex -> listOf("codex", id.toString())
+        is ProviderSetting.Codex -> listOf(
+            "codex",
+            id.toString(),
+            codexAccountId.orEmpty(),
+            codexAuthExpiresAt?.toString().orEmpty(),
+        )
         is ProviderSetting.OpenAI -> listOf(
             "openai",
             id.toString(),
@@ -304,9 +314,9 @@ private fun ProviderSetting.apiModelCacheKey(): String {
     }.joinToString("|")
 }
 
-private fun ProviderSetting.canFetchApiModels(): Boolean {
+private fun ProviderSetting.canFetchApiModels(codexAccountAvailable: Boolean = false): Boolean {
     return when (this) {
-        is ProviderSetting.Codex -> true
+        is ProviderSetting.Codex -> codexAccountAvailable
         is ProviderSetting.OpenAI -> apiKey.isNotBlank()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
@@ -317,6 +327,32 @@ private fun ProviderSetting.canFetchApiModels(): Boolean {
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
         is ProviderSetting.LiteRtLocal -> false // on-device: no remote model list
     }
+}
+
+private data class ApiModelSource(
+    val cacheKey: String,
+    val canFetchModels: Boolean,
+)
+
+@Composable
+private fun rememberApiModelSource(provider: ProviderSetting): ApiModelSource {
+    if (provider is ProviderSetting.Codex) {
+        val repository = koinInject<CodexAccountRepository>()
+        val accounts by repository.accounts.collectAsStateWithLifecycle()
+        val account = accounts.singleOrNull()
+        val canFetch = account != null && account.tokenStatus != CodexTokenStatus.INVALID
+        return ApiModelSource(
+            cacheKey = provider.apiModelCacheKey(
+                codexAccountId = account?.id,
+                codexAuthExpiresAt = account?.expiresAt,
+            ),
+            canFetchModels = provider.canFetchApiModels(canFetch),
+        )
+    }
+    return ApiModelSource(
+        cacheKey = provider.apiModelCacheKey(),
+        canFetchModels = provider.canFetchApiModels(),
+    )
 }
 
 private fun iconFileExtension(context: android.content.Context, uri: android.net.Uri): String {
@@ -341,14 +377,12 @@ private object ApiModelListCache {
     private val lock = Any()
     private val modelsByProvider = mutableMapOf<String, List<Model>>()
 
-    fun get(key: String): List<Model> = synchronized(lock) {
-        modelsByProvider[key].orEmpty()
+    fun get(key: String): List<Model>? = synchronized(lock) {
+        modelsByProvider[key]
     }
 
     fun put(key: String, models: List<Model>) = synchronized(lock) {
-        if (models.isNotEmpty()) {
-            modelsByProvider[key] = models
-        }
+        modelsByProvider[key] = models
     }
 }
 
@@ -576,6 +610,7 @@ private fun SettingProviderConfigPage(
                 if (currentProvider is ProviderSetting.Codex) {
                     CodexProviderConfigure(
                         provider = currentProvider,
+                        showSavingIndicator = isSaving,
                         onEdit = {
                             internalProvider = it
                             // Auto-save immediately
@@ -804,7 +839,8 @@ private fun ModelList(
     val density = LocalDensity.current
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
-    val apiModelCacheKey = remember(providerSetting) { providerSetting.apiModelCacheKey() }
+    val apiModelSource = rememberApiModelSource(providerSetting)
+    val apiModelCacheKey = apiModelSource.cacheKey
     var modelList by remember(apiModelCacheKey) { mutableStateOf(ApiModelListCache.get(apiModelCacheKey)) }
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
     var reloadModelsError by remember(apiModelCacheKey) { mutableStateOf<String?>(null) }
@@ -838,41 +874,29 @@ private fun ModelList(
 
     fun reloadApiModels() {
         if (isReloadingModels) return
-        if (!providerSetting.canFetchApiModels()) return
+        if (!apiModelSource.canFetchModels) return
         scope.launch {
             isReloadingModels = true
             reloadModelsError = null
-            var retryAttempt = 0
-            do {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        providerManager.getProviderByType(providerSetting)
-                            .listModels(providerSetting)
-                            .sortedBy { it.modelId }
-                            .toList()
-                    }.map { model ->
-                        resolveProviderModel(modelMetadataResolver, providerSetting, model)
-                    }
-                }.onSuccess { freshModels ->
-                    if (freshModels.isNotEmpty()) {
-                        ApiModelListCache.put(apiModelCacheKey, freshModels)
-                        modelList = freshModels
-                        val updatedProvider = syncFreshModelMetadata(freshModels, providerSetting)
-                        if (updatedProvider != providerSetting) {
-                            onUpdateProvider(updatedProvider)
-                        }
-                    }
-                }.onFailure { error ->
-                    reloadModelsError = error.message ?: error::class.simpleName
-                    isReloadingModels = false
-                    return@launch
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    providerManager.getProviderByType(providerSetting)
+                        .listModels(providerSetting)
+                        .sortedBy { it.modelId }
+                        .toList()
+                }.map { model ->
+                    resolveProviderModel(modelMetadataResolver, providerSetting, model)
                 }
-
-                if (modelList.isEmpty()) {
-                    retryAttempt++
-                    delay((retryAttempt * 1_500L).coerceAtMost(10_000L))
+            }.onSuccess { freshModels ->
+                ApiModelListCache.put(apiModelCacheKey, freshModels)
+                modelList = freshModels
+                val updatedProvider = syncFreshModelMetadata(freshModels, providerSetting)
+                if (updatedProvider != providerSetting) {
+                    onUpdateProvider(updatedProvider)
                 }
-            } while (modelList.isEmpty())
+            }.onFailure { error ->
+                reloadModelsError = error.message ?: error::class.simpleName
+            }
             isReloadingModels = false
         }
     }
@@ -1054,7 +1078,9 @@ private fun ModelList(
         ) {
             // Model picker FAB (gray, like lorebook toggle button)
             ModelPickerFab(
-                models = modelList,
+                models = modelList.orEmpty(),
+                modelsLoaded = modelList != null,
+                canReload = apiModelSource.canFetchModels,
                 selectedModels = providerSetting.models,
                 isLoading = isReloadingModels,
                 reloadError = reloadModelsError,
@@ -1468,6 +1494,8 @@ private fun ModelSettingsForm(
 @Composable
 private fun ModelPickerFab(
     models: List<Model>,
+    modelsLoaded: Boolean,
+    canReload: Boolean,
     selectedModels: List<Model>,
     isLoading: Boolean,
     reloadError: String?,
@@ -1482,14 +1510,17 @@ private fun ModelPickerFab(
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
+
+    LaunchedEffect(showPicker, modelsLoaded, canReload, isLoading, reloadError) {
+        if (showPicker && !modelsLoaded && canReload && !isLoading && reloadError == null) {
+            onReload()
+        }
+    }
     
     FloatingActionButton(
         onClick = { 
             showPicker = true
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
-            if (models.isEmpty() && !isLoading) {
-                onReload()
-            }
         },
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1573,7 +1604,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
                                 onReload()
                             },
-                            enabled = !isLoading,
+                            enabled = canReload && !isLoading,
                             modifier = Modifier.height(40.dp),
                         ) {
                             Icon(Icons.Rounded.Refresh, contentDescription = null)
@@ -1594,15 +1625,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 ) {
                     if (filteredModels.isEmpty()) {
                         item {
-                            val hasApiKey = when (parentProvider) {
-                                is ProviderSetting.Codex -> true
-                                is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
-                                is ProviderSetting.LiteRtLocal -> true
-                            }
-                            
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1612,8 +1634,13 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             ) {
                                 Text(
                                     text = stringResource(
-                                        if (hasApiKey) R.string.setting_provider_page_no_models_with_api_key
-                                        else R.string.setting_provider_page_no_models_no_api_key
+                                        when {
+                                            parentProvider is ProviderSetting.Codex && !canReload -> {
+                                                R.string.codex_sign_in_to_load_models
+                                            }
+                                            canReload -> R.string.setting_provider_page_no_models_with_api_key
+                                            else -> R.string.setting_provider_page_no_models_no_api_key
+                                        }
                                     ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,

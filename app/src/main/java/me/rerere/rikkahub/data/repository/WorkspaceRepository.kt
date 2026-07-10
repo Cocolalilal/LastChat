@@ -317,20 +317,36 @@ class WorkspaceRepository(
         return true
     }
 
+    suspend fun isPythonInstalled(id: String): Boolean {
+        val workspace = dao.getById(id) ?: return false
+        if (!manager.hasRootfs(workspace.root)) return false
+        return runInterruptible(Dispatchers.IO) {
+            val result = manager.executeCommand(
+                root = workspace.root,
+                command = "command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1",
+                timeoutMillis = PYTHON_STATUS_TIMEOUT_MS,
+            )
+            result.exitCode == 0 && !result.timedOut && !result.isFatalProotFailure()
+        }
+    }
+
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val ROOTFS_SMOKE_TIMEOUT_MS = 30_000L
+        private const val PYTHON_STATUS_TIMEOUT_MS = 10_000L
         private const val PYTHON_BOOTSTRAP_TIMEOUT_MS = 10 * 60_000L
         private val PYTHON_BOOTSTRAP_COMMAND = """
             set -e
-            export DEBIAN_FRONTEND=noninteractive
-            if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
-              python3 --version
-              python3 -m pip --version
-              exit 0
+            if command -v apt-get >/dev/null 2>&1; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates python3 python3-pip
+            elif command -v apk >/dev/null 2>&1; then
+              apk add --no-cache ca-certificates python3 py3-pip
+            else
+              echo "Unsupported rootfs package manager: expected apt-get or apk" >&2
+              exit 1
             fi
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates python3 python3-pip
             python3 --version
             python3 -m pip --version
         """.trimIndent()

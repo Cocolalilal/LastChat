@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "sherpa-moonshine-tiny-en-quantized-2026-02-27",
+      "name": "Moonshine Tiny (English)",
+      "description": "Small, fast English transcription model. Recommended for most devices.",
+      "family": "moonshine",
+      "languages": ["en"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2",
+      "archiveSizeBytes": 29858559,
+      "revision": "2026-02-27",
+      "files": {
+        "encoder": "encoder_model.ort",
+        "decoder": "decoder_model_merged.ort",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-whisper-tiny-en",
+      "name": "Whisper Tiny (English)",
+      "description": "Compact Whisper model optimized for English.",
+      "family": "whisper",
+      "languages": ["en"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2",
+      "archiveSizeBytes": 118071777,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "tiny.en-encoder.int8.onnx",
+        "decoder": "tiny.en-decoder.int8.onnx",
+        "tokens": "tiny.en-tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-whisper-tiny-multilingual",
+      "name": "Whisper Tiny (Multilingual)",
+      "description": "Compact multilingual Whisper transcription model.",
+      "family": "whisper",
+      "languages": ["multilingual"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2",
+      "archiveSizeBytes": 116204861,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "tiny-encoder.int8.onnx",
+        "decoder": "tiny-decoder.int8.onnx",
+        "tokens": "tiny-tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-whisper-base-multilingual",
+      "name": "Whisper Base (Multilingual)",
+      "description": "More accurate multilingual Whisper model for faster devices.",
+      "family": "whisper",
+      "languages": ["multilingual"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2",
+      "archiveSizeBytes": 207557382,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "base-encoder.int8.onnx",
+        "decoder": "base-decoder.int8.onnx",
+        "tokens": "base-tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-sensevoice-int8-2025-09-09",
+      "name": "SenseVoice INT8",
+      "description": "Fast Chinese, Cantonese, English, Japanese, and Korean transcription.",
+      "family": "sense_voice",
+      "languages": ["zh", "yue", "en", "ja", "ko"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2",
+      "archiveSizeBytes": 165783878,
+      "revision": "2025-09-09",
+      "files": {
+        "model": "model.int8.onnx",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 2, "useInverseTextNormalization": true }
+    },
+    {
+      "id": "sherpa-streaming-zipformer-en-2023-06-26",
+      "name": "Streaming Zipformer (English)",
+      "description": "True real-time English transcription with live partial results.",
+      "family": "online_transducer",
+      "languages": ["en"],
+      "streaming": true,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
+      "archiveSizeBytes": 310414022,
+      "revision": "2023-06-26",
+      "files": {
+        "encoder": "encoder-epoch-99-avg-1.int8.onnx",
+        "decoder": "decoder-epoch-99-avg-1.int8.onnx",
+        "joiner": "joiner-epoch-99-avg-1.int8.onnx",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 2 }
+    }
+  ]
+}

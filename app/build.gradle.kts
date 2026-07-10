@@ -220,6 +220,7 @@ tasks.register("buildAll") {
 
 tasks.named("preBuild") {
     dependsOn(buildWebUi)
+    dependsOn(":speech:downloadSherpaOnnxAar")
 }
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
@@ -386,6 +387,9 @@ dependencies {
     implementation(project(":search"))
     implementation(project(":tts"))
     implementation(project(":speech"))
+    // sherpa-onnx AAR must be provided at the app level because :speech uses compileOnly
+    // (AGP forbids direct local AAR deps inside library modules)
+    implementation(files(rootProject.file("speech/build/sherpa/sherpa-onnx-1.13.4.aar")))
     implementation(project(":common"))
     implementation(project(":workspace"))
     implementation(project(":local-llm"))

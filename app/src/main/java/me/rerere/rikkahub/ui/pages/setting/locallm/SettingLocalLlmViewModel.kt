@@ -199,7 +199,8 @@ class SettingLocalLlmViewModel(
         val catalogSnapshot = modelCatalogService.snapshotFlow.value
         val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
         val existingByModelId = local.models.associateBy { it.modelId }
-        val newModels = installed.map { it.toAiModel(existingByModelId[it.id], catalogSnapshot) }
+        val newModels = local.models.filter { it.type == ModelType.STT } +
+            installed.map { it.toAiModel(existingByModelId[it.id], catalogSnapshot) }
         if (newModels == local.models) return
         val updatedProviders = settings.providers.map {
             if (it is ProviderSetting.LiteRtLocal) it.copy(models = newModels) else it
