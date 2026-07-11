@@ -50,12 +50,13 @@ class LiteRtProvider(
         val installed = requireInstalled(params)
         val loaded = runtime.acquire(installed)
         val effective = loaded.model
+        val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
         val conversation = loaded.engine.createConversation(
-            buildConversationConfig(effective, messages, params)
+            buildConversationConfig(effective, preparedMessages.messages, params)
         )
         runtime.setGenerating(effective)
         try {
-            val sendable = messages.lastNonSystem() ?: error("no_message_to_send")
+            val sendable = preparedMessages.sendable
             val reply = conversation.sendMessage(toSendableMessage(effective, sendable), emptyMap())
             val (reasoning, text) = splitThink(reply.textString())
             val parts = buildList {
@@ -89,10 +90,11 @@ class LiteRtProvider(
         val installed = requireInstalled(params)
         val loaded = runtime.acquire(installed)
         val effective = loaded.model
+        val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
         val conversation = loaded.engine.createConversation(
-            buildConversationConfig(effective, messages, params)
+            buildConversationConfig(effective, preparedMessages.messages, params)
         )
-        val sendable = messages.lastNonSystem() ?: error("no_message_to_send")
+        val sendable = preparedMessages.sendable
         val modelId = params.model.modelId
 
         return callbackFlow {
@@ -267,6 +269,15 @@ class LiteRtProvider(
         return Contents.of(contents)
     }
 
+    private fun prepareLiteRtConversationMessages(
+        model: InstalledLocalModel,
+        messages: List<UIMessage>,
+    ): PreparedLiteRtMessages = prepareLiteRtConversationMessages(
+        messages = messages,
+        supportsImage = model.supportsImage,
+        supportsAudio = model.supportsAudio,
+    )
+
     private fun parseArgs(argumentsJson: String): Map<String, Any> {
         if (argumentsJson.isBlank()) return emptyMap()
         return runCatching {
@@ -296,8 +307,94 @@ private fun List<ToolCall>.toUiToolCalls(gson: Gson): List<UIMessagePart.ToolCal
         )
     }
 
-private fun List<UIMessage>.lastNonSystem(): UIMessage? =
-    lastOrNull { it.role != MessageRole.SYSTEM }
+internal data class PreparedLiteRtMessages(
+    val messages: List<UIMessage>,
+    val sendable: UIMessage,
+)
+
+/**
+ * LiteRT-LM 0.11 renders media placeholders from ConversationConfig.initialMessages, but its first
+ * send only supplies media bytes from the newly sent message. Keeping an image or audio part in
+ * history therefore fails natively with "Provided less ... than expected in the prompt".
+ *
+ * Preserve the historical roles/text, replace historical media with an explanatory marker, and
+ * attach that media to the live user/model message where LiteRT can actually consume its bytes.
+ */
+internal fun prepareLiteRtConversationMessages(
+    messages: List<UIMessage>,
+    supportsImage: Boolean,
+    supportsAudio: Boolean,
+): PreparedLiteRtMessages {
+    val sendableIndex = messages.indexOfLast { it.role != MessageRole.SYSTEM }
+    require(sendableIndex >= 0) { "no_message_to_send" }
+    val canCarryHistoricalMedia = messages[sendableIndex].role == MessageRole.USER ||
+        messages[sendableIndex].role == MessageRole.ASSISTANT
+
+    val historicalMedia = mutableListOf<Pair<MessageRole, UIMessagePart>>()
+    val sanitized = messages.mapIndexed { index, message ->
+        if (index == sendableIndex) return@mapIndexed message
+
+        val parts = buildList {
+            message.parts.forEach { part ->
+                val move = when (part) {
+                    is UIMessagePart.Image -> supportsImage
+                    is UIMessagePart.Audio -> supportsAudio
+                    else -> false
+                }
+                if (move) {
+                    historicalMedia += message.role to part
+                    add(
+                        UIMessagePart.Text(
+                            historicalMediaMarker(message.role, part, canCarryHistoricalMedia)
+                        )
+                    )
+                } else {
+                    add(part)
+                }
+            }
+        }
+        message.copy(parts = parts)
+    }.toMutableList()
+
+    val originalSendable = sanitized[sendableIndex]
+    val sendable = if (historicalMedia.isNotEmpty() && canCarryHistoricalMedia) {
+        originalSendable.copy(
+            parts = buildList {
+                add(UIMessagePart.Text("[Earlier conversation media reattached for local inference]"))
+                historicalMedia.forEach { (role, part) ->
+                    add(UIMessagePart.Text(historicalMediaLabel(role, part)))
+                    add(part)
+                }
+                add(UIMessagePart.Text("[Current message]"))
+                addAll(originalSendable.parts)
+            }
+        )
+    } else {
+        originalSendable
+    }
+    sanitized[sendableIndex] = sendable
+
+    return PreparedLiteRtMessages(messages = sanitized, sendable = sendable)
+}
+
+private fun historicalMediaMarker(
+    role: MessageRole,
+    part: UIMessagePart,
+    reattached: Boolean,
+): String = if (reattached) {
+    "[Earlier ${role.name.lowercase()} ${mediaKind(part)} is reattached with the current message.]"
+} else {
+    "[Earlier ${role.name.lowercase()} ${mediaKind(part)} is unavailable during this tool turn.]"
+}
+
+private fun historicalMediaLabel(role: MessageRole, part: UIMessagePart): String =
+    "[Earlier ${role.name.lowercase()} ${mediaKind(part)}]"
+
+private fun mediaKind(part: UIMessagePart): String = when (part) {
+    is UIMessagePart.Image -> "image"
+    is UIMessagePart.Audio -> "audio"
+    else -> "media"
+}
 
 internal fun splitThink(raw: String): Pair<String, String> {
     if (!raw.contains("<think>")) return "" to raw

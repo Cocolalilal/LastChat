@@ -34,6 +34,7 @@ class McpManager(
     private val settingsStore: SettingsStore,
     private val appScope: AppScope,
     private val transportFactory: McpTransportFactory,
+    private val oauthManager: McpOAuthManager,
 ) {
     private val clients: MutableMap<McpServerConfig, Client> = mutableMapOf()
     val syncingStatus = MutableStateFlow<Map<Uuid, McpStatus>>(mapOf())
@@ -88,6 +89,7 @@ class McpManager(
     }
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): JsonElement {
+        oauthManager.refreshIfNeeded(serverId)
         val entry = clients.entries.find { it.key.id == serverId }
         val client = entry?.value
             ?: return JsonPrimitive("Failed to execute tool, because no such mcp client for the tool")
@@ -114,6 +116,7 @@ class McpManager(
 
     suspend fun addClient(config: McpServerConfig) = withContext(Dispatchers.IO) {
         removeClient(config) // Remove first
+        oauthManager.refreshIfNeeded(config.id)
         val transport = getTransport(config)
         val client = Client(
             clientInfo = Implementation(
@@ -223,6 +226,9 @@ class McpManager(
             clients.remove(entry.key)
             syncingStatus.emit(syncingStatus.value.toMutableMap().apply { remove(entry.key.id) })
             Log.i(TAG, "removeClient: ${entry.key} / ${entry.key.commonOptions.name}")
+        }
+        if (settingsStore.settingsFlow.value.mcpServers.none { it.id == config.id }) {
+            oauthManager.disconnect(config.id)
         }
     }
 

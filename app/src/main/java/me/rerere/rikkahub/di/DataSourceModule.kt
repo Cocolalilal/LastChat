@@ -41,6 +41,7 @@ import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpTransportFactory
 import me.rerere.rikkahub.data.ai.mcp.transport.SseClientTransport
@@ -176,27 +177,45 @@ val dataSourceModule = module {
     }
 
     single {
+        McpOAuthManager(
+            context = get(),
+            scope = get<me.rerere.rikkahub.AppScope>(),
+            client = get<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT)),
+            settingsStore = get(),
+            secretKeyManager = get(),
+        )
+    }
+
+    single {
         McpManager(
             settingsStore = get(),
             appScope = get(),
             transportFactory = get(),
+            oauthManager = get(),
         )
     }
 
     single<McpTransportFactory> {
         val platformHttpClient = get<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT))
+        val oauthManager = get<McpOAuthManager>()
         McpTransportFactory { config ->
             when (config) {
                 is McpServerConfig.SseTransportServer -> SseClientTransport(
                     urlString = config.url,
                     client = platformHttpClient,
-                    headers = config.commonOptions.headers,
+                    headersProvider = {
+                        config.commonOptions.headers.toMap() +
+                            oauthManager.authorizationHeaders(config.id)
+                    },
                 )
 
                 is McpServerConfig.StreamableHTTPServer -> StreamableHttpClientTransport(
                     url = config.url,
                     client = platformHttpClient,
-                    headers = config.commonOptions.headers.toMap(),
+                    headersProvider = {
+                        config.commonOptions.headers.toMap() +
+                            oauthManager.authorizationHeaders(config.id)
+                    },
                 )
             }
         }

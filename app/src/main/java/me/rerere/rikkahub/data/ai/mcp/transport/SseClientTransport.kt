@@ -27,7 +27,7 @@ private const val TAG = "SseClientTransport"
 internal class SseClientTransport(
     private val client: PlatformHttpClient,
     private val urlString: String,
-    private val headers: List<Pair<String, String>>,
+    private val headersProvider: () -> Map<String, String> = { emptyMap() },
 ) : AbstractTransport() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val initialized: AtomicBoolean = AtomicBoolean(false)
@@ -59,7 +59,7 @@ internal class SseClientTransport(
             val request = PlatformHttpRequest(
                 method = "GET",
                 url = urlString,
-                headers = headers.toMap() + mapOf(
+                headers = headersProvider() + mapOf(
                     "Accept" to "text/event-stream",
                     "User-Agent" to "LastChat/${BuildConfig.VERSION_NAME}",
                 ),
@@ -150,7 +150,7 @@ internal class SseClientTransport(
                 PlatformHttpRequest(
                     method = "POST",
                     url = endpoint.getCompleted(),
-                    headers = headers.toMap(),
+                    headers = headersProvider(),
                     body = McpJson.encodeToString(message).encodeToByteArray(),
                     mediaType = "application/json",
                 )

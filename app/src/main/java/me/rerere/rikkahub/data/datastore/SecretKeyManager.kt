@@ -24,6 +24,7 @@ class SecretKeyManager(
         private const val STT_PROVIDER_APIKEY_PREFIX = "stt_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
         private const val HUGGINGFACE_TOKEN_KEY = "huggingface_token"
+        private const val MCP_OAUTH_PREFIX = "mcp_oauth_"
     }
 
     // ========== Provider API Key Management ==========
@@ -139,6 +140,27 @@ class SecretKeyManager(
         } else {
             secureStore.removeSecret(HUGGINGFACE_TOKEN_KEY)
         }
+    }
+
+    // ========== MCP OAuth Management ==========
+
+    fun getMcpOAuthSecret(serverId: Uuid, name: String): String? {
+        return secureStore.getSecret("$MCP_OAUTH_PREFIX${serverId}_$name")
+    }
+
+    fun setMcpOAuthSecret(serverId: Uuid, name: String, value: String?) {
+        val key = "$MCP_OAUTH_PREFIX${serverId}_$name"
+        if (value.isNullOrBlank()) {
+            secureStore.removeSecret(key)
+        } else {
+            secureStore.putSecret(key, value)
+        }
+    }
+
+    fun removeMcpOAuthSecrets(serverId: Uuid) {
+        secureStore.getAllKeys()
+            .filter { it.startsWith("$MCP_OAUTH_PREFIX${serverId}_") }
+            .forEach(secureStore::removeSecret)
     }
 
     // ========== Migration Logic ==========

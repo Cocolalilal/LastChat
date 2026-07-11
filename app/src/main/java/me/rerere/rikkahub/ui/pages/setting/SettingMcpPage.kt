@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +55,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -71,7 +74,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
@@ -81,7 +87,11 @@ import androidx.compose.material.icons.rounded.CommentsDisabled
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.automirrored.rounded.Input
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.Login
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
 import kotlinx.serialization.json.JsonObject
@@ -91,9 +101,14 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
+import me.rerere.rikkahub.data.ai.mcp.McpAuthMode
+import me.rerere.rikkahub.data.ai.mcp.McpConnectionPreset
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthManager
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthStatus
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
+import me.rerere.rikkahub.data.ai.mcp.POPULAR_MCP_CONNECTIONS
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -101,6 +116,7 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -109,6 +125,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.openUrl
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -140,8 +157,36 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var mcpToDelete by remember { mutableStateOf<McpServerConfig?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showConnectionsSheet by remember { mutableStateOf(false) }
+    var setupRequiredPreset by remember { mutableStateOf<McpConnectionPreset?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
+    val oauthManager = koinInject<McpOAuthManager>()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+
+    fun addConnection(preset: McpConnectionPreset) {
+        val existing = mcpConfigs.firstOrNull { it.commonOptions.presetId == preset.id }
+        if (existing != null) {
+            if (preset.authMode == McpAuthMode.OAUTH) oauthManager.startAuthorization(existing)
+            showConnectionsSheet = false
+            return
+        }
+        if (preset.authMode == McpAuthMode.EXTERNAL_OAUTH_SETUP) {
+            showConnectionsSheet = false
+            setupRequiredPreset = preset
+            return
+        }
+        val config = preset.createConfig()
+        vm.updateSettings(
+            settings.copy(mcpServers = listOf(config) + mcpConfigs),
+            afterPersist = if (preset.authMode == McpAuthMode.OAUTH) {
+                { oauthManager.startAuthorization(config) }
+            } else {
+                null
+            },
+        )
+        showConnectionsSheet = false
+    }
     
     Scaffold(
         topBar = {
@@ -150,24 +195,48 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            showImportDialog = true
-                        }
-                    ) {
-                        Icon(Icons.Rounded.FileUpload, null)
-                    }
-                    IconButton(
-                        onClick = {
-                            creationState.open(McpServerConfig.SseTransportServer())
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Add, null)
-                    }
                 }
             )
+        },
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, MaterialTheme.colorScheme.background)
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showImportDialog = true
+                        },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                    }
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showConnectionsSheet = true
+                        },
+                        shape = AppShapes.CardLarge,
+                    ) {
+                        Icon(Icons.Rounded.Add, "Add connection")
+                    }
+                }
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
@@ -209,8 +278,21 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         .fillMaxSize(),
                     state = lazyListState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(16.dp)
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)
                 ) {
+                    item {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("Your connections", style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                "Connect assistants to the services you use. Tools remain selectable per assistant.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     itemsIndexed(mcpConfigs, key = { _, it -> it.id }) { index, mcpConfig ->
                         val position = when {
                             mcpConfigs.size == 1 -> ItemPosition.ONLY
@@ -270,6 +352,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                 }
+
             }
 
             if (mcpConfigs.isEmpty()) {
@@ -278,10 +361,11 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found))
+                    Text(text = "No connections yet", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
+                        text = "Tap + to choose a popular service or add your own MCP server.",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -330,6 +414,21 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     }
     McpServerConfigModal(creationState)
     McpServerConfigModal(editState)
+    if (showConnectionsSheet) {
+        McpConnectionsSheet(
+            installedPresetIds = mcpConfigs.mapNotNull { it.commonOptions.presetId }.toSet(),
+            onDismiss = { showConnectionsSheet = false },
+            onAddCustom = {
+                showConnectionsSheet = false
+                creationState.open(
+                    McpServerConfig.StreamableHTTPServer(
+                        commonOptions = McpCommonOptions(name = "", authMode = McpAuthMode.CUSTOM_HEADERS)
+                    )
+                )
+            },
+            onSelect = ::addConnection,
+        )
+    }
     if (showImportDialog) {
         McpImportModal(
             onDismiss = { showImportDialog = false },
@@ -347,6 +446,182 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             }
         )
     }
+
+    setupRequiredPreset?.let { preset ->
+        val context = LocalContext.current
+        AlertDialog(
+            onDismissRequest = { setupRequiredPreset = null },
+            icon = { Icon(Icons.Rounded.Info, null) },
+            title = { Text("${preset.name} needs app setup") },
+            text = {
+                Text(
+                    preset.setupNote ?: "This service requires an OAuth application to be registered for LastChat."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        preset.documentationUrl?.let(context::openUrl)
+                        setupRequiredPreset = null
+                    },
+                ) { Text("Open setup guide") }
+            },
+            dismissButton = {
+                TextButton(onClick = { setupRequiredPreset = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun McpConnectionsSheet(
+    installedPresetIds: Set<String>,
+    onDismiss: () -> Unit,
+    onAddCustom: () -> Unit,
+    onSelect: (McpConnectionPreset) -> Unit,
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val haptics = rememberPremiumHaptics()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val filtered = remember(searchQuery) {
+        if (searchQuery.isBlank()) POPULAR_MCP_CONNECTIONS else POPULAR_MCP_CONNECTIONS.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+                it.description.contains(searchQuery, ignoreCase = true) ||
+                it.badge.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) { Icon(Icons.Rounded.KeyboardArrowDown, null) }
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                "Add a connection",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            )
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.SearchField,
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, "Clear") } }
+                } else null,
+                placeholder = { Text("Search connections") },
+            )
+            Spacer(Modifier.height(16.dp))
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                item {
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onAddCustom()
+                        },
+                        shape = AppShapes.CardMedium,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(40.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Custom MCP server", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Enter a URL, transport, and optional headers yourself.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                itemsIndexed(filtered, key = { _, preset -> preset.id }) { index, preset ->
+                    val installed = preset.id in installedPresetIds
+                    val shape = when {
+                        filtered.size == 1 -> AppShapes.CardMedium
+                        index == 0 -> AppShapes.ListItemFirst
+                        index == filtered.lastIndex -> AppShapes.ListItemLast
+                        else -> AppShapes.ListItem
+                    }
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onSelect(preset)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = shape,
+                        color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AutoAIIconWithUrl(
+                                name = preset.name,
+                                customIconUri = preset.iconUri,
+                                modifier = Modifier.size(40.dp),
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(preset.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    preset.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Tag(type = if (preset.authMode == McpAuthMode.OAUTH) TagType.SUCCESS else TagType.DEFAULT) {
+                                        Text(preset.badge)
+                                    }
+                                    if (installed) Tag(type = TagType.INFO) { Text("Added") }
+                                }
+                            }
+                            Icon(
+                                if (installed) Icons.AutoMirrored.Rounded.Login else Icons.Rounded.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -361,7 +636,16 @@ private fun McpServerItem(
     onEdit: (McpServerConfig) -> Unit,
 ) {
     val mcpManager = koinInject<McpManager>()
+    val oauthManager = koinInject<McpOAuthManager>()
     val status by mcpManager.getStatus(item).collectAsStateWithLifecycle(McpStatus.Idle)
+    val oauthStatuses by oauthManager.statuses.collectAsStateWithLifecycle()
+    val oauthStatus = oauthStatuses[item.id] ?: McpOAuthStatus.Idle
+    val preset = remember(item.commonOptions.presetId) {
+        POPULAR_MCP_CONNECTIONS.firstOrNull { it.id == item.commonOptions.presetId }
+    }
+    val hasOAuthCredentials = remember(oauthStatuses, item.id) {
+        oauthManager.hasCredentials(item.id)
+    }
     val haptics = rememberPremiumHaptics()
     
     PhysicsSwipeToDelete(
@@ -433,13 +717,19 @@ private fun McpServerItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = grayscaleModifier) {
-                when (status) {
-                    McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
-                    McpStatus.Connecting -> CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp)
+                if (preset != null) {
+                    AutoAIIconWithUrl(
+                        name = preset.name,
+                        customIconUri = preset.iconUri,
+                        modifier = Modifier.size(40.dp),
                     )
-                    McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
-                    is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
+                } else {
+                    when (status) {
+                        McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
+                        McpStatus.Connecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
+                        is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
+                    }
                 }
             }
 
@@ -458,8 +748,20 @@ private fun McpServerItem(
                     // Show disabled tag only for disabled items (with gray styling)
                     if (!item.commonOptions.enable) {
                         Tag(type = TagType.DEFAULT) {
-                            Text(stringResource(R.string.setting_provider_page_disabled))
+                            Text(
+                                if (item.commonOptions.authMode == McpAuthMode.OAUTH && !hasOAuthCredentials) {
+                                    "Sign-in required"
+                                } else {
+                                    stringResource(R.string.setting_provider_page_disabled)
+                                }
+                            )
                         }
+                    }
+                    if (oauthStatus == McpOAuthStatus.WaitingForUser) {
+                        Tag(type = TagType.INFO) { Text("Waiting for sign-in") }
+                    }
+                    if (oauthStatus is McpOAuthStatus.Error || status is McpStatus.Error) {
+                        Tag(type = TagType.ERROR) { Text("Connection error") }
                     }
                     Tag(type = TagType.SUCCESS) {
                         when (item) {
@@ -470,12 +772,23 @@ private fun McpServerItem(
                 }
             }
 
-            IconButton(
-                onClick = {
-                    onEdit(item)
+            if (item.commonOptions.authMode == McpAuthMode.OAUTH && !hasOAuthCredentials) {
+                FilledTonalIconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        oauthManager.startAuthorization(item)
+                    }
+                ) {
+                    if (oauthStatus is McpOAuthStatus.Discovering || oauthStatus is McpOAuthStatus.ExchangingCode) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.AutoMirrored.Rounded.Login, "Sign in")
+                    }
                 }
-            ) {
-                Icon(Icons.Rounded.Settings, null)
+            } else {
+                IconButton(onClick = { onEdit(item) }) {
+                    Icon(Icons.Rounded.Settings, null)
+                }
             }
         }
     }

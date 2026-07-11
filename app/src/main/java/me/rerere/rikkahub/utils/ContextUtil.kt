@@ -87,6 +87,9 @@ fun Context.openUrl(url: String) {
         val intent = CustomTabsIntent.Builder()
             .setShowTitle(true)
             .build()
+        if (this !is Activity) {
+            intent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         intent.launchUrl(this, url.toUri())
     }.onFailure {
         it.printStackTrace()

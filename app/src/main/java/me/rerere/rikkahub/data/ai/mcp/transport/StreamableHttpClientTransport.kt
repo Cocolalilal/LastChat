@@ -40,7 +40,7 @@ class StreamableHttpError(
 class StreamableHttpClientTransport(
     private val client: PlatformHttpClient,
     private val url: String,
-    private val headers: Map<String, String> = emptyMap(),
+    private val headersProvider: () -> Map<String, String> = { emptyMap() },
 ) : AbstractTransport() {
     var sessionId: String? = null
         private set
@@ -282,7 +282,7 @@ class StreamableHttpClientTransport(
     private fun commonHeaders() = buildMap {
         sessionId?.let { put(MCP_SESSION_ID_HEADER, it) }
         protocolVersion?.let { put(MCP_PROTOCOL_VERSION_HEADER, it) }
-        putAll(headers)
+        putAll(headersProvider())
     }
 
     private val PlatformHttpResponse.isSuccessful: Boolean
