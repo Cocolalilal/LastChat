@@ -81,9 +81,9 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 <a href="https://www.star-history.com/?repos=Cocolalilal%2FLastChat&type=date&legend=bottom-right">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&theme=dark&legend=bottom-right&sealed_token=h6KBNo0RzypvDXalxCwJmPyVQ5gKGswMS94m2Lr-kVGaLyQ_u138MvraoUzAqGUKkSBmGQ5R1mGAi1MyCkvK0ZZ8naNt4H4IZOcrluk5pxnO1xYupzG2XLcKfIArt9PK37UkkyNwBZAcPenp_RW8cgBeFSQcX3ryiPRjxeHWalnB9W6dPHcUclBoKZaZ" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=bottom-right&sealed_token=h6KBNo0RzypvDXalxCwJmPyVQ5gKGswMS94m2Lr-kVGaLyQ_u138MvraoUzAqGUKkSBmGQ5R1mGAi1MyCkvK0ZZ8naNt4H4IZOcrluk5pxnO1xYupzG2XLcKfIArt9PK37UkkyNwBZAcPenp_RW8cgBeFSQcX3ryiPRjxeHWalnB9W6dPHcUclBoKZaZ" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=bottom-right&sealed_token=h6KBNo0RzypvDXalxCwJmPyVQ5gKGswMS94m2Lr-kVGaLyQ_u138MvraoUzAqGUKkSBmGQ5R1mGAi1MyCkvK0ZZ8naNt4H4IZOcrluk5pxnO1xYupzG2XLcKfIArt9PK37UkkyNwBZAcPenp_RW8cgBeFSQcX3ryiPRjxeHWalnB9W6dPHcUclBoKZaZ" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&theme=dark&legend=bottom-right&sealed_token=VEWKurby6oDdfHfrfAIhLIUFa45KXrExIX0VxgKOIX4-9BK7vqQkKLNJQ8xCssKrRvZejYXHzpe1iB05kZxIgYNxIOAEt4TCwSKd48yAByN1zijXVgPz39EfxvMQgpRWfZxwlDfTB5msKiRyB7GsCKBbuk5cOWO3O1jw43nQr-675hgq7Hg9Pfu2CI6E" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=bottom-right&sealed_token=VEWKurby6oDdfHfrfAIhLIUFa45KXrExIX0VxgKOIX4-9BK7vqQkKLNJQ8xCssKrRvZejYXHzpe1iB05kZxIgYNxIOAEt4TCwSKd48yAByN1zijXVgPz39EfxvMQgpRWfZxwlDfTB5msKiRyB7GsCKBbuk5cOWO3O1jw43nQr-675hgq7Hg9Pfu2CI6E" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=bottom-right&sealed_token=VEWKurby6oDdfHfrfAIhLIUFa45KXrExIX0VxgKOIX4-9BK7vqQkKLNJQ8xCssKrRvZejYXHzpe1iB05kZxIgYNxIOAEt4TCwSKd48yAByN1zijXVgPz39EfxvMQgpRWfZxwlDfTB5msKiRyB7GsCKBbuk5cOWO3O1jw43nQr-675hgq7Hg9Pfu2CI6E" />
  </picture>
 </a>
 
