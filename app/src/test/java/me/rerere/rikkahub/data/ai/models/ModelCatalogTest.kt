@@ -378,7 +378,6 @@ class ModelCatalogTest {
 
         // Verify newly added/recent providers
         val expectedProviderIds = setOf(
-            "2269a913-9b16-43b8-89c0-fd2b4a5d3c8c", // GitHub Models
             "5a8c27de-c5e0-4434-8efa-932d0613dd9c", // Baichuan AI
             "c1f92a0e-c1d4-45aa-9b24-78fdbe4a3196", // Upstage AI
             "9fb2c4d8-c71b-457f-b88e-df41f23da4c1", // Scaleway

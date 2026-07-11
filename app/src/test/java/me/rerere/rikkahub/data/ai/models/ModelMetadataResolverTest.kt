@@ -6,6 +6,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import org.junit.Assert.assertEquals
@@ -159,7 +160,7 @@ class ModelMetadataResolverTest {
     }
 
     @Test
-    fun preservesApiDisplayNameWhenRequested() {
+    fun preservesExistingUserSettingsWhenRequested() {
         val resolver = resolverFor(
             """
             {
@@ -168,8 +169,11 @@ class ModelMetadataResolverTest {
                 "id": "gpt-5-mini",
                 "canonical_model_id": "gpt-5-mini",
                 "display_name": "GPT-5 mini catalog",
-                "type": "CHAT",
-                "abilities": ["TOOL", "REASONING"]
+                "type": "IMAGE",
+                "input_modalities": ["TEXT", "IMAGE"],
+                "output_modalities": ["IMAGE"],
+                "abilities": ["TOOL", "REASONING"],
+                "image_generation_method": "diffusion"
               }]
             }
             """.trimIndent()
@@ -185,11 +189,86 @@ class ModelMetadataResolverTest {
                 preserveDisplayName = true,
                 preserveExistingCapabilities = true,
                 preserveExistingType = true,
+                preserveExistingConfiguration = true,
             ),
         )
 
         assertEquals("GPT-5 mini from API", resolved.displayName)
-        assertEquals(listOf(ModelAbility.TOOL, ModelAbility.REASONING), resolved.abilities)
+        assertEquals(ModelType.CHAT, resolved.type)
+        assertEquals(listOf(Modality.TEXT), resolved.inputModalities)
+        assertEquals(listOf(Modality.TEXT), resolved.outputModalities)
+        assertEquals(emptyList<ModelAbility>(), resolved.abilities)
+        assertNull(resolved.imageGenerationMethod)
+    }
+
+    @Test
+    fun catalogMergeDoesNotResetSavedModelOrProviderOptions() {
+        val providerId = "d5734028-d39b-4d41-9841-fd648d65440e"
+        val snapshot = snapshotFor(
+            """
+            {
+              "schema_version": 1,
+              "providers": [{
+                "id": "$providerId",
+                "name": "OpenRouter",
+                "type": "openai",
+                "base_url": "https://openrouter.ai/api/v1",
+                "stream_options_mode": "enabled",
+                "image_response_modalities_mode": "enabled",
+                "reasoning_content_replay_mode": "enabled",
+                "prompt_cache_mode": "enabled"
+              }],
+              "models": [{
+                "id": "openai/gpt-5-mini",
+                "canonical_model_id": "gpt-5-mini",
+                "provider_ids": ["$providerId"],
+                "type": "IMAGE",
+                "input_modalities": ["TEXT", "IMAGE"],
+                "output_modalities": ["IMAGE"],
+                "abilities": ["TOOL", "REASONING"],
+                "image_generation_method": "diffusion"
+              }]
+            }
+            """.trimIndent()
+        )
+        val savedModel = Model(
+            modelId = "openai/gpt-5-mini",
+            type = ModelType.CHAT,
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = emptyList(),
+            imageGenerationMethod = null,
+            reasoningBehavior = null,
+        )
+        val savedProvider = ProviderSetting.OpenAI(
+            id = kotlin.uuid.Uuid.parse(providerId),
+            name = "OpenRouter",
+            baseUrl = "https://openrouter.ai/api/v1",
+            models = listOf(savedModel),
+            streamOptionsMode = OpenAICompatibilityMode.AUTO,
+            imageResponseModalitiesMode = OpenAICompatibilityMode.AUTO,
+            reasoningContentReplayMode = OpenAICompatibilityMode.AUTO,
+            promptCacheMode = OpenAICompatibilityMode.AUTO,
+        )
+
+        val merged = mergeCatalogIntoSettings(
+            settings = Settings(providers = listOf(savedProvider)),
+            snapshot = snapshot,
+            resolver = ModelMetadataResolver { snapshot },
+        )
+
+        val provider = merged.providers.single() as ProviderSetting.OpenAI
+        val model = provider.models.single()
+        assertEquals(ModelType.CHAT, model.type)
+        assertEquals(listOf(Modality.TEXT), model.inputModalities)
+        assertEquals(listOf(Modality.TEXT), model.outputModalities)
+        assertEquals(emptyList<ModelAbility>(), model.abilities)
+        assertNull(model.imageGenerationMethod)
+        assertNull(model.reasoningBehavior)
+        assertEquals(OpenAICompatibilityMode.AUTO, provider.streamOptionsMode)
+        assertEquals(OpenAICompatibilityMode.AUTO, provider.imageResponseModalitiesMode)
+        assertEquals(OpenAICompatibilityMode.AUTO, provider.reasoningContentReplayMode)
+        assertEquals(OpenAICompatibilityMode.AUTO, provider.promptCacheMode)
     }
 
     @Test

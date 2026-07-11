@@ -463,6 +463,89 @@ class ChatServiceTest {
     }
 
     @Test
+    fun currentMessagesDoNotMixNodesFromDifferentAssistantVersions() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("first question")),
+                MessageNode(
+                    messages = listOf(
+                        UIMessage.assistant("old first").copy(versionTag = "v1"),
+                        UIMessage.assistant("new only").copy(versionTag = "v2"),
+                    ),
+                    selectIndex = 1,
+                ),
+                MessageNode.of(UIMessage.assistant("old second").copy(versionTag = "v1")),
+                MessageNode.of(UIMessage.user("later question")),
+                MessageNode.of(UIMessage.assistant("later answer")),
+            ),
+        )
+
+        assertEquals(
+            listOf("first question", "new only", "later question", "later answer"),
+            conversation.currentMessages.map { it.toContentText() },
+        )
+
+        val streamedUpdate = conversation.updateCurrentMessages(
+            conversation.currentMessages + UIMessage.assistant("new tail"),
+        )
+        assertTrue(streamedUpdate.messageNodes[2].messages.any { it.toContentText() == "old second" })
+        assertEquals(
+            listOf("first question", "new only", "later question", "later answer", "new tail"),
+            streamedUpdate.currentMessages.map { it.toContentText() },
+        )
+    }
+
+    @Test
+    fun regeneratedTurnMergePreservesOldReplyAndLaterTurns() {
+        val firstAssistantId = Uuid.random()
+        val laterUserId = Uuid.random()
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("question")),
+                MessageNode(
+                    id = firstAssistantId,
+                    messages = listOf(
+                        UIMessage.assistant("old first").copy(versionTag = "v1"),
+                        UIMessage.assistant("").copy(versionTag = "v2"),
+                    ),
+                    selectIndex = 1,
+                ),
+                MessageNode.of(UIMessage.assistant("old second").copy(versionTag = "v1")),
+                MessageNode(id = laterUserId, messages = listOf(UIMessage.user("later"))),
+                MessageNode.of(UIMessage.assistant("later answer")),
+            ),
+        )
+
+        val merged = mergeRegeneratedAssistantTurn(
+            conversation = conversation,
+            turnStartIndex = 1,
+            versionTag = "v2",
+            generatedMessages = listOf(
+                UIMessage.assistant("new first"),
+                UIMessage.assistant("new second"),
+                UIMessage.assistant("new third"),
+            ),
+        )
+
+        assertEquals(6, merged.messageNodes.size)
+        assertEquals(laterUserId, merged.messageNodes[4].id)
+        assertTrue(merged.messageNodes[1].messages.any { it.toContentText() == "old first" })
+        assertTrue(merged.messageNodes[2].messages.any { it.toContentText() == "old second" })
+        assertEquals(
+            listOf("question", "new first", "new second", "new third", "later", "later answer"),
+            merged.currentMessages.map { it.toContentText() },
+        )
+
+        val switchedBack = selectConversationTurnVersion(merged, firstAssistantId, 0)
+        assertEquals(
+            listOf("question", "old first", "old second", "later", "later answer"),
+            switchedBack.currentMessages.map { it.toContentText() },
+        )
+    }
+
+    @Test
     fun buildForkConversationSnapshotKeepsAssistantAndCopiesAttachments() {
         val assistantId = Uuid.parse("00000000-0000-0000-0000-000000000401")
         val messageId = Uuid.parse("00000000-0000-0000-0000-000000000402")

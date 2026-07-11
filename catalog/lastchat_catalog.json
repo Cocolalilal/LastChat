@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-06-25",
+  "updated_at": "2026-07-11",
   "search_providers": [
     {
       "id": "bing",
@@ -1012,17 +1012,6 @@
         "chat": "360gpt2-o1",
         "title": "360gpt-turbo"
       }
-    },
-    {
-      "id": "2269a913-9b16-43b8-89c0-fd2b4a5d3c8c",
-      "name": "GitHub Models",
-      "description": "Prototyping platform with access to global models (Llama, GPT, Gemini, Phi, Mistral, Qwen, etc.).",
-      "type": "openai",
-      "base_url": "https://models.github.ai/inference",
-      "icon": "icons/github.svg",
-      "preset": true,
-      "signup_url": "https://github.com/marketplace/models",
-      "api_key_url": "https://github.com/settings/tokens"
     },
     {
       "id": "2995fc1d-78ad-4a67-9c6a-fd2b4a5d3c90",

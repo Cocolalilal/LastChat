@@ -10,6 +10,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,6 +30,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Refresh
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ProviderSetting
@@ -39,6 +44,8 @@ import me.rerere.rikkahub.data.codex.CodexOAuthStatus
 import me.rerere.rikkahub.data.codex.CodexTokenStatus
 import me.rerere.rikkahub.data.codex.CodexUsageWindow
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -93,13 +100,9 @@ fun CodexProviderConfigure(
             showSavingIndicator = showSavingIndicator,
             showProviderTypeSelector = false,
             enabledToggleEnabled = provider.enabled || canEnable,
-            enabledSupportingText = stringResource(
-                if (canEnable) {
-                    R.string.codex_single_account_description
-                } else {
-                    R.string.codex_sign_in_required
-                }
-            ),
+            enabledSupportingText = if (canEnable) null else {
+                stringResource(R.string.codex_sign_in_required)
+            },
             onEdit = { updated -> onEdit(updated as ProviderSetting.Codex) },
         )
 
@@ -189,6 +192,7 @@ private fun CodexAccountCard(
     onDelete: () -> Unit,
 ) {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    val haptics = rememberPremiumHaptics()
 
     if (showDeleteConfirmation) {
         AlertDialog(
@@ -269,18 +273,38 @@ private fun CodexAccountCard(
             HorizontalDivider()
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onRefresh) {
-                    Text(stringResource(R.string.codex_check_status))
-                }
-                TextButton(onClick = onReauthenticate) {
+                TextButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onReauthenticate()
+                    },
+                ) {
                     Text(stringResource(R.string.codex_reauthenticate))
                 }
-                TextButton(onClick = { showDeleteConfirmation = true }) {
-                    Text(
-                        stringResource(R.string.codex_remove),
-                        color = MaterialTheme.colorScheme.error,
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onRefresh()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.codex_check_status),
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showDeleteConfirmation = true
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(R.string.codex_remove),
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }

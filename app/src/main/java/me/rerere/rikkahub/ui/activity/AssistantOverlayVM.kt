@@ -61,7 +61,12 @@ class AssistantOverlayVM(
     /** Regenerate the assistant reply for [message] (re-runs that turn). */
     fun regenerate(message: UIMessage) {
         val id = _conversationId.value ?: return
-        chatService.regenerateAtMessage(id, message, true, false)
+        chatService.regenerateAtMessage(
+            conversationId = id,
+            message = message,
+            regenerateAssistantMsg = true,
+            suppressCompletionNotification = false,
+        )
     }
 
     fun handleToolApproval(

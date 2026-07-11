@@ -485,54 +485,11 @@ class ChatVM(
         }
     }
 
-    /**
-     * Checks if regenerating this message will preserve version history (simple message)
-     * or wipe the old version (complex message with tool calls).
-     *
-     * A message is considered "simple" if the turn contains only:
-     * - Text/Thinking/Reasoning parts (no tool calls)
-     *
-     * A message is "complex" if the turn contains:
-     * - Any tool calls or tool results
-     *
-     * @return true if the turn is simple (can go back), false if complex (will wipe)
-     */
-    fun canPreserveVersionHistory(message: UIMessage): Boolean {
-        val currentMessages = conversation.value.messageNodes.map { it.currentMessage }
-
-        // Find the index of the message
-        val messageIndex = currentMessages.indexOfFirst { it.id == message.id }
-        if (messageIndex == -1) return false
-
-        // Find the start of the turn (last user message before this assistant message)
-        val lastUserIndex = currentMessages
-            .subList(0, messageIndex + 1)
-            .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
-
-        // Get all messages in this turn (from user to end of turn or next user)
-        val turnStart = if (lastUserIndex >= 0) lastUserIndex else 0
-        val turnEnd = currentMessages
-            .subList(messageIndex, currentMessages.size)
-            .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
-            .let { if (it == -1) currentMessages.size else messageIndex + it }
-
-        // Check if any message in the turn has tool calls or tool results
-        for (i in turnStart until turnEnd) {
-            val msg = currentMessages[i]
-            if (msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }) {
-                return false // Complex turn - cannot preserve version history
-            }
-        }
-
-        return true // Simple turn - can preserve version history
-    }
-
     fun regenerateAtMessage(
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
-        forceWipe: Boolean = false
     ) {
-        chatService.regenerateAtMessage(_conversationId, message, regenerateAssistantMsg, forceWipe)
+        chatService.regenerateAtMessage(_conversationId, message, regenerateAssistantMsg)
     }
 
     fun saveConversationAsync() {

@@ -194,6 +194,16 @@ class SecretKeyManager(
      * This should be called BEFORE migrateSecretsFromSettings() in the update flow.
      */
     fun handleExplicitSecretDeletions(oldSettings: Settings, newSettings: Settings) {
+        // Provider presets have stable IDs. If a deleted provider's secrets remain in
+        // SecureStore, adding the same preset again silently restores those credentials.
+        // Treat removal from Settings as deletion of every secret owned by that provider.
+        val newProviderIds = newSettings.providers.asSequence().map { it.id }.toHashSet()
+        oldSettings.providers
+            .asSequence()
+            .map { it.id }
+            .filterNot(newProviderIds::contains)
+            .forEach(::removeProviderSecrets)
+
         // Handle provider secrets (API keys and private keys)
         for (newProvider in newSettings.providers) {
             val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue

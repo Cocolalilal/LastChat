@@ -75,8 +75,8 @@ val FALLBACK_PROVIDER_PRESETS = listOf(
 
 val SPECIAL_PROVIDER_PRESETS = listOf(
     ProviderPreset(
-        name = "Local · LiteRT",
-        description = "Run downloaded LiteRT language models directly on this device",
+        name = "Local models",
+        description = "Run downloaded language, embedding, and speech models directly on this device",
         type = ProviderSetting.LiteRtLocal::class,
         baseUrl = "",
     ),

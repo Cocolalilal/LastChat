@@ -98,6 +98,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.currentVersionMessages
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -120,6 +121,12 @@ private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
+
+private data class AssistantRegenerationContext(
+    val inputMessages: List<UIMessage>,
+    val turnStartNodeIndex: Int,
+    val versionTag: String,
+)
 
 internal fun shouldPreserveInMemoryConversation(
     conversation: Conversation?,
@@ -234,6 +241,47 @@ internal fun selectConversationTurnVersion(
     return normalizeConversation(
         normalizedConversation.copy(messageNodes = updatedNodes)
     )
+}
+
+internal fun mergeRegeneratedAssistantTurn(
+    conversation: Conversation,
+    turnStartIndex: Int,
+    versionTag: String,
+    generatedMessages: List<UIMessage>,
+): Conversation {
+    if (turnStartIndex !in 0..conversation.messageNodes.size) return conversation
+
+    val nodes = conversation.messageNodes.toMutableList()
+    generatedMessages.forEachIndexed { offset, generatedMessage ->
+        val taggedMessage = if (generatedMessage.versionTag == versionTag) {
+            generatedMessage
+        } else {
+            generatedMessage.copy(versionTag = versionTag)
+        }
+        val nodeIndex = turnStartIndex + offset
+        val currentTurnEnd = nodes
+            .subList(turnStartIndex, nodes.size)
+            .indexOfFirst { it.role == MessageRole.USER }
+            .let { if (it == -1) nodes.size else turnStartIndex + it }
+
+        if (nodeIndex < currentTurnEnd) {
+            val node = nodes[nodeIndex]
+            val existingIndex = node.messages.indexOfFirst { it.id == taggedMessage.id }
+            val updatedMessages = node.messages.toMutableList()
+            val selectedIndex = if (existingIndex >= 0) {
+                updatedMessages[existingIndex] = taggedMessage
+                existingIndex
+            } else {
+                updatedMessages += taggedMessage
+                updatedMessages.lastIndex
+            }
+            nodes[nodeIndex] = node.copy(messages = updatedMessages, selectIndex = selectedIndex)
+        } else {
+            nodes.add(nodeIndex, MessageNode.of(taggedMessage))
+        }
+    }
+
+    return conversation.copy(messageNodes = nodes)
 }
 
 internal suspend fun buildForkConversationSnapshot(
@@ -1256,13 +1304,10 @@ class ChatService(
     // When regenerating an assistant message, we regenerate the entire turn
     // by finding the last user message and regenerating from there
     //
-    // forceWipe: If true, completely removes the old turn and replaces it with a new one.
-    //            If false, preserves old versions for simple messages (text only).
     fun regenerateAtMessage(
         conversationId: Uuid,
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
-        forceWipe: Boolean = false,
         suppressCompletionNotification: Boolean = false,
     ) {
         getGenerationJob(conversationId)?.cancel()
@@ -1300,101 +1345,44 @@ class ChatService(
                             .indexOfLast { it.role == MessageRole.USER }
 
                         if (lastUserIndex >= 0) {
-                            // Find turn boundaries (first assistant node to end of turn)
+                            // Find the assistant turn start.
                             val firstAssistantIndex = lastUserIndex + 1
-                            val turnEndIndex = conversation.messageNodes
-                                .subList(firstAssistantIndex, conversation.messageNodes.size)
-                                .indexOfFirst { it.role == MessageRole.USER }
-                                .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
 
-                            if (forceWipe) {
-                                // WIPE MODE: Completely remove old turn and replace with new assistant node
-                                // This is used for complex messages with tool calls
-                                val nodesBeforeTurn = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-
-                                // Create a fresh assistant node
-                                val freshAssistantNode = MessageNode(
-                                    id = kotlin.uuid.Uuid.random(),
-                                    messages = listOf(
-                                        UIMessage(
-                                            role = MessageRole.ASSISTANT,
-                                            parts = emptyList(),
-                                            versionTag = null  // No versioning when wiping
-                                        )
-                                    ),
-                                    selectIndex = 0
+                            // Preserve every previous turn snapshot, including tool calls/results.
+                            // Generated nodes are merged positionally into this turn under one tag;
+                            // nodes absent from a shorter version remain stored but are not selected.
+                            val versionTag = kotlin.uuid.Uuid.random().toString()
+                            val oldFirstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
+                            if (oldFirstAssistant != null) {
+                                val blankMessage = UIMessage(
+                                    role = MessageRole.ASSISTANT,
+                                    parts = emptyList(),
+                                    versionTag = versionTag,
                                 )
-                                nodesBeforeTurn.add(freshAssistantNode)
-
-                                // Add any nodes after this turn
-                                if (turnEndIndex < conversation.messageNodes.size) {
-                                    nodesBeforeTurn.addAll(
-                                        conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size)
-                                    )
-                                }
-
-                                val newConversation = conversation.copy(
-                                    messageNodes = nodesBeforeTurn
-                                )
-                                saveConversation(
-                                    conversationId = conversationId,
-                                    conversation = newConversation,
-                                    preserveConsolidation = true,
-                                )
-                                handleMessageComplete(
-                                    conversationId = conversationId,
-                                    messageRange = 0..lastUserIndex,
-                                    preserveConsolidation = true,
-                                    suppressCompletionNotification = suppressCompletionNotification,
-                                )
-                            } else {
-                                // VERSION HISTORY MODE: Keep ALL nodes in the turn but add new versions with shared versionTag
-                                // This is used for simple messages (text/reasoning only)
-                                val versionTag = kotlin.uuid.Uuid.random().toString()
-
-                                // Keep nodes up to user, then just the first assistant node with new version
-                                val nodesBeforeTurn = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-
-                                // For the first assistant node, add a new blank version with versionTag
-                                val oldFirstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
-                                if (oldFirstAssistant != null) {
-                                    val blankMessage = UIMessage(
-                                        role = MessageRole.ASSISTANT,
-                                        parts = emptyList(),  // Empty parts = Waiting state
-                                        versionTag = versionTag
-                                    )
-                                    val newMessages = oldFirstAssistant.messages + blankMessage
-                                    val newAssistantNode = oldFirstAssistant.copy(
+                                val newMessages = oldFirstAssistant.messages + blankMessage
+                                val seededNodes = conversation.messageNodes.toMutableList().apply {
+                                    this[firstAssistantIndex] = oldFirstAssistant.copy(
                                         messages = newMessages,
-                                        selectIndex = newMessages.lastIndex
+                                        selectIndex = newMessages.lastIndex,
                                     )
-                                    nodesBeforeTurn.add(newAssistantNode)
-
-                                    // NOTE: We DON'T keep old tool nodes - they'll be replaced by new ones
-                                    // during streaming. The versionTag filtering in UI will handle showing
-                                    // correct content for each version.
-
-                                    // Add any nodes after this turn (other user/assistant turns)
-                                    if (turnEndIndex < conversation.messageNodes.size) {
-                                        nodesBeforeTurn.addAll(
-                                            conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size)
-                                        )
-                                    }
                                 }
-
-                                val newConversation = conversation.copy(
-                                    messageNodes = nodesBeforeTurn
-                                )
+                                val inputMessages = conversation.messageNodes
+                                    .subList(0, lastUserIndex + 1)
+                                    .currentVersionMessages()
                                 saveConversation(
                                     conversationId = conversationId,
-                                    conversation = newConversation,
+                                    conversation = conversation.copy(messageNodes = seededNodes),
                                     preserveConsolidation = true,
                                 )
                                 handleMessageComplete(
                                     conversationId = conversationId,
-                                    messageRange = 0..lastUserIndex,
                                     preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
+                                    assistantRegeneration = AssistantRegenerationContext(
+                                        inputMessages = inputMessages,
+                                        turnStartNodeIndex = firstAssistantIndex,
+                                        versionTag = versionTag,
+                                    ),
                                 )
                             }
                         } else {
@@ -1438,6 +1426,7 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         preserveConsolidation: Boolean = false,
         suppressCompletionNotification: Boolean = false,
+        assistantRegeneration: AssistantRegenerationContext? = null,
     ) {
         val settings = settingsStore.settingsFlow.first()
 
@@ -1482,7 +1471,7 @@ class ChatService(
                     generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = conversation.currentMessages.let {
+                messages = assistantRegeneration?.inputMessages ?: conversation.currentMessages.let {
                     if (messageRange != null) {
                         it.subList(messageRange.start, messageRange.endInclusive + 1)
                     } else {
@@ -1551,13 +1540,32 @@ class ChatService(
 
                 // 可能被取消了，或者意外结束，兜底更新
                 val currentConversation = getConversationFlow(conversationId).value
+                val regenerationLastNodeIndex = assistantRegeneration?.let { regeneration ->
+                    val turnEndIndex = currentConversation.messageNodes
+                        .subList(regeneration.turnStartNodeIndex, currentConversation.messageNodes.size)
+                        .indexOfFirst { it.role == MessageRole.USER }
+                        .let { offset ->
+                            if (offset == -1) currentConversation.messageNodes.size
+                            else regeneration.turnStartNodeIndex + offset
+                        }
+                    (regeneration.turnStartNodeIndex until turnEndIndex).lastOrNull { index ->
+                        currentConversation.messageNodes[index].messages.any {
+                            it.versionTag == regeneration.versionTag
+                        }
+                    }
+                }
                 val updatedConversation = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes.mapIndexed { index, node ->
-                        val isLastNode = index == currentConversation.messageNodes.lastIndex
                         node.copy(messages = node.messages.map { msg ->
                             val finishedMsg = msg.finishReasoning()
                             // Add generation duration to the last assistant message
-                            if (isLastNode && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
+                            val isCompletionTarget = if (assistantRegeneration == null) {
+                                index == currentConversation.messageNodes.lastIndex
+                            } else {
+                                index == regenerationLastNodeIndex &&
+                                    finishedMsg.versionTag == assistantRegeneration.versionTag
+                            }
+                            if (isCompletionTarget && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
                                 // Debug usage
                                 if (finishedMsg.usage == null) {
                                     Log.w(TAG, "Assistant message usage is null in onCompletion")
@@ -1602,9 +1610,17 @@ class ChatService(
                 
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
-                            .copy(updateAt = Instant.now())
+                        val currentConversation = getConversationFlow(conversationId).value
+                        val updatedConversation = if (assistantRegeneration != null) {
+                            mergeRegeneratedAssistantTurn(
+                                conversation = currentConversation,
+                                turnStartIndex = assistantRegeneration.turnStartNodeIndex,
+                                versionTag = assistantRegeneration.versionTag,
+                                generatedMessages = chunk.messages.drop(assistantRegeneration.inputMessages.size),
+                            )
+                        } else {
+                            currentConversation.updateCurrentMessages(chunk.messages)
+                        }.copy(updateAt = Instant.now())
                         updateConversation(conversationId, updatedConversation)
 
                         val nowMs = System.currentTimeMillis()

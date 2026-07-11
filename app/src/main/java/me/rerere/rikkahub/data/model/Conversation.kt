@@ -81,15 +81,7 @@ data class Conversation(
      *  当前选中的 message
      */
     val currentMessages
-        get(): List<UIMessage> {
-            return messageNodes.mapNotNull { node ->
-                if (node.messages.isEmpty()) {
-                    null
-                } else {
-                    node.messages.getOrNull(node.selectIndex) ?: node.messages.first()
-                }
-            }
-        }
+        get(): List<UIMessage> = messageNodes.currentVersionMessages()
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
         return getMessageNodeByMessageId(message.id)
@@ -110,9 +102,12 @@ data class Conversation(
             .lastOrNull { it.role == MessageRole.ASSISTANT }
             ?.currentMessage?.versionTag
 
-        messages.forEachIndexed { index, message ->
-            val node = newNodes.getOrNull(index)
-            val isNewGeneratedMessage = node == null || !node.messages.any { it.id == message.id }
+        var previousNodeIndex = -1
+        messages.forEach { message ->
+            val existingNodeIndex = newNodes.indexOfFirst { node ->
+                node.messages.any { it.id == message.id }
+            }
+            val isNewGeneratedMessage = existingNodeIndex == -1
 
             // Propagate versionTag ONLY to new messages that don't have one
             // This ensures tool results and newly spawned assistant nodes inherit the tag
@@ -122,29 +117,23 @@ data class Conversation(
                 message
             }
             
-            val nodeToUse = newNodes
-                .getOrElse(index) { messageWithTag.toMessageNode() }
-
-            val newMessages = nodeToUse.messages.toMutableList()
-            var newMessageIndex = nodeToUse.selectIndex
-            if (newMessages.any { it.id == messageWithTag.id }) {
-                newMessages[newMessages.indexOfFirst { it.id == messageWithTag.id }] = messageWithTag
+            if (existingNodeIndex >= 0) {
+                val node = newNodes[existingNodeIndex]
+                val messageIndex = node.messages.indexOfFirst { it.id == messageWithTag.id }
+                val newMessages = node.messages.toMutableList()
+                newMessages[messageIndex] = messageWithTag
+                newNodes[existingNodeIndex] = node.copy(
+                    messages = newMessages,
+                    selectIndex = messageIndex,
+                )
+                previousNodeIndex = existingNodeIndex
             } else {
-                newMessages.add(messageWithTag)
-                newMessageIndex = newMessages.lastIndex
+                val insertionIndex = (previousNodeIndex + 1).coerceIn(0, newNodes.size)
+                newNodes.add(insertionIndex, messageWithTag.toMessageNode())
+                previousNodeIndex = insertionIndex
             }
-
-            val newNode = nodeToUse.copy(
-                messages = newMessages,
-                selectIndex = newMessageIndex
-            )
 
             // 更新newNodes
-            if (index > newNodes.lastIndex) {
-                newNodes.add(newNode)
-            } else {
-                newNodes[index] = newNode
-            }
         }
 
         return this.copy(
@@ -163,6 +152,61 @@ data class Conversation(
             messageNodes = messages
         )
     }
+}
+
+/**
+ * Resolves the visible message path without mixing nodes from different assistant-turn versions.
+ * Regenerated tool/assistant turns can have different numbers of nodes, so a node that has no
+ * snapshot for the active tag must be omitted rather than falling back to another reply.
+ */
+fun List<MessageNode>.currentVersionMessages(): List<UIMessage> {
+    val result = mutableListOf<UIMessage>()
+    var index = 0
+    while (index < size) {
+        val node = this[index]
+        if (node.role == MessageRole.USER) {
+            node.messages.getOrNull(node.selectIndex)?.let(result::add)
+            index++
+            continue
+        }
+
+        val turnStart = index
+        while (index < size && this[index].role != MessageRole.USER) {
+            index++
+        }
+        val turnNodes = subList(turnStart, index)
+        val activeTag = turnNodes
+            .firstOrNull { it.messages.isNotEmpty() }
+            ?.let { turnNode -> turnNode.messages.getOrNull(turnNode.selectIndex)?.versionTag }
+        val selected = turnNodes.mapNotNull { turnNode ->
+            val selectedIndex = turnNode.selectIndex.takeIf { candidate ->
+                turnNode.messages.getOrNull(candidate)?.versionTag == activeTag
+            } ?: turnNode.messages.indexOfLast { it.versionTag == activeTag }
+            turnNode.messages.getOrNull(selectedIndex)
+        }.toMutableList()
+
+        // Older tool-result snapshots were not always tagged. Retain only results that belong to
+        // a tool call in the active version; unrelated results from another version stay hidden.
+        val activeToolCallIds = selected
+            .flatMap { it.getToolCalls() }
+            .map { it.toolCallId }
+            .toSet()
+        if (activeToolCallIds.isNotEmpty()) {
+            turnNodes.forEach { turnNode ->
+                if (selected.any { selectedMessage -> selectedMessage.id in turnNode.messages.map(UIMessage::id) }) {
+                    return@forEach
+                }
+                turnNode.messages.lastOrNull { candidate ->
+                    candidate.getToolResults().any { it.toolCallId in activeToolCallIds }
+                }?.let(selected::add)
+            }
+            selected.sortBy { message ->
+                turnNodes.indexOfFirst { turnNode -> turnNode.messages.any { it.id == message.id } }
+            }
+        }
+        result += selected
+    }
+    return result
 }
 
 @Serializable

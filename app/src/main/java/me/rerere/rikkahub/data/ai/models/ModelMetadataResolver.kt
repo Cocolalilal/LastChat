@@ -10,8 +10,11 @@ import me.rerere.ai.registry.ModelIdNormalizer
 
 data class ModelResolutionOptions(
     val preserveDisplayName: Boolean = false,
+    // These options make persisted user choices authoritative. In particular, empty lists,
+    // CHAT, and null are valid explicit choices rather than signals to reapply catalog defaults.
     val preserveExistingCapabilities: Boolean = false,
     val preserveExistingType: Boolean = false,
+    val preserveExistingConfiguration: Boolean = false,
 )
 
 class ModelMetadataResolver(
@@ -31,11 +34,7 @@ class ModelMetadataResolver(
             ?: catalogEntry?.canonicalModelId
             ?: ModelIdNormalizer.canonicalize(model.modelId)
 
-        val displayName = if (
-            options.preserveDisplayName &&
-            model.displayName.isNotBlank() &&
-            model.displayName != model.modelId
-        ) {
+        val displayName = if (options.preserveDisplayName) {
             model.displayName
         } else {
             ModelDisplayNameGenerator.generate(model.modelId, canonicalModelId)
@@ -53,10 +52,18 @@ class ModelMetadataResolver(
             inputModalities = inputModalities,
             outputModalities = outputModalities,
             abilities = abilities,
-            imageGenerationMethod = model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod,
+            imageGenerationMethod = if (options.preserveExistingConfiguration) {
+                model.imageGenerationMethod
+            } else {
+                model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod
+            },
             iconUrl = catalogEntry?.iconUrl,
             customIconUri = model.customIconUri.preserveUserModelIcon(),
-            reasoningBehavior = model.reasoningBehavior ?: catalogEntry?.reasoningBehavior,
+            reasoningBehavior = if (options.preserveExistingConfiguration) {
+                model.reasoningBehavior
+            } else {
+                model.reasoningBehavior ?: catalogEntry?.reasoningBehavior
+            },
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
         )
     }
@@ -67,6 +74,7 @@ class ModelMetadataResolver(
             preserveDisplayName = true,
             preserveExistingCapabilities = true,
             preserveExistingType = true,
+            preserveExistingConfiguration = true,
         ),
     ): ProviderSetting {
         // Step 1: Resolve all models individually for capabilities, type, icon, etc.
@@ -76,9 +84,7 @@ class ModelMetadataResolver(
         // Collect which models need name generation (skip preserved names)
         val needsNameGen = resolvedModels.mapIndexed { index, model ->
             val original = provider.models[index]
-            val isPreserved = options.preserveDisplayName &&
-                    original.displayName.isNotBlank() &&
-                    original.displayName != original.modelId
+            val isPreserved = options.preserveDisplayName
             !isPreserved
         }
 
@@ -180,7 +186,7 @@ class ModelMetadataResolver(
         catalogEntry: ModelCatalogEntry?,
         options: ModelResolutionOptions,
     ): ModelType {
-        if (options.preserveExistingType && model.type != ModelType.CHAT) {
+        if (options.preserveExistingType) {
             return model.type
         }
 
@@ -197,10 +203,11 @@ class ModelMetadataResolver(
         resolvedType: ModelType,
         options: ModelResolutionOptions,
     ): List<Modality> {
-        val inputs = linkedSetOf(Modality.TEXT)
-        if (options.preserveExistingCapabilities && model.inputModalities.contains(Modality.IMAGE)) {
-            inputs += Modality.IMAGE
+        if (options.preserveExistingCapabilities) {
+            return model.inputModalities
         }
+
+        val inputs = linkedSetOf(Modality.TEXT)
         if (catalogEntry?.supportsVision == true || catalogEntry?.supportedModalities?.contains(Modality.IMAGE) == true) {
             inputs += Modality.IMAGE
         }
@@ -219,18 +226,17 @@ class ModelMetadataResolver(
         resolvedType: ModelType,
         options: ModelResolutionOptions,
     ): List<Modality> {
+        if (options.preserveExistingCapabilities) {
+            return model.outputModalities
+        }
+
         return when (resolvedType) {
             ModelType.CHAT -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
                 add(Modality.TEXT)
-                if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.IMAGE)) {
-                    add(Modality.IMAGE)
-                }
             }.distinct()
 
             ModelType.IMAGE -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
-                if (options.preserveExistingCapabilities && model.outputModalities.contains(Modality.TEXT)) {
-                    add(Modality.TEXT)
-                } else if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
+                if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
                     add(Modality.TEXT)
                 }
                 add(Modality.IMAGE)
@@ -246,15 +252,13 @@ class ModelMetadataResolver(
         catalogEntry: ModelCatalogEntry?,
         options: ModelResolutionOptions,
     ): List<ModelAbility> {
-        val abilities = linkedSetOf<ModelAbility>()
-        if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.TOOL)) {
-            abilities += ModelAbility.TOOL
+        if (options.preserveExistingCapabilities) {
+            return model.abilities
         }
+
+        val abilities = linkedSetOf<ModelAbility>()
         if (catalogEntry?.supportsFunctionCalling == true) {
             abilities += ModelAbility.TOOL
-        }
-        if (options.preserveExistingCapabilities && model.abilities.contains(ModelAbility.REASONING)) {
-            abilities += ModelAbility.REASONING
         }
         if (catalogEntry?.supportsReasoning == true) {
             abilities += ModelAbility.REASONING

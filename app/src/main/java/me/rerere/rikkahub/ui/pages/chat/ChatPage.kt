@@ -1073,9 +1073,6 @@ private fun ChatPageContent(
     }
     val isTemporaryChat = activePersistenceMode == ChatPersistenceMode.TEMPORARY
 
-    // State for regeneration confirmation dialog
-    var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     // State for user message regeneration confirmation dialog
     var showUserRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
@@ -1103,8 +1100,6 @@ private fun ChatPageContent(
     LaunchedEffect(conversation.id) {
         previewMode = false
         showToolbarOverflowMenu = false
-        showRegenerateConfirmDialog = false
-        pendingRegenerateMessage = null
         showUserRegenerateConfirmDialog = false
         pendingUserRegenerateMessage = null
         showDeleteConfirmDialog = false
@@ -1349,13 +1344,8 @@ private fun ChatPageContent(
                                             // User message regeneration always truncates - show confirmation
                                             pendingUserRegenerateMessage = message
                                             showUserRegenerateConfirmDialog = true
-                                        } else if (vm.canPreserveVersionHistory(message)) {
-                                            // Simple assistant message - regenerate with version history
-                                            vm.regenerateAtMessage(message, forceWipe = false)
                                         } else {
-                                            // Complex assistant message - show confirmation dialog
-                                            pendingRegenerateMessage = message
-                                            showRegenerateConfirmDialog = true
+                                            vm.regenerateAtMessage(message)
                                         }
                                     },
                                     onEdit = {
@@ -1551,43 +1541,6 @@ private fun ChatPageContent(
                     )
                 }
 
-                // Regeneration confirmation dialog for complex messages
-                if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
-                    AlertDialog(
-                        onDismissRequest = {
-                            showRegenerateConfirmDialog = false
-                            pendingRegenerateMessage = null
-                        },
-                        title = { Text(stringResource(R.string.chat_regenerate_message_title)) },
-                        text = {
-                            Text(stringResource(R.string.chat_regenerate_message_warning))
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    pendingRegenerateMessage?.let { message ->
-                                        vm.regenerateAtMessage(message, forceWipe = true)
-                                    }
-                                    showRegenerateConfirmDialog = false
-                                    pendingRegenerateMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.regenerate))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    showRegenerateConfirmDialog = false
-                                    pendingRegenerateMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        }
-                    )
-                }
-
                 // User message regeneration confirmation dialog
                 if (showUserRegenerateConfirmDialog && pendingUserRegenerateMessage != null) {
                     AlertDialog(
@@ -1603,7 +1556,7 @@ private fun ChatPageContent(
                             TextButton(
                                 onClick = {
                                     pendingUserRegenerateMessage?.let { message ->
-                                        vm.regenerateAtMessage(message, forceWipe = false)
+                                        vm.regenerateAtMessage(message)
                                     }
                                     showUserRegenerateConfirmDialog = false
                                     pendingUserRegenerateMessage = null

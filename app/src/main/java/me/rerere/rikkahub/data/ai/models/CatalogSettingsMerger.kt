@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.models
 
-import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.common.http.urlPartsOrNull
@@ -27,14 +26,14 @@ fun mergeCatalogIntoSettings(
                 ?.singleOrNull()
             ?: catalogProvidersByName[provider.matchType to provider.name.normalizedCatalogNameKey()]
                 ?.singleOrNull()
-        val withCatalogDefaults = if (catalogProvider != null) {
+        val withCatalogIcon = if (catalogProvider != null) {
             matchedCatalogProviderIds += catalogProvider.id
             provider
-                .withCatalogProviderDefaults(catalogProvider)
+                .withCatalogManagedIcon(catalogProvider)
         } else {
             provider
         }
-        resolver.applyToProvider(withCatalogDefaults)
+        resolver.applyToProvider(withCatalogIcon)
     }
 
     val existingProviderIds = normalizedExisting.map { it.id }.toSet()
@@ -56,7 +55,7 @@ fun mergeCatalogIntoSettings(
     )
 }
 
-private fun ProviderSetting.withCatalogProviderDefaults(
+private fun ProviderSetting.withCatalogManagedIcon(
     catalogProvider: CatalogProvider,
 ): ProviderSetting {
     val catalogIcon = catalogProvider.icon?.toCatalogIconUrl()
@@ -67,12 +66,6 @@ private fun ProviderSetting.withCatalogProviderDefaults(
         )
         is ProviderSetting.OpenAI -> copy(
             customIconUri = resolvedIcon,
-            reasoningBehavior = reasoningBehavior
-                ?: catalogProvider.reasoningBehavior?.toReasoningRequestBehavior(),
-            streamOptionsMode = streamOptionsMode.catalogDefault(catalogProvider.streamOptionsMode),
-            imageResponseModalitiesMode = imageResponseModalitiesMode.catalogDefault(catalogProvider.imageResponseModalitiesMode),
-            reasoningContentReplayMode = reasoningContentReplayMode.catalogDefault(catalogProvider.reasoningContentReplayMode),
-            promptCacheMode = promptCacheMode.catalogDefault(catalogProvider.promptCacheMode),
         )
 
         is ProviderSetting.Google -> copy(customIconUri = resolvedIcon)
@@ -131,10 +124,6 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
             baseUrl = baseUrl,
         )
     }
-}
-
-private fun OpenAICompatibilityMode.catalogDefault(catalogValue: OpenAICompatibilityMode): OpenAICompatibilityMode {
-    return if (this == OpenAICompatibilityMode.AUTO) catalogValue else this
 }
 
 private val CatalogProvider.matchType: CatalogProviderType

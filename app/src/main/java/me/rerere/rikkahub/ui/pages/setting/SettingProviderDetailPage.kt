@@ -196,6 +196,7 @@ private val providerPickerResolutionOptions = ModelResolutionOptions(
     preserveDisplayName = true,
     preserveExistingCapabilities = true,
     preserveExistingType = true,
+    preserveExistingConfiguration = true,
 )
 
 private fun resolveProviderModel(
@@ -327,6 +328,28 @@ private fun ProviderSetting.canFetchApiModels(codexAccountAvailable: Boolean = f
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
         is ProviderSetting.LiteRtLocal -> false // on-device: no remote model list
     }
+}
+
+internal fun syncFreshModelMetadata(
+    freshModels: List<Model>,
+    currentProvider: ProviderSetting,
+    resolver: ModelMetadataResolver,
+): ProviderSetting {
+    val updatedModels = currentProvider.models.map { savedModel ->
+        val freshModel = freshModels.firstOrNull { apiModel ->
+            modelsReferToSameApiModel(savedModel, apiModel)
+        }
+        if (freshModel != null) {
+            savedModel.copy(
+                canonicalModelId = freshModel.canonicalModelId ?: savedModel.canonicalModelId,
+                iconUrl = freshModel.iconUrl,
+                providerSlug = freshModel.providerSlug,
+            )
+        } else {
+            resolveProviderModel(resolver, currentProvider, savedModel)
+        }
+    }
+    return currentProvider.copyProvider(models = updatedModels)
 }
 
 private data class ApiModelSource(
@@ -845,33 +868,6 @@ private fun ModelList(
     var isReloadingModels by remember(apiModelCacheKey) { mutableStateOf(false) }
     var reloadModelsError by remember(apiModelCacheKey) { mutableStateOf<String?>(null) }
 
-    fun syncFreshModelMetadata(freshModels: List<Model>, currentProvider: ProviderSetting): ProviderSetting {
-        val updatedModels = currentProvider.models.map { savedModel ->
-            val freshModel = freshModels.firstOrNull { apiModel ->
-                modelsReferToSameApiModel(savedModel, apiModel)
-            }
-            if (freshModel != null) {
-                val preserveDisplayName = savedModel.displayName.isNotBlank() &&
-                    savedModel.displayName != savedModel.modelId
-                savedModel.copy(
-                    displayName = if (preserveDisplayName) savedModel.displayName else freshModel.displayName,
-                    canonicalModelId = freshModel.canonicalModelId ?: savedModel.canonicalModelId,
-                    type = freshModel.type,
-                    inputModalities = freshModel.inputModalities,
-                    outputModalities = freshModel.outputModalities,
-                    abilities = freshModel.abilities,
-                    iconUrl = freshModel.iconUrl,
-                    providerSlug = freshModel.providerSlug,
-                    imageGenerationMethod = freshModel.imageGenerationMethod,
-                    reasoningBehavior = savedModel.reasoningBehavior ?: freshModel.reasoningBehavior,
-                )
-            } else {
-                resolveProviderModel(modelMetadataResolver, currentProvider, savedModel)
-            }
-        }
-        return currentProvider.copyProvider(models = updatedModels)
-    }
-
     fun reloadApiModels() {
         if (isReloadingModels) return
         if (!apiModelSource.canFetchModels) return
@@ -890,7 +886,11 @@ private fun ModelList(
             }.onSuccess { freshModels ->
                 ApiModelListCache.put(apiModelCacheKey, freshModels)
                 modelList = freshModels
-                val updatedProvider = syncFreshModelMetadata(freshModels, providerSetting)
+                val updatedProvider = syncFreshModelMetadata(
+                    freshModels = freshModels,
+                    currentProvider = providerSetting,
+                    resolver = modelMetadataResolver,
+                )
                 if (updatedProvider != providerSetting) {
                     onUpdateProvider(updatedProvider)
                 }
@@ -1828,7 +1828,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         options = ModelResolutionOptions(
                                             preserveDisplayName = true,
                                             preserveExistingCapabilities = true,
-                                            preserveExistingType = modelState.type != ModelType.CHAT,
+                                            preserveExistingType = true,
+                                            preserveExistingConfiguration = true,
                                         ),
                                     )
                                     dialogState.confirm()

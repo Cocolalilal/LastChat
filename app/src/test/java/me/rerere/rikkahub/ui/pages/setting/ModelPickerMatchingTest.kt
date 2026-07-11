@@ -1,7 +1,15 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,5 +76,46 @@ class ModelPickerMatchingTest {
                 Model(modelId = "gpt-4o-2024-05-13"),
             )
         )
+    }
+
+    @Test
+    fun refreshingApiMetadataPreservesSavedUserConfiguration() {
+        val saved = Model(
+            modelId = "gpt-5-mini",
+            displayName = "My model",
+            type = ModelType.CHAT,
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.TEXT),
+            abilities = emptyList(),
+            imageGenerationMethod = null,
+        )
+        val fresh = Model(
+            modelId = "gpt-5-mini",
+            displayName = "GPT-5 Mini",
+            type = ModelType.IMAGE,
+            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+            outputModalities = listOf(Modality.IMAGE),
+            abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+            iconUrl = "https://example.com/model.svg",
+            providerSlug = "openai",
+        )
+        val provider = ProviderSetting.OpenAI(models = listOf(saved))
+
+        val synced = syncFreshModelMetadata(
+            freshModels = listOf(fresh),
+            currentProvider = provider,
+            resolver = ModelMetadataResolver { null },
+        ) as ProviderSetting.OpenAI
+
+        val model = synced.models.single()
+        assertEquals("My model", model.displayName)
+        assertEquals(ModelType.CHAT, model.type)
+        assertEquals(listOf(Modality.TEXT), model.inputModalities)
+        assertEquals(listOf(Modality.TEXT), model.outputModalities)
+        assertEquals(emptyList<ModelAbility>(), model.abilities)
+        assertNull(model.imageGenerationMethod)
+        assertEquals(fresh.iconUrl, model.iconUrl)
+        assertEquals(fresh.providerSlug, model.providerSlug)
     }
 }

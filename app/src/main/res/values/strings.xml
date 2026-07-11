@@ -1325,7 +1325,6 @@
     <string name="update_download_failed">Failed to download update</string>
     <string name="placeholder_location">Location</string>
     <string name="placeholder_location_unavailable">[Location unavailable - grant location permission in Settings &gt; Apps &gt; LastChat]</string>
-  <string name="local_llm_litert_name">Local · LiteRT</string>
   <string name="local_llm_default_disabled">Run open models on this device. ~1.5 GB download required (Qwen2.5 1.5B Q8).</string>
   <string name="local_llm_download_title">Download default model</string>
   <string name="local_llm_download_message">LastChat needs to download a starter model for this provider. The download is ~1.5 GB (Qwen2.5 1.5B Q8). Continue?</string>
@@ -1489,7 +1488,6 @@
   <string name="codex_oauth_ports_unavailable">Couldn\'t start the local sign-in callback</string>
   <string name="codex_provider_description">Connect your own OpenAI account to use Codex models. Sign-in opens in your browser, credentials stay on this device, and OpenAI usage limits apply.</string>
   <string name="codex_sign_in">Sign in with OpenAI</string>
-  <string name="codex_single_account_description">Uses only the signed-in account</string>
   <string name="codex_sign_in_required">Sign in before enabling this provider</string>
   <string name="codex_account_title">Signed-in account</string>
   <string name="codex_check_status">Refresh status</string>

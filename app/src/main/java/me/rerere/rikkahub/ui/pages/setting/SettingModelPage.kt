@@ -205,7 +205,7 @@ private fun DefaultSTTModelSetting(
                 )
             }
             IconButton(
-                onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingLocalStt) }
+                onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingLocalLlm) }
             ) {
                 Icon(Icons.Rounded.DownloadForOffline, "Manage local speech models")
             }
