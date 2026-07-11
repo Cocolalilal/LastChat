@@ -79,8 +79,6 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 
 ##
 
-## Star History
-
 <a href="https://www.star-history.com/?repos=Cocolalilal%2FLastChat&type=date&legend=bottom-right">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&theme=dark&legend=bottom-right&sealed_token=h6KBNo0RzypvDXalxCwJmPyVQ5gKGswMS94m2Lr-kVGaLyQ_u138MvraoUzAqGUKkSBmGQ5R1mGAi1MyCkvK0ZZ8naNt4H4IZOcrluk5pxnO1xYupzG2XLcKfIArt9PK37UkkyNwBZAcPenp_RW8cgBeFSQcX3ryiPRjxeHWalnB9W6dPHcUclBoKZaZ" />
