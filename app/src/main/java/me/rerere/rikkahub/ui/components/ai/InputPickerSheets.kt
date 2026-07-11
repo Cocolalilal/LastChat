@@ -72,6 +72,7 @@ internal fun SkillsPickerSheet(
     val availableSkills = remember(settings.skills) {
         settings.skills
     }
+    val userInvocableSkills = remember(availableSkills) { availableSkills.filter { it.userInvocable } }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
         settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
@@ -134,20 +135,20 @@ internal fun SkillsPickerSheet(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            if (availableSkills.isEmpty()) {
+            if (userInvocableSkills.isEmpty()) {
                 Text(
                     text = stringResource(R.string.skills_picker_none),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                availableSkills.forEachIndexed { index, skill ->
+                userInvocableSkills.forEachIndexed { index, skill ->
                     val isEnabled = localEnabledIds.contains(skill.id)
 
                     val position = when {
-                        availableSkills.size == 1 -> ItemPosition.ONLY
+                        userInvocableSkills.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
-                        index == availableSkills.lastIndex -> ItemPosition.LAST
+                        index == userInvocableSkills.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
 

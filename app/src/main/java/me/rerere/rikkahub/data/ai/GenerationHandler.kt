@@ -65,6 +65,8 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.utils.SkillExportImport
+import java.io.File
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -197,7 +199,9 @@ internal fun buildSkillToolState(
     )
     // Always-enabled skills are invisible to the manage_skills tool:
     // they cannot be toggled by the AI so they don't appear in any tool list.
-    val toggleableSkills = usableSkills
+    // A skill may be enabled by the user but opt out of model-driven discovery.
+    // Keep it active when selected, while preventing the model from activating it.
+    val toggleableSkills = usableSkills.filterNot { it.disableModelInvocation }
     val autonomousSkills = toggleableSkills.filter { skill ->
         skill.canAssistantAutonomouslyToggle(assistantId)
     }
@@ -332,11 +336,15 @@ internal fun createSkillManagementTool(
     }
 
     fun summarizeSkill(skill: me.rerere.rikkahub.data.model.Skill): String {
-        return skill.description
+        val description = skill.description
             .ifBlank { "No description provided." }
             .replace('\n', ' ')
             .trim()
             .take(160)
+        return skill.compatibility
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "$description (Requires: ${it.replace('\n', ' ').take(120)})" }
+            ?: description
     }
 
     return Tool(
@@ -363,7 +371,7 @@ internal fun createSkillManagementTool(
         systemPrompt = { _, _ ->
             buildString {
                 appendLine("## Skill Management")
-                appendLine("Use `manage_skills` only when one of the available skills is clearly needed for the current user request.")
+                appendLine("Use `manage_skills` only when one of the available skills is clearly needed for the current user request. Activating a skill loads its full SKILL.md instructions and exposes its package directory.")
                 appendLine("Activations only apply to this assistant turn.")
                 appendLine()
                 appendLine(
@@ -482,6 +490,13 @@ class GenerationHandler(
         enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
     ): Flow<GenerationChunk> = channelFlow {
+        // Older app-created skills predate package storage. Materialize their
+        // canonical SKILL.md before a workspace starts so resource paths in the
+        // prompt always point to a real package.
+        settings.skills.forEach { skill ->
+            runCatching { SkillExportImport.syncManagedSkill(context, skill) }
+                .onFailure { Log.w(TAG, "Could not sync skill package ${skill.name}", it) }
+        }
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
@@ -884,6 +899,9 @@ class GenerationHandler(
         // Group injections by position
         val beforeSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val topOfChatSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
+        val beforeLatestSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
+        val depthSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
@@ -896,6 +914,21 @@ class GenerationHandler(
                 baseSystemPromptBuilder.appendLine()
             }
             baseSystemPromptBuilder.append(skill.instructions)
+            val skillsRoot = File(context.filesDir, "skills")
+            val resources = File(skillsRoot, skill.workspaceDirectory().removePrefix("/skills/"))
+                .takeIf { it.isDirectory }
+                ?.walkTopDown()
+                ?.filter { it.isFile && it.name != "SKILL.md" }
+                ?.map { it.relativeTo(skillsRoot).invariantSeparatorsPath }
+                ?.take(64)
+                ?.toList()
+                .orEmpty()
+            if (resources.isNotEmpty()) {
+                baseSystemPromptBuilder.appendLine()
+                baseSystemPromptBuilder.appendLine("Skill package: ${skill.workspaceDirectory()}")
+                baseSystemPromptBuilder.appendLine("Bundled resources (load only when needed):")
+                resources.forEach { baseSystemPromptBuilder.appendLine("- /skills/$it") }
+            }
         }
         
         // BEFORE_SYSTEM injections
@@ -1159,6 +1192,15 @@ class GenerationHandler(
             if (baseSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(baseSystemPrompt))
             }
+
+            fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
+                "<system>\n[Skill: ${skill.name}]\n${skill.instructions}\nSkill directory: ${skill.workspaceDirectory()}\n</system>"
+            )
+
+            // These positions intentionally become in-context messages rather than
+            // system-prompt text. That makes TOP_OF_CHAT, BEFORE_LATEST and AT_DEPTH
+            // materially distinct and preserves their documented ordering.
+            topOfChatSkills.forEach { add(skillMessage(it)) }
             
             val dynamicContext = buildList {
                 if (selectedMemories.isNotEmpty()) {
@@ -1173,7 +1215,15 @@ class GenerationHandler(
                 val lastMessage = orderedSelectedMessages.last()
                 val history = orderedSelectedMessages.dropLast(1)
                 
-                addAll(history)
+                val depthByInsertionIndex = depthSkills.groupBy { skill ->
+                    (history.size - skill.depth.coerceAtLeast(0)).coerceIn(0, history.size)
+                }
+                for (index in 0..history.size) {
+                    depthByInsertionIndex[index].orEmpty().forEach { add(skillMessage(it)) }
+                    if (index < history.size) add(history[index])
+                }
+
+                beforeLatestSkills.forEach { add(skillMessage(it)) }
                 
                 var finalParts = lastMessage.parts
                 
@@ -1187,6 +1237,8 @@ class GenerationHandler(
                 
                 add(lastMessage.copy(parts = finalParts))
             } else {
+                depthSkills.forEach { add(skillMessage(it)) }
+                beforeLatestSkills.forEach { add(skillMessage(it)) }
                 if (dynamicContext.isNotBlank()) {
                     add(UIMessage.system(dynamicContext))
                 }

@@ -85,9 +85,16 @@ fun SettingPromptInjectionsPage(
         if (uri == null) return@rememberLauncherForActivityResult
         when (val result = SkillExportImport.importFromUri(context, uri)) {
             is SkillExportImport.ImportResult.Success -> {
-                vm.updateSettings(settings.copy(skills = settings.skills + result.skill))
-                haptics.perform(HapticPattern.Success)
-                toaster.show(context.getString(R.string.skill_import_success, result.skill.name))
+                runCatching { SkillExportImport.installPackage(context, result) }
+                    .onSuccess { installedSkill ->
+                        vm.updateSettings(settings.copy(skills = settings.skills + installedSkill))
+                        haptics.perform(HapticPattern.Success)
+                        toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
+                    }
+                    .onFailure {
+                        haptics.perform(HapticPattern.Error)
+                        toaster.show(it.message ?: "Could not install skill package")
+                    }
             }
 
             is SkillExportImport.ImportResult.Error -> {
@@ -218,7 +225,7 @@ fun SettingPromptInjectionsPage(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
                             if (pagerState.currentPage == 0) {
-                                skillImportLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
+                                skillImportLauncher.launch(arrayOf("application/json", "text/markdown", "application/zip", "*/*"))
                             } else {
                                 lorebookImportLauncher.launch(arrayOf("application/json", "*/*"))
                             }
@@ -290,13 +297,14 @@ fun SettingPromptInjectionsPage(
                 editingSkill = null
             },
             onSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 if (editingSkill == null) {
-                    vm.updateSettings(settings.copy(skills = settings.skills + savedSkill))
+                    vm.updateSettings(settings.copy(skills = settings.skills + persistedSkill))
                 } else {
                     vm.updateSettings(
                         settings.copy(
                             skills = settings.skills.map {
-                                if (it.id == savedSkill.id) savedSkill else it
+                                if (it.id == persistedSkill.id) persistedSkill else it
                             }
                         )
                     )
@@ -305,10 +313,11 @@ fun SettingPromptInjectionsPage(
                 editingSkill = null
             },
             onAutoSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 vm.updateSettings(
                     settings.copy(
                         skills = settings.skills.map {
-                            if (it.id == savedSkill.id) savedSkill else it
+                            if (it.id == persistedSkill.id) persistedSkill else it
                         }
                     )
                 )

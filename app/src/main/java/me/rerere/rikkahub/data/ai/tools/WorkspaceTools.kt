@@ -48,7 +48,7 @@ private fun createReadFileTool(
     workspaceRepository: WorkspaceRepository,
 ) = Tool(
     name = "workspace_read_file",
-    description = "Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for the workspace files area.",
+    description = "Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for workspace files or /skills/<skill>/ for a read-only Agent Skill package.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject { putPathProperty(required = true) },
@@ -197,6 +197,19 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
     workspaceId: String,
     path: String,
 ): String {
+    // `/skills` is an external bind mount, not WorkspaceRepository-managed
+    // storage. Read it through the active rootfs so packaged resources work.
+    if (path == "/skills" || path.startsWith("/skills/")) {
+        val result = executeCommand(
+            id = workspaceId,
+            command = "cat -- ${path.shellQuote()}",
+            timeoutMillis = WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+        )
+        if (result.timedOut) error("Read file timed out")
+        if (result.exitCode != 0) error(result.stderr.ifBlank { result.stdout }.trim().ifBlank { "Read file failed" })
+        if (result.truncated || result.stdout.toByteArray().size > MAX_READ_FILE_BYTES) error("File is too large to read")
+        return result.stdout
+    }
     val (area, relativePath) = rootfsPathToAreaAndRelative(path)
     val size = fileSize(workspaceId, area, relativePath)
     require(size <= MAX_READ_FILE_BYTES) {
@@ -222,6 +235,7 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     text: String,
     overwrite: Boolean,
 ): WorkspaceFileEntry {
+    require(path != "/skills" && !path.startsWith("/skills/")) { "Skill packages are read-only" }
     val pathArg = path.shellQuote()
     val overwriteInt = if(overwrite) 1 else 0
     val result = runRootfsCommand(

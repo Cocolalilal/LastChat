@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
@@ -92,6 +93,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
@@ -140,9 +142,16 @@ fun SettingSkillsPage(
         if (uri == null) return@rememberLauncherForActivityResult
         when (val result = SkillExportImport.importFromUri(context, uri)) {
             is SkillExportImport.ImportResult.Success -> {
-                vm.updateSettings(settings.copy(skills = settings.skills + result.skill))
-                haptics.perform(HapticPattern.Success)
-                toaster.show(context.getString(R.string.skill_import_success, result.skill.name))
+                runCatching { SkillExportImport.installPackage(context, result) }
+                    .onSuccess { installedSkill ->
+                        vm.updateSettings(settings.copy(skills = settings.skills + installedSkill))
+                        haptics.perform(HapticPattern.Success)
+                        toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
+                    }
+                    .onFailure {
+                        haptics.perform(HapticPattern.Error)
+                        toaster.show(it.message ?: "Could not install skill package")
+                    }
             }
 
             is SkillExportImport.ImportResult.Error -> {
@@ -230,7 +239,7 @@ fun SettingSkillsPage(
                     FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
-                            importLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
+                            importLauncher.launch(arrayOf("application/json", "text/markdown", "application/zip", "*/*"))
                         },
                         shape = AppShapes.CardLarge,
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -275,13 +284,14 @@ fun SettingSkillsPage(
                 editingSkill = null
             },
             onSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 if (editingSkill == null) {
-                    vm.updateSettings(settings.copy(skills = settings.skills + savedSkill))
+                    vm.updateSettings(settings.copy(skills = settings.skills + persistedSkill))
                 } else {
                     vm.updateSettings(
                         settings.copy(
                             skills = settings.skills.map {
-                                if (it.id == savedSkill.id) savedSkill else it
+                                if (it.id == persistedSkill.id) persistedSkill else it
                             }
                         )
                     )
@@ -290,10 +300,11 @@ fun SettingSkillsPage(
                 editingSkill = null
             },
             onAutoSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 vm.updateSettings(
                     settings.copy(
                         skills = settings.skills.map {
-                            if (it.id == savedSkill.id) savedSkill else it
+                            if (it.id == persistedSkill.id) persistedSkill else it
                         }
                     )
                 )
@@ -721,6 +732,10 @@ fun SkillEditorSheet(
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
     var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
+    var disableModelInvocation by remember { mutableStateOf(skill?.disableModelInvocation ?: false) }
+    var userInvocable by remember { mutableStateOf(skill?.userInvocable ?: true) }
+    var injectionPosition by remember { mutableStateOf(skill?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) }
+    var depth by remember { mutableStateOf(skill?.depth?.toString() ?: "0") }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
     var showIconPicker by remember { mutableStateOf(false) }
@@ -815,6 +830,10 @@ fun SkillEditorSheet(
                                         icon = icon,
                                         instructions = instructions,
                                         alwaysEnabled = alwaysEnabled,
+                                        disableModelInvocation = disableModelInvocation,
+                                        userInvocable = userInvocable,
+                                        injectionPosition = injectionPosition,
+                                        depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                         availableForAllAssistants = availableForAllAssistants,
                                         availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                         updatedAt = System.currentTimeMillis()
@@ -854,6 +873,10 @@ fun SkillEditorSheet(
                                     icon = icon,
                                     instructions = instructions,
                                     alwaysEnabled = alwaysEnabled,
+                                    disableModelInvocation = disableModelInvocation,
+                                    userInvocable = userInvocable,
+                                    injectionPosition = injectionPosition,
+                                    depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                     availableForAllAssistants = availableForAllAssistants,
                                     availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                     updatedAt = System.currentTimeMillis()
@@ -881,6 +904,10 @@ fun SkillEditorSheet(
                                     icon = icon,
                                     instructions = newVal,
                                     alwaysEnabled = alwaysEnabled,
+                                    disableModelInvocation = disableModelInvocation,
+                                    userInvocable = userInvocable,
+                                    injectionPosition = injectionPosition,
+                                    depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                     availableForAllAssistants = availableForAllAssistants,
                                     availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                     updatedAt = System.currentTimeMillis()
@@ -957,6 +984,56 @@ fun SkillEditorSheet(
                                 )
                             }
                         )
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_disable_model_invocation)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_disable_model_invocation_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = disableModelInvocation,
+                                    onCheckedChange = { disableModelInvocation = it }
+                                )
+                            }
+                        )
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_user_invocable)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_user_invocable_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = userInvocable,
+                                    onCheckedChange = { userInvocable = it }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                FormItem(label = { Text(stringResource(R.string.lorebook_entry_injection_position)) }) {
+                    Select(
+                        options = InjectionPosition.entries,
+                        selectedOption = injectionPosition,
+                        onOptionSelected = { injectionPosition = it },
+                        optionToString = { position ->
+                            when (position) {
+                                InjectionPosition.BEFORE_SYSTEM -> stringResource(R.string.injection_position_before_system)
+                                InjectionPosition.AFTER_SYSTEM -> stringResource(R.string.injection_position_after_system)
+                                InjectionPosition.TOP_OF_CHAT -> stringResource(R.string.injection_position_top_of_chat)
+                                InjectionPosition.BEFORE_LATEST -> stringResource(R.string.injection_position_before_latest)
+                                InjectionPosition.AT_DEPTH -> stringResource(R.string.injection_position_at_depth)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (injectionPosition == InjectionPosition.AT_DEPTH) {
+                    FormItem(label = { Text("Depth") }, description = { Text("Messages before the latest message") }) {
+                        OutlinedTextField(
+                            value = depth,
+                            onValueChange = { depth = it.filter(Char::isDigit) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -980,17 +1057,14 @@ fun SkillEditorSheet(
                                 description = description.trim(),
                                 icon = icon,
                                 instructions = instructions,
-                                attachments = emptyList(),
                                 enabled = true,
                                 alwaysEnabled = alwaysEnabled,
+                                disableModelInvocation = disableModelInvocation,
+                                userInvocable = userInvocable,
+                                injectionPosition = injectionPosition,
+                                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                 availableForAllAssistants = availableForAllAssistants,
                                 availableAssistantIds = availableIds,
-                                autonomousForAllAssistants = true,
-                                autonomousAssistantIds = emptySet(),
-                                injectionPosition = InjectionPosition.AFTER_SYSTEM,
-                                depth = 0,
-                                disableModelInvocation = false,
-                                userInvocable = true,
                                 updatedAt = System.currentTimeMillis()
                             )
                             onSave(savedSkill)
@@ -1013,17 +1087,14 @@ fun SkillEditorSheet(
                 description = description.trim(),
                 icon = icon,
                 instructions = instructions,
-                attachments = emptyList(),
                 enabled = true,
                 alwaysEnabled = alwaysEnabled,
+                disableModelInvocation = disableModelInvocation,
+                userInvocable = userInvocable,
+                injectionPosition = injectionPosition,
+                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 availableForAllAssistants = availableForAllAssistants,
                 availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                autonomousForAllAssistants = true,
-                autonomousAssistantIds = emptySet(),
-                injectionPosition = InjectionPosition.AFTER_SYSTEM,
-                depth = 0,
-                disableModelInvocation = false,
-                userInvocable = true,
             ),
             onDismiss = { showExportDialog = false }
         )
@@ -1056,6 +1127,23 @@ private fun SkillExportDialog(
                         it.message ?: context.getString(R.string.backup_page_unknown_error)
                     )
                 )
+            }
+        }
+        onDismiss()
+    }
+
+    val skillPackageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(SkillExportImport.exportPackage(context, skill))
+                } ?: error("Could not open export destination")
+            }.onSuccess {
+                toaster.show(context.getString(R.string.skill_export_success))
+            }.onFailure {
+                toaster.show(it.message ?: "Could not export skill package")
             }
         }
         onDismiss()
@@ -1099,6 +1187,22 @@ private fun SkillExportDialog(
                     leadingContent = {
                         Icon(Icons.Rounded.Code, contentDescription = null)
                     }
+                )
+            }
+
+            Card(
+                onClick = { skillPackageLauncher.launch("${skill.name.ifBlank { "skill" }}.zip") },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow
+                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                ),
+                shape = AppShapes.CardLarge
+            ) {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Full skill package (.zip)") },
+                    supportingContent = { Text("Includes SKILL.md, scripts, references, and assets") },
+                    leadingContent = { Icon(Icons.Rounded.Archive, contentDescription = null) }
                 )
             }
         }
