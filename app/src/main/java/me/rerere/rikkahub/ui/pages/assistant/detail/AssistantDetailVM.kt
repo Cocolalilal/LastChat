@@ -5,12 +5,16 @@ import android.util.Log
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
@@ -24,6 +28,13 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.HybridMemoryRepository
+import me.rerere.rikkahub.data.model.MemoryDocumentKind
+import me.rerere.rikkahub.data.model.MemoryConversionDirection
+import me.rerere.rikkahub.data.model.MemoryConversionPreview
+import me.rerere.rikkahub.data.model.MemorySystemType
+import me.rerere.rikkahub.data.ai.MemoryConversionService
+import me.rerere.rikkahub.service.HybridMemoryCatchUpWorker
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -32,11 +43,13 @@ class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
+    private val hybridMemoryRepository: HybridMemoryRepository,
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: me.rerere.ai.provider.ProviderManager,
     private val appStorageRepository: AppStorageRepository,
+    private val memoryConversionService: MemoryConversionService,
 ) : ViewModel() {
     private val assistantId = runCatching { Uuid.parse(id) }
         .onFailure { Log.w(TAG, "Invalid assistant id route parameter: $id", it) }
@@ -59,6 +72,147 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
+
+    val memoryDocuments = hybridMemoryRepository.observeDocuments(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val continuityDigests = hybridMemoryRepository.observeDigests(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val memoryGraphNodes = hybridMemoryRepository.observeGraphNodes(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val memoryGraphEdges = hybridMemoryRepository.observeGraphEdges(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val memoryGraphOverrides = hybridMemoryRepository.observeGraphOverrides(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _graphProvenance = MutableStateFlow<me.rerere.rikkahub.data.db.entity.MemoryGraphProvenanceEntity?>(null)
+    val graphProvenance = _graphProvenance.asStateFlow()
+
+    val memoryProcessingStates = hybridMemoryRepository.observeProcessingStates(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _conversionPreview = MutableStateFlow<MemoryConversionPreview?>(null)
+    val conversionPreview = _conversionPreview.asStateFlow()
+    private val _conversionBusy = MutableStateFlow(false)
+    val conversionBusy = _conversionBusy.asStateFlow()
+    private val _conversionError = MutableStateFlow<String?>(null)
+    val conversionError = _conversionError.asStateFlow()
+    private val _conversionAvailable = MutableStateFlow(false)
+    val conversionAvailable = _conversionAvailable.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            assistant.collect { current ->
+                hybridMemoryRepository.ensureDocuments(current)
+                refreshConversionAvailability(current)
+            }
+        }
+        viewModelScope.launch {
+            memoryProcessingStates.collect { refreshConversionAvailability(assistant.value) }
+        }
+    }
+
+    fun updateMemoryDocument(kind: MemoryDocumentKind, content: String, reason: String = "Edited by user") {
+        viewModelScope.launch {
+            val currentAssistant = assistant.value
+            val current = memoryDocuments.value.firstOrNull { it.kind == kind.name } ?: return@launch
+            hybridMemoryRepository.updateDocument(
+                assistant = currentAssistant,
+                kind = kind,
+                content = content,
+                expectedRevision = current.revision,
+                reason = reason,
+                source = "manual",
+            )
+            refreshConversionAvailability(currentAssistant)
+        }
+    }
+
+    fun setDigestPinned(id: String, pinned: Boolean) {
+        viewModelScope.launch { hybridMemoryRepository.setDigestPinned(id, pinned) }
+    }
+
+    fun dismissDigest(id: String) {
+        viewModelScope.launch { hybridMemoryRepository.dismissDigest(id) }
+    }
+
+    fun documentRevisions(documentId: String?) = documentId?.let(hybridMemoryRepository::observeDocumentRevisions)
+        ?: flowOf(emptyList())
+
+    fun restoreMemoryDocument(kind: MemoryDocumentKind, revision: Long) {
+        viewModelScope.launch { hybridMemoryRepository.restoreDocument(assistant.value, kind, revision) }
+    }
+
+    fun processMemoryBacklog() {
+        WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<HybridMemoryCatchUpWorker>().build())
+    }
+
+    fun rebuildMemoryIndex() {
+        viewModelScope.launch {
+            val current = assistant.value
+            val conversations = conversationRepository.getConversationsOfAssistant(current.id).first()
+            hybridMemoryRepository.rebuildSearchIndex(current, conversations)
+            processMemoryBacklog()
+        }
+    }
+
+    fun loadGraphProvenance(graphId: String) {
+        viewModelScope.launch { _graphProvenance.value = hybridMemoryRepository.getGraphProvenance(graphId).firstOrNull() }
+    }
+
+    fun clearGraphProvenance() { _graphProvenance.value = null }
+
+    fun addGraphOverride(targetKind: String, targetId: String, operation: String, payload: String) {
+        viewModelScope.launch {
+            hybridMemoryRepository.addGraphOverride(assistantId.toString(), targetKind, targetId, operation, payload)
+        }
+    }
+
+    fun generateConversionPreview() {
+        if (_conversionBusy.value) return
+        viewModelScope.launch {
+            _conversionBusy.value = true
+            _conversionError.value = null
+            runCatching { memoryConversionService.generatePreview(assistant.value, targetConversionDirection(assistant.value)) }
+                .onSuccess { _conversionPreview.value = it }
+                .onFailure { _conversionError.value = it.message ?: "Could not generate conversion preview" }
+            _conversionBusy.value = false
+        }
+    }
+
+    fun cancelConversionPreview() {
+        _conversionPreview.value = null
+        _conversionError.value = null
+    }
+
+    fun applyConversionPreview() {
+        val preview = _conversionPreview.value ?: return
+        if (_conversionBusy.value) return
+        viewModelScope.launch {
+            _conversionBusy.value = true
+            val result = hybridMemoryRepository.applyConversionPreview(assistant.value, preview)
+            if (result.applied) {
+                _conversionPreview.value = null
+                _conversionError.value = null
+                refreshConversionAvailability(assistant.value)
+            } else {
+                _conversionError.value = result.error
+            }
+            _conversionBusy.value = false
+        }
+    }
+
+    private suspend fun refreshConversionAvailability(current: Assistant) {
+        val input = hybridMemoryRepository.buildConversionInput(current, targetConversionDirection(current))
+        _conversionAvailable.value = input.sourceRevision > input.previousWatermark
+    }
+
+    private fun targetConversionDirection(current: Assistant) =
+        if (current.memorySystem == MemorySystemType.DOCUMENT_BASED) MemoryConversionDirection.ENTRY_TO_DOCUMENT
+        else MemoryConversionDirection.DOCUMENT_TO_ENTRY
 
     private val _memorySearchQuery = MutableStateFlow("")
     val memorySearchQuery = _memorySearchQuery.asStateFlow()
@@ -239,7 +393,8 @@ class AssistantDetailVM(
             memoryRepository.addMemory(
                 assistantId = assistantId.toString(),
                 content = memory.content
-            )
+            ).also { hybridMemoryRepository.indexEntry(assistantId.toString(), it) }
+            refreshConversionAvailability(assistant.value)
         }
     }
 
@@ -249,6 +404,8 @@ class AssistantDetailVM(
                 memoryRepository.updateEpisodeContent(id = -memory.id, content = memory.content)
             } else {
                 memoryRepository.updateContent(id = memory.id, content = memory.content)
+                    .also { hybridMemoryRepository.indexEntry(assistantId.toString(), it) }
+                refreshConversionAvailability(assistant.value)
             }
         }
     }
@@ -257,6 +414,8 @@ class AssistantDetailVM(
         viewModelScope.launch {
             if (memory.id > 0) {
                 memoryRepository.deleteMemory(id = memory.id)
+                hybridMemoryRepository.deleteIndexedSource(me.rerere.rikkahub.data.model.MemorySourceKind.ENTRY, memory.id.toString())
+                refreshConversionAvailability(assistant.value)
             }
         }
     }
@@ -352,16 +511,6 @@ class AssistantDetailVM(
                 Log.e(TAG, "Failed to regenerate embeddings", e)
             }
         }
-    }
-
-    fun consolidateMemories(isFullScan: Boolean) {
-        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-            .setInputData(
-                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(context).enqueue(request)
-        _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
     }
 
     suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {

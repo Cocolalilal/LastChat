@@ -73,6 +73,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,6 +87,11 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.MemorySystemType
+import me.rerere.rikkahub.data.model.effectiveAdvancedEntryMemoryEnabled
+import me.rerere.rikkahub.data.model.effectiveMemorySearchToolEnabled
+import me.rerere.rikkahub.data.model.effectiveRagMemoryEnabled
+import me.rerere.rikkahub.data.model.effectiveRecentContinuityEnabled
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -101,7 +107,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 private fun getMemoryMode(assistant: Assistant): MemoryMode {
     return when {
         !assistant.enableMemory -> MemoryMode.OFF
-        assistant.enableMemoryConsolidation -> MemoryMode.ADVANCED
+        assistant.effectiveAdvancedEntryMemoryEnabled() -> MemoryMode.ADVANCED
         assistant.useRagMemoryRetrieval -> MemoryMode.BASIC_RAG
         assistant.enableRecentChatsReference -> MemoryMode.BASIC_RECENT
         else -> MemoryMode.BASIC
@@ -143,6 +149,8 @@ fun AssistantMemorySettings(
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
+    memorySourceKind: String? = null,
+    memorySourceId: String? = null,
     onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
@@ -207,6 +215,20 @@ fun AssistantMemorySettings(
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
+    val processingStates by assistantDetailVM.memoryProcessingStates.collectAsStateWithLifecycle()
+
+    if (assistant.memorySystem == MemorySystemType.DOCUMENT_BASED) {
+        DocumentBasedMemorySettings(
+            assistant = assistant,
+            onUpdateAssistant = onUpdateAssistant,
+            vm = assistantDetailVM,
+            highlightedSourceKind = memorySourceKind,
+            highlightedSourceId = memorySourceId,
+        )
+        return
+    }
+
+    var systemMenuExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -216,6 +238,25 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        MemoryConversionPanel(assistantDetailVM)
+
+        val pendingMemoryCount = processingStates.count { it.indexedAt > it.processedAt }
+        val failedMemoryCount = processingStates.count { !it.lastError.isNullOrBlank() }
+        Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainer) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Processing status", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (failedMemoryCount > 0) "$pendingMemoryCount waiting • $failedMemoryCount need retry"
+                    else if (pendingMemoryCount > 0) "$pendingMemoryCount conversations waiting" else "Memory is up to date",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = assistantDetailVM::processMemoryBacklog, enabled = assistant.enableMemory) { Text("Process backlog") }
+                    TextButton(onClick = assistantDetailVM::rebuildMemoryIndex, enabled = assistant.enableMemory) { Text("Full rebuild") }
+                }
+            }
+        }
+
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
         
@@ -232,7 +273,7 @@ fun AssistantMemorySettings(
             MemorySettingsItem(
                 title = stringResource(R.string.assistant_page_memory),
                 subtitle = stringResource(R.string.assistant_page_memory_desc),
-                position = if (!assistant.enableMemory) "ONLY" else "FIRST",
+                position = "FIRST",
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableMemory,
@@ -241,17 +282,40 @@ fun AssistantMemorySettings(
                 }
             )
 
+            Box {
+                MemorySettingsItem(
+                    title = "Memory system",
+                    subtitle = "Entry-based",
+                    position = if (assistant.enableMemory) "MIDDLE" else "LAST",
+                    trailing = { Text("Entry-based", color = MaterialTheme.colorScheme.primary) },
+                    onClick = { systemMenuExpanded = true },
+                )
+                DropdownMenu(expanded = systemMenuExpanded, onDismissRequest = { systemMenuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Entry-based") },
+                        onClick = { systemMenuExpanded = false },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Document-based") },
+                        onClick = {
+                            systemMenuExpanded = false
+                            onUpdateAssistant(assistant.copy(memorySystem = MemorySystemType.DOCUMENT_BASED))
+                        },
+                    )
+                }
+            }
+
             // Recent Chats Toggle (when memory enabled)
             AnimatedVisibility(
                 visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                val isLockedByConsolidation = assistant.enableMemoryConsolidation
+                val isLockedByConsolidation = assistant.effectiveAdvancedEntryMemoryEnabled()
                 
                 MemorySettingsItem(
-                    title = stringResource(R.string.assistant_page_recent_chats),
-                    subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
+                    title = "Recent continuity",
+                    subtitle = "Naturally recall short, automatically maintained conversation digests",
                     // RAG toggle is always visible below when memory is on, so this is always MIDDLE
                     position = "MIDDLE",
                     trailing = {
@@ -263,10 +327,10 @@ fun AssistantMemorySettings(
                         )
                         Box(modifier = Modifier.graphicsLayer { alpha = toggleAlpha }) {
                             HapticSwitch(
-                                checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
+                                checked = assistant.effectiveRecentContinuityEnabled(),
                                 onCheckedChange = { 
                                     if (!isLockedByConsolidation) {
-                                        onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
+                                        onUpdateAssistant(assistant.copy(entryRecentContinuityEnabled = it))
                                     }
                                 },
                                 enabled = !isLockedByConsolidation
@@ -282,16 +346,18 @@ fun AssistantMemorySettings(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
+                val locked = assistant.effectiveAdvancedEntryMemoryEnabled()
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_search_tool),
                     subtitle = stringResource(R.string.assistant_memory_search_tool_desc),
                     position = "MIDDLE",
                     trailing = {
                         HapticSwitch(
-                            checked = assistant.enableMemorySearchTool,
+                            checked = assistant.effectiveMemorySearchToolEnabled(),
                             onCheckedChange = { enabled ->
-                                onUpdateAssistant(assistant.copy(enableMemorySearchTool = enabled))
-                            }
+                                if (!locked) onUpdateAssistant(assistant.copy(entryMemorySearchToolEnabled = enabled))
+                            },
+                            enabled = !locked,
                         )
                     }
                 )
@@ -303,23 +369,25 @@ fun AssistantMemorySettings(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
+                val locked = assistant.effectiveAdvancedEntryMemoryEnabled()
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_rag_retrieval),
                     subtitle = stringResource(R.string.assistant_memory_rag_retrieval_desc),
                     position = if (!assistant.useRagMemoryRetrieval) "LAST" else "MIDDLE",
                     trailing = {
                         HapticSwitch(
-                            checked = assistant.useRagMemoryRetrieval,
+                            checked = assistant.effectiveRagMemoryEnabled(),
                             onCheckedChange = { enabled ->
-                                if (!enabled) {
+                                if (!locked && !enabled) {
                                     onUpdateAssistant(assistant.copy(
                                         useRagMemoryRetrieval = false,
-                                        enableMemoryConsolidation = false
+                                        entryAdvancedMemoryEnabled = false
                                     ))
-                                } else {
+                                } else if (!locked) {
                                     onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true))
                                 }
-                            }
+                            },
+                            enabled = !locked,
                         )
                     }
                 )
@@ -327,7 +395,7 @@ fun AssistantMemorySettings(
 
             // Memory Consolidation Toggle (requires RAG)
             AnimatedVisibility(
-                visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+                visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -337,16 +405,15 @@ fun AssistantMemorySettings(
                     position = "LAST",
                     trailing = {
                         HapticSwitch(
-                            checked = assistant.enableMemoryConsolidation,
+                            checked = assistant.effectiveAdvancedEntryMemoryEnabled(),
                             onCheckedChange = { enabled ->
                                 if (!enabled) {
                                     onUpdateAssistant(assistant.copy(
-                                        enableMemoryConsolidation = false
+                                        entryAdvancedMemoryEnabled = false
                                     ))
                                 } else {
                                     onUpdateAssistant(assistant.copy(
-                                        enableMemoryConsolidation = true,
-                                        enableRecentChatsReference = true
+                                        entryAdvancedMemoryEnabled = true
                                     ))
                                 }
                             }
@@ -360,7 +427,7 @@ fun AssistantMemorySettings(
         // RAG SETTINGS (when RAG is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+            visible = assistant.enableMemory && assistant.effectiveRagMemoryEnabled(),
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -405,25 +472,6 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                SettingsGroupHeader(title = stringResource(R.string.assistant_memory_advanced_settings))
-                
-                ConsolidationSettingsCard(
-                    assistant = assistant,
-                    onUpdateAssistant = onUpdateAssistant,
-                    onConsolidate = { assistantDetailVM.consolidateMemories(true) },
-                    showSummarizerWarning = !hasSummarizerModelConfigured,
-                    onNavigateToSummarizerSettings = onNavigateToSummarizerSettings
-                )
-            }
-        }
-
-
         // ═══════════════════════════════════════════════════════════════════
         // MEMORY STATISTICS (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
@@ -456,7 +504,7 @@ fun AssistantMemorySettings(
                 memorySearchQuery = memorySearchQuery,
                 onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                 currentEmbeddingModelId = currentEmbeddingModelId,
-                showMemoryTypes = assistant.enableMemoryConsolidation,
+                showMemoryTypes = false,
                 initialMemoryTab = initialMemoryTab,
                 scrollToMemoryId = scrollToMemoryId,
                 onRegenerateEmbeddings = onRegenerateEmbeddings,
@@ -469,7 +517,7 @@ fun AssistantMemorySettings(
         // MEMORY DEBUGGER (RAG only)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
+            visible = assistant.enableMemory && assistant.effectiveRagMemoryEnabled() && onTestRetrieval != null,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -699,92 +747,6 @@ private fun RagSettingsCard(
                     )
                     Text(
                         stringResource(R.string.assistant_memory_similarity_exact),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConsolidationSettingsCard(
-    assistant: Assistant,
-    onUpdateAssistant: (Assistant) -> Unit,
-    onConsolidate: () -> Unit,
-    showSummarizerWarning: Boolean = false,
-    onNavigateToSummarizerSettings: () -> Unit = {}
-) {
-    Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        AnimatedVisibility(
-            visible = showSummarizerWarning,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
-        }
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        stringResource(R.string.assistant_memory_consolidation_delay_label),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.assistant_memory_consolidation_delay_value,
-                            assistant.consolidationDelayMinutes
-                        ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.assistant_memory_consolidation_delay_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Slider(
-                    value = assistant.consolidationDelayMinutes.toFloat(),
-                    onValueChange = { onUpdateAssistant(assistant.copy(consolidationDelayMinutes = it.toInt())) },
-                    valueRange = 0f..240f,
-                    steps = 23,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        }
-
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onConsolidate,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.assistant_memory_consolidate_now))
-                }
-
-                if (assistant.lastConsolidationTime > 0) {
-                    val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDateTime()
-                        .toLocalString()
-                    Text(
-                        text = stringResource(R.string.assistant_memory_last_run, time),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

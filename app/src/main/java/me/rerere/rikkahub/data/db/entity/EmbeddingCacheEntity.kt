@@ -12,7 +12,10 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "embedding_cache",
-    indices = [Index(value = ["memory_id", "memory_type", "model_id"], unique = true)]
+    indices = [
+        Index(value = ["memory_id", "memory_type", "model_id"], unique = true),
+        Index(value = ["source_id", "source_kind", "model_id"], unique = true),
+    ]
 )
 data class EmbeddingCacheEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -22,4 +25,6 @@ data class EmbeddingCacheEntity(
     @ColumnInfo(name = "embedding") val embedding: String, // JSON list of floats
     @ColumnInfo(name = "embedding_blob", typeAffinity = ColumnInfo.BLOB) val embeddingBlob: ByteArray? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+    ,@ColumnInfo(name = "source_id", defaultValue = "NULL") val sourceId: String? = null
+    ,@ColumnInfo(name = "source_kind", defaultValue = "NULL") val sourceKind: String? = null
 )

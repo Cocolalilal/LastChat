@@ -100,7 +100,9 @@ fun AssistantDetailPage(
     id: String,
     startRoute: String? = null,
     initialMemoryTab: Int? = null,
-    scrollToMemoryId: Int? = null
+    scrollToMemoryId: Int? = null,
+    memorySourceKind: String? = null,
+    memorySourceId: String? = null,
 ) {
     val vm: AssistantDetailVM = koinViewModel(
         parameters = {
@@ -469,6 +471,8 @@ fun AssistantDetailPage(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
+                    memorySourceKind = memorySourceKind,
+                    memorySourceId = memorySourceId,
                     onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }

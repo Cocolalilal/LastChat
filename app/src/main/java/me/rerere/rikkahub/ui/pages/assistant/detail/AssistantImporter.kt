@@ -186,7 +186,8 @@ private class CharaCardV2Parser : TavernCardParser {
             name = name,
             presetMessages = if (firstMessage != null) listOf(UIMessage.assistant(firstMessage)) else emptyList(),
             systemPrompt = prompt,
-            background = background
+            background = background,
+            memorySystem = me.rerere.rikkahub.data.model.MemorySystemType.DOCUMENT_BASED,
         )
     }
 }
@@ -224,7 +225,8 @@ private class CharaCardV3Parser : TavernCardParser {
             name = name,
             presetMessages = if (firstMessage != null) listOf(UIMessage.assistant(firstMessage)) else emptyList(),
             systemPrompt = prompt,
-            background = background
+            background = background,
+            memorySystem = me.rerere.rikkahub.data.model.MemorySystemType.DOCUMENT_BASED,
         )
     }
 }

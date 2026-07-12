@@ -14,6 +14,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.MemoryContextCoordinator
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -22,7 +23,6 @@ import me.rerere.rikkahub.data.datastore.getTextSelectionActionModel
 import me.rerere.rikkahub.data.datastore.resolveTextSelectionAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.defaultChatInputTransformers
 import me.rerere.rikkahub.service.defaultChatOutputTransformers
 
@@ -56,8 +56,8 @@ sealed interface TextSelectionState {
 class TextSelectionVM(
     private val settingsStore: SettingsStore,
     private val generationHandler: GenerationHandler,
-    private val memoryRepository: MemoryRepository,
     private val templateTransformer: TemplateTransformer,
+    private val memoryContextCoordinator: MemoryContextCoordinator,
 ) : ViewModel() {
 
     internal var inputData by mutableStateOf(QuickAskInputData())
@@ -234,27 +234,11 @@ class TextSelectionVM(
         assistant: Assistant,
         queryText: String,
     ): List<AssistantMemory> {
-        if (!assistant.enableMemory) {
-            return emptyList()
-        }
-        if (!assistant.useRagMemoryRetrieval) {
-            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString()).take(50)
-        }
-        if (queryText.isBlank()) {
-            return memoryRepository.getMemoriesOfAssistant(assistant.id.toString()).take(50)
-        }
-        val results = memoryRepository.retrieveRelevantMemories(
-            assistantId = assistant.id.toString(),
+        return memoryContextCoordinator.contextFor(
+            assistant = assistant,
             query = queryText,
-            limit = 50,
-            similarityThreshold = assistant.ragSimilarityThreshold,
-            includeCore = assistant.ragIncludeCore,
-            includeEpisodes = assistant.ragIncludeEpisodes
-        )
-        if (settings.enableRagLogging) {
-            Log.d(TAG, "Resolved ${results.size} quick ask memories for ${assistant.id}")
-        }
-        return results
+            allowMemory = assistant.enableMemory,
+        ).memories
     }
 
     private fun handleGeneratedMessages(messages: List<UIMessage>) {

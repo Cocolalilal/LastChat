@@ -46,6 +46,7 @@ class ConversationRepository(
     private val dailyActivityDAO: DailyActivityDAO,
     private val usageStatsDAO: UsageStatsDAO,
     private val chatAttachmentRepository: ChatAttachmentRepository,
+    private val hybridMemoryRepository: HybridMemoryRepository,
 ) {
     companion object {
         private const val TAG = "ConversationRepository"
@@ -249,6 +250,7 @@ class ConversationRepository(
             conversationToConversationEntity(conversation)
         )
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
+        hybridMemoryRepository.onConversationDeleted(conversation.id.toString())
         chatAttachmentRepository.removeConversationReferences(conversation.id)
     }
 

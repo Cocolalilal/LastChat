@@ -336,6 +336,7 @@
     <string name="chat_page_date_format_same_year">%1$d-%2$d</string>
     <string name="chat_page_delete">Delete</string>
     <string name="conversation_deleted">Conversation deleted</string>
+    <string name="conversation_deleted_memory_retained">Conversation deleted. Distilled memory remains; edit or dismiss it from Memory if you also want it forgotten.</string>
     <string name="message_deleted">Message deleted</string>
     <string name="chat_page_edit_nickname">Edit Nickname</string>
     <string name="chat_page_edit_title">Edit Title</string>
@@ -595,8 +596,8 @@
     <string name="setting_model_page_suggestion_model">Suggestion Model</string>
     <string name="setting_model_page_suggestion_model_desc">Model for generating chat suggestions. Recommend fast/cheap model.</string>
     <string name="setting_model_page_suggestion_prompt_vars">Vars: Content: {content}, Locale: {locale}</string>
-    <string name="setting_model_page_summarizer_model">Summarizer Model</string>
-    <string name="setting_model_page_summarizer_model_desc">Model for memory summarization and context refresh across all characters.</string>
+    <string name="setting_model_page_summarizer_model">Memory &amp; Summary Model</string>
+    <string name="setting_model_page_summarizer_model_desc">Model for memory documents, continuity, graph extraction, conversion, and context summaries.</string>
     <string name="setting_model_page_subagent_model">Subagent Model</string>
     <string name="setting_model_page_subagent_model_desc">Model for helper agents such as deliberate memory recall.</string>
     <string name="setting_model_page_summarizer_missing_banner">Select a summarizer model in Settings > Default Models</string>

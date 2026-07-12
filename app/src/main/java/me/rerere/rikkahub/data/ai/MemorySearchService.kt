@@ -23,6 +23,10 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.HybridMemoryRepository
+import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.ai.rag.VectorEngine
+import me.rerere.rikkahub.data.ai.rag.toFloatArray
 import kotlinx.datetime.toInstant
 import kotlin.math.min
 import kotlin.uuid.Uuid
@@ -369,6 +373,8 @@ class MemorySearchService(
     private val providerManager: ProviderManager,
     private val memoryRepository: MemoryRepository,
     private val conversationRepository: ConversationRepository,
+    private val hybridMemoryRepository: HybridMemoryRepository,
+    private val embeddingService: EmbeddingService,
 ) {
     suspend fun searchMemory(
         assistant: Assistant,
@@ -376,6 +382,11 @@ class MemorySearchService(
         query: String,
         limit: Int = 5,
         timeRange: String? = null,
+        sourceTypes: Set<String> = emptySet(),
+        speaker: String? = null,
+        entity: String? = null,
+        conversationId: String? = null,
+        frame: String? = null,
     ): JsonObject = withContext(Dispatchers.IO) {
         val trimmedQuery = query.trim()
         if (trimmedQuery.isBlank()) {
@@ -388,108 +399,81 @@ class MemorySearchService(
 
         val boundedLimit = limit.coerceIn(1, MEMORY_SEARCH_MAX_LIMIT)
         val parsedTimeRange = parseMemorySearchTimeRange(timeRange ?: trimmedQuery)
-        val settings = settingsStore.settingsFlow.first()
-        val warnings = mutableListOf<String>()
-        val deterministicQueries = buildDeterministicMemoryRecallQueries(trimmedQuery)
-        val agentQueries = runCatching {
-            generateSubagentRecallQueries(
-                settings = settings,
-                assistant = assistant,
-                query = trimmedQuery,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Subagent query expansion was unavailable, so deterministic recall queries were used."
-            emptyList()
-        }
-        val recallQueries = (deterministicQueries + agentQueries)
-            .distinctBy { it.text.normalizedRecallText() }
-            .take(MEMORY_SEARCH_MAX_QUERIES)
+        val embeddingModelId = embeddingService.getEmbeddingModelId(assistant.id.toString())
+        val queryEmbedding = runCatching { embeddingService.embed(trimmedQuery, assistant.id.toString()).toFloatArray() }.getOrNull()
+        val indexedResults = hybridMemoryRepository.search(
+            assistantId = assistant.id.toString(),
+            query = trimmedQuery,
+            limit = boundedLimit * 4,
+            start = parsedTimeRange?.startMillis,
+            end = parsedTimeRange?.endMillis,
+        ).filter { it.conversationId != activeConversationId?.toString() }
+            .filter { sourceTypes.isEmpty() || it.sourceKind.name.lowercase() in sourceTypes.map(String::lowercase) }
+            .filter { speaker.isNullOrBlank() || it.speaker.equals(speaker, ignoreCase = true) }
+            .filter { conversationId.isNullOrBlank() || it.conversationId == conversationId }
+            .filter { frame.isNullOrBlank() || it.frame.equals(frame, ignoreCase = true) }
+            .filter { entity.isNullOrBlank() || it.text.contains(entity, ignoreCase = true) }
+            .map { hit ->
+                val vectorScore = if (queryEmbedding != null && hit.embeddingModelId == embeddingModelId) {
+                    hit.embeddingBlob?.toFloatArray()?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                } else null
+                val combinedConfidence = if (vectorScore == null) hit.score else hit.score * 0.55f + vectorScore * 0.45f
+                RecallResult(
+                    source = hit.sourceKind.name.lowercase(),
+                    id = hit.sourceId,
+                    summary = hit.text.toRecallSnippet(700),
+                    content = hit.text,
+                    timestampMillis = hit.recordedAt,
+                    confidence = combinedConfidence.coerceIn(0f, 1f),
+                    title = hit.sourceKind.name.lowercase().replace('_', ' '),
+                    matchedText = hit.text.toRecallSnippet(260),
+                    score = (combinedConfidence * 100).toInt(),
+                    conversationId = hit.conversationId,
+                    messageId = hit.messageId,
+                )
+            }
+        val entryEntities = memoryRepository.getMemoryEntitiesOfAssistant(assistant.id.toString())
+        val entryResults = entryEntities
+            .asSequence()
+            .filter { it.type == MemoryType.CORE }
+            .filter { sourceTypes.isEmpty() || "entry" in sourceTypes.map(String::lowercase) }
+            .filter { entity.isNullOrBlank() || it.content.contains(entity, ignoreCase = true) }
+            .mapNotNull { entity ->
+                val memory = AssistantMemory(entity.id, entity.content, entity.type, entity.embedding != null, entity.embeddingModelId, entity.createdAt)
+                val score = scoreMemorySearchText(memory.content, trimmedQuery)
+                val vectorScore = if (queryEmbedding != null && entity.embeddingModelId == embeddingModelId) {
+                    entity.embeddingBlob?.toFloatArray()?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                } else null
+                if (score <= 0 && vectorScore == null) null else RecallResult(
+                    source = "entry",
+                    id = memory.id.toString(),
+                    summary = memory.content.toRecallSnippet(700),
+                    content = memory.content,
+                    timestampMillis = memory.timestamp,
+                    confidence = if (vectorScore == null) confidenceFromScore(score) else (confidenceFromScore(score) * 0.4f + vectorScore * 0.6f).coerceIn(0f, 1f),
+                    matchedText = memory.content.toRecallSnippet(260),
+                    score = score,
+                )
+            }.take(boundedLimit).toList()
 
-        val memoryResults = runCatching {
-            searchStoredMemories(
-                assistant = assistant,
-                queries = recallQueries,
-                limit = boundedLimit,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Stored memory search fell back with no results."
-            emptyList()
-        }
-        val chatSpans = runCatching {
-            searchPastChatSpans(
-                assistant = assistant,
-                activeConversationId = activeConversationId,
-                queries = recallQueries,
-                limit = boundedLimit,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Past chat search fell back with no results."
-            emptyList()
-        }
-
-        val chatResults = chatSpans.take(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
-            val summary = summarizeChatSpan(settings, assistant, span, trimmedQuery)
-                ?: buildFallbackRecallSummary(span)
-            RecallResult(
-                source = "past_chat",
-                id = span.conversationId.toString(),
-                summary = summary,
-                content = summary,
-                timestampMillis = span.timestampMillis,
-                confidence = confidenceFromScore(span.score),
-                title = span.conversationTitle.takeIf { it.isNotBlank() },
-                matchedText = span.matchedText,
-                score = span.score,
-            )
-        } + chatSpans.drop(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
-            val summary = buildFallbackRecallSummary(span)
-            RecallResult(
-                source = "past_chat",
-                id = span.conversationId.toString(),
-                summary = summary,
-                content = summary,
-                timestampMillis = span.timestampMillis,
-                confidence = confidenceFromScore(span.score),
-                title = span.conversationTitle.takeIf { it.isNotBlank() },
-                matchedText = span.matchedText,
-                score = span.score,
-            )
-        }
-
-        val results = (memoryResults + chatResults)
+        val results = (indexedResults + entryResults)
             .sortedWith(
                 compareByDescending<RecallResult> { it.confidence }
                     .thenByDescending { it.score ?: 0 }
                     .thenByDescending { it.timestampMillis }
             )
             .take(boundedLimit)
-        val agentSummary = synthesizeMemoryFindings(
-            settings = settings,
-            assistant = assistant,
-            query = trimmedQuery,
-            timeRange = parsedTimeRange,
-            results = results,
-        )
 
         buildJsonObject {
             put("query", trimmedQuery)
             put("source", "memory_search")
-            put("queries", JsonArray(recallQueries.map { JsonPrimitive(it.text) }))
-            put("scope", "core_memories_and_current_character_past_chats")
+            put("queries", JsonArray(listOf(JsonPrimitive(trimmedQuery))))
+            put("scope", "entries_documents_digests_graph_and_current_character_past_chats")
             parsedTimeRange?.let { put("time_filter", it.label) }
-            put("summary", agentSummary ?: buildOverallSummary(results))
+            put("summary", buildOverallSummary(results))
             put("confidence", JsonPrimitive(results.maxOfOrNull { it.confidence } ?: 0f))
             put("results", JsonArray(results.map { it.toJson() }))
             put("note", "These are approximate memory search results. Time labels are intentionally fuzzy.")
-            if (warnings.isNotEmpty()) {
-                put("warnings", JsonArray(warnings.map(::JsonPrimitive)))
-            }
         }
     }
 
@@ -820,6 +804,8 @@ class MemorySearchService(
         val matchedText: String? = null,
         val matchedQuery: String? = null,
         val score: Int? = null,
+        val conversationId: String? = null,
+        val messageId: String? = null,
     ) {
         fun toJson(): JsonObject = buildJsonObject {
             put("source", source)
@@ -832,6 +818,8 @@ class MemorySearchService(
             put("time_ago", fuzzyMemoryAgeLabel(timestampMillis))
             put("confidence", JsonPrimitive(confidence))
             score?.let { put("score", JsonPrimitive(it)) }
+            conversationId?.let { put("conversation_id", it) }
+            messageId?.let { put("message_id", it) }
         }
     }
 }

@@ -122,7 +122,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                     DefaultSTTModelSetting(settings = settings, vm = vm)
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
-                    DefaultSubagentModelSetting(settings = settings, vm = vm)
                     DefaultSuggestionModelSetting(settings = settings, vm = vm)
                 }
             }
