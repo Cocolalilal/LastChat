@@ -40,7 +40,7 @@ jobs:
       - name: Gradle Build
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
