@@ -1,9 +1,8 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,9 +74,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -497,6 +497,16 @@ private class GraphParticle(
     var velocityY: Float = 0f,
 )
 
+private class GraphGestureState {
+    var nodeIndex: Int? = null
+    var didDrag = false
+    var dragDistance = 0f
+    var lastX = 0f
+    var lastY = 0f
+    var lastCentroid = Offset.Zero
+    var lastSpan = 0f
+}
+
 private fun buildGraphVisualModel(
     memories: List<GraphMemoryEntity>,
     entities: List<GraphEntityEntity>,
@@ -553,7 +563,7 @@ private fun createGraphParticles(model: GraphVisualModel): MutableList<GraphPart
     val centerY = particles.map { it.y }.average().toFloat()
     val extent = particles.maxOfOrNull { hypot(it.x - centerX, it.y - centerY) }
         ?.coerceAtLeast(.001f) ?: 1f
-    val fitScale = .9f / extent
+    val fitScale = .96f / extent
     particles.forEach { particle ->
         particle.x = (particle.x - centerX) * fitScale
         particle.y = (particle.y - centerY) * fitScale
@@ -579,7 +589,7 @@ private fun relaxGraph(
             val dy = particles[second].y - particles[first].y
             val distanceSquared = max(dx * dx + dy * dy, .0025f)
             val distance = sqrt(distanceSquared)
-            val repulsion = .0038f / distanceSquared
+            val repulsion = .0065f / distanceSquared
             val fx = dx / distance * repulsion
             val fy = dy / distance * repulsion
             forceX[first] -= fx
@@ -594,8 +604,8 @@ private fun relaxGraph(
         val dx = second.x - first.x
         val dy = second.y - first.y
         val distance = max(hypot(dx, dy), .001f)
-        val desiredLength = .25f + .035f / max(model.degree[edge.start] + model.degree[edge.end], 1)
-        val spring = (distance - desiredLength) * .042f
+        val desiredLength = .38f + .045f / max(model.degree[edge.start] + model.degree[edge.end], 1)
+        val spring = (distance - desiredLength) * .034f
         val fx = dx / distance * spring
         val fy = dy / distance * spring
         forceX[edge.start] += fx
@@ -605,8 +615,8 @@ private fun relaxGraph(
     }
     particles.forEachIndexed { index, particle ->
         if (index == pinnedNode) return@forEachIndexed
-        forceX[index] -= particle.x * .006f
-        forceY[index] -= particle.y * .006f
+        forceX[index] -= particle.x * .0035f
+        forceY[index] -= particle.y * .0035f
         particle.velocityX = ((particle.velocityX + forceX[index]) * damping).coerceIn(-.075f, .075f)
         particle.velocityY = ((particle.velocityY + forceY[index]) * damping).coerceIn(-.075f, .075f)
         particle.x += particle.velocityX
@@ -628,14 +638,16 @@ private fun GraphCanvas(
     val motionPolicy = LocalMotionPolicy.current
     val currentOnNodeClick by rememberUpdatedState(onNodeClick)
     val density = LocalDensity.current
+    val viewConfiguration = LocalViewConfiguration.current
     val primary = if (interactive) Color(0xFFA9D1FF) else MaterialTheme.colorScheme.primary
     val secondary = if (interactive) Color(0xFFD0C4FF) else MaterialTheme.colorScheme.tertiary
     val edge = if (interactive) Color.White.copy(alpha = .28f) else MaterialTheme.colorScheme.outlineVariant
     val labelColor = if (interactive) Color.White else MaterialTheme.colorScheme.onSurface
     val model = remember(memories, entities, links, interactive) {
-        buildGraphVisualModel(memories, entities, links, maxNodes = if (interactive) 88 else 52)
+        buildGraphVisualModel(memories, entities, links, maxNodes = if (interactive) 68 else 46)
     }
     val particles = remember(model) { createGraphParticles(model) }
+    val gestureState = remember(model) { GraphGestureState() }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
     var scale by remember { mutableFloatStateOf(1f) }
     var translation by remember { mutableStateOf(Offset.Zero) }
@@ -643,11 +655,18 @@ private fun GraphCanvas(
     var renderTick by remember { mutableIntStateOf(0) }
     var reheatToken by remember { mutableIntStateOf(0) }
 
-    fun worldToScreen(index: Int): Offset {
+    fun graphScale(): Offset = if (interactive) {
+        Offset(viewportSize.width * .46f, viewportSize.height * .36f)
+    } else {
         val unit = min(viewportSize.width, viewportSize.height) * .42f
+        Offset(unit, unit)
+    }
+
+    fun worldToScreen(index: Int): Offset {
+        val graphScale = graphScale()
         val center = Offset(viewportSize.width / 2f, viewportSize.height / 2f) + translation
         val particle = particles[index]
-        return center + Offset(particle.x, particle.y) * unit * scale
+        return center + Offset(particle.x * graphScale.x, particle.y * graphScale.y) * scale
     }
 
     LaunchedEffect(model, reheatToken, interactive) {
@@ -664,68 +683,106 @@ private fun GraphCanvas(
         }
     }
 
-    val interactionModifier = if (!interactive) Modifier else Modifier.pointerInput(model, viewportSize) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false)
-            val hitRadius = with(density) { 30.dp.toPx() }
-            var draggedNode = model.nodes.indices.minByOrNull { (worldToScreen(it) - down.position).getDistance() }
-                ?.takeIf { (worldToScreen(it) - down.position).getDistance() <= hitRadius }
-            var dragDistance = 0f
-            var didDrag = false
-            selectedNode = draggedNode
+    val interactionModifier = if (!interactive) Modifier else Modifier.pointerInteropFilter { event ->
+        fun centroid(): Offset {
+            var x = 0f
+            var y = 0f
+            for (index in 0 until event.pointerCount) {
+                x += event.getX(index)
+                y += event.getY(index)
+            }
+            return Offset(x / event.pointerCount, y / event.pointerCount)
+        }
+        fun span(center: Offset): Float {
+            var total = 0f
+            for (index in 0 until event.pointerCount) {
+                total += (Offset(event.getX(index), event.getY(index)) - center).getDistance()
+            }
+            return total / event.pointerCount
+        }
 
-            do {
-                val event = awaitPointerEvent()
-                val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) break
-                if (pressed.size >= 2) {
-                    draggedNode = null
-                    didDrag = true
-                    val previousCentroid = pressed.map { it.previousPosition }.reduce(Offset::plus) / pressed.size.toFloat()
-                    val currentCentroid = pressed.map { it.position }.reduce(Offset::plus) / pressed.size.toFloat()
-                    val previousSpan = pressed.map { (it.previousPosition - previousCentroid).getDistance() }.average().toFloat()
-                    val currentSpan = pressed.map { (it.position - currentCentroid).getDistance() }.average().toFloat()
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val position = Offset(event.x, event.y)
+                val hitRadius = with(density) { 32.dp.toPx() }
+                gestureState.nodeIndex = model.nodes.indices
+                    .minByOrNull { (worldToScreen(it) - position).getDistance() }
+                    ?.takeIf { (worldToScreen(it) - position).getDistance() <= hitRadius }
+                gestureState.didDrag = false
+                gestureState.dragDistance = 0f
+                gestureState.lastX = event.x
+                gestureState.lastY = event.y
+                selectedNode = gestureState.nodeIndex
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                gestureState.nodeIndex = null
+                gestureState.didDrag = true
+                gestureState.lastCentroid = centroid()
+                gestureState.lastSpan = span(gestureState.lastCentroid)
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (event.pointerCount == 2) {
+                    val remainingIndex = if (event.actionIndex == 0) 1 else 0
+                    gestureState.lastX = event.getX(remainingIndex)
+                    gestureState.lastY = event.getY(remainingIndex)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount >= 2) {
+                    val currentCentroid = centroid()
+                    val currentSpan = span(currentCentroid)
                     val oldScale = scale
-                    val newScale = (scale * if (previousSpan > 0f) currentSpan / previousSpan else 1f).coerceIn(.55f, 2.8f)
+                    val newScale = (oldScale * if (gestureState.lastSpan > 0f) currentSpan / gestureState.lastSpan else 1f)
+                        .coerceIn(.55f, 3.2f)
                     val viewportCenter = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
-                    val worldVector = previousCentroid - viewportCenter - translation
+                    val worldVector = gestureState.lastCentroid - viewportCenter - translation
                     translation = currentCentroid - viewportCenter - worldVector * (newScale / oldScale)
                     scale = newScale
+                    gestureState.lastCentroid = currentCentroid
+                    gestureState.lastSpan = currentSpan
                 } else {
-                    val change = pressed.first()
-                    val delta = change.position - change.previousPosition
-                    dragDistance += delta.getDistance()
-                    if (!didDrag && dragDistance >= viewConfiguration.touchSlop) {
-                        didDrag = true
-                        if (draggedNode != null) haptics.perform(HapticPattern.DragStart)
+                    val delta = Offset(event.x - gestureState.lastX, event.y - gestureState.lastY)
+                    gestureState.dragDistance += delta.getDistance()
+                    if (!gestureState.didDrag && gestureState.dragDistance >= viewConfiguration.touchSlop) {
+                        gestureState.didDrag = true
+                        if (gestureState.nodeIndex != null) haptics.perform(HapticPattern.DragStart)
                     }
-                    val nodeIndex = draggedNode
-                    if (nodeIndex != null) {
-                        val unit = min(viewportSize.width, viewportSize.height) * .42f * scale
-                        if (unit > 0f) {
-                            particles[nodeIndex].x += delta.x / unit
-                            particles[nodeIndex].y += delta.y / unit
-                            particles[nodeIndex].velocityX = 0f
-                            particles[nodeIndex].velocityY = 0f
-                            repeat(3) { relaxGraph(model, particles, pinnedNode = nodeIndex) }
-                            renderTick++
+                    if (gestureState.didDrag) {
+                        val nodeIndex = gestureState.nodeIndex
+                        if (nodeIndex != null) {
+                            val graphScale = graphScale()
+                            if (graphScale.x > 0f && graphScale.y > 0f) {
+                                particles[nodeIndex].x += delta.x / (graphScale.x * scale)
+                                particles[nodeIndex].y += delta.y / (graphScale.y * scale)
+                                particles[nodeIndex].velocityX = 0f
+                                particles[nodeIndex].velocityY = 0f
+                                repeat(3) { relaxGraph(model, particles, pinnedNode = nodeIndex) }
+                                renderTick++
+                            }
+                        } else {
+                            translation += delta
                         }
-                    } else {
-                        translation += delta
                     }
+                    gestureState.lastX = event.x
+                    gestureState.lastY = event.y
                 }
-                event.changes.forEach { it.consume() }
-            } while (true)
-
-            val finishedNode = draggedNode
-            if (finishedNode != null && !didDrag) {
-                haptics.perform(HapticPattern.Pop)
-                currentOnNodeClick?.invoke(model.nodes[finishedNode])
-            } else {
-                if (finishedNode != null) haptics.perform(HapticPattern.DragEnd)
-                reheatToken++
+            }
+            MotionEvent.ACTION_UP -> {
+                val nodeIndex = gestureState.nodeIndex
+                if (nodeIndex != null && !gestureState.didDrag) {
+                    haptics.perform(HapticPattern.Pop)
+                    currentOnNodeClick?.invoke(model.nodes[nodeIndex])
+                } else {
+                    if (nodeIndex != null) haptics.perform(HapticPattern.DragEnd)
+                    reheatToken++
+                }
+                gestureState.nodeIndex = null
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                gestureState.nodeIndex = null
             }
         }
+        true
     }
 
     Canvas(modifier.onSizeChanged { viewportSize = it }.then(interactionModifier)) {
@@ -766,9 +823,12 @@ private fun GraphCanvas(
 
         if (showLabels) {
             val labelIndexes = model.nodes.indices
-                .filter { it == selectedNode || model.degree[it] >= 2 }
+                .filter { index ->
+                    index == selectedNode ||
+                        (model.nodes[index].kind == GraphNodeKind.ENTITY && model.degree[index] >= 3)
+                }
                 .sortedByDescending { if (it == selectedNode) Int.MAX_VALUE else model.degree[it] }
-                .take(12)
+                .take(5)
                 .reversed()
             val textPaint = android.graphics.Paint().apply {
                 color = android.graphics.Color.WHITE
@@ -1194,9 +1254,6 @@ private fun GraphMemorySettingsSheet(
             }
             SettingSwitch("Deep memory search tool", "Lets the assistant deliberately search deeper when automatic recall is not enough.", assistant.graphSearchToolEnabled) {
                 onUpdateAssistant(assistant.copy(graphSearchToolEnabled = it))
-            }
-            SettingSwitch("Session memory", "Keeps a conversation-scoped working memory in addition to normal context.", assistant.enableSessionMemory) {
-                onUpdateAssistant(assistant.copy(enableSessionMemory = it))
             }
             Text("Background batching", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

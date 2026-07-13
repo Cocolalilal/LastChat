@@ -5,6 +5,7 @@ import io.modelcontextprotocol.kotlin.sdk.JSONRPCMessage
 import io.modelcontextprotocol.kotlin.sdk.JSONRPCNotification
 import io.modelcontextprotocol.kotlin.sdk.JSONRPCRequest
 import io.modelcontextprotocol.kotlin.sdk.JSONRPCResponse
+import io.modelcontextprotocol.kotlin.sdk.InitializeResult
 import io.modelcontextprotocol.kotlin.sdk.RequestId
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.McpJson
@@ -125,7 +126,10 @@ class StreamableHttpClientTransport(
                 val body = response.body.decodeToString()
                 if (body.isNotEmpty()) {
                     runCatching { McpJson.decodeFromString<JSONRPCMessage>(body) }
-                        .onSuccess { _onMessage(it) }
+                        .onSuccess {
+                            adoptNegotiatedProtocolVersion(it)
+                            _onMessage(it)
+                        }
                         .onFailure(_onError)
                 }
             }
@@ -243,6 +247,7 @@ class StreamableHttpClientTransport(
                                 if (event.data.isNotEmpty()) {
                                     runCatching { McpJson.decodeFromString<JSONRPCMessage>(event.data) }
                                         .onSuccess { msg ->
+                                            adoptNegotiatedProtocolVersion(msg)
                                             scope.launch {
                                                 if (replayMessageId != null && msg is JSONRPCResponse) {
                                                     _onMessage(msg.copy(id = replayMessageId))
@@ -316,6 +321,7 @@ class StreamableHttpClientTransport(
             if (eventName == null || eventName == "message") {
                 runCatching { McpJson.decodeFromString<JSONRPCMessage>(data) }
                     .onSuccess { msg ->
+                        adoptNegotiatedProtocolVersion(msg)
                         scope.launch {
                             if (replayMessageId != null && msg is JSONRPCResponse) {
                                 _onMessage(msg.copy(id = replayMessageId))
@@ -344,4 +350,11 @@ class StreamableHttpClientTransport(
             }
         }
     }
+
+    private fun adoptNegotiatedProtocolVersion(message: JSONRPCMessage) {
+        protocolVersion = negotiatedProtocolVersion(message) ?: return
+    }
 }
+
+internal fun negotiatedProtocolVersion(message: JSONRPCMessage): String? =
+    ((message as? JSONRPCResponse)?.result as? InitializeResult)?.protocolVersion

@@ -347,9 +347,10 @@ internal fun buildUsedModes(
 internal fun createSkillManagementTool(
     state: SkillToolState,
     currentTurnScopedSkillIds: Set<Uuid>,
+    automaticInvocationEnabled: Boolean = true,
     onUpdateTurnScopedSkillIds: suspend (Set<Uuid>) -> Unit,
 ): Tool? {
-    if (state.availableSkills.isEmpty()) {
+    if (!automaticInvocationEnabled || state.availableSkills.isEmpty()) {
         return null
     }
 
@@ -380,16 +381,21 @@ internal fun createSkillManagementTool(
             .ifBlank { "No description provided." }
             .replace('\n', ' ')
             .trim()
-            .take(160)
+            .take(120)
         return skill.compatibility
             ?.takeIf { it.isNotBlank() }
-            ?.let { "$description (Requires: ${it.replace('\n', ' ').take(120)})" }
+            ?.let { "$description (Requires: ${it.replace('\n', ' ').take(64)})" }
             ?: description
+    }
+
+    val availableSkillSummary = state.availableSkills.joinToString("; ") { skill ->
+        val label = skill.name.ifBlank { skill.id.toString() }
+        "$label: ${summarizeSkill(skill)}"
     }
 
     return Tool(
         name = SKILL_MANAGEMENT_TOOL_NAME,
-        description = "Activate available skills for the current assistant turn only.",
+        description = "Activate relevant skills for this turn; their full instructions load on the next step. Available: $availableSkillSummary",
         parameters = {
             InputSchema.Obj(
                 properties = buildJsonObject {
@@ -400,35 +406,9 @@ internal fun createSkillManagementTool(
                             put("type", "string")
                         })
                     })
-                    put("skill", buildJsonObject {
-                        put("type", "string")
-                        put("description", "Single skill to activate for this turn, referenced by exact id or exact skill name.")
-                    })
                 },
-                required = emptyList(),
+                required = listOf("skills"),
             )
-        },
-        systemPrompt = { _, _ ->
-            buildString {
-                appendLine("## Skill Management")
-                appendLine("Use `manage_skills` only when one of the available skills is clearly needed for the current user request. Activating a skill loads its full SKILL.md instructions and exposes its package directory.")
-                appendLine("Activations only apply to this assistant turn.")
-                appendLine()
-                appendLine(
-                    if (state.activeSkills.isEmpty()) {
-                        "Currently active skills: none"
-                    } else {
-                        "Currently active skills: ${state.activeSkills.joinToString(", ") { skill -> skill.name.ifBlank { skill.id.toString() } }}"
-                    }
-                )
-                appendLine("Available skills:")
-                append(
-                    state.availableSkills.joinToString("\n") { skill ->
-                        val label = skill.name.ifBlank { skill.id.toString() }
-                        "- $label: ${summarizeSkill(skill)}"
-                    }
-                )
-            }
         },
         execute = { args ->
             val targets = parseTargets(args)
@@ -536,7 +516,7 @@ class GenerationHandler(
         // canonical SKILL.md before a workspace starts so resource paths in the
         // prompt always point to a real package.
         settings.skills.forEach { skill ->
-            runCatching { SkillExportImport.syncManagedSkill(context, skill) }
+            runCatching { SkillExportImport.ensureManagedSkillPackage(context, skill) }
                 .onFailure { Log.w(TAG, "Could not sync skill package ${skill.name}", it) }
         }
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -603,6 +583,8 @@ class GenerationHandler(
                         turnScopedSkillIds = currentTurnScopedSkillIds,
                     ),
                     currentTurnScopedSkillIds = currentTurnScopedSkillIds,
+                    automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
+                        model.abilities.contains(ModelAbility.TOOL),
                     onUpdateTurnScopedSkillIds = { updatedIds ->
                         currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
                     },
@@ -1565,71 +1547,6 @@ class GenerationHandler(
         assistant: Assistant,
         conversationId: String?,
     ) = buildList {
-        val scope = me.rerere.ai.memory.MemoryScope(assistant.id.toString())
-        add(Tool(
-            name = "create_memory",
-            description = "Create a durable graph memory for this character.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("content", buildJsonObject {
-                            put("type", "string")
-                            put("description", "The fact or preference to remember.")
-                        })
-                    },
-                    required = listOf("content"),
-                )
-            },
-            execute = { args ->
-                val content = args.jsonObject["content"]?.jsonPrimitive?.contentOrNull
-                    ?: error("content is required")
-                val memory = graphMemoryRepository.addManual(scope, content)
-                buildJsonObject {
-                    put("id", memory.id)
-                    put("content", memory.content)
-                }
-            },
-        ))
-        add(Tool(
-            name = "edit_memory",
-            description = "Update an existing graph memory by its string ID.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject { put("type", "string") })
-                        put("content", buildJsonObject { put("type", "string") })
-                    },
-                    required = listOf("id", "content"),
-                )
-            },
-            execute = { args ->
-                val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.contentOrNull ?: error("id is required")
-                val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
-                val memory = graphMemoryRepository.update(id, content)
-                buildJsonObject {
-                    put("id", memory.id)
-                    put("content", memory.content)
-                }
-            },
-        ))
-        add(Tool(
-            name = "delete_memory",
-            description = "Forget an existing graph memory by its string ID.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject { put("type", "string") })
-                    },
-                    required = listOf("id"),
-                )
-            },
-            execute = { args ->
-                val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: error("id is required")
-                graphMemoryRepository.forget(id)
-                buildJsonObject { put("deleted", true); put("id", id) }
-            },
-        ))
         if (shouldRegisterMemorySearchTool(assistant)) {
             add(Tool(
                 name = MEMORY_SEARCH_TOOL_NAME,

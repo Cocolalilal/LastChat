@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -202,11 +203,6 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, MaterialTheme.colorScheme.background)
-                        )
-                    )
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp),
             ) {
@@ -253,7 +249,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 }
             },
             state = state,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier
+                .padding(top = innerPadding.calculateTopPadding())
+                .consumeWindowInsets(innerPadding)
         ) {
             // Track which item is being dragged and its offset
             var draggingIndex by remember { mutableStateOf(-1) }
@@ -353,6 +351,17 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     }
                 }
 
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, MaterialTheme.colorScheme.background)
+                            )
+                        )
+                )
             }
 
             if (mcpConfigs.isEmpty()) {

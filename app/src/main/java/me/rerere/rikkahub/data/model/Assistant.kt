@@ -107,6 +107,7 @@ data class Assistant(
     val learningMode: Boolean = false,
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
     val enabledSkillIds: Set<Uuid> = emptySet(), // Skills enabled for this assistant
+    val enableAutomaticSkillInvocation: Boolean = true, // Let the model discover and activate otherwise unselected skills
 
     // Context Management Settings
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)

@@ -248,6 +248,32 @@ class GenerationHandlerSkillToolTest {
     }
 
     @Test
+    fun createSkillManagementTool_omitsToolWhenAutomaticInvocationIsDisabled() {
+        val availableSkill = skill(
+            id = "00000000-0000-0000-0000-000000000232",
+            name = "code-review",
+            description = "Review code.",
+            autonomousForAllAssistants = true,
+        )
+        val state = buildSkillToolState(
+            skills = listOf(availableSkill),
+            assistantId = assistantId,
+            assistantDefaultSkillIds = emptySet(),
+            conversationSkillIds = emptySet(),
+            turnScopedSkillIds = emptySet(),
+        )
+
+        val tool = createSkillManagementTool(
+            state = state,
+            currentTurnScopedSkillIds = emptySet(),
+            automaticInvocationEnabled = false,
+            onUpdateTurnScopedSkillIds = {},
+        )
+
+        assertNull(tool)
+    }
+
+    @Test
     fun createSkillManagementTool_promptAndExecutionStayTurnScoped() = runBlocking {
         val activeSkill = skill(
             id = "00000000-0000-0000-0000-000000000241",
@@ -277,12 +303,15 @@ class GenerationHandlerSkillToolTest {
         )
 
         assertNotNull(tool)
-        val prompt = tool!!.systemPrompt(Model(), emptyList())
-        assertTrue(prompt.contains("Currently active skills: brainstorm"))
-        assertTrue(prompt.contains("- code-review: Review code carefully."))
-        assertFalse(prompt.contains("Generate ideas."))
+        val registeredTool = requireNotNull(tool)
+        assertTrue(registeredTool.systemPrompt(Model(), emptyList()).isEmpty())
+        assertTrue(registeredTool.description.contains("code-review: Review code carefully."))
+        assertFalse(registeredTool.description.contains("Generate ideas."))
+        val schema = registeredTool.parameters() as me.rerere.ai.core.InputSchema.Obj
+        assertEquals(setOf("skills"), schema.properties.keys)
+        assertEquals(listOf("skills"), schema.required)
 
-        val result = tool.execute(
+        val result = registeredTool.execute(
             kotlinx.serialization.json.buildJsonObject {
                 put("skill", kotlinx.serialization.json.JsonPrimitive(availableSkill.name))
             }

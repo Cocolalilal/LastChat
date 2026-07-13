@@ -110,6 +110,53 @@ fun AssistantSkillsSubPage(
             Spacer(Modifier.size(12.dp))
         }
 
+        item(key = "automatic_skill_invocation") {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                ),
+                shape = AppShapes.CardMedium,
+                onClick = {
+                    onUpdate(
+                        assistant.copy(
+                            enableAutomaticSkillInvocation = !assistant.enableAutomaticSkillInvocation
+                        )
+                    )
+                }
+            ) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Automatic skill selection",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Allow the model to discover unselected skills. Turning this off reduces input token usage.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HapticSwitch(
+                        checked = assistant.enableAutomaticSkillInvocation,
+                        onCheckedChange = {
+                            onUpdate(assistant.copy(enableAutomaticSkillInvocation = it))
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.size(12.dp))
+        }
+
         itemsIndexed(availableSkills, key = { _, it -> it.id }) { index, skill ->
             val position = when {
                 availableSkills.size == 1 -> ItemPosition.ONLY

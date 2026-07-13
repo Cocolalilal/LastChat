@@ -48,7 +48,7 @@ interface MemoryGraphDao {
         now: Long,
     ): List<GraphMemoryEntity>
 
-    @Query("SELECT * FROM graph_memories WHERE assistant_id = :assistantId ORDER BY created_at DESC")
+    @Query("SELECT * FROM graph_memories WHERE assistant_id = :assistantId AND scope_kind = 'ASSISTANT' ORDER BY created_at DESC")
     fun observeMemories(assistantId: String): Flow<List<GraphMemoryEntity>>
 
     @Query("DELETE FROM graph_memories WHERE id = :id")
@@ -67,7 +67,7 @@ interface MemoryGraphDao {
     """)
     suspend fun getEntities(assistantId: String, scopeKind: String, conversationId: String?): List<GraphEntityEntity>
 
-    @Query("SELECT * FROM graph_entities WHERE assistant_id = :assistantId ORDER BY canonical_name COLLATE NOCASE")
+    @Query("SELECT * FROM graph_entities WHERE assistant_id = :assistantId AND scope_kind = 'ASSISTANT' ORDER BY canonical_name COLLATE NOCASE")
     fun observeEntities(assistantId: String): Flow<List<GraphEntityEntity>>
 
     @Query("SELECT * FROM graph_entities WHERE id = :id")

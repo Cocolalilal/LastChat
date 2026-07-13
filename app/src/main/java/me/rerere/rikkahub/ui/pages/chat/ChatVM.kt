@@ -152,6 +152,10 @@ class ChatVM(
         chatService.removeConversationReference(_conversationId)
     }
 
+    fun flushMemoryOnExit() {
+        chatService.flushMemoryOnConversationExit(_conversationId)
+    }
+
     // 用户设置
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -539,25 +543,6 @@ class ChatVM(
                 conversationRepo.getConversationById(conversation.id)
             } ?: return@launch
             chatService.generateTitle(conversation.id, conversationFull, force)
-        }
-    }
-
-    fun consolidateConversation(conversation: Conversation) {
-        viewModelScope.launch {
-            // Mark conversation as not consolidated so it will be picked up by the worker
-            withContext(Dispatchers.IO) {
-                conversationRepo.markAsNotConsolidated(conversation.id)
-            }
-            
-            // Trigger a consolidation run with specific conversation ID
-            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-                .setInputData(
-                    androidx.work.workDataOf(
-                        "FORCE_CONVERSATION_ID" to conversation.id.toString()
-                    )
-                )
-                .build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
         }
     }
 

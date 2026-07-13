@@ -354,16 +354,6 @@ class AssistantDetailVM(
         }
     }
 
-    fun consolidateMemories(isFullScan: Boolean) {
-        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-            .setInputData(
-                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(context).enqueue(request)
-        _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
-    }
-
     suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {
         // Cleanup now happens after the settings update through orphan-aware storage checks.
     }

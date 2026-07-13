@@ -3,6 +3,15 @@ package me.rerere.rikkahub.data.ai.mcp
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import io.ktor.http.ContentType
+import io.ktor.server.application.call
+import io.ktor.server.cio.CIO
+import io.ktor.server.cio.CIOApplicationEngine
+import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,8 +42,9 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "McpOAuthManager"
-private const val REDIRECT_BASE = "lastchat://mcp/oauth"
 private const val TOKEN_REFRESH_SKEW_SECONDS = 60L
+private const val CALLBACK_PORTS_UNAVAILABLE = "OAuth callback ports are unavailable"
+private val CALLBACK_PORTS = listOf(1460, 1461, 1462)
 
 sealed class McpOAuthStatus {
     data object Idle : McpOAuthStatus()
@@ -49,6 +59,7 @@ sealed class McpOAuthStatus {
 private data class OAuthClientRegistration(
     val clientId: String,
     val clientSecret: String? = null,
+    val redirectUri: String? = null,
 )
 
 @Serializable
@@ -92,6 +103,8 @@ class McpOAuthManager(
     private val settingsStore: SettingsStore,
     private val secretKeyManager: SecretKeyManager,
 ) {
+    private var callbackServer: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+    private var callbackPort: Int? = null
     private val _statuses = MutableStateFlow<Map<Uuid, McpOAuthStatus>>(emptyMap())
     val statuses: StateFlow<Map<Uuid, McpOAuthStatus>> = _statuses.asStateFlow()
 
@@ -107,13 +120,23 @@ class McpOAuthManager(
 
     fun handleRedirect(uri: Uri?) {
         if (uri?.scheme != "lastchat" || uri.host != "mcp") return
+        if (uri.getQueryParameter("status") == "complete") return
         val serverId = uri.lastPathSegment
             ?.takeUnless { it == "oauth" }
             ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
             ?: return
 
         scope.launch(Dispatchers.IO) {
-            runCatching { finishAuthorization(serverId, uri) }
+            runCatching {
+                finishAuthorization(
+                    serverId = serverId,
+                    code = uri.getQueryParameter("code"),
+                    state = uri.getQueryParameter("state"),
+                    returnedIssuer = uri.getQueryParameter("iss"),
+                    oauthError = uri.getQueryParameter("error"),
+                    errorDescription = uri.getQueryParameter("error_description"),
+                )
+            }
                 .onFailure { error ->
                     Log.e(TAG, "Unable to finish MCP authorization", error)
                     setStatus(serverId, McpOAuthStatus.Error(error.message ?: "OAuth sign-in failed"))
@@ -168,12 +191,14 @@ class McpOAuthManager(
         }
         val resourceMetadata = discoverProtectedResource(serverUrl)
         val serverMetadata = discoverAuthorizationServer(resourceMetadata.authorizationServer)
-        val redirectUri = "$REDIRECT_BASE/${config.id}"
-        val registration = loadRegistration(config.id) ?: registerClient(
-            endpoint = serverMetadata.registrationEndpoint
-                ?: error("The authorization server does not support automatic client registration"),
-            redirectUri = redirectUri,
-        ).also { saveRegistration(config.id, it) }
+        val redirectUri = "http://127.0.0.1:${ensureCallbackServer()}/mcp/oauth/${config.id}"
+        val registration = loadRegistration(config.id)
+            ?.takeIf { it.redirectUri == redirectUri }
+            ?: registerClient(
+                endpoint = serverMetadata.registrationEndpoint
+                    ?: error("The authorization server does not support automatic client registration"),
+                redirectUri = redirectUri,
+            ).also { saveRegistration(config.id, it) }
 
         val verifier = randomUrlSafe(64)
         val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
@@ -211,26 +236,32 @@ class McpOAuthManager(
         withContext(Dispatchers.Main) { context.openUrl(authUrl.toString()) }
     }
 
-    private suspend fun finishAuthorization(serverId: Uuid, uri: Uri) {
-        uri.getQueryParameter("error")?.let { error ->
-            val description = uri.getQueryParameter("error_description")
-            error(description ?: error)
+    private suspend fun finishAuthorization(
+        serverId: Uuid,
+        code: String?,
+        state: String?,
+        returnedIssuer: String?,
+        oauthError: String?,
+        errorDescription: String?,
+    ) {
+        oauthError?.let { error ->
+            error(errorDescription ?: error)
         }
         val session = loadSession(serverId) ?: error("The sign-in session has expired")
-        require(uri.getQueryParameter("state") == session.state) {
+        require(state == session.state) {
             "OAuth state validation failed"
         }
-        uri.getQueryParameter("iss")?.let { returnedIssuer ->
+        returnedIssuer?.let {
             require(returnedIssuer == session.issuer) { "OAuth issuer validation failed" }
         }
-        val code = uri.getQueryParameter("code") ?: error("The authorization code is missing")
+        val authorizationCode = code ?: error("The authorization code is missing")
         setStatus(serverId, McpOAuthStatus.ExchangingCode)
 
         val tokens = requestTokens(
             endpoint = session.tokenEndpoint,
             fields = buildMap {
                 put("grant_type", "authorization_code")
-                put("code", code)
+                put("code", authorizationCode)
                 put("redirect_uri", session.redirectUri)
                 put("client_id", session.clientId)
                 put("code_verifier", session.verifier)
@@ -251,6 +282,79 @@ class McpOAuthManager(
             )
         }
         setStatus(serverId, McpOAuthStatus.Connected)
+    }
+
+    @Synchronized
+    private fun ensureCallbackServer(): Int {
+        callbackPort?.let { return it }
+        var lastError: Throwable? = null
+        for (port in CALLBACK_PORTS) {
+            try {
+                callbackServer = embeddedServer(CIO, host = "127.0.0.1", port = port) {
+                    routing {
+                        get("/mcp/oauth/{serverId}") {
+                            val serverId = call.parameters["serverId"]
+                                ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+                            if (serverId == null) {
+                                call.respondText(callbackPage(null, false), ContentType.Text.Html)
+                                return@get
+                            }
+                            val result = runCatching {
+                                finishAuthorization(
+                                    serverId = serverId,
+                                    code = call.request.queryParameters["code"],
+                                    state = call.request.queryParameters["state"],
+                                    returnedIssuer = call.request.queryParameters["iss"],
+                                    oauthError = call.request.queryParameters["error"],
+                                    errorDescription = call.request.queryParameters["error_description"],
+                                )
+                            }
+                            result.exceptionOrNull()?.let { error ->
+                                Log.e(TAG, "Unable to finish MCP authorization", error)
+                                setStatus(serverId, McpOAuthStatus.Error(error.message ?: "OAuth sign-in failed"))
+                            }
+                            call.respondText(
+                                callbackPage(serverId, result.isSuccess),
+                                ContentType.Text.Html,
+                            )
+                        }
+                    }
+                }.start(wait = false)
+                callbackPort = port
+                return port
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw IllegalStateException(CALLBACK_PORTS_UNAVAILABLE, lastError)
+    }
+
+    private fun callbackPage(serverId: Uuid?, success: Boolean): String {
+        val deepLink = serverId?.let { "lastchat://mcp/oauth/$it?status=complete" }
+        val heading = if (success) "Connection complete" else "Connection failed"
+        val message = if (success) {
+            "Returning to LastChat&hellip;"
+        } else {
+            "Return to LastChat and try signing in again."
+        }
+        val returnLink = deepLink?.let { "<p><a href=\"$it\">Return to LastChat</a></p>" }.orEmpty()
+        val returnScript = deepLink?.let { "<script>window.location.replace(\"$it\");</script>" }.orEmpty()
+        return """
+            <!doctype html>
+            <html>
+              <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>LastChat connection</title>
+              </head>
+              <body>
+                <p>$heading</p>
+                <p>$message</p>
+                $returnLink
+                $returnScript
+              </body>
+            </html>
+        """.trimIndent()
     }
 
     private suspend fun discoverProtectedResource(url: String): ProtectedResourceMetadata {
@@ -324,6 +428,7 @@ class McpOAuthManager(
         return OAuthClientRegistration(
             clientId = json.string("client_id") ?: error("OAuth registration did not return a client ID"),
             clientSecret = json.string("client_secret"),
+            redirectUri = redirectUri,
         )
     }
 

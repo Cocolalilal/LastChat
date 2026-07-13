@@ -723,6 +723,7 @@ class ChatService(
 
     // 移除引用
     fun removeConversationReference(conversationId: Uuid) {
+        var becameUnreferenced = false
         val referenceCount = synchronized(conversationReferencesLock) {
             conversationReferences[conversationId]?.let { count ->
                 if (count > 1) {
@@ -731,6 +732,7 @@ class ChatService(
                     nextCount
                 } else {
                     conversationReferences.remove(conversationId)
+                    becameUnreferenced = true
                     0
                 }
             } ?: 0
@@ -739,9 +741,55 @@ class ChatService(
             TAG,
             "Removed reference for $conversationId (current references: $referenceCount)"
         )
+        if (becameUnreferenced) {
+            flushMemoryOnConversationExit(conversationId)
+        }
         appScope.launch {
             delay(500)
             checkAllConversationsReferences()
+        }
+    }
+
+    fun flushMemoryOnConversationExit(conversationId: Uuid) {
+        appScope.launch(Dispatchers.IO) {
+            val conversation = conversationRepo.getConversationById(conversationId) ?: return@launch
+            val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
+                ?: return@launch
+            if (!assistant.enableMemory) return@launch
+
+            when (assistant.resolvedMemoryEngineId()) {
+                me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH -> {
+                    if (!assistant.graphLearnFromChats && !assistant.enableSessionMemory) return@launch
+                    val request = androidx.work.OneTimeWorkRequestBuilder<GraphMemoryIngestWorker>()
+                        .setInputData(
+                            androidx.work.workDataOf(
+                                GraphMemoryIngestWorker.KEY_CONVERSATION_ID to conversationId.toString(),
+                            ),
+                        )
+                        .build()
+                    androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                        "graph_memory_ingest_$conversationId",
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        request,
+                    )
+                }
+                me.rerere.ai.memory.BuiltInMemoryEngines.SIMPLE -> {
+                    if (conversation.messageNodes.size < 4) return@launch
+                    val request = androidx.work.OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                        .setInputData(
+                            androidx.work.workDataOf(
+                                MemoryConsolidationWorker.KEY_FORCE_CONVERSATION_ID to conversationId.toString(),
+                                MemoryConsolidationWorker.KEY_ASSISTANT_ID to conversation.assistantId.toString(),
+                            ),
+                        )
+                        .build()
+                    androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                        "memory_consolidation_$conversationId",
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        request,
+                    )
+                }
+            }
         }
     }
 

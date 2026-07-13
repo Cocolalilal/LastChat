@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -71,5 +72,21 @@ class SkillExportImportTest {
         }
 
         assertTrue(SkillExportImport.importFromBytes(archive) is SkillExportImport.ImportResult.Error)
+    }
+
+    @Test
+    fun packageFileResolutionStaysInsideSkillRoot() {
+        val root = Files.createTempDirectory("lastchat-skill").toFile()
+        try {
+            assertEquals(
+                root.resolve("references/guide.md").canonicalFile,
+                SkillExportImport.resolvePackageFile(root, "references/guide.md"),
+            )
+            assertEquals(null, SkillExportImport.resolvePackageFile(root, "../secret.txt"))
+            assertEquals(null, SkillExportImport.resolvePackageFile(root, "/absolute.txt"))
+            assertEquals(null, SkillExportImport.resolvePackageFile(root, "references//guide.md"))
+        } finally {
+            root.deleteRecursively()
+        }
     }
 }

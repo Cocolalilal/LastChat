@@ -312,6 +312,26 @@ fun SettingPromptInjectionsPage(
                 showAddSkillDialog = false
                 editingSkill = null
             },
+            onSavePreservingPackage = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
+                showAddSkillDialog = false
+                editingSkill = null
+            },
+            onPackageMetadataChanged = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
+            },
             onAutoSave = { savedSkill ->
                 val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 vm.updateSettings(

@@ -20,9 +20,11 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
+import me.rerere.ai.memory.BuiltInMemoryEngines
 import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -56,35 +58,38 @@ class MemoryConsolidationWorker(
 
     private suspend fun consolidateMemories() {
         val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
-        if (!assistant.enableMemory) return
+        val forceConversationId = inputData.getString(KEY_FORCE_CONVERSATION_ID)
+        val forcedConversation = forceConversationId
+            ?.let { runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull() }
+            ?.let { conversationRepository.getConversationById(it) }
+        val requestedAssistantId = inputData.getString(KEY_ASSISTANT_ID)
+            ?.let { runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull() }
+        val assistantUuid = forcedConversation?.assistantId ?: requestedAssistantId ?: settings.assistantId
+        val assistant = settings.getAssistantById(assistantUuid) ?: return
+        if (!assistant.enableMemory || assistant.resolvedMemoryEngineId() != BuiltInMemoryEngines.SIMPLE) return
         val summarizerModelId = settings.summarizerModelId
         val backgroundModelId = summarizerModelId ?: assistant.backgroundModelId ?: settings.chatModelId
         val model = settings.findModelById(backgroundModelId) ?: return
         val provider = model.findProvider(settings.providers) ?: return
         val providerHandler = providerManager.getProviderByType(provider)
-        val assistantId = settings.assistantId.toString()
+        val assistantId = assistantUuid.toString()
 
         // =========================================================================================
         // TRACK A: Episodic Memory Creation (Stream of Consciousness)
-        // Only runs if enableMemoryConsolidation is true
+        // Runs invisibly for Simple Memory. Conversation-exit work is forced immediately;
+        // periodic work remains a delayed fallback for the currently selected assistant.
         // =========================================================================================
-        val isFullScan = inputData.getBoolean("FULL_SCAN", false)
-        val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
+        val isFullScan = inputData.getBoolean(KEY_FULL_SCAN, false)
         
         var trackACount = 0
         val now = System.currentTimeMillis()
         
-        // Only process conversations if consolidation is enabled
-        if (assistant.enableMemoryConsolidation || forceConversationId != null) {
-            val conversationsToProcess = if (forceConversationId != null) {
-                // Manual consolidation: only process the specific conversation
-                val targetConversation = conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(forceConversationId))
-                if (targetConversation != null) listOf(targetConversation) else emptyList()
+            val conversationsToProcess = if (forcedConversation != null) {
+                listOf(forcedConversation)
             } else if (isFullScan) {
-                conversationRepository.getConversationsOfAssistant(settings.assistantId).first()
+                conversationRepository.getConversationsOfAssistant(assistantUuid).first()
             } else {
-                conversationRepository.getRecentConversations(settings.assistantId, 10)
+                conversationRepository.getRecentConversations(assistantUuid, 10)
             }
             
             for (conversation in conversationsToProcess) {
@@ -236,7 +241,7 @@ class MemoryConsolidationWorker(
             settingsStore.update { currentSettings ->
                 currentSettings.copy(
                     assistants = currentSettings.assistants.map { 
-                        if (it.id == settings.assistantId) {
+                        if (it.id == assistantUuid) {
                             it.copy(
                                 lastConsolidationTime = now,
                                 lastConsolidationResult = resultMsg
@@ -246,7 +251,6 @@ class MemoryConsolidationWorker(
                 )
             }
             }
-        } // End of enableMemoryConsolidation check
 
         // =========================================================================================
         // PRUNING: The "Throw Out" Mechanism
@@ -284,5 +288,11 @@ class MemoryConsolidationWorker(
         } catch (e: Exception) {
             Log.e("MemoryConsolidation", "Error auto-embedding memories", e)
         }
+    }
+
+    companion object {
+        const val KEY_FORCE_CONVERSATION_ID = "FORCE_CONVERSATION_ID"
+        const val KEY_ASSISTANT_ID = "ASSISTANT_ID"
+        const val KEY_FULL_SCAN = "FULL_SCAN"
     }
 }

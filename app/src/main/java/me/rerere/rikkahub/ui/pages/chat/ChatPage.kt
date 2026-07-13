@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.DisposableEffect
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -540,6 +541,10 @@ fun ChatPage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val genericErrorMessage = context.getString(R.string.common_error)
+
+    DisposableEffect(vm) {
+        onDispose(vm::flushMemoryOnExit)
+    }
 
     // Handle Error
     LaunchedEffect(vm) {

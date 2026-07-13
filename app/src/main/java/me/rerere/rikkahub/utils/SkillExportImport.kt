@@ -22,6 +22,22 @@ object SkillExportImport {
     private const val MAX_PACKAGE_FILES = 256
     private const val MAX_PACKAGE_BYTES = 32 * 1024 * 1024
     private const val MAX_SINGLE_FILE_BYTES = 8 * 1024 * 1024
+    private const val MAX_EDITABLE_FILE_BYTES = 1024 * 1024
+
+    data class PackageEntry(
+        val relativePath: String,
+        val name: String,
+        val isDirectory: Boolean,
+        val sizeBytes: Long,
+        val isTextEditable: Boolean,
+    )
+
+    private val editableTextExtensions = setOf(
+        "", "md", "txt", "json", "yaml", "yml", "xml", "csv", "tsv",
+        "py", "sh", "bash", "js", "mjs", "cjs", "ts", "tsx", "jsx",
+        "kt", "kts", "java", "c", "cc", "cpp", "h", "hpp", "rs", "go",
+        "rb", "php", "swift", "toml", "ini", "cfg", "conf", "sql", "html", "css",
+    )
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -237,10 +253,78 @@ object SkillExportImport {
         return skill.copy(packageRoot = rootName)
     }
 
+    fun ensureManagedSkillPackage(context: Context, skill: Skill): Skill {
+        val rootName = skill.safePackageRoot()
+        val skillFile = File(context.filesDir, "skills/$rootName/SKILL.md")
+        if (!skillFile.isFile) {
+            skillFile.parentFile?.mkdirs()
+            skillFile.writeText(exportToSkillMd(skill))
+        }
+        return skill.copy(packageRoot = rootName)
+    }
+
     fun deletePackage(context: Context, skill: Skill) {
         skill.packageRoot
             ?.takeIf { it.matches(Regex("skill-[0-9a-f-]+")) }
             ?.let { File(context.filesDir, "skills/$it").deleteRecursively() }
+    }
+
+    fun listPackageEntries(context: Context, skill: Skill): List<PackageEntry> {
+        val root = packageRoot(context, skill)
+        if (!root.isDirectory) return emptyList()
+        return root.walkTopDown()
+            .drop(1)
+            .filterNot { it.name.startsWith(".") }
+            .map { file ->
+                PackageEntry(
+                    relativePath = file.relativeTo(root).invariantSeparatorsPath,
+                    name = file.name,
+                    isDirectory = file.isDirectory,
+                    sizeBytes = if (file.isFile) file.length() else 0L,
+                    isTextEditable = file.isFile &&
+                        file.length() <= MAX_EDITABLE_FILE_BYTES &&
+                        file.extension.lowercase() in editableTextExtensions,
+                )
+            }
+            .sortedWith(
+                compareBy<PackageEntry>(
+                    { it.relativePath.substringBeforeLast('/', "") },
+                    { !it.isDirectory },
+                    { it.name != "SKILL.md" },
+                    { it.name.lowercase() },
+                )
+            )
+            .toList()
+    }
+
+    fun readPackageTextFile(context: Context, skill: Skill, relativePath: String): String {
+        val target = resolvePackageFile(packageRoot(context, skill), relativePath)
+            ?: error("Invalid skill file path")
+        require(target.isFile) { "Skill file does not exist" }
+        require(target.length() <= MAX_EDITABLE_FILE_BYTES) { "File is too large to edit" }
+        val bytes = target.readBytes()
+        require(bytes.none { it == 0.toByte() }) { "Binary files cannot be edited as text" }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    fun savePackageTextFile(
+        context: Context,
+        skill: Skill,
+        relativePath: String,
+        content: String,
+    ) {
+        require(content.toByteArray().size <= MAX_EDITABLE_FILE_BYTES) { "File is too large to edit" }
+        val root = packageRoot(context, skill).apply { mkdirs() }
+        val target = resolvePackageFile(root, relativePath) ?: error("Invalid skill file path")
+        require(target != root) { "A file name is required" }
+        target.parentFile?.mkdirs()
+        target.writeText(content)
+    }
+
+    fun deletePackageFile(context: Context, skill: Skill, relativePath: String): Boolean {
+        require(relativePath != "SKILL.md") { "SKILL.md cannot be deleted" }
+        val target = resolvePackageFile(packageRoot(context, skill), relativePath) ?: return false
+        return target.isFile && target.delete()
     }
 
     fun exportPackage(context: Context, skill: Skill): ByteArray {
@@ -250,7 +334,11 @@ object SkillExportImport {
                 file.relativeTo(root).invariantSeparatorsPath to file.readBytes()
             }
         } else emptyMap()
-        val normalizedFiles = files + mapOf("SKILL.md" to exportToSkillMd(skill).toByteArray())
+        val normalizedFiles = if (files.containsKey("SKILL.md")) {
+            files
+        } else {
+            files + mapOf("SKILL.md" to exportToSkillMd(skill).toByteArray())
+        }
         return ByteArrayOutputStream().use { output ->
             ZipOutputStream(output).use { zip ->
                 normalizedFiles.toSortedMap().forEach { (path, bytes) ->
@@ -309,6 +397,21 @@ object SkillExportImport {
         require(normalized.isNotBlank() && !normalized.split('/').any { it == ".." || it.isBlank() }) { "Unsafe archive path" }
         return normalized
     }
+
+    internal fun resolvePackageFile(root: File, relativePath: String): File? {
+        val normalized = relativePath.replace('\\', '/').trim()
+        if (normalized.isBlank() || normalized.startsWith('/') || normalized.split('/').any { it.isBlank() || it == "." || it == ".." }) {
+            return null
+        }
+        val canonicalRoot = root.canonicalFile
+        val target = canonicalRoot.resolve(normalized).canonicalFile
+        return target.takeIf {
+            it.path.startsWith(canonicalRoot.path + File.separator)
+        }
+    }
+
+    private fun packageRoot(context: Context, skill: Skill): File =
+        File(context.filesDir, "skills/${skill.safePackageRoot()}")
 
     private fun yamlValue(raw: String): String = raw.trim()
         .removeSurrounding("\"")
