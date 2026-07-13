@@ -121,7 +121,10 @@ fun ColumnScope.ConversationList(
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
+    onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
+    showUnconsolidatedDot: Boolean = false,
+    showConsolidateOption: Boolean = false,
     quickActions: (@Composable () -> Unit)? = null
 ) {
     val navController = LocalNavController.current
@@ -314,8 +317,11 @@ fun ColumnScope.ConversationList(
                             onDelete = onDelete,
                             onRegenerateTitle = onRegenerateTitle,
                             onEditTitle = onEditTitle,
+                            onConsolidate = onConsolidate,
                             onPin = onPin,
                             searchQuery = searchQuery,
+                            showUnconsolidatedDot = showUnconsolidatedDot,
+                            showConsolidateOption = showConsolidateOption,
                             modifier = Modifier.animateItem(
                                 fadeInSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
                                 fadeOutSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
@@ -430,8 +436,11 @@ private fun ConversationItem(
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
+    onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     searchQuery: String = "",
+    showUnconsolidatedDot: Boolean = false,
+    showConsolidateOption: Boolean = false,
     onClick: (Conversation) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -540,6 +549,17 @@ private fun ConversationItem(
                 }
             }
             
+            // Unconsolidated Dot — only show for chats that are eligible for consolidation (≥4 nodes)
+            AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated && conversation.messageNodes.size >= 4) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error)
+                        .size(6.dp)
+                )
+            }
+
             // 置顶图标
             AnimatedVisibility(conversation.isPinned) {
                 Icon(
@@ -613,6 +633,22 @@ private fun ConversationItem(
                         Icon(Icons.Rounded.Refresh, null)
                     }
                 )
+
+                if (showConsolidateOption && !conversation.isConsolidated) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(id = R.string.chat_page_consolidate))
+                        },
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onConsolidate(conversation)
+                            showDropdownMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Memory, null)
+                        }
+                    )
+                }
 
                 DropdownMenuItem(
                     text = {

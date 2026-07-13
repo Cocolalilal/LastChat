@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.data.model
 
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.ui.UIMessage
@@ -57,13 +57,6 @@ data class Assistant(
     val summarizerModelId: Uuid? = null, // Legacy import field; global summarizer lives in Settings
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
-    /** Existing serialized assistants default to the legacy entry store. Creation flows opt into documents. */
-    val memorySystem: MemorySystemType = MemorySystemType.ENTRY_BASED,
-    val entryRecentContinuityEnabled: Boolean = false,
-    val entryAdvancedMemoryEnabled: Boolean = false,
-    val entryMemorySearchToolEnabled: Boolean = false,
-    val userProfileCharLimit: Int = DEFAULT_MEMORY_DOCUMENT_CHAR_LIMIT,
-    val characterMemoryCharLimit: Int = DEFAULT_MEMORY_DOCUMENT_CHAR_LIMIT,
     val enableMemorySearchTool: Boolean = false, // Allow the assistant to deliberately search memories and past chats
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
     val ragSimilarityThreshold: Float = 0.45f, // Similarity threshold for RAG (0.0 = include all, 1.0 = only perfect matches)
@@ -120,47 +113,6 @@ data class Assistant(
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
 
-@Serializable
-enum class MemorySystemType {
-    @SerialName("entry_based")
-    ENTRY_BASED,
-    @SerialName("document_based")
-    DOCUMENT_BASED,
-}
-
-@Serializable
-enum class MemoryDocumentKind {
-    @SerialName("user_profile")
-    USER_PROFILE,
-    @SerialName("character_memory")
-    CHARACTER_MEMORY,
-}
-
-const val DEFAULT_MEMORY_DOCUMENT_CHAR_LIMIT = 3_000
-const val MIN_MEMORY_DOCUMENT_CHAR_LIMIT = 1_500
-const val MAX_MEMORY_DOCUMENT_CHAR_LIMIT = 6_000
-
-fun Assistant.effectiveRecentContinuityEnabled(): Boolean =
-    memorySystem == MemorySystemType.DOCUMENT_BASED || entryAdvancedMemoryEnabled ||
-        entryRecentContinuityEnabled || enableRecentChatsReference
-
-fun Assistant.effectiveAdvancedEntryMemoryEnabled(): Boolean =
-    memorySystem == MemorySystemType.ENTRY_BASED &&
-        (entryAdvancedMemoryEnabled || enableMemoryConsolidation)
-
-fun Assistant.effectiveMemorySearchToolEnabled(): Boolean =
-    enableMemory && (
-        memorySystem == MemorySystemType.DOCUMENT_BASED ||
-            effectiveAdvancedEntryMemoryEnabled() ||
-            entryMemorySearchToolEnabled ||
-            enableMemorySearchTool
-        )
-
-fun Assistant.effectiveRagMemoryEnabled(): Boolean =
-    memorySystem == MemorySystemType.DOCUMENT_BASED ||
-        effectiveAdvancedEntryMemoryEnabled() ||
-        useRagMemoryRetrieval
-
 internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
 
 internal fun Assistant.canManuallySummarizeConversation(messageCount: Int): Boolean {
@@ -196,13 +148,7 @@ data class AssistantMemory(
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null, // UUID of the embedding model used (for model mismatch detection)
     val timestamp: Long = 0L, // Timestamp of the memory (e.g. creation time or episode start time)
-    val significance: Int? = null, // Significance score (1-10) for episodic memories, null for core memories
-    // Typed source metadata is appended for backwards-compatible deserialization of old bundles.
-    val sourceId: String? = null,
-    val sourceKind: String? = null,
-    val sourceTitle: String? = null,
-    val conversationId: String? = null,
-    val messageId: String? = null,
+    val significance: Int? = null // Significance score (1-10) for episodic memories, null for core memories
 )
 
 @Serializable

@@ -65,8 +65,6 @@ val appModule = module {
             conversationRepo = get(),
             chatAttachmentRepository = get(),
             memoryRepository = get(),
-            hybridMemoryRepository = get(),
-            memoryContextCoordinator = get(),
             generationHandler = get(),
             templateTransformer = get(),
             providerManager = get(),
@@ -83,8 +81,6 @@ val appModule = module {
             chatService = get(),
             conversationRepo = get(),
             settingsStore = get(),
-            hybridMemoryRepository = get(),
-            hybridMemoryDao = get(),
         )
     }
 }

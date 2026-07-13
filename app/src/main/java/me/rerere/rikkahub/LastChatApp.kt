@@ -36,7 +36,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
 import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
-import me.rerere.rikkahub.service.HybridMemoryCatchUpWorker
+import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
@@ -138,9 +138,9 @@ class LastChatApp : Application() {
                         .build()
 
                     WorkManager.getInstance(this@LastChatApp).enqueueUniquePeriodicWork(
-                        "hybrid_memory_catch_up",
+                        "memory_consolidation",
                         ExistingPeriodicWorkPolicy.UPDATE,
-                        PeriodicWorkRequestBuilder<HybridMemoryCatchUpWorker>(
+                        PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
                             interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
                         )
                             .setConstraints(constraints)

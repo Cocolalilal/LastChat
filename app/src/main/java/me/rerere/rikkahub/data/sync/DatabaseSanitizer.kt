@@ -71,18 +71,7 @@ object DatabaseSanitizer {
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
                 "daily_activity",
-                "usage_stats",
-                "memory_document",
-                "memory_document_revision",
-                "memory_conversation_digest",
-                "memory_search_row",
-                "memory_search_fts",
-                "memory_graph_node",
-                "memory_graph_edge",
-                "memory_graph_provenance",
-                "memory_graph_override",
-                "memory_processing_state",
-                "memory_conversion_state",
+                "usage_stats"
             )
 
             for (table in tables) {

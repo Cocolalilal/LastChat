@@ -297,17 +297,10 @@ private fun MemoryItem(
 ) {
     val isDarkMode = LocalDarkMode.current
     val isCore = memory.memoryType == 0
-    val memoryTypeLabel = memory.title ?: when (memory.sourceKind) {
-        "USER_PROFILE" -> "User Profile"
-        "CHARACTER_MEMORY" -> "Character Memory"
-        "CONTINUITY_DIGEST" -> "Recent continuity"
-        "GRAPH_NODE", "GRAPH_RELATION" -> "Memory graph"
-        "RAW_CHAT" -> "Chat source"
-        else -> when {
-            isCore -> stringResource(R.string.activity_timeline_memory_core)
-            memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
-            else -> stringResource(R.string.activity_timeline_memory_episodic)
-        }
+    val memoryTypeLabel = when {
+        isCore -> stringResource(R.string.activity_timeline_memory_core)
+        memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
+        else -> stringResource(R.string.activity_timeline_memory_episodic)
     }
     
     val backgroundColor = if (isCore) {

@@ -190,7 +190,7 @@ class SettingsStore(
                     titleModelId = preferences[TITLE_MODEL]?.let { Uuid.parse(it) }
                         ?: GEMINI_2_5_FLASH_ID,
                     titleThinkingBudget = preferences[TITLE_THINKING_BUDGET] ?: 0,
-                    summarizerModelId = (preferences[SUMMARIZER_MODEL] ?: preferences[SUBAGENT_MODEL])?.let { Uuid.parse(it) },
+                    summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) },
                     summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
                     subagentModelId = preferences[SUBAGENT_MODEL]?.let { Uuid.parse(it) },
                     subagentThinkingBudget = preferences[SUBAGENT_THINKING_BUDGET] ?: 0,
@@ -358,13 +358,6 @@ class SettingsStore(
                 },
                 assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
                     assistant.copy(
-                        entryRecentContinuityEnabled = assistant.entryRecentContinuityEnabled || assistant.enableRecentChatsReference,
-                        entryAdvancedMemoryEnabled = assistant.entryAdvancedMemoryEnabled || assistant.enableMemoryConsolidation,
-                        entryMemorySearchToolEnabled = assistant.entryMemorySearchToolEnabled || assistant.enableMemorySearchTool,
-                        // Deprecated aliases remain readable for one compatibility release.
-                        enableRecentChatsReference = false,
-                        enableMemoryConsolidation = false,
-                        enableMemorySearchTool = false,
                         // 过滤掉不存在的 MCP 服务器 ID
                         mcpServers = assistant.mcpServers.filter { serverId ->
                             serverId in validMcpServerIds

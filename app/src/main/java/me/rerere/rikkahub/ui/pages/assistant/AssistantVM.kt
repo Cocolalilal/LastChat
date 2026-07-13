@@ -13,13 +13,10 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.repository.HybridMemoryRepository
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
-    private val hybridMemoryRepository: HybridMemoryRepository,
-    private val workManager: androidx.work.WorkManager,
     private val conversationRepo: ConversationRepository,
     private val appScope: me.rerere.rikkahub.AppScope,
     private val appStorageRepository: AppStorageRepository,
@@ -88,8 +85,6 @@ class AssistantVM(
         val job = appScope.launch {
             kotlinx.coroutines.delay(4000) // 4 seconds to undo
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
-            hybridMemoryRepository.deleteAssistantData(assistant.id.toString())
-            workManager.cancelAllWorkByTag("hybrid_memory_assistant_${assistant.id}")
             conversationRepo.deleteConversationOfAssistant(assistant.id)
             appStorageRepository.deleteFilesIfUnreferenced(assistant.collectMediaFileRefs())
             deletionJobs.remove(assistant.id)

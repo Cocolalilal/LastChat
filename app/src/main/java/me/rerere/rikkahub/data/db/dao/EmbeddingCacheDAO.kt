@@ -20,9 +20,6 @@ interface EmbeddingCacheDAO {
      */
     @Query("SELECT * FROM embedding_cache WHERE memory_id = :memoryId AND memory_type = :memoryType AND model_id = :modelId LIMIT 1")
     suspend fun getEmbedding(memoryId: Int, memoryType: Int, modelId: String): EmbeddingCacheEntity?
-
-    @Query("SELECT * FROM embedding_cache WHERE source_id = :sourceId AND source_kind = :sourceKind AND model_id = :modelId LIMIT 1")
-    suspend fun getSourceEmbedding(sourceId: String, sourceKind: String, modelId: String): EmbeddingCacheEntity?
     
     /**
      * Insert or replace an embedding in the cache.

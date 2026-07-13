@@ -22,15 +22,7 @@ import me.rerere.rikkahub.data.model.toTavernCharacterBook
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.data.db.dao.HybridMemoryDao
-import me.rerere.rikkahub.data.db.entity.MemoryConversationDigestEntity
-import me.rerere.rikkahub.data.db.entity.MemoryConversionStateEntity
-import me.rerere.rikkahub.data.db.entity.MemoryDocumentEntity
-import me.rerere.rikkahub.data.db.entity.MemoryDocumentRevisionEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphEdgeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphNodeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphOverrideEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphProvenanceEntity
+import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import okio.Buffer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -53,26 +45,13 @@ data class AssistantExportV1(
     // Bundled Lorebooks
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
-    val memories: List<AssistantMemory> = emptyList(),
-    val hybridMemory: HybridMemoryExport? = null,
-)
-
-@Serializable
-data class HybridMemoryExport(
-    val documents: List<MemoryDocumentEntity> = emptyList(),
-    val revisions: List<MemoryDocumentRevisionEntity> = emptyList(),
-    val digests: List<MemoryConversationDigestEntity> = emptyList(),
-    val graphNodes: List<MemoryGraphNodeEntity> = emptyList(),
-    val graphEdges: List<MemoryGraphEdgeEntity> = emptyList(),
-    val graphProvenance: List<MemoryGraphProvenanceEntity> = emptyList(),
-    val graphOverrides: List<MemoryGraphOverrideEntity> = emptyList(),
-    val conversionStates: List<MemoryConversionStateEntity> = emptyList(),
+    val memories: List<AssistantMemory> = emptyList()
 )
 
 object AssistantExportImport : KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
-    private val hybridMemoryDao: HybridMemoryDao by inject()
+    private val chatEpisodeDAO: ChatEpisodeDAO by inject()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -135,19 +114,31 @@ object AssistantExportImport : KoinComponent {
             // Fetch Core Memories (already returns AssistantMemory list)
             val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
             
-            coreConfigured
+            // Fetch Episodic Memories
+            val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistant.id.toString())
+            val episodicConfigured = episodes.map {
+                AssistantMemory(
+                    id = -it.id, // Negative to distinguish
+                    content = it.content,
+                    type = 1, // EPISODIC
+                    hasEmbedding = it.embedding != null,
+                    embeddingModelId = it.embeddingModelId,
+                    timestamp = it.startTime,
+                    significance = it.significance
+                )
+            }
+            
+            coreConfigured + episodicConfigured
         } else {
             emptyList()
         }
 
-        val hybridMemory = if (includeMemories) exportHybridMemory(assistant.id.toString()) else null
         val export = AssistantExportV1(
             assistant = assistant,
             avatarContent = avatarContent,
             avatarMimeType = avatarMime,
             lorebooks = bundledLorebooks,
-            memories = bundledMemories,
-            hybridMemory = hybridMemory,
+            memories = bundledMemories
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -245,94 +236,24 @@ object AssistantExportImport : KoinComponent {
                          assistantId = assistant.id.toString(),
                          content = memory.content
                      )
-                } else if (memory.type == 1) { // Legacy episodic bundle compatibility
-                    hybridMemoryDao.upsertDigest(MemoryConversationDigestEntity(
-                        id = "${assistant.id}:legacy-import:${memory.id}:${memory.timestamp}",
-                        assistantId = assistant.id.toString(),
-                        conversationId = null,
-                        summary = memory.content,
-                        importance = (memory.significance ?: 3).coerceIn(1, 5),
-                        sourceAvailable = false,
-                        eventStart = memory.timestamp,
-                        eventEnd = memory.timestamp,
-                        recordedAt = memory.timestamp,
-                    ))
+                } else if (memory.type == 1) { // Episodic
+                     val entity = me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity(
+                         id = 0, // Auto-generate
+                         assistantId = assistant.id.toString(),
+                         startTime = memory.timestamp,
+                         endTime = memory.timestamp, // approximate
+                         content = memory.content,
+                         lastAccessedAt = System.currentTimeMillis(),
+                         significance = memory.significance ?: 5,
+                         embedding = null, // Needs regeneration
+                         embeddingModelId = null
+                     )
+                     chatEpisodeDAO.insertEpisode(entity)
                 }
             }
-            export.hybridMemory?.let { restoreHybridMemory(it, assistant.id.toString()) }
         }
 
         return assistant
-    }
-
-    private suspend fun exportHybridMemory(assistantId: String): HybridMemoryExport {
-        val documents = hybridMemoryDao.getDocuments(assistantId)
-        return HybridMemoryExport(
-            documents = documents,
-            revisions = documents.flatMap { hybridMemoryDao.getRevisions(it.id) },
-            digests = hybridMemoryDao.getDigests(assistantId),
-            graphNodes = hybridMemoryDao.getAllNodes(assistantId),
-            graphEdges = hybridMemoryDao.getAllEdges(assistantId),
-            graphProvenance = hybridMemoryDao.getAllProvenance(assistantId),
-            graphOverrides = hybridMemoryDao.getAllOverrides(assistantId),
-            conversionStates = hybridMemoryDao.getConversionStates(assistantId),
-        )
-    }
-
-    private suspend fun restoreHybridMemory(bundle: HybridMemoryExport, assistantId: String) {
-        val documentIds = bundle.documents.associate { it.id to "$assistantId:${it.kind.lowercase()}" }
-        bundle.documents.forEach { document ->
-            hybridMemoryDao.upsertDocument(document.copy(id = documentIds.getValue(document.id), assistantId = assistantId))
-        }
-        hybridMemoryDao.restoreRevisions(bundle.revisions.mapNotNull { revision ->
-            val documentId = documentIds[revision.documentId] ?: return@mapNotNull null
-            revision.copy(id = "$documentId:${revision.revision}", documentId = documentId)
-        })
-
-        val nodeIds = bundle.graphNodes.associate { it.id to "$assistantId:import-node:${it.id}" }
-        val edgeIds = bundle.graphEdges.associate { it.id to "$assistantId:import-edge:${it.id}" }
-        bundle.graphNodes.forEach { node ->
-            hybridMemoryDao.upsertNode(node.copy(id = nodeIds.getValue(node.id), assistantId = assistantId))
-        }
-        bundle.graphEdges.forEach { edge ->
-            hybridMemoryDao.upsertEdge(edge.copy(
-                id = edgeIds.getValue(edge.id),
-                assistantId = assistantId,
-                subjectId = nodeIds[edge.subjectId] ?: edge.subjectId,
-                objectId = edge.objectId?.let { nodeIds[it] ?: it },
-            ))
-        }
-        if (bundle.graphProvenance.isNotEmpty()) {
-            hybridMemoryDao.upsertProvenance(bundle.graphProvenance.mapNotNull { provenance ->
-                val graphId = nodeIds[provenance.graphId] ?: edgeIds[provenance.graphId] ?: return@mapNotNull null
-                provenance.copy(
-                    id = "$assistantId:import-provenance:${provenance.id}",
-                    graphId = graphId,
-                    conversationId = null,
-                    messageId = null,
-                    excerpt = "",
-                    sourceAvailable = false,
-                )
-            })
-        }
-        bundle.graphOverrides.forEach { override ->
-            hybridMemoryDao.upsertOverride(override.copy(
-                id = "$assistantId:import-override:${override.id}",
-                assistantId = assistantId,
-                targetId = nodeIds[override.targetId] ?: edgeIds[override.targetId] ?: override.targetId,
-            ))
-        }
-        bundle.digests.forEach { digest ->
-            hybridMemoryDao.upsertDigest(digest.copy(
-                id = "$assistantId:import-digest:${digest.id}",
-                assistantId = assistantId,
-                conversationId = null,
-                sourceAvailable = false,
-            ))
-        }
-        bundle.conversionStates.forEach { state ->
-            hybridMemoryDao.upsertConversionState(state.copy(assistantId = assistantId))
-        }
     }
 
     /**
@@ -690,9 +611,7 @@ object AssistantExportImport : KoinComponent {
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
-                        hasMemories = export.memories.isNotEmpty() || export.hybridMemory?.let {
-                            it.documents.isNotEmpty() || it.digests.isNotEmpty() || it.graphNodes.isNotEmpty()
-                        } == true,
+                        hasMemories = export.memories.isNotEmpty(),
                         hasLorebooks = export.lorebooks.isNotEmpty(),
                         missingModels = checkMissingModels(export.assistant)
                     )
@@ -972,8 +891,7 @@ object AssistantExportImport : KoinComponent {
         return Assistant(
             name = name,
             systemPrompt = systemPromptBuilder.toString().trim(),
-            presetMessages = presetMessages,
-            memorySystem = me.rerere.rikkahub.data.model.MemorySystemType.DOCUMENT_BASED,
+            presetMessages = presetMessages
         )
     }
 
@@ -1009,8 +927,7 @@ object AssistantExportImport : KoinComponent {
         return Assistant(
             name = data.name.ifBlank { "Imported Character" },
             systemPrompt = systemPromptBuilder.toString().trim(),
-            presetMessages = presetMessages,
-            memorySystem = me.rerere.rikkahub.data.model.MemorySystemType.DOCUMENT_BASED,
+            presetMessages = presetMessages
         )
     }
 }

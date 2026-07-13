@@ -16,10 +16,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -73,7 +69,6 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
-import me.rerere.rikkahub.data.ai.MemoryContextCoordinator
 import me.rerere.rikkahub.data.ai.buildSuggestionGenerationParams
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.buildTitleGenerationParams
@@ -110,11 +105,6 @@ import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.repository.HybridMemoryRepository
-import me.rerere.rikkahub.data.model.MemorySystemType
-import me.rerere.rikkahub.data.model.effectiveRagMemoryEnabled
-import me.rerere.rikkahub.data.model.effectiveRecentContinuityEnabled
-import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -126,7 +116,6 @@ import me.rerere.search.SearchServiceOptions
 import java.time.Instant
 import java.util.Locale
 import kotlin.uuid.Uuid
-import java.util.concurrent.TimeUnit
 
 private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
@@ -625,8 +614,6 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
-    private val hybridMemoryRepository: HybridMemoryRepository,
-    private val memoryContextCoordinator: MemoryContextCoordinator,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -667,12 +654,7 @@ class ChatService(
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
         when (event) {
             Lifecycle.Event.ON_START -> _isForeground.value = true
-            Lifecycle.Event.ON_STOP -> {
-                _isForeground.value = false
-                conversationIdsSnapshot().forEach { id ->
-                    getConversationState(id)?.value?.let { enqueueHybridMemoryProcessing(it, immediate = true) }
-                }
-            }
+            Lifecycle.Event.ON_STOP -> _isForeground.value = false
             else -> {}
         }
     }
@@ -708,7 +690,6 @@ class ChatService(
 
     private fun removeConversationState(conversationId: Uuid) = synchronized(conversationsLock) {
         conversations.remove(conversationId)
-        memoryContextCoordinator.clearConversationSnapshot(conversationId)
     }
 
     private fun conversationReferenceCount(): Int = synchronized(conversationReferencesLock) {
@@ -751,9 +732,6 @@ class ChatService(
             "Removed reference for $conversationId (current references: $referenceCount)"
         )
         appScope.launch {
-            getConversationState(conversationId)?.value?.let { conversation ->
-                enqueueHybridMemoryProcessing(conversation, immediate = true)
-            }
             delay(500)
             checkAllConversationsReferences()
         }
@@ -1354,7 +1332,6 @@ class ChatService(
                         conversationId = conversationId,
                         preserveConsolidation = true,
                         suppressCompletionNotification = suppressCompletionNotification,
-                        excludeActiveConversationMemory = true,
                     )
                 } else {
                     // TURN-BASED REGENERATION for assistant messages
@@ -1401,7 +1378,6 @@ class ChatService(
                                     conversationId = conversationId,
                                     preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
-                                    excludeActiveConversationMemory = true,
                                     assistantRegeneration = AssistantRegenerationContext(
                                         inputMessages = inputMessages,
                                         turnStartNodeIndex = firstAssistantIndex,
@@ -1416,7 +1392,6 @@ class ChatService(
                                 messageRange = 0..clickedIndex, // Ensure we encompass up to clickedIndex 
                                 preserveConsolidation = true,
                                 suppressCompletionNotification = suppressCompletionNotification,
-                                excludeActiveConversationMemory = true,
                             )
                         }
                     } else {
@@ -1451,7 +1426,6 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         preserveConsolidation: Boolean = false,
         suppressCompletionNotification: Boolean = false,
-        excludeActiveConversationMemory: Boolean = false,
         assistantRegeneration: AssistantRegenerationContext? = null,
     ) {
         val settings = settingsStore.settingsFlow.first()
@@ -1466,13 +1440,6 @@ class ChatService(
             var conversation = normalizeConversation(getConversationFlow(conversationId).value)
             val conversationContext = settings.resolveConversationContext(conversation)
             val assistant = conversationContext.assistant
-            // Temporary and persist-on-reply chats must not read or expose memory tools.
-            // Regeneration keeps memory enabled, but filters sources from this conversation below.
-            val generationAssistant = if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
-                assistant
-            } else {
-                assistant.copy(enableMemory = false)
-            }
             val model = conversationContext.chatModel ?: return
 
             // reset suggestions
@@ -1482,7 +1449,7 @@ class ChatService(
             // Check if model supports tools when external tools are configured
             val tools = buildConversationTools(
                 settings = settings,
-                assistant = generationAssistant,
+                assistant = assistant,
                 conversation = conversation,
                 model = model,
             )
@@ -1500,31 +1467,57 @@ class ChatService(
             while (true) {
                 conversation = getConversationFlow(conversationId).value
                 try {
-                    val generationMessages = assistantRegeneration?.inputMessages ?: conversation.currentMessages.let {
-                        if (messageRange != null) {
-                            it.subList(messageRange.start, messageRange.endInclusive + 1)
-                        } else {
-                            it
-                        }
-                    }
-                    val shouldExcludeActiveConversationMemory =
-                        excludeActiveConversationMemory || assistantRegeneration != null
-                    val coordinatedMemory = memoryContextCoordinator.contextFor(
-                        assistant = generationAssistant,
-                        query = generationMessages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty(),
-                        conversationId = conversationId,
-                        excludedConversationId = conversationId.takeIf { shouldExcludeActiveConversationMemory },
-                        stableConversationSnapshot = generationAssistant.memorySystem == MemorySystemType.DOCUMENT_BASED &&
-                            !shouldExcludeActiveConversationMemory,
-                        allowMemory = generationAssistant.enableMemory,
-                    )
                     // start generating
                     generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = generationMessages,
-                assistant = generationAssistant,
-                memories = coordinatedMemory.memories,
+                messages = assistantRegeneration?.inputMessages ?: conversation.currentMessages.let {
+                    if (messageRange != null) {
+                        it.subList(messageRange.start, messageRange.endInclusive + 1)
+                    } else {
+                        it
+                    }
+                },
+                assistant = assistant,
+                memories = if (
+                    assistant.enableMemory &&
+                    getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+                ) {
+                    if (assistant.useRagMemoryRetrieval) {
+                        // RAG mode: retrieve relevant memories based on context
+                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                        
+                        if (settings.enableRagLogging) {
+                            Log.d("RAG", "Query: $lastUserMessage")
+                        }
+
+                        if (lastUserMessage.isNotBlank()) {
+                            val results = memoryRepository.retrieveRelevantMemories(
+                                assistantId = conversation.assistantId.toString(),
+                                query = lastUserMessage,
+                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes
+                            )
+                            if (settings.enableRagLogging) {
+                                Log.d("RAG", "Retrieved ${results.size} memories")
+                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
+                            }
+                            results
+                        } else {
+                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
+                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
+                                .take(50)
+                        }
+                    } else {
+                        // Simple mode: inject recent memories
+                        memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
+                            .take(50)
+                    }
+                } else {
+                    emptyList()
+                },
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
                     val cwd = getWorkspaceCwd(
@@ -2662,32 +2655,6 @@ class ChatService(
         persistConversationToRepository(
             conversation = updatedConversation,
             preserveConsolidation = preserveConsolidation,
-        )
-        val assistant = settingsStore.settingsFlow.value.getAssistantById(updatedConversation.assistantId)
-        if (assistant?.enableMemory == true) {
-            withContext(Dispatchers.IO) { hybridMemoryRepository.indexConversation(updatedConversation) }
-            enqueueHybridMemoryProcessing(updatedConversation, immediate = false)
-        }
-    }
-
-    private fun enqueueHybridMemoryProcessing(conversation: Conversation, immediate: Boolean) {
-        if (getConversationPersistenceMode(conversation.id) != ChatPersistenceMode.NORMAL) return
-        val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId) ?: return
-        if (!assistant.enableMemory) return
-        val request = OneTimeWorkRequestBuilder<HybridMemoryProcessingWorker>()
-            .setInputData(
-                workDataOf(
-                    HybridMemoryProcessingWorker.KEY_CONVERSATION_ID to conversation.id.toString(),
-                    HybridMemoryProcessingWorker.KEY_ASSISTANT_ID to conversation.assistantId.toString(),
-                )
-            )
-            .addTag("hybrid_memory_assistant_${conversation.assistantId}")
-            .apply { if (!immediate) setInitialDelay(5, TimeUnit.MINUTES) }
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "hybrid_memory_${conversation.id}",
-            ExistingWorkPolicy.REPLACE,
-            request,
         )
     }
 

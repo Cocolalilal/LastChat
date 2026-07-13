@@ -34,7 +34,6 @@ import me.rerere.rikkahub.data.model.SpontaneousMessageMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.ai.MemoryContextCoordinator
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.LocalTime
@@ -54,7 +53,7 @@ class SpontaneousWorker(
 ) : CoroutineWorker(context, params), KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
-    private val memoryContextCoordinator: MemoryContextCoordinator by inject()
+    private val memoryRepository: MemoryRepository by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
     private val spontaneousStateStore: SpontaneousMessagingStateStore by inject()
 
@@ -253,9 +252,51 @@ class SpontaneousWorker(
         assistant: Assistant,
         conversation: Conversation?,
     ): String {
-        val query = conversation?.currentMessages?.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty()
-        return memoryContextCoordinator.contextFor(assistant, query, allowMemory = assistant.enableMemory)
-            .promptText.ifBlank { "No relevant memories." }
+        val assistantId = assistant.id.toString()
+        val retrievedMemories = if (conversation != null) {
+            val lastUserMessage = conversation.currentMessages
+                .lastOrNull { it.role == MessageRole.USER }
+                ?.toText()
+                .orEmpty()
+            if (lastUserMessage.isNotBlank()) {
+                val searchLimit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
+                memoryRepository.retrieveRelevantMemories(
+                    assistantId = assistantId,
+                    query = lastUserMessage,
+                    limit = searchLimit,
+                )
+            } else {
+                val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
+                memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
+                    .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+            }
+        } else {
+            val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
+            memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
+                .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+        }
+
+        val episodicMemories = if (conversation == null && retrievedMemories.size < 5) {
+            memoryRepository.getEpisodeEntitiesOfAssistant(assistantId)
+                .take(5 - retrievedMemories.size)
+                .map { episode ->
+                    me.rerere.rikkahub.data.model.AssistantMemory(
+                        id = -episode.id,
+                        content = episode.content,
+                        type = 1,
+                        hasEmbedding = episode.embedding != null,
+                        embeddingModelId = episode.embeddingModelId,
+                        timestamp = episode.startTime,
+                        significance = episode.significance,
+                    )
+                }
+        } else {
+            emptyList()
+        }
+
+        return (retrievedMemories + episodicMemories)
+            .joinToString("\n") { memory -> "- ${memory.content}" }
+            .ifBlank { "No relevant memories." }
     }
 
     private fun buildDefaultPrompt(

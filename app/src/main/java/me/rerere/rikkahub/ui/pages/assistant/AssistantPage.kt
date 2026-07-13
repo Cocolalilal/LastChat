@@ -195,7 +195,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 actions = {
                     IconButton(
                         onClick = {
-                            createState.open(Assistant(memorySystem = me.rerere.rikkahub.data.model.MemorySystemType.DOCUMENT_BASED))
+                            createState.open(Assistant())
                         }
                     ) {
                         Icon(Icons.Rounded.Add, stringResource(R.string.assistant_page_add))

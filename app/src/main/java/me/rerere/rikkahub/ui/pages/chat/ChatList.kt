@@ -112,7 +112,6 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.plus
-import me.rerere.rikkahub.utils.navigateToChatPage
 import kotlin.uuid.Uuid
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -640,21 +639,14 @@ private fun SharedTransitionScope.ChatListNormal(
                                     navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
                                 },
                                 onMemoryClick = { memory ->
-                                    val sourceConversationId = memory.conversationId
-                                    if ((memory.sourceKind == "CONTINUITY_DIGEST" || memory.sourceKind == "RAW_CHAT") && sourceConversationId != null) {
-                                        runCatching { Uuid.parse(sourceConversationId) }.getOrNull()?.let { navigateToChatPage(navController, it) }
-                                    } else {
-                                        navController.navigate(
-                                            Screen.AssistantDetail(
-                                                id = conversation.assistantId.toString(),
-                                                startRoute = "memory",
-                                                initialMemoryTab = memory.memoryType,
-                                                scrollToMemoryId = memory.memoryId,
-                                                memorySourceKind = memory.sourceKind,
-                                                memorySourceId = memory.sourceId,
-                                            )
+                                    navController.navigate(
+                                        Screen.AssistantDetail(
+                                            id = conversation.assistantId.toString(),
+                                            startRoute = "memory",
+                                            initialMemoryTab = memory.memoryType,
+                                            scrollToMemoryId = memory.memoryId
                                         )
-                                    }
+                                    )
                                 },
                                 showRegenerate = showRegenerate,
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {

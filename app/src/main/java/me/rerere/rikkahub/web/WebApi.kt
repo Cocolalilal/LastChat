@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.web
 
 import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.core.net.toUri
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
@@ -66,9 +69,8 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.HybridMemoryRepository
-import me.rerere.rikkahub.data.db.dao.HybridMemoryDao
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.utils.JsonInstant
 
 private const val MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024
@@ -85,8 +87,6 @@ fun Application.configureWebApi(
     chatService: ChatService,
     conversationRepo: ConversationRepository,
     settingsStore: SettingsStore,
-    hybridMemoryRepository: HybridMemoryRepository,
-    hybridMemoryDao: HybridMemoryDao,
 ) {
     val jwtEnabled = settingsStore.settingsFlow.value.webServerJwtEnabled
 
@@ -137,24 +137,6 @@ fun Application.configureWebApi(
         }
 
         route("/api") {
-            get("/memory/{assistantId}") {
-                val assistantId = call.parameters["assistantId"] ?: throw BadRequestException("Missing assistant id")
-                val assistantUuid = assistantId.toUuid("assistant id")
-                val assistant = settingsStore.settingsFlow.value.assistants.firstOrNull { it.id == assistantUuid }
-                    ?: throw NotFoundException("Assistant not found")
-                call.respond(
-                    WebHybridMemoryResponse(
-                        system = assistant.memorySystem.name,
-                        documents = hybridMemoryRepository.getDocuments(assistant),
-                        digests = hybridMemoryDao.getDigests(assistantId),
-                        graphNodes = hybridMemoryDao.getAllNodes(assistantId),
-                        graphEdges = hybridMemoryDao.getAllEdges(assistantId),
-                        graphOverrides = hybridMemoryDao.getAllOverrides(assistantId),
-                        conversionStates = hybridMemoryDao.getConversionStates(assistantId),
-                    )
-                )
-            }
-
             post("/auth/token") {
                 val settings = settingsStore.settingsFlow.value
                 val request = call.receive<WebAuthTokenRequest>()
@@ -453,6 +435,26 @@ private fun Route.webRoutes(
             } ?: throw NotFoundException("Conversation not found")
 
             chatService.generateTitle(conversationId, conversation, force = true)
+            call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        post("/{id}/consolidate") {
+            val conversationId = call.parameters["id"].toUuid("conversation id")
+            withContext(Dispatchers.IO) {
+                conversationRepo.getConversationById(conversationId)
+            } ?: throw NotFoundException("Conversation not found")
+
+            withContext(Dispatchers.IO) {
+                conversationRepo.markAsNotConsolidated(conversationId)
+            }
+            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                .setInputData(
+                    workDataOf(
+                        "FORCE_CONVERSATION_ID" to conversationId.toString()
+                    )
+                )
+                .build()
+            WorkManager.getInstance(context).enqueue(request)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 

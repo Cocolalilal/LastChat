@@ -17,7 +17,6 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.ai.MemoryContextCoordinator
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.uuid.Uuid
@@ -32,7 +31,7 @@ class ScheduledMessageWorker(
 
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
-    private val memoryContextCoordinator: MemoryContextCoordinator by inject()
+    private val memoryRepository: MemoryRepository by inject()
     private val providerManager: me.rerere.ai.provider.ProviderManager by inject()
 
     override suspend fun doWork(): Result {
@@ -71,13 +70,19 @@ class ScheduledMessageWorker(
             // Prepare context
             val history = conversation.currentMessages.takeLast(10).joinToString("\n") { "${it.role}: ${it.toText()}" }
             
+            // RAG Retrieval
             val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-            val memoryContext = memoryContextCoordinator.contextFor(
-                assistant = assistant,
-                query = lastUserMessage,
-                conversationId = conversation.id,
-                allowMemory = assistant.enableMemory,
-            ).promptText
+            val memories = if (lastUserMessage.isNotBlank()) {
+                val searchLimit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit
+                memoryRepository.retrieveRelevantMemories(
+                    assistantId = assistant.id.toString(),
+                    query = lastUserMessage,
+                    limit = searchLimit
+                )
+            } else {
+                emptyList()
+            }
+            val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
 
             val prompt = """
                 You are ${assistant.name}.

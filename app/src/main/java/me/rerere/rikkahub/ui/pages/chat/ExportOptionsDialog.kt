@@ -28,24 +28,8 @@ fun ExportOptionsDialog(
     showLorebooksOption: Boolean,
     onConfirm: (includeMemories: Boolean, includeLorebooks: Boolean) -> Unit
 ) {
-    var includeMemories by remember { mutableStateOf(false) }
+    var includeMemories by remember { mutableStateOf(showMemoriesOption) }
     var includeLorebooks by remember { mutableStateOf(showLorebooksOption) }
-    var showMemoryPrivacyWarning by remember { mutableStateOf(false) }
-
-    if (showMemoryPrivacyWarning) {
-        AlertDialog(
-            onDismissRequest = { showMemoryPrivacyWarning = false },
-            title = { Text("Include personal memory?") },
-            text = { Text("The exported character bundle will include personal information stored in both active and preserved inactive memory systems. Raw chats are not included.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    includeMemories = true
-                    showMemoryPrivacyWarning = false
-                }) { Text("Include memory") }
-            },
-            dismissButton = { TextButton(onClick = { showMemoryPrivacyWarning = false }) { Text(stringResource(R.string.cancel)) } },
-        )
-    }
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -56,17 +40,13 @@ fun ExportOptionsDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                if (includeMemories) includeMemories = false else showMemoryPrivacyWarning = true
-                            }
+                            .clickable { includeMemories = !includeMemories }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
                             checked = includeMemories,
-                            onCheckedChange = { enabled ->
-                                if (!enabled) includeMemories = false else showMemoryPrivacyWarning = true
-                            }
+                            onCheckedChange = { includeMemories = it }
                         )
                         Text(
                             stringResource(R.string.export_include_memories),

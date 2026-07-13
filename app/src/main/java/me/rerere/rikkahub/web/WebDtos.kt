@@ -39,12 +39,6 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
-import me.rerere.rikkahub.data.db.entity.MemoryConversationDigestEntity
-import me.rerere.rikkahub.data.db.entity.MemoryConversionStateEntity
-import me.rerere.rikkahub.data.db.entity.MemoryDocumentEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphEdgeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphNodeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryGraphOverrideEntity
 import me.rerere.common.http.urlEncode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
@@ -53,17 +47,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 // Requests
-
-@Serializable
-data class WebHybridMemoryResponse(
-    val system: String,
-    val documents: List<MemoryDocumentEntity>,
-    val digests: List<MemoryConversationDigestEntity>,
-    val graphNodes: List<MemoryGraphNodeEntity>,
-    val graphEdges: List<MemoryGraphEdgeEntity>,
-    val graphOverrides: List<MemoryGraphOverrideEntity>,
-    val conversionStates: List<MemoryConversionStateEntity>,
-)
 
 @Serializable
 data class SendMessageRequest(

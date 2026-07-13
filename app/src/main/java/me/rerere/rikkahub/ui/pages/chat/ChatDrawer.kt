@@ -257,10 +257,13 @@ fun ChatDrawerContent(
                 onEditTitle = { conversation, title ->
                     vm.updateConversationTitle(conversation, title)
                 },
+                onConsolidate = {
+                    vm.consolidateConversation(it)
+                },
                 onDelete = {
                     vm.deleteConversation(it)
                     toaster.show(
-                        message = context.getString(R.string.conversation_deleted_memory_retained),
+                        message = context.getString(R.string.conversation_deleted),
                         action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                             label = context.getString(R.string.undo),
                             onClick = {
@@ -276,6 +279,8 @@ fun ChatDrawerContent(
                 onPin = {
                     vm.updatePinnedStatus(it)
                 },
+                showUnconsolidatedDot = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
+                showConsolidateOption = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
                     // Quick Action Buttons (settings-style grouping)

@@ -287,13 +287,7 @@ data class UsedMemory(
     val memoryContent: String,  // First line/truncated content for display
     val memoryType: Int,  // 0 = CORE, 1 = EPISODIC
     val priority: Int = 0,
-    val activationReason: String? = null,  // "Contextually relevant", "Always included", "Recent continuity"
-    // String IDs and kinds replace the legacy integer-only contract while keeping old messages readable.
-    val sourceId: String? = null,
-    val sourceKind: String? = null,
-    val title: String? = null,
-    val conversationId: String? = null,
-    val messageId: String? = null,
+    val activationReason: String? = null  // "Contextually relevant", "Always included", "Recent episode boost"
 )
 
 
