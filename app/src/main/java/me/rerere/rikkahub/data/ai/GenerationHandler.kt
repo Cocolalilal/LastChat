@@ -122,6 +122,37 @@ internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
         }
     )
 }
+
+internal fun shouldInjectMemoryInSystemPrompt(assistant: Assistant): Boolean {
+    return assistant.enableMemory &&
+        assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.SIMPLE &&
+        !assistant.useRagMemoryRetrieval
+}
+
+internal data class PromptContextBlocks(
+    val systemPrompt: String,
+    val dynamicContext: String,
+)
+
+internal fun placeMemoryPrompt(
+    baseSystemPrompt: String,
+    memoryPrompt: String,
+    timeAwarenessPrompt: String?,
+    injectMemoryInSystemPrompt: Boolean,
+): PromptContextBlocks {
+    val systemPrompt = buildList {
+        if (baseSystemPrompt.isNotBlank()) add(baseSystemPrompt)
+        if (injectMemoryInSystemPrompt && memoryPrompt.isNotBlank()) add(memoryPrompt)
+    }.joinToString(separator = "\n")
+    val dynamicContext = buildList {
+        if (!injectMemoryInSystemPrompt && memoryPrompt.isNotBlank()) add(memoryPrompt)
+        if (!timeAwarenessPrompt.isNullOrBlank()) add(timeAwarenessPrompt)
+    }.joinToString(separator = "\n")
+    return PromptContextBlocks(
+        systemPrompt = systemPrompt,
+        dynamicContext = dynamicContext,
+    )
+}
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
 private const val SKILL_REASON_TURN = "Activated for this turn"
@@ -1205,10 +1236,21 @@ class GenerationHandler(
             fullMessages = messages,
             retainedMessages = orderedSelectedMessages
         )
+        val memoryPrompt = if (selectedMemories.isNotEmpty()) {
+            buildMemoryPrompt(model, selectedMemories)
+        } else {
+            ""
+        }
+        val promptContextBlocks = placeMemoryPrompt(
+            baseSystemPrompt = baseSystemPrompt,
+            memoryPrompt = memoryPrompt,
+            timeAwarenessPrompt = timeAwarenessPrompt,
+            injectMemoryInSystemPrompt = shouldInjectMemoryInSystemPrompt(assistant),
+        )
 
         val builtMessages = buildList {
-            if (baseSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(baseSystemPrompt))
+            if (promptContextBlocks.systemPrompt.isNotBlank()) {
+                add(UIMessage.system(promptContextBlocks.systemPrompt))
             }
 
             fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
@@ -1220,14 +1262,7 @@ class GenerationHandler(
             // materially distinct and preserves their documented ordering.
             topOfChatSkills.forEach { add(skillMessage(it)) }
             
-            val dynamicContext = buildList {
-                if (selectedMemories.isNotEmpty()) {
-                    add(buildMemoryPrompt(model, selectedMemories))
-                }
-                if (!timeAwarenessPrompt.isNullOrBlank()) {
-                    add(timeAwarenessPrompt)
-                }
-            }.joinToString(separator = "\n")
+            val dynamicContext = promptContextBlocks.dynamicContext
 
             if (orderedSelectedMessages.isNotEmpty()) {
                 val lastMessage = orderedSelectedMessages.last()

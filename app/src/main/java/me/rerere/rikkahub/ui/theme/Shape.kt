@@ -39,9 +39,22 @@ object AppShapes {
     val Indicator = RoundedCornerShape(8.dp)
     
     // List items
-    val ListItem = RoundedCornerShape(16.dp)
-    val ListItemFirst = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-    val ListItemLast = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+    // Grouped rows use the same optical relationship as PhysicsSwipeToDelete:
+    // a 24dp group silhouette with softer 10dp seams between neighbouring rows.
+    val ListItem = RoundedCornerShape(24.dp)
+    val ListItemFirst = RoundedCornerShape(
+        topStart = 24.dp,
+        topEnd = 24.dp,
+        bottomStart = 10.dp,
+        bottomEnd = 10.dp,
+    )
+    val ListItemMiddle = RoundedCornerShape(10.dp)
+    val ListItemLast = RoundedCornerShape(
+        topStart = 10.dp,
+        topEnd = 10.dp,
+        bottomStart = 24.dp,
+        bottomEnd = 24.dp,
+    )
     
     // Optical roundness for nested elements inside cards
     // Formula: outer radius - padding = inner radius
