@@ -71,7 +71,21 @@ object DatabaseSanitizer {
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
                 "daily_activity",
-                "usage_stats"
+                "usage_stats",
+                "graph_memories",
+                "graph_entities",
+                "graph_memory_entity_links",
+                "graph_memory_sources",
+                "graph_memory_history",
+                "memory_engine_state",
+                "memory_transfer_jobs",
+                "memory_transfer_links",
+                "memory_transfer_conflicts",
+                "memory_activity",
+                "memory_suppressions",
+                "session_memory_cursors",
+                "memory_scope_messages",
+                "graph_embedding_cache",
             )
 
             for (table in tables) {

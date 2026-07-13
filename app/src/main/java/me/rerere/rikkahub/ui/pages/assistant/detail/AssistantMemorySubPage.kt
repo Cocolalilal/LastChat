@@ -94,6 +94,8 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.ai.memory.BuiltInMemoryEngines
+import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
 
 /**
  * Memory mode based on current settings
@@ -145,6 +147,15 @@ fun AssistantMemorySettings(
     scrollToMemoryId: Int? = null,
     onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
+    val displayedEngine = assistant.pendingMemoryEngineId ?: assistant.resolvedMemoryEngineId()
+    if (displayedEngine == BuiltInMemoryEngines.GRAPH) {
+        GraphMemoryOverview(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+        return
+    }
+    if (displayedEngine == BuiltInMemoryEngines.OFF) {
+        MemoryOffOverview(assistant)
+        return
+    }
     val memoryDialogState = useEditState<AssistantMemory> {
         if (it.id == 0) {
             onAddMemory(it)
@@ -216,6 +227,7 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        MemoryEngineSelector(assistant)
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
         

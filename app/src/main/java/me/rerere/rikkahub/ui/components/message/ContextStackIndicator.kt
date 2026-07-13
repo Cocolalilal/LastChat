@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,7 @@ import coil3.compose.AsyncImage
 import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
+import me.rerere.ai.memory.BuiltInMemoryEngines
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
@@ -256,6 +258,7 @@ private fun MemoryCover(
     overlayAlpha: Float,
     modifier: Modifier = Modifier
 ) {
+    val isGraph = memory.engineId == BuiltInMemoryEngines.GRAPH
     val isCore = memory.memoryType == 0
     val memoryTypeLabel = when {
         isCore -> stringResource(R.string.activity_timeline_memory_core)
@@ -291,6 +294,14 @@ private fun MemoryCover(
         contentAlignment = Alignment.Center
     ) {
         when {
+            isGraph -> {
+                Icon(
+                    imageVector = Icons.Rounded.AccountTree,
+                    contentDescription = "Graph memory",
+                    modifier = Modifier.size(16.dp),
+                    tint = contentColor,
+                )
+            }
             isCore -> {
                 Icon(
                     imageVector = Icons.Rounded.Memory,

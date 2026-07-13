@@ -8,6 +8,13 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.memory.GraphMemoryRepository
+import me.rerere.rikkahub.data.memory.GraphMemoryEngine
+import me.rerere.rikkahub.data.memory.MemoryCoordinator
+import me.rerere.rikkahub.data.memory.MemoryTransferManager
+import me.rerere.rikkahub.data.memory.MemoryEngineRegistry
+import me.rerere.rikkahub.data.memory.OffMemoryEngine
+import me.rerere.rikkahub.data.memory.SimpleMemoryEngine
 import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceBindMount
@@ -51,6 +58,30 @@ val repositoryModule = module {
     single {
         MemorySearchService(get(), get(), get(), get())
     }
+
+    single {
+        GraphMemoryRepository(
+            database = get(),
+            dao = get(),
+            embeddingService = get(),
+            providerManager = get(),
+            settingsStore = get(),
+            json = get(),
+        )
+    }
+
+    single {
+        MemoryEngineRegistry(
+            listOf(
+                OffMemoryEngine(),
+                SimpleMemoryEngine(get()),
+                GraphMemoryEngine(get()),
+            ),
+        )
+    }
+
+    single { MemoryCoordinator(get(), get()) }
+    single { MemoryTransferManager(get(), get(), get()) }
 
     single {
         GenMediaRepository(get())

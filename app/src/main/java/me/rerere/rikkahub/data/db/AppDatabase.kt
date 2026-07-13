@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemoryGraphDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
@@ -31,6 +32,20 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphEntityEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryHistoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemorySourceEntity
+import me.rerere.rikkahub.data.db.entity.MemoryActivityEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEngineStateEntity
+import me.rerere.rikkahub.data.db.entity.MemorySuppressionEntity
+import me.rerere.rikkahub.data.db.entity.MemoryTransferConflictEntity
+import me.rerere.rikkahub.data.db.entity.MemoryTransferJobEntity
+import me.rerere.rikkahub.data.db.entity.MemoryTransferLinkEntity
+import me.rerere.rikkahub.data.db.entity.SessionMemoryCursorEntity
+import me.rerere.rikkahub.data.db.entity.MemoryScopeMessageEntity
+import me.rerere.rikkahub.data.db.entity.GraphEmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -45,8 +60,33 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class],
-    version = 35,
+    entities = [
+        ConversationEntity::class,
+        MemoryEntity::class,
+        GenMediaEntity::class,
+        ChatEpisodeEntity::class,
+        EmbeddingCacheEntity::class,
+        DailyActivityEntity::class,
+        UsageStatsEntity::class,
+        ChatAttachmentEntity::class,
+        ConversationAttachmentRefEntity::class,
+        WorkspaceEntity::class,
+        GraphMemoryEntity::class,
+        GraphEntityEntity::class,
+        GraphMemoryEntityLinkEntity::class,
+        GraphMemorySourceEntity::class,
+        GraphMemoryHistoryEntity::class,
+        MemoryEngineStateEntity::class,
+        MemoryTransferJobEntity::class,
+        MemoryTransferLinkEntity::class,
+        MemoryTransferConflictEntity::class,
+        MemoryActivityEntity::class,
+        MemorySuppressionEntity::class,
+        SessionMemoryCursorEntity::class,
+        MemoryScopeMessageEntity::class,
+        GraphEmbeddingCacheEntity::class,
+    ],
+    version = 36,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -79,6 +119,7 @@ import kotlinx.serialization.json.put
         // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
         AutoMigration(from = 33, to = 35),
         AutoMigration(from = 34, to = 35, spec = Migration_34_35::class),
+        AutoMigration(from = 35, to = 36),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -90,6 +131,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationAttachmentRefDao(): ConversationAttachmentRefDao
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun memoryGraphDao(): MemoryGraphDao
 
     abstract fun genMediaDao(): GenMediaDAO
 

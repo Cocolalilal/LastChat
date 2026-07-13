@@ -33,6 +33,31 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.memory.GraphMemoryRepository
+import me.rerere.rikkahub.data.db.dao.MemoryGraphDao
+import me.rerere.rikkahub.data.db.entity.GraphMemoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphEntityEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemorySourceEntity
+import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
+import me.rerere.ai.memory.BuiltInMemoryEngines
+
+@Serializable
+data class GraphMemoryExportV1(
+    val memories: List<GraphMemoryRecordV1> = emptyList(),
+    val entities: List<GraphEntityRecordV1> = emptyList(),
+    val links: List<GraphLinkRecordV1> = emptyList(),
+    val sources: List<GraphSourceRecordV1> = emptyList(),
+)
+
+@Serializable
+data class GraphMemoryRecordV1(val id: String, val content: String, val contentHash: String, val lemmatizedText: String, val attributedTo: String?, val origin: String, val createdAt: Long, val updatedAt: Long, val expirationAt: Long?, val embeddingBlob: ByteArray? = null, val embeddingModelId: String? = null)
+@Serializable
+data class GraphEntityRecordV1(val id: String, val canonicalName: String, val normalizedName: String, val entityType: String, val aliasesJson: String, val createdAt: Long, val updatedAt: Long, val embeddingBlob: ByteArray? = null, val embeddingModelId: String? = null)
+@Serializable
+data class GraphLinkRecordV1(val memoryId: String, val entityId: String, val confidence: Float, val createdAt: Long)
+@Serializable
+data class GraphSourceRecordV1(val memoryId: String, val sourceType: String, val sourceId: String?, val conversationId: String?, val messageId: String?, val speaker: String?, val excerpt: String, val observedAt: Long)
 
 @Serializable
 data class AssistantExportV1(
@@ -45,13 +70,16 @@ data class AssistantExportV1(
     // Bundled Lorebooks
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
-    val memories: List<AssistantMemory> = emptyList()
+    val memories: List<AssistantMemory> = emptyList(),
+    val graphMemory: GraphMemoryExportV1? = null,
 )
 
 object AssistantExportImport : KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
+    private val graphMemoryRepository: GraphMemoryRepository by inject()
+    private val memoryGraphDao: MemoryGraphDao by inject()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -133,12 +161,24 @@ object AssistantExportImport : KoinComponent {
             emptyList()
         }
 
+        val graphExport = if (includeMemories && assistant.resolvedMemoryEngineId() == BuiltInMemoryEngines.GRAPH) {
+            val snapshot = graphMemoryRepository.snapshot(assistant.id.toString())
+            GraphMemoryExportV1(
+                memories = snapshot.memories.map { GraphMemoryRecordV1(it.id, it.content, it.contentHash, it.lemmatizedText, it.attributedTo, it.origin, it.createdAt, it.updatedAt, it.expirationAt, it.embeddingBlob, it.embeddingModelId) },
+                entities = snapshot.entities.map { GraphEntityRecordV1(it.id, it.canonicalName, it.normalizedName, it.entityType, it.aliasesJson, it.createdAt, it.updatedAt, it.embeddingBlob, it.embeddingModelId) },
+                links = snapshot.links.map { GraphLinkRecordV1(it.memoryId, it.entityId, it.confidence, it.createdAt) },
+                sources = snapshot.memories.flatMap { memory -> graphMemoryRepository.sources(memory.id) }
+                    .map { GraphSourceRecordV1(it.memoryId, it.sourceType, it.sourceId, it.conversationId, it.messageId, it.speaker, it.excerpt, it.observedAt) },
+            )
+        } else null
+
         val export = AssistantExportV1(
             assistant = assistant,
             avatarContent = avatarContent,
             avatarMimeType = avatarMime,
             lorebooks = bundledLorebooks,
-            memories = bundledMemories
+            memories = bundledMemories,
+            graphMemory = graphExport,
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -249,6 +289,66 @@ object AssistantExportImport : KoinComponent {
                          embeddingModelId = null
                      )
                      chatEpisodeDAO.insertEpisode(entity)
+                }
+            }
+            export.graphMemory?.let { graph ->
+                val memoryIds = graph.memories.associate { it.id to Uuid.random().toString() }
+                val entityIds = graph.entities.associate { it.id to Uuid.random().toString() }
+                graph.memories.forEach { item ->
+                    memoryGraphDao.upsertMemory(
+                        GraphMemoryEntity(
+                            id = memoryIds.getValue(item.id),
+                            assistantId = assistant.id.toString(),
+                            scopeKind = "ASSISTANT",
+                            content = item.content,
+                            contentHash = item.contentHash,
+                            lemmatizedText = item.lemmatizedText,
+                            attributedTo = item.attributedTo,
+                            origin = item.origin,
+                            createdAt = item.createdAt,
+                            updatedAt = item.updatedAt,
+                            expirationAt = item.expirationAt,
+                            embeddingBlob = item.embeddingBlob,
+                            embeddingModelId = item.embeddingModelId,
+                        ),
+                    )
+                }
+                graph.entities.forEach { item ->
+                    memoryGraphDao.upsertEntity(
+                        GraphEntityEntity(
+                            id = entityIds.getValue(item.id),
+                            assistantId = assistant.id.toString(),
+                            scopeKind = "ASSISTANT",
+                            canonicalName = item.canonicalName,
+                            normalizedName = item.normalizedName,
+                            entityType = item.entityType,
+                            aliasesJson = item.aliasesJson,
+                            embeddingBlob = item.embeddingBlob,
+                            embeddingModelId = item.embeddingModelId,
+                            createdAt = item.createdAt,
+                            updatedAt = item.updatedAt,
+                        ),
+                    )
+                }
+                graph.links.forEach { item ->
+                    val memoryId = memoryIds[item.memoryId] ?: return@forEach
+                    val entityId = entityIds[item.entityId] ?: return@forEach
+                    memoryGraphDao.insertLink(GraphMemoryEntityLinkEntity(memoryId, entityId, item.confidence, item.createdAt))
+                }
+                graph.sources.forEach { item ->
+                    val memoryId = memoryIds[item.memoryId] ?: return@forEach
+                    memoryGraphDao.insertSource(
+                        GraphMemorySourceEntity(
+                            memoryId = memoryId,
+                            sourceType = item.sourceType,
+                            sourceId = item.sourceId,
+                            conversationId = item.conversationId,
+                            messageId = item.messageId,
+                            speaker = item.speaker,
+                            excerpt = item.excerpt,
+                            observedAt = item.observedAt,
+                        ),
+                    )
                 }
             }
         }

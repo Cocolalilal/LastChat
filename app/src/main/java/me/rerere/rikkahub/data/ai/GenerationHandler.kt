@@ -59,11 +59,14 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
 import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.memory.GraphMemoryRepository
+import me.rerere.rikkahub.data.memory.MemoryCoordinator
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.SkillExportImport
 import java.io.File
@@ -111,7 +114,13 @@ private fun extractInjectedImageParts(
 }
 
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
-    return assistant.enableMemory && assistant.enableMemorySearchTool
+    return assistant.enableMemory && (
+        if (assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH) {
+            assistant.graphSearchToolEnabled
+        } else {
+            assistant.enableMemorySearchTool
+        }
+    )
 }
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
@@ -473,6 +482,8 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
+    private val memoryCoordinator: MemoryCoordinator,
+    private val graphMemoryRepository: GraphMemoryRepository,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
@@ -520,7 +531,13 @@ class GenerationHandler(
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 // Add memory tools if memory is enabled for this assistant
                 if (assistant.enableMemory) {
-                    buildMemoryTools(
+                    if (assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH) {
+                        buildGraphMemoryTools(
+                            assistant = assistant,
+                            conversationId = activeConversationId?.toString(),
+                        ).let(this::addAll)
+                    } else {
+                        buildMemoryTools(
                         onCreation = { content ->
                             memoryRepo.addMemory(assistant.id.toString(), content)
                         },
@@ -543,7 +560,8 @@ class GenerationHandler(
                         } else {
                             null
                         }
-                    ).let(this::addAll)
+                        ).let(this::addAll)
+                    }
                 }
                 createSkillManagementTool(
                     state = buildSkillToolState(
@@ -1263,7 +1281,11 @@ class GenerationHandler(
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason
+                activationReason = reason,
+                engineId = memory.engineId,
+                stableId = memory.stableId,
+                source = memory.source,
+                relevanceScore = memory.relevanceScore,
             )
         }
         
@@ -1501,6 +1523,110 @@ class GenerationHandler(
                     Log.w(TAG, "Failed to persist token usage", e)
                 }
             }
+        }
+    }
+
+    private fun buildGraphMemoryTools(
+        assistant: Assistant,
+        conversationId: String?,
+    ) = buildList {
+        val scope = me.rerere.ai.memory.MemoryScope(assistant.id.toString())
+        add(Tool(
+            name = "create_memory",
+            description = "Create a durable graph memory for this character.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("content", buildJsonObject {
+                            put("type", "string")
+                            put("description", "The fact or preference to remember.")
+                        })
+                    },
+                    required = listOf("content"),
+                )
+            },
+            execute = { args ->
+                val content = args.jsonObject["content"]?.jsonPrimitive?.contentOrNull
+                    ?: error("content is required")
+                val memory = graphMemoryRepository.addManual(scope, content)
+                buildJsonObject {
+                    put("id", memory.id)
+                    put("content", memory.content)
+                }
+            },
+        ))
+        add(Tool(
+            name = "edit_memory",
+            description = "Update an existing graph memory by its string ID.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("id", buildJsonObject { put("type", "string") })
+                        put("content", buildJsonObject { put("type", "string") })
+                    },
+                    required = listOf("id", "content"),
+                )
+            },
+            execute = { args ->
+                val params = args.jsonObject
+                val id = params["id"]?.jsonPrimitive?.contentOrNull ?: error("id is required")
+                val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                val memory = graphMemoryRepository.update(id, content)
+                buildJsonObject {
+                    put("id", memory.id)
+                    put("content", memory.content)
+                }
+            },
+        ))
+        add(Tool(
+            name = "delete_memory",
+            description = "Forget an existing graph memory by its string ID.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("id", buildJsonObject { put("type", "string") })
+                    },
+                    required = listOf("id"),
+                )
+            },
+            execute = { args ->
+                val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: error("id is required")
+                graphMemoryRepository.forget(id)
+                buildJsonObject { put("deleted", true); put("id", id) }
+            },
+        ))
+        if (shouldRegisterMemorySearchTool(assistant)) {
+            add(Tool(
+                name = MEMORY_SEARCH_TOOL_NAME,
+                description = "Search this character's graph memory and current session memory.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("query", buildJsonObject { put("type", "string") })
+                            put("limit", buildJsonObject { put("type", "integer") })
+                        },
+                        required = listOf("query"),
+                    )
+                },
+                systemPrompt = { _, _ ->
+                    "Use `$MEMORY_SEARCH_TOOL_NAME` only for deliberate deeper recall when the automatically supplied memories are insufficient."
+                },
+                execute = { args ->
+                    val query = args.jsonObject["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
+                    val limit = args.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 5
+                    val hits = memoryCoordinator.recall(assistant, conversationId, query, limit.coerceIn(1, 20))
+                    buildJsonObject {
+                        put("results", JsonArray(hits.map { hit ->
+                            buildJsonObject {
+                                put("id", hit.stableId)
+                                put("memory", hit.content)
+                                put("score", hit.score)
+                                put("source", hit.source)
+                            }
+                        }))
+                    }
+                },
+            ))
         }
     }
 

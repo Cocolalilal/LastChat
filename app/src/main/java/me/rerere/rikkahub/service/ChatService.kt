@@ -101,6 +101,12 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.currentVersionMessages
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
+import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
+import me.rerere.rikkahub.data.model.memoryBatchIdleSeconds
+import me.rerere.rikkahub.data.model.memoryBatchMessageThreshold
+import me.rerere.rikkahub.data.memory.MemoryCoordinator
+import me.rerere.rikkahub.data.db.dao.MemoryGraphDao
+import me.rerere.rikkahub.data.db.entity.SessionMemoryCursorEntity
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -614,6 +620,8 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
+    private val memoryCoordinator: MemoryCoordinator,
+    private val memoryGraphDao: MemoryGraphDao,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -1483,7 +1491,32 @@ class ChatService(
                     assistant.enableMemory &&
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
-                    if (assistant.useRagMemoryRetrieval) {
+                    if (assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH) {
+                        val lastUserMessage = conversation.currentMessages
+                            .lastOrNull { it.role == MessageRole.USER }
+                            ?.toText()
+                            .orEmpty()
+                        if (lastUserMessage.isBlank()) {
+                            emptyList()
+                        } else {
+                            memoryCoordinator.recall(
+                                assistant = assistant,
+                                conversationId = conversationId.toString(),
+                                query = lastUserMessage,
+                            ).map { hit ->
+                                me.rerere.rikkahub.data.model.AssistantMemory(
+                                    id = hit.stableId.hashCode(),
+                                    content = hit.content,
+                                    type = 0,
+                                    timestamp = hit.timestamp,
+                                    engineId = hit.engineId,
+                                    stableId = hit.stableId,
+                                    source = hit.source,
+                                    relevanceScore = hit.score,
+                                )
+                            }
+                        }
+                    } else if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
                         val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                         
@@ -1683,6 +1716,7 @@ class ChatService(
             Logging.log(TAG, it.stackTraceToString())
         }.onSuccess {
             val finalConversation = getConversationFlow(conversationId).value
+            val finalAssistant = settings.resolveConversationContext(finalConversation).assistant
             saveConversation(
                 conversationId = conversationId,
                 conversation = finalConversation,
@@ -1719,11 +1753,50 @@ class ChatService(
                     launch {
                         checkAndAutoSummarize(conversationId, finalConversation, settings)
                     }
+                    if (
+                        finalAssistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH &&
+                        (finalAssistant.graphLearnFromChats || finalAssistant.enableSessionMemory)
+                    ) {
+                        launch {
+                            enqueueGraphMemoryIngest(conversationId, finalAssistant)
+                        }
+                    }
                 }
             }.invokeOnCompletion {
                 removeConversationReference(conversationId) // 移除引用
             }
         }
+    }
+
+    private suspend fun enqueueGraphMemoryIngest(
+        conversationId: Uuid,
+        assistant: me.rerere.rikkahub.data.model.Assistant,
+    ) = withContext(Dispatchers.IO) {
+        val cursor = memoryGraphDao.getSessionCursor(conversationId.toString())
+        val pendingCount = (cursor?.pendingCount ?: 0) + 2
+        val delaySeconds = if (pendingCount >= assistant.memoryBatchMessageThreshold()) {
+            0L
+        } else {
+            assistant.memoryBatchIdleSeconds().toLong()
+        }
+        memoryGraphDao.upsertSessionCursor(
+            (cursor ?: SessionMemoryCursorEntity(
+                conversationId = conversationId.toString(),
+                assistantId = assistant.id.toString(),
+            )).copy(
+                pendingCount = pendingCount,
+                lastQueuedAt = System.currentTimeMillis(),
+            ),
+        )
+        val request = androidx.work.OneTimeWorkRequestBuilder<GraphMemoryIngestWorker>()
+            .setInputData(androidx.work.workDataOf(GraphMemoryIngestWorker.KEY_CONVERSATION_ID to conversationId.toString()))
+            .setInitialDelay(delaySeconds, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+            "graph_memory_ingest_$conversationId",
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            request,
+        )
     }
 
     // 创建搜索工具

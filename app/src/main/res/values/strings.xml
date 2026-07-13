@@ -595,8 +595,8 @@
     <string name="setting_model_page_suggestion_model">Suggestion Model</string>
     <string name="setting_model_page_suggestion_model_desc">Model for generating chat suggestions. Recommend fast/cheap model.</string>
     <string name="setting_model_page_suggestion_prompt_vars">Vars: Content: {content}, Locale: {locale}</string>
-    <string name="setting_model_page_summarizer_model">Summarizer Model</string>
-    <string name="setting_model_page_summarizer_model_desc">Model for memory summarization and context refresh across all characters.</string>
+    <string name="setting_model_page_summarizer_model">Memory &amp; summary model</string>
+    <string name="setting_model_page_summarizer_model_desc">Model used for graph-memory extraction, memory search, and context summaries across all characters.</string>
     <string name="setting_model_page_subagent_model">Subagent Model</string>
     <string name="setting_model_page_subagent_model_desc">Model for helper agents such as deliberate memory recall.</string>
     <string name="setting_model_page_summarizer_missing_banner">Select a summarizer model in Settings > Default Models</string>

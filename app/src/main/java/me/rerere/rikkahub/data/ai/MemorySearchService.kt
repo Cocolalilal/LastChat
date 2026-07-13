@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -407,47 +409,40 @@ class MemorySearchService(
             .distinctBy { it.text.normalizedRecallText() }
             .take(MEMORY_SEARCH_MAX_QUERIES)
 
-        val memoryResults = runCatching {
-            searchStoredMemories(
-                assistant = assistant,
-                queries = recallQueries,
-                limit = boundedLimit,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Stored memory search fell back with no results."
-            emptyList()
-        }
-        val chatSpans = runCatching {
-            searchPastChatSpans(
-                assistant = assistant,
-                activeConversationId = activeConversationId,
-                queries = recallQueries,
-                limit = boundedLimit,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Past chat search fell back with no results."
-            emptyList()
+        val (memoryResults, chatSpans) = coroutineScope {
+            val stored = async {
+                runCatching {
+                    searchStoredMemories(
+                        assistant = assistant,
+                        queries = recallQueries,
+                        limit = boundedLimit,
+                        timeRange = parsedTimeRange,
+                    )
+                }.getOrElse { throwable ->
+                    if (throwable is CancellationException) throw throwable
+                    emptyList()
+                }
+            }
+            val chats = async {
+                runCatching {
+                    searchPastChatSpans(
+                        assistant = assistant,
+                        activeConversationId = activeConversationId,
+                        queries = recallQueries,
+                        limit = boundedLimit,
+                        timeRange = parsedTimeRange,
+                    )
+                }.getOrElse { throwable ->
+                    if (throwable is CancellationException) throw throwable
+                    emptyList()
+                }
+            }
+            stored.await() to chats.await()
         }
 
-        val chatResults = chatSpans.take(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
-            val summary = summarizeChatSpan(settings, assistant, span, trimmedQuery)
-                ?: buildFallbackRecallSummary(span)
-            RecallResult(
-                source = "past_chat",
-                id = span.conversationId.toString(),
-                summary = summary,
-                content = summary,
-                timestampMillis = span.timestampMillis,
-                confidence = confidenceFromScore(span.score),
-                title = span.conversationTitle.takeIf { it.isNotBlank() },
-                matchedText = span.matchedText,
-                score = span.score,
-            )
-        } + chatSpans.drop(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
+        // Keep the original spans intact for the single final synthesis call. This removes
+        // two serial model calls and avoids summarizing already-summarized text.
+        val chatResults = chatSpans.map { span ->
             val summary = buildFallbackRecallSummary(span)
             RecallResult(
                 source = "past_chat",
