@@ -33,6 +33,8 @@ data class SherpaModelMetadata(
     val family: SherpaModelFamily,
     val languages: List<String> = emptyList(),
     val streaming: Boolean = false,
+    /** sherpa-onnx online recognizer architecture, e.g. zipformer or zipformer2. */
+    val onlineModelType: String = "zipformer2",
     val archiveUrl: String,
     val archiveSizeBytes: Long,
     val revision: String,
@@ -54,6 +56,7 @@ data class InstalledSherpaModel(
     val family: SherpaModelFamily,
     val languages: List<String> = emptyList(),
     val streaming: Boolean = false,
+    val onlineModelType: String = "zipformer2",
     val directoryPath: String,
     val sizeInBytes: Long,
     val revision: String,
@@ -70,6 +73,7 @@ data class InstalledSherpaModel(
         family = meta.family,
         languages = meta.languages,
         streaming = meta.streaming,
+        onlineModelType = meta.onlineModelType,
         files = meta.files.mapValues { (_, relative) ->
             java.io.File(directoryPath, relative).absolutePath
         },

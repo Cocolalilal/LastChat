@@ -36,6 +36,23 @@
       "defaultConfig": { "language": "en", "numThreads": 2 }
     },
     {
+      "id": "sherpa-moonshine-base-en-quantized-2026-02-27",
+      "name": "Moonshine Base (English)",
+      "description": "A noticeably more accurate English Moonshine model that remains efficient on-device.",
+      "family": "moonshine",
+      "languages": ["en"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2",
+      "archiveSizeBytes": 111266225,
+      "revision": "2026-02-27",
+      "files": {
+        "encoder": "encoder_model.ort",
+        "decoder": "decoder_model_merged.ort",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 2 }
+    },
+    {
       "id": "sherpa-whisper-tiny-multilingual",
       "name": "Whisper Tiny (Multilingual)",
       "description": "Compact multilingual Whisper transcription model.",
@@ -70,6 +87,57 @@
       "defaultConfig": { "language": "", "numThreads": 2 }
     },
     {
+      "id": "sherpa-whisper-small-en",
+      "name": "Whisper Small (English)",
+      "description": "Higher-accuracy English Whisper model for devices with more storage and CPU headroom.",
+      "family": "whisper",
+      "languages": ["en"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2",
+      "archiveSizeBytes": 635693775,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "small.en-encoder.int8.onnx",
+        "decoder": "small.en-decoder.int8.onnx",
+        "tokens": "small.en-tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 4 }
+    },
+    {
+      "id": "sherpa-whisper-small-multilingual",
+      "name": "Whisper Small (Multilingual)",
+      "description": "Higher-accuracy multilingual Whisper model for capable phones.",
+      "family": "whisper",
+      "languages": ["multilingual"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2",
+      "archiveSizeBytes": 639387718,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "small-encoder.int8.onnx",
+        "decoder": "small-decoder.int8.onnx",
+        "tokens": "small-tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 4 }
+    },
+    {
+      "id": "sherpa-whisper-medium-multilingual",
+      "name": "Whisper Medium (Multilingual)",
+      "description": "Largest bundled choice: high-quality multilingual transcription for powerful devices.",
+      "family": "whisper",
+      "languages": ["multilingual"],
+      "streaming": false,
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-medium.tar.bz2",
+      "archiveSizeBytes": 1931372882,
+      "revision": "asr-models",
+      "files": {
+        "encoder": "medium-encoder.int8.onnx",
+        "decoder": "medium-decoder.int8.onnx",
+        "tokens": "medium-tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 4 }
+    },
+    {
       "id": "sherpa-sensevoice-int8-2025-09-09",
       "name": "SenseVoice INT8",
       "description": "Fast Chinese, Cantonese, English, Japanese, and Korean transcription.",
@@ -92,16 +160,55 @@
       "family": "online_transducer",
       "languages": ["en"],
       "streaming": true,
+      "onlineModelType": "zipformer2",
       "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2",
       "archiveSizeBytes": 310414022,
       "revision": "2023-06-26",
       "files": {
+        "encoder": "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+        "decoder": "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+        "joiner": "joiner-epoch-99-avg-1-chunk-16-left-128.onnx",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "en", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-streaming-zipformer-en-20m-2023-02-17",
+      "name": "Streaming Zipformer 20M (English)",
+      "description": "Smallest live English transcription option, tuned for low latency.",
+      "family": "online_transducer",
+      "languages": ["en"],
+      "streaming": true,
+      "onlineModelType": "zipformer",
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2",
+      "archiveSizeBytes": 127887156,
+      "revision": "2023-02-17",
+      "files": {
         "encoder": "encoder-epoch-99-avg-1.int8.onnx",
-        "decoder": "decoder-epoch-99-avg-1.int8.onnx",
+        "decoder": "decoder-epoch-99-avg-1.onnx",
         "joiner": "joiner-epoch-99-avg-1.int8.onnx",
         "tokens": "tokens.txt"
       },
       "defaultConfig": { "language": "en", "numThreads": 2 }
+    },
+    {
+      "id": "sherpa-streaming-zipformer-bilingual-zh-en-2023-02-20",
+      "name": "Streaming Zipformer (Chinese + English)",
+      "description": "Live bilingual Chinese and English transcription, including mixed speech.",
+      "family": "online_transducer",
+      "languages": ["zh", "en"],
+      "streaming": true,
+      "onlineModelType": "zipformer",
+      "archiveUrl": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
+      "archiveSizeBytes": 511274346,
+      "revision": "2023-02-20",
+      "files": {
+        "encoder": "encoder-epoch-99-avg-1.int8.onnx",
+        "decoder": "decoder-epoch-99-avg-1.onnx",
+        "joiner": "joiner-epoch-99-avg-1.int8.onnx",
+        "tokens": "tokens.txt"
+      },
+      "defaultConfig": { "language": "", "numThreads": 4 }
     }
   ]
 }

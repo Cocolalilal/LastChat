@@ -89,7 +89,8 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.localstt.SettingLocalSttViewModel
 import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaDownloadableModelCard
 import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaInstalledModelCard
-import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelConfigDialog
+import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelDragHandle
+import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelSettingsSheet
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -122,12 +123,32 @@ fun SettingLocalLlmPage(
             vm.moveInstalledModel(fromIndex, toIndex)
         }
     }
+    val sttInstalledStartIndex =
+        (if (runtimeStatus != null) 1 else 0) +
+            (if (state.installed.isNotEmpty()) 1 + state.installed.size else 0) +
+            (if (state.importedDownloads.isNotEmpty()) 1 + state.importedDownloads.size else 0) +
+            1 + state.downloadable.size +
+            1
+    val sttReorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromIndex = from.index - sttInstalledStartIndex
+        val toIndex = to.index - sttInstalledStartIndex
+        if (fromIndex in sttState.installed.indices && toIndex in sttState.installed.indices) {
+            sttVm.moveInstalledModel(fromIndex, toIndex)
+        }
+    }
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
+    var sttDraggingIndex by remember { mutableStateOf(-1) }
+    var sttDragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var sttIsUnlocked by remember { mutableStateOf(false) }
+    var sttNeighborsUnlocked by remember { mutableStateOf(false) }
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
+    }
+    if (sttDragOffset == 0f && sttNeighborsUnlocked) {
+        sttNeighborsUnlocked = false
     }
 
     Scaffold(
@@ -332,17 +353,63 @@ fun SettingLocalLlmPage(
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
-            items(sttState.installed, key = { "sherpa-installed-${it.id}" }) { model ->
-                SherpaInstalledModelCard(
-                    model = model,
-                    selected = sttState.selectedModelId == model.id,
-                    onSelect = {
-                        haptics.perform(HapticPattern.Selection)
-                        sttVm.select(model)
-                    },
-                    onSettings = { editingSherpaModel = model },
-                    onDelete = { sherpaModelPendingDelete = model },
-                )
+            itemsIndexed(sttState.installed, key = { _, model -> "sherpa-installed-${model.id}" }) { index, model ->
+                val position = when {
+                    sttState.installed.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == sttState.installed.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
+                }
+                val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
+                if (sttDraggingIndex >= 0 && !sttNeighborsUnlocked && kotlin.math.abs(sttDragOffset) >= thresholdPx) {
+                    sttNeighborsUnlocked = true
+                }
+                val neighborOffset = if (
+                    sttDraggingIndex >= 0 && sttDraggingIndex != index && !sttIsUnlocked && !sttNeighborsUnlocked
+                ) {
+                    when (kotlin.math.abs(index - sttDraggingIndex)) {
+                        1 -> sttDragOffset * 0.35f
+                        2 -> sttDragOffset * 0.12f
+                        else -> 0f
+                    }
+                } else {
+                    0f
+                }
+                ReorderableItem(state = sttReorderableState, key = "sherpa-installed-${model.id}") { isDragging ->
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked ->
+                            sttDraggingIndex = index
+                            sttDragOffset = offset
+                            sttIsUnlocked = unlocked
+                        },
+                        onDragEnd = {
+                            if (sttDraggingIndex == index) {
+                                sttDraggingIndex = -1
+                                sttDragOffset = 0f
+                            }
+                        },
+                        onDelete = { sherpaModelPendingDelete = model },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .scale(if (isDragging) 0.95f else 1f),
+                    ) { shape ->
+                        SherpaInstalledModelCard(
+                            model = model,
+                            shape = shape,
+                            onClick = { editingSherpaModel = model },
+                            dragHandle = {
+                                SherpaModelDragHandle(
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                        onDragStopped = { haptics.perform(HapticPattern.Thud) },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
             }
             if (sttState.downloadable.isNotEmpty()) {
                 item {
@@ -358,7 +425,7 @@ fun SettingLocalLlmPage(
                             sttVm.download(model)
                         },
                         onCancel = { sttVm.cancelDownload(model.id) },
-                        onDismissError = { sttVm.dismissDownloadError(model.id) },
+                        onDismissFailure = { sttVm.dismissDownloadError(model.id) },
                     )
                 }
             }
@@ -434,11 +501,14 @@ fun SettingLocalLlmPage(
 
     editingSherpaModel?.let { model ->
         val live = sttState.installed.firstOrNull { it.id == model.id } ?: model
-        SherpaModelConfigDialog(
+        SherpaModelSettingsSheet(
             model = live,
             onDismiss = { editingSherpaModel = null },
-            onSave = {
-                sttVm.updateConfig(live.id, it)
+            onRename = { sttVm.rename(live.id, it) },
+            onConfigChange = { sttVm.updateConfig(live.id, it) },
+            onDelete = {
+                haptics.perform(HapticPattern.Thud)
+                sttVm.delete(live)
                 editingSherpaModel = null
             },
         )

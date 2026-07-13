@@ -37,11 +37,33 @@ class SherpaCatalogTest {
 
                 SherpaModelFamily.ONLINE_TRANSDUCER -> {
                     assertTrue(model.streaming)
+                    assertTrue(model.onlineModelType.isNotBlank())
                     assertTrue(model.files.containsKey(SherpaFileRole.ENCODER))
                     assertTrue(model.files.containsKey(SherpaFileRole.DECODER))
                     assertTrue(model.files.containsKey(SherpaFileRole.JOINER))
                 }
             }
         }
+    }
+
+    @Test
+    fun `streaming zipformer models use their published file names`() {
+        val english = catalog.models.first { it.id == "sherpa-streaming-zipformer-en-2023-06-26" }
+        assertEquals("zipformer2", english.onlineModelType)
+        assertEquals("encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx", english.files[SherpaFileRole.ENCODER])
+        assertEquals("decoder-epoch-99-avg-1-chunk-16-left-128.onnx", english.files[SherpaFileRole.DECODER])
+        assertEquals("joiner-epoch-99-avg-1-chunk-16-left-128.onnx", english.files[SherpaFileRole.JOINER])
+
+        val compact = catalog.models.first { it.id == "sherpa-streaming-zipformer-en-20m-2023-02-17" }
+        assertEquals("zipformer", compact.onlineModelType)
+        assertEquals("decoder-epoch-99-avg-1.onnx", compact.files[SherpaFileRole.DECODER])
+    }
+
+    @Test
+    fun `archive download avoids invalid range retries`() {
+        assertEquals(ArchiveDownloadPlan.REUSE_COMPLETE, archiveDownloadPlan(existingBytes = 100, expectedBytes = 100))
+        assertEquals(ArchiveDownloadPlan.RESUME, archiveDownloadPlan(existingBytes = 37, expectedBytes = 100))
+        assertEquals(ArchiveDownloadPlan.RESTART, archiveDownloadPlan(existingBytes = 101, expectedBytes = 100))
+        assertEquals(ArchiveDownloadPlan.RESTART, archiveDownloadPlan(existingBytes = 0, expectedBytes = 100))
     }
 }

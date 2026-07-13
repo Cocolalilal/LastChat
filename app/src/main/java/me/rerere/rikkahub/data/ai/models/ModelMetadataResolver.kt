@@ -55,14 +55,14 @@ class ModelMetadataResolver(
             imageGenerationMethod = if (options.preserveExistingConfiguration) {
                 model.imageGenerationMethod
             } else {
-                model.imageGenerationMethod ?: catalogEntry?.imageGenerationMethod
+                catalogEntry?.imageGenerationMethod ?: model.imageGenerationMethod
             },
             iconUrl = catalogEntry?.iconUrl,
             customIconUri = model.customIconUri.preserveUserModelIcon(),
             reasoningBehavior = if (options.preserveExistingConfiguration) {
                 model.reasoningBehavior
             } else {
-                model.reasoningBehavior ?: catalogEntry?.reasoningBehavior
+                catalogEntry?.reasoningBehavior ?: model.reasoningBehavior
             },
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
         )
@@ -190,10 +190,6 @@ class ModelMetadataResolver(
             return model.type
         }
 
-        if (model.type != ModelType.CHAT) {
-            return model.type
-        }
-
         return catalogEntry?.mode.toModelTypeOrNull() ?: model.type
     }
 
@@ -207,14 +203,19 @@ class ModelMetadataResolver(
             return model.inputModalities
         }
 
-        val inputs = linkedSetOf(Modality.TEXT)
-        if (catalogEntry?.supportsVision == true || catalogEntry?.supportedModalities?.contains(Modality.IMAGE) == true) {
+        if (catalogEntry == null) {
+            return model.inputModalities
+        }
+
+        val inputs = linkedSetOf<Modality>()
+        inputs += model.inputModalities
+        if (catalogEntry.supportsVision || catalogEntry.supportedModalities.contains(Modality.IMAGE)) {
             inputs += Modality.IMAGE
         }
 
         return when (resolvedType) {
-            ModelType.CHAT -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
-            ModelType.IMAGE -> catalogEntry?.inputModalities?.takeIf { it.isNotEmpty() } ?: inputs.toList()
+            ModelType.CHAT -> catalogEntry.inputModalities.takeIf { it.isNotEmpty() } ?: inputs.toList()
+            ModelType.IMAGE -> catalogEntry.inputModalities.takeIf { it.isNotEmpty() } ?: inputs.toList()
             ModelType.EMBEDDING -> listOf(Modality.TEXT)
             ModelType.STT -> listOf(Modality.AUDIO)
         }
@@ -229,14 +230,16 @@ class ModelMetadataResolver(
         if (options.preserveExistingCapabilities) {
             return model.outputModalities
         }
+        if (catalogEntry == null) {
+            return model.outputModalities
+        }
 
         return when (resolvedType) {
-            ModelType.CHAT -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
-                add(Modality.TEXT)
-            }.distinct()
+            ModelType.CHAT -> catalogEntry.outputModalities.takeIf { it.isNotEmpty() }
+                ?: model.outputModalities
 
-            ModelType.IMAGE -> catalogEntry?.outputModalities?.takeIf { it.isNotEmpty() } ?: buildList {
-                if (catalogEntry?.supportedModalities?.contains(Modality.TEXT) == true) {
+            ModelType.IMAGE -> catalogEntry.outputModalities.takeIf { it.isNotEmpty() } ?: buildList {
+                if (catalogEntry.supportedModalities.contains(Modality.TEXT)) {
                     add(Modality.TEXT)
                 }
                 add(Modality.IMAGE)
@@ -255,12 +258,15 @@ class ModelMetadataResolver(
         if (options.preserveExistingCapabilities) {
             return model.abilities
         }
+        if (catalogEntry == null) {
+            return model.abilities
+        }
 
         val abilities = linkedSetOf<ModelAbility>()
-        if (catalogEntry?.supportsFunctionCalling == true) {
+        if (catalogEntry.supportsFunctionCalling) {
             abilities += ModelAbility.TOOL
         }
-        if (catalogEntry?.supportsReasoning == true) {
+        if (catalogEntry.supportsReasoning) {
             abilities += ModelAbility.REASONING
         }
         return ModelAbility.entries.filter { it in abilities }

@@ -96,6 +96,16 @@ class SettingLocalSttViewModel(
         }
     }
 
+    fun rename(id: String, displayName: String) {
+        viewModelScope.launch {
+            store.rename(id, displayName.trim().ifBlank { id })
+        }
+    }
+
+    fun moveInstalledModel(from: Int, to: Int) {
+        viewModelScope.launch { store.move(from, to) }
+    }
+
     fun select(model: InstalledSherpaModel) {
         viewModelScope.launch {
             val settings = settingsStore.settingsFlow.value

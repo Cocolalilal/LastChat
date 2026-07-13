@@ -6,6 +6,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.data.ai.models.ModelCatalogParser
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,6 +15,72 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelPickerMatchingTest {
+    @Test
+    fun endpointModelUsesCatalogMetadataBeforeItIsAdded() {
+        val snapshot = ModelCatalogParser.parse(
+            """
+            {
+              "schema_version": 1,
+              "model_families": [{
+                "id": "gpt",
+                "match_patterns": ["gpt-5"],
+                "icon": "icons/openai.svg",
+                "type": "CHAT",
+                "input_modalities": ["TEXT", "IMAGE"],
+                "output_modalities": ["TEXT"],
+                "abilities": ["TOOL", "REASONING"],
+                "provider_slug": "openai"
+              }]
+            }
+            """.trimIndent()
+        )
+        val endpointModel = Model(
+            modelId = "gpt-5-mini",
+            type = ModelType.IMAGE,
+            inputModalities = listOf(Modality.TEXT),
+            outputModalities = listOf(Modality.IMAGE),
+            abilities = emptyList(),
+        )
+
+        val resolved = resolveProviderModel(
+            resolver = ModelMetadataResolver { snapshot },
+            provider = ProviderSetting.OpenAI(),
+            model = endpointModel,
+        )
+
+        assertEquals(ModelType.CHAT, resolved.type)
+        assertEquals(listOf(Modality.TEXT, Modality.IMAGE), resolved.inputModalities)
+        assertEquals(listOf(Modality.TEXT), resolved.outputModalities)
+        assertEquals(listOf(ModelAbility.TOOL, ModelAbility.REASONING), resolved.abilities)
+        assertEquals("openai", resolved.providerSlug)
+        assertTrue(resolved.iconUrl?.endsWith("/catalog/icons/openai.svg") == true)
+    }
+
+    @Test
+    fun endpointMetadataRemainsAvailableWhenCatalogHasNoMatch() {
+        val snapshot = ModelCatalogParser.parse("""{ "schema_version": 1 }""")
+        val endpointModel = Model(
+            modelId = "vendor-new-image-model",
+            type = ModelType.IMAGE,
+            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+            outputModalities = listOf(Modality.IMAGE),
+            abilities = listOf(ModelAbility.REASONING),
+            imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+        )
+
+        val resolved = resolveProviderModel(
+            resolver = ModelMetadataResolver { snapshot },
+            provider = ProviderSetting.OpenAI(),
+            model = endpointModel,
+        )
+
+        assertEquals(endpointModel.type, resolved.type)
+        assertEquals(endpointModel.inputModalities, resolved.inputModalities)
+        assertEquals(endpointModel.outputModalities, resolved.outputModalities)
+        assertEquals(endpointModel.abilities, resolved.abilities)
+        assertEquals(endpointModel.imageGenerationMethod, resolved.imageGenerationMethod)
+    }
+
     @Test
     fun matchesExactModelId() {
         assertTrue(
@@ -105,7 +172,6 @@ class ModelPickerMatchingTest {
         val synced = syncFreshModelMetadata(
             freshModels = listOf(fresh),
             currentProvider = provider,
-            resolver = ModelMetadataResolver { null },
         ) as ProviderSetting.OpenAI
 
         val model = synced.models.single()

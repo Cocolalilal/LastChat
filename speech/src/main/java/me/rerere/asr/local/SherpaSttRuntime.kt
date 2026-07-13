@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class SherpaSttRuntime {
     private val mutex = Mutex()
@@ -55,6 +56,19 @@ class SherpaSttRuntime {
 
     private fun loadOffline(model: InstalledSherpaModel): OfflineRecognizer {
         require(!model.streaming) { "${model.id} is a streaming model" }
+        requireModelFiles(
+            model,
+            when (model.family) {
+                SherpaModelFamily.WHISPER,
+                SherpaModelFamily.MOONSHINE -> listOf(
+                    SherpaFileRole.ENCODER,
+                    SherpaFileRole.DECODER,
+                    SherpaFileRole.TOKENS,
+                )
+                SherpaModelFamily.SENSE_VOICE -> listOf(SherpaFileRole.MODEL, SherpaFileRole.TOKENS)
+                SherpaModelFamily.ONLINE_TRANSDUCER -> emptyList()
+            },
+        )
         disposeLocked()
         val modelConfig = when (model.family) {
             SherpaModelFamily.WHISPER -> OfflineModelConfig(
@@ -105,6 +119,10 @@ class SherpaSttRuntime {
 
     private fun loadOnline(model: InstalledSherpaModel): OnlineRecognizer {
         require(model.streaming && model.family == SherpaModelFamily.ONLINE_TRANSDUCER)
+        requireModelFiles(
+            model,
+            listOf(SherpaFileRole.ENCODER, SherpaFileRole.DECODER, SherpaFileRole.JOINER, SherpaFileRole.TOKENS),
+        )
         disposeLocked()
         val recognizer = OnlineRecognizer(
             assetManager = null,
@@ -118,7 +136,7 @@ class SherpaSttRuntime {
                     ),
                     tokens = model.file(SherpaFileRole.TOKENS),
                     numThreads = model.config.numThreads.coerceIn(1, 8),
-                    modelType = "zipformer2",
+                    modelType = model.onlineModelType,
                 ),
                 enableEndpoint = true,
                 decodingMethod = "greedy_search",
@@ -135,6 +153,15 @@ class SherpaSttRuntime {
             null -> Unit
         }
         loaded = null
+    }
+
+    private fun requireModelFiles(model: InstalledSherpaModel, roles: List<String>) {
+        val missing = roles.filter { role ->
+            model.files[role]?.let(::File)?.isFile != true
+        }
+        require(missing.isEmpty()) {
+            "Local speech model is incomplete (${missing.joinToString()}). Re-download it from Local models."
+        }
     }
 
     private sealed interface LoadedRecognizer {

@@ -26,6 +26,19 @@ data class SherpaDownloadProgress(
         }
 }
 
+internal enum class ArchiveDownloadPlan {
+    REUSE_COMPLETE,
+    RESUME,
+    RESTART,
+}
+
+internal fun archiveDownloadPlan(existingBytes: Long, expectedBytes: Long): ArchiveDownloadPlan = when {
+    existingBytes <= 0L -> ArchiveDownloadPlan.RESTART
+    expectedBytes > 0L && existingBytes == expectedBytes -> ArchiveDownloadPlan.REUSE_COMPLETE
+    expectedBytes > 0L && existingBytes > expectedBytes -> ArchiveDownloadPlan.RESTART
+    else -> ArchiveDownloadPlan.RESUME
+}
+
 class SherpaModelInstall(private val context: Context) {
     private val http by lazy {
         OkHttpClient.Builder()
@@ -68,6 +81,7 @@ class SherpaModelInstall(private val context: Context) {
             family = metadata.family,
             languages = metadata.languages,
             streaming = metadata.streaming,
+            onlineModelType = metadata.onlineModelType,
             directoryPath = target.absolutePath,
             sizeInBytes = target.walkTopDown().filter { it.isFile }.sumOf { it.length() },
             revision = metadata.revision,
@@ -91,13 +105,25 @@ class SherpaModelInstall(private val context: Context) {
         onProgress: (SherpaDownloadProgress) -> Unit,
     ) {
         target.parentFile?.mkdirs()
-        var existing = target.length().coerceAtMost(expectedBytes)
-        if (existing != target.length()) target.delete()
+        val plan = archiveDownloadPlan(target.length(), expectedBytes)
+        if (plan == ArchiveDownloadPlan.REUSE_COMPLETE) {
+            onProgress(SherpaDownloadProgress(expectedBytes, expectedBytes))
+            return
+        }
+        if (plan == ArchiveDownloadPlan.RESTART) target.delete()
+        var existing = if (plan == ArchiveDownloadPlan.RESUME) target.length() else 0L
         val request = Request.Builder().url(url).apply {
             if (existing > 0) header("Range", "bytes=$existing-")
         }.build()
 
         http.newCall(request).execute().use { response ->
+            // A completed archive left behind after a failed extraction asks for bytes past EOF on
+            // the next attempt. GitHub correctly answers 416; discard that stale partial and retry
+            // once from the beginning instead of surfacing an unhelpful download error.
+            if (response.code == 416 && existing > 0) {
+                target.delete()
+                return downloadTo(url, target, expectedBytes, onProgress)
+            }
             if (!response.isSuccessful) throw IOException("Download failed: HTTP ${response.code}")
             val append = existing > 0 && response.code == 206
             if (!append) existing = 0

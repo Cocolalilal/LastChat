@@ -146,7 +146,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
-import me.rerere.rikkahub.data.ai.models.ModelResolutionOptions
 import me.rerere.rikkahub.ui.components.ai.ModelAbilityTag
 import me.rerere.rikkahub.ui.components.ai.ModelModalityTag
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
@@ -192,14 +191,7 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
 
-private val providerPickerResolutionOptions = ModelResolutionOptions(
-    preserveDisplayName = true,
-    preserveExistingCapabilities = true,
-    preserveExistingType = true,
-    preserveExistingConfiguration = true,
-)
-
-private fun resolveProviderModel(
+internal fun resolveProviderModel(
     resolver: ModelMetadataResolver,
     provider: ProviderSetting,
     model: Model,
@@ -207,7 +199,6 @@ private fun resolveProviderModel(
     return resolver.applyToModel(
         model = model,
         providerHint = provider,
-        options = providerPickerResolutionOptions,
     )
 }
 
@@ -333,7 +324,6 @@ private fun ProviderSetting.canFetchApiModels(codexAccountAvailable: Boolean = f
 internal fun syncFreshModelMetadata(
     freshModels: List<Model>,
     currentProvider: ProviderSetting,
-    resolver: ModelMetadataResolver,
 ): ProviderSetting {
     val updatedModels = currentProvider.models.map { savedModel ->
         val freshModel = freshModels.firstOrNull { apiModel ->
@@ -346,7 +336,7 @@ internal fun syncFreshModelMetadata(
                 providerSlug = freshModel.providerSlug,
             )
         } else {
-            resolveProviderModel(resolver, currentProvider, savedModel)
+            savedModel
         }
     }
     return currentProvider.copyProvider(models = updatedModels)
@@ -889,7 +879,6 @@ private fun ModelList(
                 val updatedProvider = syncFreshModelMetadata(
                     freshModels = freshModels,
                     currentProvider = providerSetting,
-                    resolver = modelMetadataResolver,
                 )
                 if (updatedProvider != providerSetting) {
                     onUpdateProvider(updatedProvider)
@@ -1825,12 +1814,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     dialogState.currentState = modelMetadataResolver.applyToModel(
                                         model = modelState,
                                         providerHint = parentProvider,
-                                        options = ModelResolutionOptions(
-                                            preserveDisplayName = true,
-                                            preserveExistingCapabilities = true,
-                                            preserveExistingType = true,
-                                            preserveExistingConfiguration = true,
-                                        ),
                                     )
                                     dialogState.confirm()
                                 }
