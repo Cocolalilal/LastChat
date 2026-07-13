@@ -89,7 +89,33 @@ class MemoryTransferManager(
 
     suspend fun resume(jobId: String) {
         val job = dao.getTransferJob(jobId) ?: return
-        dao.upsertTransferJob(job.copy(state = "QUEUED", lastError = null, updatedAt = System.currentTimeMillis()))
+        dao.upsertTransferJob(
+            job.copy(
+                state = "QUEUED",
+                stage = "RETRYING",
+                lastError = null,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+        enqueue(jobId)
+    }
+
+    /** Retry one stale initial enqueue without creating an endless automatic retry loop. */
+    suspend fun recoverStaleQueued(jobId: String, expectedUpdatedAt: Long) {
+        val job = dao.getTransferJob(jobId) ?: return
+        if (
+            job.state != "QUEUED" ||
+            job.updatedAt != expectedUpdatedAt ||
+            job.stage != "PREPARING"
+        ) return
+        dao.upsertTransferJob(
+            job.copy(
+                stage = "AUTO_RETRY",
+                lastError = "Android delayed starting the background transfer. Retrying once…",
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+        WorkManager.getInstance(context).cancelUniqueWork(uniqueName(jobId))
         enqueue(jobId)
     }
 

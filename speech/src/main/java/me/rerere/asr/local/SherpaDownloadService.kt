@@ -36,13 +36,18 @@ class SherpaDownloadService : Service() {
                 stopSelf()
                 return@onEach
             }
+            val installing = running.filter { it.progress.phase == SherpaDownloadPhase.INSTALLING }
             val downloaded = running.sumOf { it.progress.bytesDownloaded }
             val total = running.sumOf { it.progress.totalBytes.coerceAtLeast(0) }
             val percent = if (total > 0) ((downloaded * 100) / total).toInt() else 0
-            val title = running.joinToString { it.displayName }
+            val title = if (installing.isNotEmpty()) {
+                "Installing ${installing.joinToString { it.displayName }}"
+            } else {
+                running.joinToString { it.displayName }
+            }
             getSystemService(android.app.NotificationManager::class.java).notify(
                 NOTIFICATION_ID,
-                notification(title, percent, 100, total <= 0),
+                notification(title, percent, 100, installing.isNotEmpty() || total <= 0),
             )
         }.launchIn(scope)
     }
@@ -57,7 +62,13 @@ class SherpaDownloadService : Service() {
     private fun notification(title: String, progress: Int, max: Int, indeterminate: Boolean) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText("Downloading for offline speech recognition")
+            .setContentText(
+                if (indeterminate && title.startsWith("Installing ")) {
+                    "Preparing model for offline speech recognition"
+                } else {
+                    "Downloading for offline speech recognition"
+                }
+            )
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setProgress(max, progress, indeterminate)
             .setOngoing(true)

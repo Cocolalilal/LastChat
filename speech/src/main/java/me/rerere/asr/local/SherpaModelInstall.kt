@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 data class SherpaDownloadProgress(
     val bytesDownloaded: Long,
     val totalBytes: Long,
+    val phase: SherpaDownloadPhase = SherpaDownloadPhase.DOWNLOADING,
 ) {
     val percent: Int
         get() = if (totalBytes > 0) {
@@ -24,6 +25,11 @@ data class SherpaDownloadProgress(
         } else {
             0
         }
+}
+
+enum class SherpaDownloadPhase {
+    DOWNLOADING,
+    INSTALLING,
 }
 
 internal enum class ArchiveDownloadPlan {
@@ -57,6 +63,13 @@ class SherpaModelInstall(private val context: Context) {
     ): InstalledSherpaModel = withContext(Dispatchers.IO) {
         val archive = File(downloadsDir(), "${metadata.id}.tar.bz2.part")
         downloadTo(metadata.archiveUrl, archive, metadata.archiveSizeBytes, onProgress)
+        onProgress(
+            SherpaDownloadProgress(
+                bytesDownloaded = archive.length(),
+                totalBytes = archive.length(),
+                phase = SherpaDownloadPhase.INSTALLING,
+            )
+        )
 
         val target = modelDir(metadata.id)
         val staging = File(target.parentFile, "${target.name}.installing")
@@ -177,6 +190,7 @@ class SherpaModelInstall(private val context: Context) {
                         output.parentFile?.mkdirs()
                         output.outputStream().buffered().use { tar.copyTo(it) }
                         found += relative
+                        if (found.size == normalizedRequired.size) break
                     }
                 }
             }

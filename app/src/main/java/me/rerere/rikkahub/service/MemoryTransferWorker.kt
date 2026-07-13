@@ -3,6 +3,7 @@ package me.rerere.rikkahub.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
@@ -41,8 +42,11 @@ class MemoryTransferWorker(
         val jobId = inputData.getString(KEY_JOB_ID) ?: return@withContext Result.failure()
         val initial = dao.getTransferJob(jobId) ?: return@withContext Result.failure()
         if (initial.state == "PAUSED") return@withContext Result.success()
-        setForeground(progressForeground(initial.processed, initial.total))
         try {
+            // Persist startup before asking Android for foreground execution. If promotion
+            // fails, the catch block can expose it instead of leaving the job QUEUED forever.
+            updateJob(jobId, state = "RUNNING", stage = "STARTING")
+            setForeground(progressForeground(initial.processed, initial.total))
             val total = when (initial.sourceEngine) {
                 BuiltInMemoryEngines.SIMPLE -> memoryRepository.getMemoryEntitiesOfAssistant(initial.assistantId).size
                 BuiltInMemoryEngines.GRAPH -> graphRepository.snapshot(initial.assistantId).memories.size
@@ -219,7 +223,15 @@ class MemoryTransferWorker(
             .setOngoing(true)
             .setProgress(100, progress, total == 0)
             .build()
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
     }
 
     companion object {

@@ -83,6 +83,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.memory.BuiltInMemoryEngines
 import me.rerere.ai.memory.MemoryScope
@@ -234,6 +235,13 @@ internal fun GraphMemoryOverview(
     val now = System.currentTimeMillis()
     val thisWeek = memories.count { it.createdAt >= now - 7 * 24 * 60 * 60 * 1000L }
 
+    LaunchedEffect(transfer?.id, transfer?.state, transfer?.updatedAt) {
+        val queued = transfer?.takeIf { it.state == "QUEUED" && it.stage == "PREPARING" }
+            ?: return@LaunchedEffect
+        delay(30_000)
+        transferManager.recoverStaleQueued(queued.id, queued.updatedAt)
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
@@ -374,7 +382,11 @@ private fun GraphStatusCard(
                 Text(
                     when (activeTransfer?.state) {
                         "QUEUED" -> "Preparing graph memory"
-                        "RUNNING" -> "Building graph memory · ${progressPercent(activeTransfer)}%"
+                        "RUNNING" -> if (activeTransfer.total <= 0) {
+                            "Starting graph memory"
+                        } else {
+                            "Building graph memory · ${progressPercent(activeTransfer)}%"
+                        }
                         "PAUSED" -> "Memory transfer paused"
                         "FAILED" -> "Memory transfer failed"
                         else -> if (assistant.pendingMemoryEngineId != null) "Preparing graph memory" else "Memory is ready"
@@ -385,15 +397,22 @@ private fun GraphStatusCard(
             }
             if (activeTransfer?.state == "RUNNING") {
                 TextButton(onClick = { onPause(activeTransfer.id) }) { Text("Pause") }
-            } else if (activeTransfer?.state in setOf("PAUSED", "FAILED")) {
-                TextButton(onClick = { onResume(requireNotNull(activeTransfer).id) }) { Text("Resume") }
+            } else if (activeTransfer?.state in setOf("QUEUED", "PAUSED", "FAILED")) {
+                val resumableTransfer = requireNotNull(activeTransfer)
+                TextButton(onClick = { onResume(resumableTransfer.id) }) {
+                    Text(if (resumableTransfer.state == "QUEUED") "Retry" else "Resume")
+                }
             }
         }
         if (activeTransfer?.state == "RUNNING") {
-            LinearProgressIndicator(
-                progress = { progressPercent(activeTransfer) / 100f },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (activeTransfer.total > 0) {
+                LinearProgressIndicator(
+                    progress = { progressPercent(activeTransfer) / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }

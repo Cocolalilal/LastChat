@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.asr.local.InstalledSherpaModel
 import me.rerere.asr.local.SherpaDownload
+import me.rerere.asr.local.SherpaDownloadPhase
 import me.rerere.asr.local.SherpaModelConfig
 import me.rerere.asr.local.SherpaModelFamily
 import me.rerere.asr.local.SherpaModelMetadata
@@ -179,17 +180,25 @@ private fun SherpaDownloadStatus(
     when (state) {
         null -> Unit
         is SherpaDownload.Running -> {
-            LinearProgressIndicator(
-                progress = { state.progress.percent / 100f },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (state.progress.phase == SherpaDownloadPhase.INSTALLING) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(
+                    progress = { state.progress.percent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Downloading ${formatBytes(state.progress.bytesDownloaded)} of ${formatBytes(state.progress.totalBytes)}",
+                    text = if (state.progress.phase == SherpaDownloadPhase.INSTALLING) {
+                        "Installing model…"
+                    } else {
+                        "Downloading ${formatBytes(state.progress.bytesDownloaded)} of ${formatBytes(state.progress.totalBytes)}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
