@@ -38,7 +38,10 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -216,6 +219,8 @@ fun AssistantMemorySettings(
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
     val processingStates by assistantDetailVM.memoryProcessingStates.collectAsStateWithLifecycle()
+    val graphNodes by assistantDetailVM.memoryGraphNodes.collectAsStateWithLifecycle()
+    val graphEdges by assistantDetailVM.memoryGraphEdges.collectAsStateWithLifecycle()
 
     if (assistant.memorySystem == MemorySystemType.DOCUMENT_BASED) {
         DocumentBasedMemorySettings(
@@ -229,6 +234,8 @@ fun AssistantMemorySettings(
     }
 
     var systemMenuExpanded by remember { mutableStateOf(false) }
+    var showGraphExplorer by remember { mutableStateOf(false) }
+    var showEntrySettings by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -238,11 +245,23 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        val weekAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        MemoryStatsRow(
+            memoryCount = memories.size,
+            recentCount = memories.count { it.timestamp >= weekAgo },
+            entityCount = graphNodes.size,
+        )
+        MemoryProcessingBanner(processingStates, assistantDetailVM::processMemoryBacklog)
         MemoryConversionPanel(assistantDetailVM)
+
+        if (assistant.enableMemory && assistant.effectiveMemorySearchToolEnabled()) {
+            SettingsGroupHeader(title = "Memories")
+            MemoryGraphOverview(graphNodes, graphEdges, onClick = { showGraphExplorer = true })
+        }
 
         val pendingMemoryCount = processingStates.count { it.indexedAt > it.processedAt }
         val failedMemoryCount = processingStates.count { !it.lastError.isNullOrBlank() }
-        Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainer) {
+        if (false) Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainer) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Processing status", style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -257,6 +276,30 @@ fun AssistantMemorySettings(
             }
         }
 
+        Surface(
+            onClick = { showEntrySettings = !showEntrySettings },
+            shape = AppShapes.CardMedium,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Memory settings", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "${if (assistant.enableMemory) "On" else "Off"} · Entry-based",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(if (showEntrySettings) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showEntrySettings,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
         
@@ -469,6 +512,14 @@ fun AssistantMemorySettings(
             }
         }
 
+        TextButton(
+            onClick = assistantDetailVM::rebuildMemoryIndex,
+            enabled = assistant.enableMemory,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Rebuild memory index") }
+        }
+        }
+
         // ═══════════════════════════════════════════════════════════════════
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
         // ═══════════════════════════════════════════════════════════════════
@@ -476,7 +527,7 @@ fun AssistantMemorySettings(
         // MEMORY STATISTICS (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory,
+            visible = false && assistant.enableMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -532,6 +583,7 @@ fun AssistantMemorySettings(
             }
         }
     }
+    if (showGraphExplorer) MemoryGraphExplorer(vm = assistantDetailVM, onDismiss = { showGraphExplorer = false })
 }
 
 @Composable
@@ -1095,6 +1147,7 @@ private fun MemoryItem(
     position: String = "MIDDLE"
 ) {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showActions by remember { mutableStateOf(false) }
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -1245,13 +1298,25 @@ private fun MemoryItem(
                 )
             }
             
-            // Only show delete for core memories (user-created)
-            if (memory.type == 0) {
-                IconButton(onClick = { 
-                    haptics.perform(HapticPattern.Pop)
-                    showDeleteConfirmation = true 
-                }) {
-                    Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
+            Box {
+                IconButton(onClick = { showActions = true }) {
+                    Icon(Icons.Rounded.MoreVert, "Memory actions")
+                }
+                DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                        onClick = { showActions = false; onEditMemory(memory) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Forget", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showActions = false
+                            showDeleteConfirmation = true
+                        },
+                    )
                 }
             }
         }

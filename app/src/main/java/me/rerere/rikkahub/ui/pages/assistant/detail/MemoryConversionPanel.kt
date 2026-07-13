@@ -3,15 +3,19 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,11 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.model.MemoryConversionDirection
 import me.rerere.rikkahub.ui.theme.AppShapes
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryConversionPanel(vm: AssistantDetailVM) {
     val available by vm.conversionAvailable.collectAsStateWithLifecycle()
@@ -32,54 +39,81 @@ fun MemoryConversionPanel(vm: AssistantDetailVM) {
     val preview by vm.conversionPreview.collectAsStateWithLifecycle()
 
     if (available) {
-        Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.tertiaryContainer) {
-            Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Suggestions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Surface(
+                onClick = { if (!busy) vm.generateConversionPreview() },
+                shape = AppShapes.CardLarge,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
             ) {
-                Icon(Icons.Rounded.Sync, null)
-                Column(Modifier.weight(1f)) {
-                    Text("Bring newer memories into this system", style = MaterialTheme.typography.titleSmall)
-                    Text("Review an incremental, non-destructive conversion before applying it.", style = MaterialTheme.typography.bodySmall)
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                }
-                Button(onClick = vm::generateConversionPreview, enabled = !busy) {
-                    if (busy) CircularProgressIndicator(strokeWidth = 2.dp) else Text("Preview")
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("New memories are available", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Review what changed in the other memory system and choose what to bring over.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    if (busy) CircularProgressIndicator() else Icon(Icons.Rounded.ChevronRight, "Review")
                 }
             }
         }
     }
 
     preview?.let { current ->
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { if (!busy) vm.cancelConversionPreview() },
-            title = { Text("Conversion preview") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(current.summary)
-                    if (current.direction == MemoryConversionDirection.ENTRY_TO_DOCUMENT) {
-                        current.userProfileReplacement?.let {
-                            Text("User Profile replacement", style = MaterialTheme.typography.labelLarge)
-                            Text(it, maxLines = 8, style = MaterialTheme.typography.bodySmall)
-                        }
-                        current.characterMemoryReplacement?.let {
-                            Text("Character Memory replacement", style = MaterialTheme.typography.labelLarge)
-                            Text(it, maxLines = 8, style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else {
-                        Text("${current.entryProposals.size} proposed entry changes", style = MaterialTheme.typography.labelLarge)
-                        current.entryProposals.take(20).forEach { Text("• ${it.content}", style = MaterialTheme.typography.bodySmall) }
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text("Review memory suggestions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    current.summary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (current.direction == MemoryConversionDirection.ENTRY_TO_DOCUMENT) {
+                    current.userProfileReplacement?.let {
+                        ProposedChangeCard("User Profile", it)
                     }
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    current.characterMemoryReplacement?.let {
+                        ProposedChangeCard("Character Memory", it)
+                    }
+                } else if (current.entryProposals.isEmpty()) {
+                    Text("No new entry changes were found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    current.entryProposals.take(20).forEach { proposal ->
+                        ProposedChangeCard(if (proposal.existingEntryId == null) "New memory" else "Updated memory", proposal.content)
+                    }
                 }
-            },
-            confirmButton = {
-                Button(onClick = vm::applyConversionPreview, enabled = !busy) { Text("Apply preview") }
-            },
-            dismissButton = {
-                TextButton(onClick = vm::cancelConversionPreview, enabled = !busy) { Text("Cancel") }
-            },
-        )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Button(onClick = vm::applyConversionPreview, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add these memories")
+                }
+                TextButton(onClick = vm::cancelConversionPreview, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("Not now")
+                }
+                Spacer(Modifier.height(28.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProposedChangeCard(title: String, content: String) {
+    Surface(shape = AppShapes.CardMedium, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(content, maxLines = 7, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }

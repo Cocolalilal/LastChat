@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -27,6 +29,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -105,8 +112,8 @@ fun MemoryGraphExplorer(vm: AssistantDetailVM, onDismiss: () -> Unit) {
         }
     }
 
-    selectedNode?.let { node -> GraphNodeCorrectionDialog(node, graph.first, vm) { selectedNode = null } }
-    selectedEdge?.let { edge -> GraphEdgeCorrectionDialog(edge, vm) { selectedEdge = null } }
+    selectedNode?.let { node -> GraphNodeDetailSheet(node, graph.first, graph.second, vm) { selectedNode = null } }
+    selectedEdge?.let { edge -> GraphEdgeDetailSheet(edge, vm) { selectedEdge = null } }
     provenance?.let { source ->
         AlertDialog(
             onDismissRequest = vm::clearGraphProvenance,
@@ -125,8 +132,11 @@ private fun InteractiveGraphCanvas(
 ) {
     var positions by remember(nodes) { mutableStateOf(emptyList<Offset>()) }
     val nodeColor = MaterialTheme.colorScheme.tertiary
+    val importantNodeColor = MaterialTheme.colorScheme.primary
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
-    Box(Modifier.fillMaxWidth().height(260.dp)) {
+    val textColor = MaterialTheme.colorScheme.onSurface
+    Surface(shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
+    Box(Modifier.fillMaxWidth().height(280.dp).padding(8.dp)) {
         Canvas(
             Modifier.fillMaxSize().pointerInput(nodes, positions) {
                 detectTapGestures { tap ->
@@ -151,76 +161,110 @@ private fun InteractiveGraphCanvas(
                 if (a != null && b != null) drawLine(edgeColor, positions[a], positions[b], 1.dp.toPx())
             }
             positions.forEachIndexed { index, point ->
-                drawCircle(nodeColor, radius = if (index == 0) 9.dp.toPx() else 6.dp.toPx(), center = point)
+                val node = visible[index]
+                drawCircle(
+                    if (node.importance >= 4) importantNodeColor else nodeColor,
+                    radius = (6 + node.importance.coerceIn(1, 5)).dp.toPx(),
+                    center = point,
+                )
+            }
+            drawIntoCanvas { canvas ->
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = textColor.toArgb()
+                    textSize = 11.dp.toPx()
+                    textAlign = Paint.Align.CENTER
+                }
+                visible.take(24).forEachIndexed { index, node ->
+                    canvas.nativeCanvas.drawText(node.label.take(20), positions[index].x, positions[index].y + 23.dp.toPx(), paint)
+                }
             }
         }
     }
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GraphNodeCorrectionDialog(
+private fun GraphNodeDetailSheet(
     node: MemoryGraphNodeEntity,
     allNodes: List<MemoryGraphNodeEntity>,
+    allEdges: List<MemoryGraphEdgeEntity>,
     vm: AssistantDetailVM,
     onDismiss: () -> Unit,
 ) {
     var label by remember(node.id) { mutableStateOf(node.label) }
     var mergeTarget by remember(node.id) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(node.label) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(node.summary.orEmpty())
-                OutlinedTextField(label, { label = it }, label = { Text("Corrected name") })
-                OutlinedTextField(mergeTarget, { mergeTarget = it }, label = { Text("Merge into entity name") })
-                TextButton(onClick = { vm.loadGraphProvenance(node.id) }) { Text("View source") }
+    var editing by remember(node.id) { mutableStateOf(false) }
+    val related = allEdges.filter { it.subjectId == node.id || it.objectId == node.id }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GraphTag(node.kind)
+                GraphTag(node.frame)
+                GraphTag("${(node.confidence * 100).toInt()}% confident")
             }
-        },
-        confirmButton = {
-            Row {
-                IconButton(onClick = {
-                    vm.addGraphOverride("node", node.id, "rename", buildJsonObject { put("label", label.trim()) }.toString()); onDismiss()
-                }) { Icon(Icons.Rounded.Edit, "Rename") }
-                IconButton(onClick = {
+            Text(node.label, style = MaterialTheme.typography.headlineSmall)
+            node.summary?.takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (related.isNotEmpty()) {
+                Text("Related memories", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                related.take(8).forEach { edge ->
+                    Surface(shape = AppShapes.ListItem, color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Text(edge.statement, Modifier.fillMaxWidth().padding(12.dp))
+                    }
+                }
+            }
+            TextButton(onClick = { vm.loadGraphProvenance(node.id) }) { Text("View source conversation") }
+            if (editing) {
+                OutlinedTextField(label, { label = it }, label = { Text("Memory name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(mergeTarget, { mergeTarget = it }, label = { Text("Merge into another memory") }, modifier = Modifier.fillMaxWidth())
+                Button(onClick = {
+                    if (label.trim() != node.label) vm.addGraphOverride("node", node.id, "rename", buildJsonObject { put("label", label.trim()) }.toString())
                     val target = allNodes.firstOrNull { it.label.equals(mergeTarget.trim(), true) }
                     if (target != null && target.id != node.id) {
-                        vm.addGraphOverride("node", node.id, "merge", buildJsonObject { put("target_id", target.id) }.toString()); onDismiss()
+                        vm.addGraphOverride("node", node.id, "merge", buildJsonObject { put("target_id", target.id) }.toString())
                     }
-                }) { Icon(Icons.Rounded.Merge, "Merge") }
-                IconButton(onClick = {
-                    vm.addGraphOverride("node", node.id, "hide", "{}"); onDismiss()
-                }) { Icon(Icons.Rounded.VisibilityOff, "Hide") }
+                    onDismiss()
+                }, modifier = Modifier.fillMaxWidth()) { Text("Save correction") }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { editing = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp)); Text("Edit")
+                    }
+                    TextButton(onClick = { vm.addGraphOverride("node", node.id, "hide", "{}"); onDismiss() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.VisibilityOff, null, Modifier.size(18.dp)); Text("Forget")
+                    }
+                }
             }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+            androidx.compose.foundation.layout.Spacer(Modifier.height(28.dp))
+        }
+    }
 }
 
 @Composable
-private fun GraphEdgeCorrectionDialog(edge: MemoryGraphEdgeEntity, vm: AssistantDetailVM, onDismiss: () -> Unit) {
+private fun GraphTag(text: String) {
+    Surface(shape = AppShapes.Tag, color = MaterialTheme.colorScheme.secondaryContainer) {
+        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GraphEdgeDetailSheet(edge: MemoryGraphEdgeEntity, vm: AssistantDetailVM, onDismiss: () -> Unit) {
     var statement by remember(edge.id) { mutableStateOf(edge.statement) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Correct relationship") },
-        text = {
-            Column {
-                OutlinedTextField(statement, { statement = it }, label = { Text("Corrected relationship") }, minLines = 3)
-                TextButton(onClick = { vm.loadGraphProvenance(edge.id) }) { Text("View source") }
-            }
-        },
-        confirmButton = {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { GraphTag(edge.predicate); GraphTag(edge.frame) }
+            Text(edge.statement, style = MaterialTheme.typography.headlineSmall)
+            Text("${(edge.confidence * 100).toInt()}% confidence · importance ${edge.importance}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(statement, { statement = it }, label = { Text("Correct relationship") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { vm.loadGraphProvenance(edge.id) }) { Text("View source conversation") }
             Button(onClick = {
                 vm.addGraphOverride("edge", edge.id, "correct", buildJsonObject { put("statement", statement.trim()) }.toString()); onDismiss()
-            }) { Text("Save correction") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = { vm.addGraphOverride("edge", edge.id, "hide", "{}"); onDismiss() }) { Text("Hide") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        },
-    )
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save correction") }
+            TextButton(onClick = { vm.addGraphOverride("edge", edge.id, "hide", "{}"); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Forget relationship") }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(28.dp))
+        }
+    }
 }
 
 private fun applyGraphOverrides(
