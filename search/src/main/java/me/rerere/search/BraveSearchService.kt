@@ -36,7 +36,7 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.BraveOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             val url = "https://api.search.brave.com/res/v1/web/search" +

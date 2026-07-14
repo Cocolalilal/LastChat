@@ -24,10 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/**
- * Typing indicator with three bouncing dots, similar to messaging apps.
- * Used in ActivityPill before the first token arrives.
- */
+/** Production three-dot generation indicator shared by Android and iOS. */
 @Composable
 fun TypingIndicator(
     modifier: Modifier = Modifier,
@@ -36,31 +33,23 @@ fun TypingIndicator(
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     bounceHeight: Dp = 4.dp,
 ) {
-    val dots = 3
-    val animatables = remember { List(dots) { Animatable(0f) } }
-
-    // Staggered bounce animation for each dot
+    val animatables = remember { List(3) { Animatable(0f) } }
     animatables.forEachIndexed { index, animatable ->
         LaunchedEffect(animatable) {
-            // Stagger the start of each dot's animation
             delay(index * 150L)
             animatable.animateTo(
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(
-                        durationMillis = 400,
-                        easing = FastOutSlowInEasing
-                    ),
-                    repeatMode = RepeatMode.Reverse
-                )
+                    animation = tween(400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
             )
         }
     }
-
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(dotSpacing),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         animatables.forEach { animatable ->
             Box(
@@ -68,7 +57,7 @@ fun TypingIndicator(
                     .offset(y = -(bounceHeight * animatable.value))
                     .size(dotSize)
                     .clip(CircleShape)
-                    .background(color.copy(alpha = 0.6f + 0.4f * animatable.value))
+                    .background(color.copy(alpha = 0.6f + 0.4f * animatable.value)),
             )
         }
     }

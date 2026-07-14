@@ -2,6 +2,11 @@ package me.rerere.tts.provider.providers
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
+import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
@@ -11,7 +16,6 @@ import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import org.json.JSONObject
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -25,9 +29,9 @@ class QwenTTSProvider(
         providerSetting: TTSProviderSetting.Qwen,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
-        val requestBody = JSONObject().apply {
+        val requestBody = buildJsonObject {
             put("model", providerSetting.model)
-            put("input", JSONObject().apply {
+            put("input", buildJsonObject {
                 put("text", request.text)
                 put("voice", providerSetting.voice)
                 put("language_type", providerSetting.languageType)
@@ -91,11 +95,14 @@ class QwenTTSProvider(
 
     private fun parseSseData(data: String): Pair<ByteArray, Boolean>? {
         return try {
-            val json = JSONObject(data)
-            val output = json.optJSONObject("output") ?: return null
-            val audio = output.optJSONObject("audio") ?: return null
-            val audioBase64 = audio.optString("data", "")
-            val finishReason = output.optString("finish_reason", "")
+            val output = ttsJson.parseToJsonElement(data)
+                .jsonObjectOrNull
+                ?.get("output")
+                ?.jsonObjectOrNull
+                ?: return null
+            val audio = output["audio"]?.jsonObjectOrNull ?: return null
+            val audioBase64 = audio["data"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
+            val finishReason = output["finish_reason"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
 
             if (audioBase64.isNotEmpty()) {
                 val audioData = Base64.Default.decode(audioBase64)

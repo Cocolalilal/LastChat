@@ -64,7 +64,7 @@ class ClaudeProvider(
     private val mediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.Claude> {
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
-        withContext(Dispatchers.IO) {
+        withContext(me.rerere.ai.util.providerIoDispatcher) {
             val response = platformHttpClient.execute(
                 PlatformHttpRequest(
                     method = "GET",
@@ -108,7 +108,7 @@ class ClaudeProvider(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): MessageChunk = withContext(Dispatchers.IO) {
+    ): MessageChunk = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val requestBody = buildMessageRequest(messages, params)
         val encodedRequestBody = json.encodeToString(requestBody)
 

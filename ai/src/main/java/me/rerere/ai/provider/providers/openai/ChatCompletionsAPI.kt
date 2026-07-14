@@ -75,7 +75,7 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): MessageChunk = withContext(Dispatchers.IO) {
+    ): MessageChunk = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val requestBody =
             buildChatCompletionRequest(
                 messages = messages,

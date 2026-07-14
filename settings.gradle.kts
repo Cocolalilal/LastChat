@@ -32,6 +32,8 @@ dependencyResolutionManagement {
 rootProject.name = "lastchat"
 include(":app")
 include(":shared")
+include(":iosApp")
+include(":ui-core")
 include(":highlight")
 include(":ai")
 include(":search")

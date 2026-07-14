@@ -11,12 +11,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,8 +58,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -82,6 +76,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ui.Tooltip
+import me.rerere.rikkahub.ui.components.chat.ConversationRowSurface
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -433,8 +428,6 @@ private fun ConversationItem(
     searchQuery: String = "",
     onClick: (Conversation) -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val haptics = rememberPremiumHaptics()
     val loadingDescription = stringResource(R.string.loading)
 
@@ -452,26 +445,6 @@ private fun ConversationItem(
         }
     }
     
-    // Physics-based press feedback
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
-        label = "conversation_scale"
-    )
-    val pressAlpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "conversation_alpha"
-    )
-    
-    // Combine alphas: restored fade-in * press feedback
-    val combinedAlpha = restoredAlpha * pressAlpha
-    
-    val backgroundColor = if (selected) {
-        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
-    } else {
-        Color.Transparent
-    }
     var showDropdownMenu by remember {
         mutableStateOf(false)
     }
@@ -479,27 +452,18 @@ private fun ConversationItem(
     var editedTitle by remember(conversation.id) { mutableStateOf(conversation.title) }
     val messageOnlyMatch = searchQuery.isNotBlank() &&
         !conversation.title.contains(searchQuery, ignoreCase = true)
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = combinedAlpha
-            }
-            .clip(RoundedCornerShape(50f))
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                onClick = {
-                    haptics.perform(HapticPattern.Tick)
-                    onClick(conversation)
-                },
-                onLongClick = {
-                    haptics.perform(HapticPattern.Buildup)
-                    showDropdownMenu = true
-                }
-            )
-            .background(backgroundColor),
+    ConversationRowSurface(
+        selected = selected,
+        restingAlpha = restoredAlpha,
+        modifier = modifier,
+        onClick = {
+            haptics.perform(HapticPattern.Tick)
+            onClick(conversation)
+        },
+        onLongClick = {
+            haptics.perform(HapticPattern.Buildup)
+            showDropdownMenu = true
+        },
     ) {
         Row(
             modifier = Modifier

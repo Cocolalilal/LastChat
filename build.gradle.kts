@@ -20,6 +20,7 @@ val iosCandidateModules = listOf(
     "highlight",
     "document",
     "tts",
+    "ui-core",
     "app"
 )
 
@@ -94,6 +95,9 @@ val iosPortabilityBlockers = linkedMapOf(
     ),
     "JVM-only helper libraries" to listOf(
         "org.apache.commons."
+    ),
+    "JVM-only JSON" to listOf(
+        "org.json."
     )
 )
 

@@ -71,7 +71,7 @@ object FirecrawlSearchService : SearchService<SearchServiceOptions.FirecrawlOpti
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.FirecrawlOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
 
@@ -141,7 +141,7 @@ object FirecrawlSearchService : SearchService<SearchServiceOptions.FirecrawlOpti
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.FirecrawlOptions
-    ): Result<ScrapedResult> = withContext(Dispatchers.IO) {
+    ): Result<ScrapedResult> = withContext(searchIoDispatcher) {
         runCatching {
             val url = params["url"]?.jsonPrimitive?.content ?: error("url is required")
             val onlyMainContent = params["onlyMainContent"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: true

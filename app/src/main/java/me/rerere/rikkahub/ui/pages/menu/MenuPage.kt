@@ -26,15 +26,8 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Chat
-import androidx.compose.material.icons.automirrored.rounded.Input
-import androidx.compose.material.icons.automirrored.rounded.Message
-import androidx.compose.material.icons.rounded.Output
-import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -59,6 +52,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.stats.LastChatStatCard
+import me.rerere.rikkahub.ui.components.stats.LastChatStatIcon
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.utils.currentAppLocale
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -161,7 +156,7 @@ private fun MenuStatsContent(
                         StatCard(
                             title = stringResource(R.string.menu_stat_conversations),
                             value = formatCount(stats.usageStats.totalConversations),
-                            icon = Icons.AutoMirrored.Rounded.Chat,
+                            icon = LastChatStatIcon.Conversations,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier
@@ -196,7 +191,7 @@ private fun MenuStatsContent(
                         StatCard(
                             title = stringResource(R.string.menu_stat_messages),
                             value = formatCount(stats.usageStats.totalMessages),
-                            icon = Icons.AutoMirrored.Rounded.Message,
+                            icon = LastChatStatIcon.Messages,
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier
@@ -206,7 +201,7 @@ private fun MenuStatsContent(
                         StatCard(
                             title = stringResource(R.string.menu_stat_input_tokens),
                             value = formatTokenCount(stats.usageStats.inputTokens),
-                            icon = Icons.AutoMirrored.Rounded.Input,
+                            icon = LastChatStatIcon.InputTokens,
                             containerColor = if (LocalDarkMode.current) {
                                 MaterialTheme.colorScheme.surfaceContainerHigh
                             } else {
@@ -245,7 +240,7 @@ private fun MenuStatsContent(
                         StatCard(
                             title = stringResource(R.string.menu_stat_output_tokens),
                             value = formatTokenCount(stats.usageStats.outputTokens),
-                            icon = Icons.Rounded.Output,
+                            icon = LastChatStatIcon.OutputTokens,
                             containerColor = if (LocalDarkMode.current) {
                                 MaterialTheme.colorScheme.surfaceContainerHigh
                             } else {
@@ -259,7 +254,7 @@ private fun MenuStatsContent(
                         StatCard(
                             title = stringResource(R.string.menu_stat_cached_tokens),
                             value = formatTokenCount(stats.usageStats.cachedTokens),
-                            icon = Icons.Rounded.Savings,
+                            icon = LastChatStatIcon.CachedTokens,
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier
@@ -981,63 +976,21 @@ private fun monthSectionOffset(
 private fun StatCard(
     title: String,
     value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: LastChatStatIcon,
     containerColor: Color,
     contentColor: Color,
     modifier: Modifier = Modifier,
     subtitle: String? = null
 ) {
-    Card(
-        modifier = modifier.heightIn(min = StatCardMinHeight),
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor,
-            contentColor = contentColor
-        ),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(me.rerere.rikkahub.ui.theme.AppShapes.Chip)
-                    .background(contentColor.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, null, modifier = Modifier.size(18.dp))
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = value,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (subtitle != null) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = contentColor.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(bottom = 2.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
+    LastChatStatCard(
+        title = title,
+        value = value,
+        containerColor = containerColor,
+        contentColor = contentColor,
+        modifier = modifier,
+        subtitle = subtitle,
+        icon = { me.rerere.rikkahub.ui.components.stats.LastChatStatIconGlyph(icon) },
+    )
 }
 
 private fun formatCount(count: Long): String {

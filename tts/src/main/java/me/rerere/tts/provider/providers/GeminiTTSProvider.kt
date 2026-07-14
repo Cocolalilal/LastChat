@@ -1,11 +1,18 @@
 package me.rerere.tts.provider.providers
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
+import me.rerere.common.http.jsonArrayOrNull
+import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
@@ -15,8 +22,6 @@ import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -58,23 +63,23 @@ class GeminiTTSProvider(
         providerSetting: TTSProviderSetting.Gemini,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
-        val requestBody = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().apply {
+        val requestBody = buildJsonObject {
+            put("contents", buildJsonArray {
+                add(buildJsonObject {
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject {
                             put("text", request.text)
                         })
                     })
                 })
             })
-            put("generationConfig", JSONObject().apply {
-                put("responseModalities", JSONArray().apply {
-                    put("AUDIO")
+            put("generationConfig", buildJsonObject {
+                put("responseModalities", buildJsonArray {
+                    add(JsonPrimitive("AUDIO"))
                 })
-                put("speechConfig", JSONObject().apply {
-                    put("voiceConfig", JSONObject().apply {
-                        put("prebuiltVoiceConfig", JSONObject().apply {
+                put("speechConfig", buildJsonObject {
+                    put("voiceConfig", buildJsonObject {
+                        put("prebuiltVoiceConfig", buildJsonObject {
                             put("voiceName", providerSetting.voiceName)
                         })
                     })
@@ -140,7 +145,7 @@ class GeminiTTSProvider(
 
     override suspend fun listModels(
         providerSetting: TTSProviderSetting.Gemini
-    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+    ): List<TTSModelInfo> = withContext(me.rerere.tts.provider.ttsIoDispatcher) {
         if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
         runCatching {
             val response = httpClient.execute(
@@ -160,21 +165,24 @@ class GeminiTTSProvider(
                 return@withContext emptyList()
             }
             val body = response.body.decodeToString()
-            val json = JSONObject(body)
-            val arr = json.optJSONArray("models") as? JSONArray
-            arr?.let { a ->
-                buildList {
-                    for (i in 0 until a.length()) {
-                        val item = a.optJSONObject(i) ?: continue
-                        val rawName = item.optString("name", "")
-                        val id = rawName.removePrefix("models/").removePrefix("tunedModels/")
-                        val lower = id.lowercase()
-                        if (lower.contains("tts") || lower.contains("speech") || lower.endsWith("-tts")) {
-                            add(TTSModelInfo(id = id, displayName = id))
-                        }
-                    }
+            ttsJson.parseToJsonElement(body)
+                .jsonObjectOrNull
+                ?.get("models")
+                ?.jsonArrayOrNull
+                .orEmpty()
+                .mapNotNull { element ->
+                    val rawName = element.jsonObjectOrNull
+                        ?.get("name")
+                        ?.jsonPrimitiveOrNull
+                        ?.contentOrNull
+                        .orEmpty()
+                    val id = rawName.removePrefix("models/").removePrefix("tunedModels/")
+                    val lower = id.lowercase()
+                    id.takeIf {
+                        it.isNotBlank() &&
+                            (lower.contains("tts") || lower.contains("speech") || lower.endsWith("-tts"))
+                    }?.let { TTSModelInfo(id = it, displayName = it) }
                 }
-            } ?: emptyList()
         }.getOrElse { e ->
             PlatformLog.e(TAG, "listModels error: ${e.message}")
             emptyList()

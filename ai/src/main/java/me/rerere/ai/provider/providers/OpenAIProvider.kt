@@ -56,7 +56,7 @@ class OpenAIProvider(
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
-        withContext(Dispatchers.IO) {
+        withContext(me.rerere.ai.util.providerIoDispatcher) {
             val key = keyRoulette.next(providerSetting.apiKey)
             
             // Fetch regular models
@@ -173,7 +173,7 @@ class OpenAIProvider(
         }
     }
 
-    override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(Dispatchers.IO) {
+    override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val key = keyRoulette.next(providerSetting.apiKey)
         val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
             providerSetting.balanceOption.apiPath
@@ -198,7 +198,7 @@ class OpenAIProvider(
         val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
         val digitalValue = value.toFloatOrNull()
         if(digitalValue != null) {
-            "%.2f".format(digitalValue)
+            me.rerere.ai.util.formatFixed2(digitalValue)
         } else {
             value
         }
@@ -243,7 +243,7 @@ class OpenAIProvider(
     override suspend fun generateImage(
         providerSetting: ProviderSetting,
         params: ImageGenerationParams
-    ): ImageGenerationResult = withContext(Dispatchers.IO) {
+    ): ImageGenerationResult = withContext(me.rerere.ai.util.providerIoDispatcher) {
         require(providerSetting is ProviderSetting.OpenAI) {
             "Expected OpenAI provider setting"
         }
@@ -310,7 +310,7 @@ class OpenAIProvider(
         providerSetting: ProviderSetting.OpenAI,
         input: List<String>,
         model: Model
-    ): List<List<Float>> = withContext(Dispatchers.IO) {
+    ): List<List<Float>> = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val key = keyRoulette.next(providerSetting.apiKey)
         val requestBody = json.encodeToString(
             buildJsonObject {

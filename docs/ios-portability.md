@@ -50,9 +50,62 @@ The portability report now flags `java.math`, `java.security`, `java.time`, `jav
 
 `:highlight` now separates the portable highlighter contract, token model, serializer, and Compose rendering from the Android QuickJS runtime. Android DI binds `Highlighter` to `AndroidHighlighter`, which owns `Context`, Prism raw-resource loading, QuickJS initialization, and serialized QuickJS access through a coroutine dispatcher instead of a JVM executor. Android highlighter diagnostics now use Kotlin class labels instead of JVM `Class` names. The portability report treats `me.rerere.highlight` as a shared candidate and excludes only `me.rerere.highlight.android`.
 
-Cloud TTS provider transport is now platform-ready. OpenAI, Gemini, MiniMax, ElevenLabs, and Qwen TTS providers call through `PlatformHttpClient`; the Android `TTSManager` is the remaining OkHttp composition boundary and preserves the existing provider-specific timeouts using Kotlin durations. Gemini and Qwen audio decoding now use Kotlin Base64 APIs, and cloud TTS diagnostics use `PlatformLog` instead of Android `Log`. The `TTSProvider` contract no longer accepts Android `Context`; Android `TTSManager` and local TTS discovery now live in `me.rerere.tts.provider.android`, while Android system synthesis lives in `me.rerere.tts.provider.providers.android`. Android system synthesis diagnostics also use `PlatformLog`, and utterance IDs use Kotlin `Uuid` instead of JVM `UUID`. System TTS still writes the same temporary WAV files through the Android temp-folder boundary, but no longer exposes direct JVM `File` imports in the provider. `TtsSynthesizer` now combines streamed audio chunks without `java.io.ByteArrayOutputStream`, and Android playback wraps PCM bytes into WAV with deterministic Kotlin byte-array assembly instead of JVM streams. TTS chunk IDs now use Kotlin `Uuid` instead of JVM `UUID`, `TtsController` diagnostics now use `PlatformLog`, and controller queue/cache state now uses Kotlin collections instead of JVM concurrent collections, preserving playback ordering and synthesis caching while keeping chunk orchestration more portable. The portability report now treats `me.rerere.tts.model`, `me.rerere.tts.provider`, and cloud `me.rerere.tts.provider.providers` as shared candidates, with Android adapter subpackages explicitly excluded. The remaining `:tts` portability findings are Android-boundary playback and platform integration: system `TextToSpeech`, Media3 audio playback/controller code, and the Android HTTP adapter construction in `TTSManager`.
+Cloud TTS provider transport is now platform-ready. OpenAI, Gemini, MiniMax, ElevenLabs, Qwen, Fish Audio, Cartesia, and PlayHT TTS providers call through `PlatformHttpClient` and build payloads with kotlinx.serialization; wire-shape regression tests cover their provider-specific request fields. The Android `TTSManager` is the remaining OkHttp composition boundary and preserves the existing provider-specific timeouts using Kotlin durations. Gemini and Qwen audio decoding now use Kotlin Base64 APIs, and cloud TTS diagnostics use `PlatformLog` instead of Android `Log`. The `TTSProvider` contract no longer accepts Android `Context`; Android `TTSManager` and local TTS discovery now live in `me.rerere.tts.provider.android`, while Android system synthesis lives in `me.rerere.tts.provider.providers.android`. Android system synthesis diagnostics also use `PlatformLog`, and utterance IDs use Kotlin `Uuid` instead of JVM `UUID`. System TTS still writes the same temporary WAV files through the Android temp-folder boundary, but no longer exposes direct JVM `File` imports in the provider. `TtsSynthesizer` now combines streamed audio chunks without `java.io.ByteArrayOutputStream`, and Android playback wraps PCM bytes into WAV with deterministic Kotlin byte-array assembly instead of JVM streams. TTS chunk IDs now use Kotlin `Uuid` instead of JVM `UUID`, `TtsController` diagnostics now use `PlatformLog`, and controller queue/cache state now uses Kotlin collections instead of JVM concurrent collections, preserving playback ordering and synthesis caching while keeping chunk orchestration more portable. The portability report now treats `me.rerere.tts.model`, `me.rerere.tts.provider`, and cloud `me.rerere.tts.provider.providers` as shared candidates, with Android adapter subpackages explicitly excluded. The remaining `:tts` portability findings are Android-boundary playback and platform integration: system `TextToSpeech`, Media3 audio playback/controller code, and the Android HTTP adapter construction in `TTSManager`.
 
-As of the latest report, `iosPortabilityReport` finds no Android/JVM-only imports in the configured shared-candidate packages (`:ai`, `:common`, `:search`, portable `:highlight`, and the portable `:tts` model/provider surface). The app module is down to 12 Android/JVM networking findings and 144 JVM-only I/O/runtime findings, with 750 Android-framework findings still concentrated in Android entry points, DI, UI, widgets, local runtimes, and adapter shells. The remaining app networking findings are Android-boundary transport/composition code such as the OkHttp/Firebase request interceptor shell, Android DI-owned OkHttp/WebDAV/Coil composition, and the Android Jsoup parser adapter for rich-text HTML; broader Android/JVM findings in app/common/tts/highlight/document modules still need platform abstractions before a full iOS target can compile the whole product. The `:shared` module currently compiles for `iosArm64`, `iosSimulatorArm64`, and `iosX64`.
+As of the latest report, `:ai`, `:common`, `:search`, and the cloud-provider
+portion of `:tts` have no shared-candidate hotspots. Android-boundary findings remain
+concentrated in app entry points, DI, UI, widgets, local runtimes, and adapter
+shells. Broader Android/JVM findings in app, highlight, document, and the
+platform side of TTS still need abstractions before the whole Android product
+implementation itself can become one common target.
+
+The `:shared`, `:common`, `:ai`, `:search`, and portable `:tts` source sets now
+compile for `iosArm64`, `iosSimulatorArm64`, and `iosX64`. `:ai` contains the
+real OpenAI, Google, Claude, and ComfyUI provider implementations, not only
+DTOs. `:search` contains all current search services. The iOS UI framework
+exports these modules so provider and search functionality can be wired into
+the production iOS repositories without duplicating request logic.
+
+The iOS client now has a production-facing controller rather than preview-only
+message state. It persists conversations and non-secret provider preferences in
+the iOS Application Support container, stores separate provider keys through
+the Keychain adapter, and drives real OpenAI-compatible, Google, and Claude
+streaming through `ProviderManager` and the Darwin SSE client. This is an iOS repository boundary, not a claim that
+Android Room/DataStore or every Android screen has already been ported.
+
+Visual parity is now source-enforced for the first production UI primitives.
+The `:ui-core` Compose Multiplatform module owns the exact Android shape tokens,
+all six production light/dark color schemes, the AMOLED surface transform,
+typography metrics, grouped-message bubble
+container, and animated typing indicator. Android imports those definitions
+after its former local shape, bubble, and indicator files were removed, while iOS imports the same definitions. Android
+continues to supply its Google Sans Flex font family. The shared module's build
+generates a Compose font resource from that same canonical TTF without checking
+in a duplicate 4 MB asset, so iOS now uses the same font binary and metric table.
+The four large generated Android palette files are parsed into generated shared
+Kotlin source at build time, while Seafoam Mint and Sakura are directly shared;
+this keeps Android's existing palette files authoritative without copying
+thousands of color literals into a second maintained source.
+Variable-axis rendering still needs screenshot comparison in Xcode before font
+parity can be marked verified.
+
+The production conversation-row interaction surface is also shared. Android
+and iOS now execute the same pill clipping, selected-state color interpolation,
+spring press scaling, press alpha, and indication code. Android retains its
+existing localized content and dropdown actions; iOS wires select, create,
+rename, and delete actions to its app-container repository. The shared iOS
+haptic contract exposes the same twelve semantic patterns as Android's
+`PremiumHaptics`, mapped to UIKit selection, impact, and notification feedback.
+The production statistics-card implementation is shared as well, including its
+136 dp minimum height, 24 dp card shape, icon chip, padding, typography, color
+alpha, and value/subtitle alignment. Android retains its localized labels and
+icons; iOS feeds the same card with totals from its persisted conversations and
+provider token usage. The activity heatmap remains pending shared visual work.
+
+The portable `:tts` source set currently includes its models, settings,
+contracts, voice resolution, all eight cloud providers, text chunking, and
+PCM/WAV helpers. Android system TTS, `TTSManager`, and Media3 playback remain in
+`androidMain` until AVFoundation synthesis and playback adapters are available.
 
 Current blockers in those packages should be tracked with:
 
@@ -66,7 +119,10 @@ The current shared boundary should stay green with:
 
 ```powershell
 ./gradlew :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosX64 :shared:compileDebugKotlinAndroid
-./gradlew :common:compileDebugKotlin
+./gradlew :common:compileKotlinIosSimulatorArm64 :common:compileDebugKotlinAndroid
+./gradlew :ai:compileKotlinIosSimulatorArm64 :ai:compileDebugKotlinAndroid
+./gradlew :search:compileKotlinIosSimulatorArm64 :search:compileDebugKotlinAndroid
+./gradlew :tts:compileKotlinIosSimulatorArm64 :tts:compileDebugKotlinAndroid
 ```
 
 ## Adapter Boundaries To Add Before iOS Compilation
@@ -102,6 +158,66 @@ Before migrating any Compose UI into shared code:
 2. Add iOS screenshots for the same states.
 3. Compare layout, color, shape, typography, motion intent, and haptic timing manually before accepting the migration.
 4. Keep Android-specific code paths when iOS needs platform behavior; do not simplify Android UI to fit iOS.
+
+## Compiling iOS Application Target
+
+The repository now contains an iOS-only Compose Multiplatform application
+framework in `:iosApp` and an Xcode host at
+`iosApp/xcode/LastChatIOS.xcodeproj`. The host's first build phase invokes
+`:iosApp:embedAndSignAppleFrameworkForXcode`, so a developer does not need to
+copy frameworks manually.
+
+The iOS UI uses the same Material color values, shape radii, message-bubble
+geometry, and top-level fade navigation intent as Android. It is intentionally
+isolated from `:app`; introducing the iOS target therefore cannot alter Android
+rendering. New portable screens should be added to `iosApp/src/commonMain`
+first, compared against Android screenshots, and only then considered for
+shared use by Android.
+
+Current iOS app status:
+
+- device, Apple Silicon simulator, and Intel simulator Kotlin targets compile;
+- SwiftUI hosts the Compose root controller without rewriting the UI in Swift;
+- UIKit haptics implement the existing shared `PlatformHaptics` contract;
+- Darwin/NSURLSession implements HTTP and SSE, Foundation implements sandboxed
+  file storage and media encoding, Keychain implements secure settings, and
+  Apple Security implements PKCS#8 RSA/RS256 signing;
+- chat, menu, and settings navigation shells are present as parity foundations;
+- conversations, provider preferences, appearance, assistant name, and system
+  prompt persist in the app container, while provider secrets persist in Keychain;
+- production provider networking and streaming chat orchestration are wired;
+- generation can be cancelled from the composer without retaining a blank
+  assistant message, multiple assistant profiles persist with conversation
+  ownership, and endpoint/model preferences persist independently per provider;
+- the native iOS document picker copies selected image/video/audio media into
+  Application Support, persists pending attachment drafts by relative storage
+  path, sends standard `UIMessagePart` media values, and renders local images;
+- iOS state writes are serialized through a mutex and streaming messages use
+  the same one-second persistence checkpoint interval as Android, preventing an
+  older asynchronous save from overwriting newer conversation or draft state;
+- attachments, audio playback, memory, tools, local models, and the remaining
+  screens still require iOS adapters or portable repositories before the iOS
+  app is feature-complete.
+
+On macOS:
+
+1. Open `iosApp/xcode/LastChatIOS.xcodeproj`.
+2. Select an Apple development team when running on a physical device.
+3. Choose an iPhone simulator or device and run `LastChatIOS`.
+
+Cross-platform compile gates:
+
+```powershell
+./gradlew :iosApp:compileKotlinIosArm64 `
+  :iosApp:compileKotlinIosSimulatorArm64 `
+  :iosApp:compileKotlinIosX64
+```
+
+Only macOS with Xcode can perform the final link, code-sign, simulator launch,
+and screenshot comparison.
+
+`.github/workflows/ios-build.yml` performs the Kotlin/Native compile gates and
+an unsigned simulator `xcodebuild` on macOS for iOS-related pull requests.
 
 ## Practical Migration Order
 

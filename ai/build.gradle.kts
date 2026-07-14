@@ -1,10 +1,47 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.compose)
+}
+
+kotlin {
+    jvmToolchain(17)
+
+    androidTarget {
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
+    }
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+        iosX64(),
+    )
+
+    sourceSets {
+        all {
+            languageSettings.optIn("kotlin.uuid.ExperimentalUuidApi")
+            languageSettings.optIn("kotlin.time.ExperimentalTime")
+        }
+        commonMain {
+            kotlin.srcDir("src/main/java")
+            dependencies {
+                api(project(":common"))
+                api(libs.kotlinx.serialization.json)
+                api(libs.kotlinx.coroutines.core)
+                api(libs.kotlinx.datetime)
+            }
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidUnitTest {
+            kotlin.srcDir("src/test/java")
+            dependencies {
+                implementation(libs.junit)
+            }
+        }
+    }
 }
 
 android {
@@ -13,7 +50,6 @@ android {
 
     defaultConfig {
         minSdk = 26
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -23,7 +59,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -31,38 +67,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-    buildFeatures {
-        compose = true
-    }
-    tasks.withType<KotlinCompile>().configureEach {
-        compilerOptions.optIn.add("kotlin.uuid.ExperimentalUuidApi")
-        compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
-    }
+    sourceSets.getByName("main").java.setSrcDirs(emptyList<String>())
 }
 
 dependencies {
-    implementation(project(":common"))
-
-    // Compose
-    implementation(libs.androidx.core.ktx)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.material3)
-
-    // okhttp
-    api(libs.okhttp)
-    api(libs.okhttp.sse)
-    api(libs.okhttp.logging)
-
-    // kotlinx
-    api(libs.kotlinx.serialization.json)
-    api(libs.kotlinx.coroutines.core)
-    api(libs.kotlinx.datetime)
-
-    // tests
-    testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

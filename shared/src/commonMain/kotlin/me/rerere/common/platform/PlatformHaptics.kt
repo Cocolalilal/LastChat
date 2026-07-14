@@ -1,9 +1,18 @@
 package me.rerere.common.platform
 
 enum class PlatformHapticPattern {
+    Tick,
     Pop,
     Thud,
-    Success
+    Buildup,
+    Success,
+    Error,
+    DragStart,
+    DragEnd,
+    Send,
+    ScrollEdge,
+    Selection,
+    Cancel,
 }
 
 interface PlatformHaptics {

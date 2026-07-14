@@ -161,7 +161,7 @@ class GoogleProvider(
     }
 
     override suspend fun listModels(providerSetting: ProviderSetting.Google): List<Model> =
-        withContext(Dispatchers.IO) {
+        withContext(me.rerere.ai.util.providerIoDispatcher) {
             val url = buildUrl(providerSetting = providerSetting, path = "models?pageSize=100")
             val response = platformHttpClient.execute(
                 PlatformHttpRequest(
@@ -210,7 +210,7 @@ class GoogleProvider(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): MessageChunk = withContext(Dispatchers.IO) {
+    ): MessageChunk = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val requestBody = buildCompletionRequestBody(messages, params)
 
         val url = buildUrl(
@@ -692,7 +692,7 @@ class GoogleProvider(
     override suspend fun generateImage(
         providerSetting: ProviderSetting,
         params: ImageGenerationParams
-    ): ImageGenerationResult = withContext(Dispatchers.IO) {
+    ): ImageGenerationResult = withContext(me.rerere.ai.util.providerIoDispatcher) {
         require(providerSetting is ProviderSetting.Google) {
             "Expected Google provider setting"
         }
@@ -766,7 +766,7 @@ class GoogleProvider(
         providerSetting: ProviderSetting.Google,
         input: List<String>,
         model: Model
-    ): List<List<Float>> = withContext(Dispatchers.IO) {
+    ): List<List<Float>> = withContext(me.rerere.ai.util.providerIoDispatcher) {
         if (input.isEmpty()) {
             return@withContext emptyList()
         }

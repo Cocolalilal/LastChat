@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.math.round
 
 // Public API
 
@@ -353,7 +354,7 @@ private class Evaluator(private val root: JsonObject) {
         return when (elem) {
             is JsonPrimitive -> {
                 if (elem.isString) Value.Str(elem.content)
-                else elem.doubleOrNull()?.let { Value.Num("%.2f".format(it).toDouble()) } ?: Value.Str(elem.content)
+                else elem.doubleOrNull()?.let { Value.Num(round(it * 100.0) / 100.0) } ?: Value.Str(elem.content)
             }
             is JsonObject, is JsonArray -> Value.Str(elem.toString())
         }
