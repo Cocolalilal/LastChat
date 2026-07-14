@@ -142,11 +142,16 @@ fun AssistantMemorySettings(
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
+    scrollToGraphMemoryId: String? = null,
     onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
     val displayedEngine = assistant.pendingMemoryEngineId ?: assistant.resolvedMemoryEngineId()
     if (displayedEngine == BuiltInMemoryEngines.GRAPH) {
-        GraphMemoryOverview(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+        GraphMemoryOverview(
+            assistant = assistant,
+            onUpdateAssistant = onUpdateAssistant,
+            initialMemoryId = scrollToGraphMemoryId,
+        )
         return
     }
     if (displayedEngine == BuiltInMemoryEngines.OFF) {

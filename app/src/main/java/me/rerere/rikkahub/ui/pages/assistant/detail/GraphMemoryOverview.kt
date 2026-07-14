@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -219,6 +220,7 @@ internal fun MemoryOffOverview(assistant: Assistant) {
 internal fun GraphMemoryOverview(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
+    initialMemoryId: String? = null,
 ) {
     val repository = koinInject<GraphMemoryRepository>()
     val dao = koinInject<MemoryGraphDao>()
@@ -238,7 +240,7 @@ internal fun GraphMemoryOverview(
     val links = remember(allLinks, memoryIds, entityIds) {
         allLinks.filter { it.memoryId in memoryIds && it.entityId in entityIds }
     }
-    var browseOpen by remember { mutableStateOf(false) }
+    var browseOpen by remember(initialMemoryId) { mutableStateOf(initialMemoryId != null) }
     var graphOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var selectedMemory by remember { mutableStateOf<GraphMemoryEntity?>(null) }
@@ -360,6 +362,7 @@ internal fun GraphMemoryOverview(
             onForgetEntity = { repository.forgetEntity(it.id) },
             repository = repository,
             assistantId = assistant.id.toString(),
+            initialMemoryId = initialMemoryId,
         )
     }
     if (graphOpen) {
@@ -624,6 +627,29 @@ private fun relaxGraph(
     }
 }
 
+private fun stabilizeGraphParticles(
+    particles: MutableList<GraphParticle>,
+    maxExtent: Float = 1.22f,
+) {
+    if (particles.isEmpty()) return
+    val centerX = particles.sumOf { it.x.toDouble() }.toFloat() / particles.size
+    val centerY = particles.sumOf { it.y.toDouble() }.toFloat() / particles.size
+    particles.forEach { particle ->
+        particle.x -= centerX
+        particle.y -= centerY
+    }
+    val extent = particles.maxOfOrNull { hypot(it.x, it.y) } ?: return
+    if (extent > maxExtent) {
+        val shrink = maxExtent / extent
+        particles.forEach { particle ->
+            particle.x *= shrink
+            particle.y *= shrink
+            particle.velocityX *= shrink
+            particle.velocityY *= shrink
+        }
+    }
+}
+
 @Composable
 private fun GraphCanvas(
     memories: List<GraphMemoryEntity>,
@@ -673,11 +699,13 @@ private fun GraphCanvas(
         if (!interactive || reheatToken == 0) return@LaunchedEffect
         if (motionPolicy.reduceMotion) {
             repeat(100) { relaxGraph(model, particles, damping = .78f) }
+            stabilizeGraphParticles(particles)
             renderTick++
         } else {
             repeat(150) {
                 withFrameNanos { }
                 repeat(2) { relaxGraph(model, particles) }
+                stabilizeGraphParticles(particles)
                 renderTick++
             }
         }
@@ -737,6 +765,10 @@ private fun GraphCanvas(
                     val viewportCenter = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
                     val worldVector = gestureState.lastCentroid - viewportCenter - translation
                     translation = currentCentroid - viewportCenter - worldVector * (newScale / oldScale)
+                    translation = Offset(
+                        translation.x.coerceIn(-viewportSize.width * .45f, viewportSize.width * .45f),
+                        translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
+                    )
                     scale = newScale
                     gestureState.lastCentroid = currentCentroid
                     gestureState.lastSpan = currentSpan
@@ -761,6 +793,10 @@ private fun GraphCanvas(
                             }
                         } else {
                             translation += delta
+                            translation = Offset(
+                                translation.x.coerceIn(-viewportSize.width * .45f, viewportSize.width * .45f),
+                                translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
+                            )
                         }
                     }
                     gestureState.lastX = event.x
@@ -772,9 +808,9 @@ private fun GraphCanvas(
                 if (nodeIndex != null && !gestureState.didDrag) {
                     haptics.perform(HapticPattern.Pop)
                     currentOnNodeClick?.invoke(model.nodes[nodeIndex])
-                } else {
+                } else if (gestureState.didDrag) {
                     if (nodeIndex != null) haptics.perform(HapticPattern.DragEnd)
-                    reheatToken++
+                    if (nodeIndex != null) reheatToken++
                 }
                 gestureState.nodeIndex = null
             }
@@ -913,15 +949,25 @@ private fun GraphMemoryBrowser(
     onForgetEntity: suspend (GraphEntityEntity) -> Unit,
     repository: GraphMemoryRepository,
     assistantId: String,
+    initialMemoryId: String? = null,
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var newMemory by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     val toaster = LocalToaster.current
     val filteredMemories = memories.filter { it.content.contains(query, true) }
     val filteredEntities = entities.filter { it.canonicalName.contains(query, true) }
+    LaunchedEffect(initialMemoryId, memories) {
+        val targetIndex = memories.indexOfFirst { it.id == initialMemoryId }
+        if (targetIndex >= 0) {
+            tab = 0
+            query = ""
+            listState.scrollToItem(targetIndex)
+        }
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
             topBar = {
@@ -951,6 +997,7 @@ private fun GraphMemoryBrowser(
         ) { padding ->
             LazyColumn(
                 Modifier.fillMaxSize().padding(padding),
+                state = listState,
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -970,7 +1017,11 @@ private fun GraphMemoryBrowser(
                             Surface(
                                 modifier = Modifier.fillMaxWidth().clickable { onMemory(memory) },
                                 shape = shape,
-                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                color = if (memory.id == initialMemoryId) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainer
+                                },
                             ) {
                                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.Memory, null, tint = MaterialTheme.colorScheme.primary)
