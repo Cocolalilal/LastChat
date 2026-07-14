@@ -1,8 +1,9 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -500,16 +501,6 @@ private class GraphParticle(
     var velocityY: Float = 0f,
 )
 
-private class GraphGestureState {
-    var nodeIndex: Int? = null
-    var didDrag = false
-    var dragDistance = 0f
-    var lastX = 0f
-    var lastY = 0f
-    var lastCentroid = Offset.Zero
-    var lastSpan = 0f
-}
-
 private fun buildGraphVisualModel(
     memories: List<GraphMemoryEntity>,
     entities: List<GraphEntityEntity>,
@@ -673,7 +664,6 @@ private fun GraphCanvas(
         buildGraphVisualModel(memories, entities, links, maxNodes = if (interactive) 68 else 46)
     }
     val particles = remember(model) { createGraphParticles(model) }
-    val gestureState = remember(model) { GraphGestureState() }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
     var scale by remember { mutableFloatStateOf(1f) }
     var translation by remember { mutableStateOf(Offset.Zero) }
@@ -711,76 +701,58 @@ private fun GraphCanvas(
         }
     }
 
-    val interactionModifier = if (!interactive) Modifier else Modifier.pointerInteropFilter { event ->
-        fun centroid(): Offset {
-            var x = 0f
-            var y = 0f
-            for (index in 0 until event.pointerCount) {
-                x += event.getX(index)
-                y += event.getY(index)
-            }
-            return Offset(x / event.pointerCount, y / event.pointerCount)
-        }
-        fun span(center: Offset): Float {
-            var total = 0f
-            for (index in 0 until event.pointerCount) {
-                total += (Offset(event.getX(index), event.getY(index)) - center).getDistance()
-            }
-            return total / event.pointerCount
-        }
+    val interactionModifier = if (!interactive) Modifier else Modifier.pointerInput(model, viewportSize) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val hitRadius = with(density) { 32.dp.toPx() }
+            var nodeIndex = model.nodes.indices
+                .minByOrNull { (worldToScreen(it) - down.position).getDistance() }
+                ?.takeIf { (worldToScreen(it) - down.position).getDistance() <= hitRadius }
+            var didDrag = false
+            var dragDistance = 0f
+            selectedNode = nodeIndex
 
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val position = Offset(event.x, event.y)
-                val hitRadius = with(density) { 32.dp.toPx() }
-                gestureState.nodeIndex = model.nodes.indices
-                    .minByOrNull { (worldToScreen(it) - position).getDistance() }
-                    ?.takeIf { (worldToScreen(it) - position).getDistance() <= hitRadius }
-                gestureState.didDrag = false
-                gestureState.dragDistance = 0f
-                gestureState.lastX = event.x
-                gestureState.lastY = event.y
-                selectedNode = gestureState.nodeIndex
-            }
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                gestureState.nodeIndex = null
-                gestureState.didDrag = true
-                gestureState.lastCentroid = centroid()
-                gestureState.lastSpan = span(gestureState.lastCentroid)
-            }
-            MotionEvent.ACTION_POINTER_UP -> {
-                if (event.pointerCount == 2) {
-                    val remainingIndex = if (event.actionIndex == 0) 1 else 0
-                    gestureState.lastX = event.getX(remainingIndex)
-                    gestureState.lastY = event.getY(remainingIndex)
-                }
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount >= 2) {
-                    val currentCentroid = centroid()
-                    val currentSpan = span(currentCentroid)
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.isEmpty()) break
+
+                if (pressed.size >= 2) {
+                    nodeIndex = null
+                    didDrag = true
+                    val currentCentroid = pressed
+                        .map { it.position }
+                        .reduce(Offset::plus) / pressed.size.toFloat()
+                    val previousCentroid = pressed
+                        .map { it.previousPosition }
+                        .reduce(Offset::plus) / pressed.size.toFloat()
+                    val currentSpan = pressed.sumOf {
+                        (it.position - currentCentroid).getDistance().toDouble()
+                    }.toFloat() / pressed.size
+                    val previousSpan = pressed.sumOf {
+                        (it.previousPosition - previousCentroid).getDistance().toDouble()
+                    }.toFloat() / pressed.size
                     val oldScale = scale
-                    val newScale = (oldScale * if (gestureState.lastSpan > 0f) currentSpan / gestureState.lastSpan else 1f)
-                        .coerceIn(.55f, 3.2f)
+                    val zoom = if (previousSpan > 1f) currentSpan / previousSpan else 1f
+                    val newScale = (oldScale * zoom).coerceIn(.55f, 3.2f)
                     val viewportCenter = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
-                    val worldVector = gestureState.lastCentroid - viewportCenter - translation
-                    translation = currentCentroid - viewportCenter - worldVector * (newScale / oldScale)
+                    val graphVector = previousCentroid - viewportCenter - translation
+                    translation = currentCentroid - viewportCenter - graphVector * (newScale / oldScale)
                     translation = Offset(
                         translation.x.coerceIn(-viewportSize.width * .45f, viewportSize.width * .45f),
                         translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
                     )
                     scale = newScale
-                    gestureState.lastCentroid = currentCentroid
-                    gestureState.lastSpan = currentSpan
+                    event.changes.forEach { it.consume() }
                 } else {
-                    val delta = Offset(event.x - gestureState.lastX, event.y - gestureState.lastY)
-                    gestureState.dragDistance += delta.getDistance()
-                    if (!gestureState.didDrag && gestureState.dragDistance >= viewConfiguration.touchSlop) {
-                        gestureState.didDrag = true
-                        if (gestureState.nodeIndex != null) haptics.perform(HapticPattern.DragStart)
+                    val change = pressed.first()
+                    val delta = change.position - change.previousPosition
+                    dragDistance += delta.getDistance()
+                    if (!didDrag && dragDistance >= viewConfiguration.touchSlop) {
+                        didDrag = true
+                        if (nodeIndex != null) haptics.perform(HapticPattern.DragStart)
                     }
-                    if (gestureState.didDrag) {
-                        val nodeIndex = gestureState.nodeIndex
+                    if (didDrag) {
                         if (nodeIndex != null) {
                             val graphScale = graphScale()
                             if (graphScale.x > 0f && graphScale.y > 0f) {
@@ -798,27 +770,19 @@ private fun GraphCanvas(
                                 translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
                             )
                         }
+                        change.consume()
                     }
-                    gestureState.lastX = event.x
-                    gestureState.lastY = event.y
                 }
             }
-            MotionEvent.ACTION_UP -> {
-                val nodeIndex = gestureState.nodeIndex
-                if (nodeIndex != null && !gestureState.didDrag) {
-                    haptics.perform(HapticPattern.Pop)
-                    currentOnNodeClick?.invoke(model.nodes[nodeIndex])
-                } else if (gestureState.didDrag) {
-                    if (nodeIndex != null) haptics.perform(HapticPattern.DragEnd)
-                    if (nodeIndex != null) reheatToken++
-                }
-                gestureState.nodeIndex = null
-            }
-            MotionEvent.ACTION_CANCEL -> {
-                gestureState.nodeIndex = null
+
+            if (nodeIndex != null && !didDrag) {
+                haptics.perform(HapticPattern.Pop)
+                currentOnNodeClick?.invoke(model.nodes[nodeIndex])
+            } else if (nodeIndex != null) {
+                haptics.perform(HapticPattern.DragEnd)
+                reheatToken++
             }
         }
-        true
     }
 
     Canvas(modifier.onSizeChanged { viewportSize = it }.then(interactionModifier)) {

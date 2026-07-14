@@ -752,6 +752,7 @@ class GenerationHandler(
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
+        activeConversationId: Uuid? = null,
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -1051,10 +1052,14 @@ class GenerationHandler(
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
                 val recentConversations = conversationRepo.getRecentConversations(
                     assistantId = assistant.id,
-                    limit = 3,
-                ).filter { 
-                    runtimeInfo.isToday(it.updateAt)
-                }
+                    // The active conversation is normally the newest result, so fetch one
+                    // extra before excluding it to retain up to three prior conversations.
+                    limit = 4,
+                ).filter { conversation ->
+                    conversation.id != activeConversationId &&
+                        conversation.title.isNotBlank() &&
+                        runtimeInfo.isToday(conversation.updateAt)
+                }.take(3)
                 recentConversations.map { conversation ->
                     AssistantMemory(
                         id = -1,
@@ -1393,6 +1398,7 @@ class GenerationHandler(
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
+            activeConversationId = activeConversationId,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
