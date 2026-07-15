@@ -96,11 +96,99 @@ existing localized content and dropdown actions; iOS wires select, create,
 rename, and delete actions to its app-container repository. The shared iOS
 haptic contract exposes the same twelve semantic patterns as Android's
 `PremiumHaptics`, mapped to UIKit selection, impact, and notification feedback.
+Top-app-bar back navigation is source-shared as well: Android and iOS use the
+same 48 dp Material control, canonical auto-mirrored rounded-arrow vector,
+0.85 pressed scale, and damping 0.6/stiffness 300 spring. Platform wrappers
+retain Android resource localization/navigation and iOS route/UIKit-haptic
+behavior.
+The production composer has begun moving through the same source-enforced
+boundary. `:ui-core` now owns the exact bottom-aligned eight-dp row gap, 48 dp
+circular add/record Surface, one-dp outline at 60 percent alpha, 24 dp input
+capsule, 48 dp minimum height, and the embedded 36 dp Picker/Send/Loading action
+with Android's 250/150 ms vertical depth transition and rounded Add, ArrowUpward,
+and Stop vectors. Android's real `MinimalChatInput` executes the shared row,
+add Surface, and capsule while retaining blur, STT long press, attachments,
+editing, model/tool pickers, questionnaires, approvals, suggestions, and
+PremiumHaptics. iOS now uses the same shell with the modern `TextFieldState`
+API, identical 16/12/52/12 dp text padding and five-line limit, in-capsule
+attachments, native file selection, Send/Cancel haptics, attachment-only sends,
+and provider-settings handoff from the empty Picker state. The Android action's
+full state machine is now source-shared too: one enum and renderer owns Picker,
+Send, Loading, STT, STT recording/finalization, questionnaire next/submit, and
+tool-denial container colors, 150/250 ms fade/scale/slide depth ordering, and
+questionnaire-specific horizontal direction. Both Android's embedded 36 dp
+action and full-screen 56 dp action use it, while Android retains exact Material
+icons, `ModelSelector`, STT calls, questionnaire/tool routing, and haptics in
+slots. iOS uses the reachable Picker/Send/Loading subset. Exact media attachment
+tiles are source-shared as well: the same 84 dp lazy strip, 12 dp inset padding,
+10 dp gaps, animated 22 dp scroll-edge masks, 60 dp image/video/audio/document
+tiles, pressed image scale, elevations, and both production removal treatments
+now render on Android and iOS. Platform adapters retain Android crop and
+duplicate-URI cleanup behavior and iOS sandbox-file state and haptics.
+Sent-message attachments now cross the same boundary: `:ui-core` owns Android's
+full-width direction-aware lazy row, eight-dp gaps, 32 dp animated edge masks,
+and 72 dp document tile. Android retains zoomable image previews, archived
+grayscale state, native open intents, and attachment metadata collection in its
+adapter; iOS uses Coil thumbnails and the shared file tiles outside the text
+bubble instead of placeholder labels inside it.
+The chat toolbar's drawer button is source-shared too, including its 48 dp pill
+surface, one-dp outline at 60 percent alpha, and canonical rounded Menu glyph.
+Android continues to attach its existing blur effect and blurred container
+color to that shared surface; iOS uses the same geometry and paint tokens for
+its menu navigation action. The menu presentation itself now uses
+`ModalNavigationDrawer` on iOS instead of navigating to an iOS-only full-screen
+page. Both platforms render through the same modal sheet implementation with
+the Android production 32 dp trailing corners and
+`surfaceContainerLow` paint; selecting a conversation/assistant or creating a
+chat dismisses back to the still-mounted chat, while settings/statistics close
+the drawer before route navigation.
+Conversation search inside that drawer is now source-shared as well. Android
+and iOS execute the same search-field capsule, transparent indicator paint,
+36/20 dp close control and glyph, focus expansion/keyboard dismissal behavior,
+100 ms focus handoff, hint placement, and horizontal spacing. Android keeps its
+resource-backed placeholder/hint and repository search; iOS filters its
+persisted conversation titles through the same control and displays the same
+16 dp empty-result surface treatment.
+The drawer footer action is source-shared too: Android and iOS now execute the
+same 42/48 dp action Surface, 22 dp icon slot, circular shape, 0.85 pressed
+scale, 0.7 pressed alpha, damping 0.6/stiffness 300 spring, content paint, and
+rounded Settings vector. Android retains its resource tooltip and
+`PremiumHaptics`; iOS maps the same callback to UIKit Pop feedback and matches
+the Android footer's 42 dp assistant pill, 30 dp avatar, spacing, typography,
+and `surfaceContainerHighest` paint.
+The production assistant picker is now source-shared rather than recreated for
+iOS. The common sheet owns the disabled native sheet gestures, 48 dp manual
+drag-dismiss threshold, tag chips, fixed initial height, selected capsule
+paint, animated 24/10/50 dp grouped corners, 40 dp avatar slot, one-line prompt,
+48 dp edit target, transition crossfade/spinner, and dismissal ordering.
+Android supplies its localized strings, UUID-backed assistants/tags, `UIAvatar`,
+navigation, dark-mode state, and PremiumHaptics callbacks. iOS supplies its
+persisted assistant records, initial avatars, UIKit haptics, settings route, and
+real assistant-to-conversation selection. The former iOS-only assistant chips
+and standalone drawer New Chat button were removed because Android's drawer
+does not contain those controls.
+Drawer quick actions now use one shared renderer too. The common implementation
+owns the 24 dp outer group clip, four-dp item spacing, 10 dp row shape,
+`surfaceContainerHighest` paint, 16 dp padding and icon/text gap, 24 dp icon
+slot, title typography, and the exact Android Rounded BarChart vector. Android
+supplies localized Imagine/Statistics labels, its existing image glyph,
+navigation, and Tick haptics in both modal and collapsed-rail presentations.
+iOS places the shared Statistics row directly below search and uses Android's
+same spring fade/expand collapse while search is expanded. Imagine remains
+absent on iOS until the actual image-generation route/provider flow is ported;
+no inert parity-only control is shown.
 The production statistics-card implementation is shared as well, including its
 136 dp minimum height, 24 dp card shape, icon chip, padding, typography, color
 alpha, and value/subtitle alignment. Android retains its localized labels and
 icons; iOS feeds the same card with totals from its persisted conversations and
-provider token usage. The activity heatmap remains pending shared visual work.
+provider token usage. The production activity heatmap renderer is now shared
+too: both apps execute the same 264 dp card layout, month-window geometry,
+horizontal scrolling and current-month positioning, cell intensity and month
+boundary painting, today outline, selected-month chip, legend, and selection
+haptic callback. Android still supplies its resource-backed labels, plurals,
+locale month names, and number formatting. iOS groups the creation dates of its
+persisted messages into the same shared calendar model and renders that data
+through the same composable.
 
 The portable `:tts` source set currently includes its models, settings,
 contracts, voice resolution, all eight cloud providers, text chunking, and

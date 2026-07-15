@@ -3,14 +3,11 @@ package me.rerere.rikkahub.ui.pages.chat
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.core.net.toUri
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +32,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,10 +57,8 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -84,6 +77,12 @@ import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.nav.LastChatModalDrawerSheet
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerAction
+import me.rerere.rikkahub.ui.components.nav.LastChatSettingsIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatBarChartIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickAction
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickActionGroup
 
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -278,79 +277,34 @@ fun ChatDrawerContent(
                 },
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
-                    // Quick Action Buttons (settings-style grouping)
-                    val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .clip(RoundedCornerShape(24.dp)),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val haptics = rememberPremiumHaptics()
-                        // Imagine button
-                        Surface(
+                    val haptics = rememberPremiumHaptics()
+                    LastChatDrawerQuickActionGroup {
+                        LastChatDrawerQuickAction(
+                            label = stringResource(R.string.chat_drawer_imagine),
                             onClick = {
-                                haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.ImageGen)
                                 dismissDrawerAfterSelection()
                             },
-                            color = itemColor,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
+                            onHaptic = { haptics.perform(HapticPattern.Tick) },
+                            icon = {
                                 Icon(
                                     imageVector = Icons.Rounded.Image,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                Text(
-                                    text = stringResource(R.string.chat_drawer_imagine),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        // Stats button
-                        Surface(
+                            },
+                        )
+                        LastChatDrawerQuickAction(
+                            label = stringResource(R.string.menu_statistics_title),
                             onClick = {
-                                haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.Menu)
                                 dismissDrawerAfterSelection()
                             },
-                            color = itemColor,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.BarChart,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = stringResource(R.string.menu_statistics_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                            onHaptic = { haptics.perform(HapticPattern.Tick) },
+                            icon = { LastChatBarChartIcon(contentDescription = null) },
+                        )
                     }
-                }
-            }
                 }
             )
 
@@ -451,7 +405,7 @@ fun ChatDrawerContent(
                 // Settings icon
                 DrawerAction(
                     icon = {
-                        Icon(Icons.Rounded.Settings, null)
+                        LastChatSettingsIcon(contentDescription = null)
                     },
                     label = { Text(stringResource(R.string.settings)) },
                     onClick = {
@@ -486,10 +440,8 @@ fun ChatDrawerContent(
     // 昵称编辑对话框
     when (presentation) {
         ChatDrawerPresentation.Modal -> {
-            ModalDrawerSheet(
+            LastChatModalDrawerSheet(
                 modifier = Modifier.widthIn(max = drawerWidth),
-                drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 drawerContent()
             }
@@ -610,7 +562,7 @@ fun CollapsedChatSideRail(
                     size = 48.dp
                 )
                 DrawerAction(
-                    icon = { Icon(Icons.Rounded.BarChart, null) },
+                    icon = { LastChatBarChartIcon(contentDescription = null) },
                     label = { Text(stringResource(R.string.menu_statistics_title)) },
                     onClick = onOpenStatistics,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -641,7 +593,7 @@ fun CollapsedChatSideRail(
             }
 
             DrawerAction(
-                icon = { Icon(Icons.Rounded.Settings, null) },
+                icon = { LastChatSettingsIcon(contentDescription = null) },
                 label = { Text(stringResource(R.string.settings)) },
                 onClick = onOpenSettings,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -661,51 +613,20 @@ private fun DrawerAction(
     shape: Shape = CircleShape,
     size: Dp = 42.dp,
 ) {
-    val containerSize = size
-    val iconSize = 22.dp
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.85f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f,
-            stiffness = 300f
-        ),
-        label = "drawer_scale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f,
-            stiffness = 300f
-        ),
-        label = "drawer_alpha"
-    )
     val haptics = rememberPremiumHaptics()
-    Surface(
-        onClick = {
-            haptics.perform(HapticPattern.Pop)
-            onClick()
-        },
-        modifier = modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            this.alpha = alpha
-        },
-        interactionSource = interactionSource,
-        color = containerColor,
+    LastChatDrawerAction(
+        onClick = onClick,
+        onHaptic = { haptics.perform(HapticPattern.Pop) },
+        modifier = modifier,
+        containerColor = containerColor,
         shape = shape,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        size = size,
     ) {
-        Tooltip(
-            tooltip = {
-               label()
-            }
-        ) {
+        containerSize, iconSize ->
+        Tooltip(tooltip = { label() }) {
             Box(
-                modifier = Modifier
-                    .size(containerSize),
-                contentAlignment = Alignment.Center
+                modifier = Modifier.size(containerSize),
+                contentAlignment = Alignment.Center,
             ) {
                 Box(modifier = Modifier.size(iconSize)) {
                     icon()

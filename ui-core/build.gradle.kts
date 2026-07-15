@@ -94,11 +94,13 @@ kotlin {
     iosX64()
 
     sourceSets.commonMain.dependencies {
+        implementation(project(":shared"))
         api(compose.runtime)
         api(compose.foundation)
         api(compose.ui)
         api(compose.material3)
         implementation(compose.components.resources)
+        implementation(libs.kotlinx.datetime)
     }
     sourceSets.commonMain {
         kotlin.srcDir(generatedPresetSources)
@@ -125,7 +127,7 @@ tasks.matching {
     dependsOn(prepareSharedFontResources)
 }
 
-tasks.matching { it.name.startsWith("compileKotlin") || it.name.startsWith("compileDebugKotlin") }
+tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }
     .configureEach { dependsOn(generateSharedPresetSchemes) }
 
 android {

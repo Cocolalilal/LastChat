@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,14 +30,11 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,11 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -67,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
@@ -77,6 +66,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.chat.ConversationRowSurface
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerSearch
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -119,95 +109,14 @@ fun ColumnScope.ConversationList(
     quickActions: (@Composable () -> Unit)? = null
 ) {
     val navController = LocalNavController.current
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    val focusRequester = remember { FocusRequester() }
-
-    // Auto-expand when search query is non-empty
-    LaunchedEffect(searchQuery) {
-        if (searchQuery.isNotEmpty()) {
-            onSearchExpandedChange(true)
-        }
-    }
-
-    // Keep a zero-height focus target to prevent auto-focusing the search field
-    // without introducing layout jumps when search enters/leaves expanded state.
-    Box(
-        modifier = Modifier
-            .height(0.dp)
-            .focusable()
+    LastChatDrawerSearch(
+        query = searchQuery,
+        onQueryChange = onSearchQueryChange,
+        expanded = isSearchExpanded,
+        onExpandedChange = onSearchExpandedChange,
+        placeholder = stringResource(id = R.string.chat_page_search_placeholder),
+        hint = stringResource(R.string.chat_page_search_hint),
     )
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (isSearchExpanded) {
-                IconButton(
-                    onClick = {
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                        onSearchExpandedChange(false)
-                        onSearchQueryChange("")
-                    },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            TextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused && !isSearchExpanded) {
-                            onSearchExpandedChange(true)
-                        }
-                    },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-                placeholder = {
-                    Text(stringResource(id = R.string.chat_page_search_placeholder))
-                },
-                singleLine = true
-            )
-        }
-
-        AnimatedVisibility(visible = isSearchExpanded || searchQuery.isNotBlank()) {
-            Text(
-                text = stringResource(R.string.chat_page_search_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = if (isSearchExpanded) 44.dp else 12.dp)
-            )
-        }
-    }
-
-    // Auto-focus search field when expanded
-    LaunchedEffect(isSearchExpanded) {
-        if (isSearchExpanded) {
-            kotlinx.coroutines.delay(100)
-            try { focusRequester.requestFocus() } catch (_: Exception) {}
-        }
-    }
 
 
     Box(modifier = modifier) {

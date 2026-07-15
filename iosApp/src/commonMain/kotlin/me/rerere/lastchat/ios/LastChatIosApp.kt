@@ -1,13 +1,18 @@
 package me.rerere.lastchat.ios
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -17,21 +22,27 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,21 +51,29 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,14 +81,43 @@ import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.platform.PlatformFilePicker
+import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.PlatformHapticPattern
 import me.rerere.common.platform.PlatformHaptics
+import me.rerere.common.calendar.CalendarHeatmapDay
+import me.rerere.common.calendar.CalendarMonth
 import me.rerere.rikkahub.ui.components.chat.BubblePosition
 import me.rerere.rikkahub.ui.components.chat.BubbleRole
 import me.rerere.rikkahub.ui.components.chat.ConversationRowSurface
 import me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble
 import me.rerere.rikkahub.ui.components.chat.TypingIndicator
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAction
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerActionButton
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerDefaultActionContent
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddButton
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddIcon
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerCapsule
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAttachmentRow
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAudioIcon
+import me.rerere.rikkahub.ui.components.chat.LastChatDocumentAttachmentTile
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerImageAttachment
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerMediaAttachment
+import me.rerere.rikkahub.ui.components.chat.LastChatMessageAttachmentRow
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerRow
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerVideoIcon
+import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerItem
+import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerSheet
+import me.rerere.rikkahub.ui.components.nav.LastChatBackButton
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerAction
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerActionIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatBarChartIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickAction
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickActionGroup
+import me.rerere.rikkahub.ui.components.nav.LastChatMenuButton
+import me.rerere.rikkahub.ui.components.nav.LastChatModalDrawerSheet
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerSearch
 import me.rerere.rikkahub.ui.components.stats.LastChatStatCard
+import me.rerere.rikkahub.ui.components.stats.LastChatActivityHeatmapCard
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIcon
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIconGlyph
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -79,8 +127,12 @@ import me.rerere.rikkahub.ui.theme.presetColorScheme
 import me.rerere.rikkahub.ui.theme.rememberLastChatFontFamily
 import me.rerere.rikkahub.ui.theme.withLastChatAmoledSurface
 import coil3.compose.AsyncImage
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlinx.coroutines.launch
 
-private enum class IosRoute { Chat, Menu, Settings, Statistics }
+private enum class IosRoute { Chat, Settings, Statistics }
 
 private data class DisplayMessage(
     val text: String,
@@ -111,34 +163,56 @@ fun LastChatIosApp(
         shapes = Shapes,
     ) {
         var route by remember { mutableStateOf(IosRoute.Chat) }
+        val drawerState = rememberDrawerState(DrawerValue.Closed)
+        val scope = rememberCoroutineScope()
         AnimatedContent(
             targetState = route,
             transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) },
             label = "lastchat-route",
         ) { destination ->
             when (destination) {
-                IosRoute.Chat -> ChatPage(
-                    state = state,
-                    onSend = controller::send,
-                    onCancelGeneration = controller::cancelGeneration,
-                    onPickFile = { filePicker.pickFile(controller::handlePickedFile) },
-                    onRemovePendingAttachment = controller::removePendingAttachment,
-                    platformHaptics = platformHaptics,
-                    onOpenMenu = { route = IosRoute.Menu },
-                )
-                IosRoute.Menu -> MenuPage(
-                    state = state,
-                    onNewChat = controller::newConversation,
-                    onSelectConversation = controller::selectConversation,
-                    onRenameConversation = controller::renameConversation,
-                    onDeleteConversation = controller::deleteConversation,
-                    onNewAssistant = controller::newAssistant,
-                    onSelectAssistant = controller::selectAssistant,
-                    platformHaptics = platformHaptics,
-                    onBack = { route = IosRoute.Chat },
-                    onSettings = { route = IosRoute.Settings },
-                    onStatistics = { route = IosRoute.Statistics },
-                )
+                IosRoute.Chat -> ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        LastChatModalDrawerSheet(
+                            modifier = Modifier.widthIn(max = 320.dp),
+                        ) {
+                            MenuPage(
+                                state = state,
+                                onSelectConversation = controller::selectConversation,
+                                onRenameConversation = controller::renameConversation,
+                                onDeleteConversation = controller::deleteConversation,
+                                onSelectAssistant = controller::selectAssistant,
+                                darkTheme = useDarkTheme,
+                                platformHaptics = platformHaptics,
+                                onDismiss = { scope.launch { drawerState.close() } },
+                                onSettings = {
+                                    scope.launch {
+                                        drawerState.close()
+                                        route = IosRoute.Settings
+                                    }
+                                },
+                                onStatistics = {
+                                    scope.launch {
+                                        drawerState.close()
+                                        route = IosRoute.Statistics
+                                    }
+                                },
+                            )
+                        }
+                    },
+                ) {
+                    ChatPage(
+                        state = state,
+                        onSend = controller::send,
+                        onCancelGeneration = controller::cancelGeneration,
+                        onPickFile = { filePicker.pickFile(controller::handlePickedFile) },
+                        onRemovePendingAttachment = controller::removePendingAttachment,
+                        platformHaptics = platformHaptics,
+                        onOpenMenu = { scope.launch { drawerState.open() } },
+                        onOpenSettings = { route = IosRoute.Settings },
+                    )
+                }
                 IosRoute.Settings -> SettingsPage(
                     state = state,
                     onSaveProvider = controller::saveProvider,
@@ -148,12 +222,14 @@ fun LastChatIosApp(
                     onNewAssistant = controller::newAssistant,
                     onSelectAssistant = controller::selectAssistant,
                     onDeleteAssistant = controller::deleteAssistant,
-                    onBack = { route = IosRoute.Menu },
+                    platformHaptics = platformHaptics,
+                    onBack = { route = IosRoute.Chat },
                 )
                 IosRoute.Statistics -> StatisticsPage(
                     state = state,
                     darkTheme = useDarkTheme,
-                    onBack = { route = IosRoute.Menu },
+                    platformHaptics = platformHaptics,
+                    onBack = { route = IosRoute.Chat },
                 )
             }
         }
@@ -170,8 +246,14 @@ private fun ChatPage(
     onRemovePendingAttachment: (String) -> Unit,
     platformHaptics: PlatformHaptics,
     onOpenMenu: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
-    var input by remember { mutableStateOf("") }
+    val inputState = remember { TextFieldState() }
+    val orderedPendingAttachments = remember(state.pendingAttachments) {
+        PlatformPickedFileKind.entries.flatMap { kind ->
+            state.pendingAttachments.filter { attachment -> attachment.kind == kind }
+        }
+    }
     val conversationMessages = state.selectedConversation?.messages.orEmpty()
         .filter { message ->
             message.toText().isNotBlank() || message.parts.any {
@@ -197,65 +279,158 @@ private fun ChatPage(
         )
     }
     fun send() {
-        val text = input.trim()
-        if (text.isEmpty()) return
+        val text = inputState.text.toString().trim()
+        if (text.isEmpty() && state.pendingAttachments.isEmpty()) return
         onSend(text)
-        input = ""
-        platformHaptics.perform(PlatformHapticPattern.Pop)
+        inputState.setTextAndPlaceCursorAtEnd("")
+        platformHaptics.perform(PlatformHapticPattern.Send)
     }
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
         topBar = {
             TopAppBar(
                 title = { Text(state.assistant.name, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = { TextButton(onClick = onOpenMenu) { Text("Menu") } },
+                navigationIcon = {
+                    LastChatMenuButton(
+                        onClick = onOpenMenu,
+                        contentDescription = "Messages",
+                    )
+                },
             )
         },
         bottomBar = {
             Column(
-                modifier = Modifier.fillMaxWidth().imePadding().padding(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (state.pendingAttachments.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                LastChatComposerRow {
+                    LastChatComposerAddButton(
+                        onClick = {
+                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                            onPickFile()
+                        },
+                        onLongClick = {},
                     ) {
-                        state.pendingAttachments.forEach { attachment ->
-                            TextButton(onClick = { onRemovePendingAttachment(attachment.storagePath) }) {
-                                Text("${attachment.displayName}  ×", maxLines = 1)
+                        LastChatComposerAddIcon(contentDescription = "Attach file")
+                    }
+                    LastChatComposerCapsule {
+                        Column(Modifier.fillMaxWidth()) {
+                            if (state.pendingAttachments.isNotEmpty()) {
+                                LastChatComposerAttachmentRow {
+                                    items(
+                                        items = orderedPendingAttachments,
+                                        key = { attachment -> attachment.storagePath },
+                                    ) { attachment ->
+                                        val remove = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            onRemovePendingAttachment(attachment.storagePath)
+                                        }
+                                        when (attachment.kind) {
+                                            PlatformPickedFileKind.Image -> {
+                                                LastChatComposerImageAttachment(
+                                                    onClick = {},
+                                                    onRemove = remove,
+                                                    removeContentDescription = "Remove attachment",
+                                                ) {
+                                                    AsyncImage(
+                                                        model = attachment.localUrl,
+                                                        contentDescription = attachment.displayName,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                    )
+                                                }
+                                            }
+                                            PlatformPickedFileKind.Video -> {
+                                                LastChatComposerMediaAttachment(onRemove = remove) {
+                                                    LastChatComposerVideoIcon()
+                                                }
+                                            }
+                                            PlatformPickedFileKind.Audio -> {
+                                                LastChatComposerMediaAttachment(onRemove = remove) {
+                                                    LastChatComposerAudioIcon()
+                                                }
+                                            }
+                                            PlatformPickedFileKind.Document -> {
+                                                LastChatDocumentAttachmentTile(
+                                                    fileName = attachment.displayName,
+                                                    modifier = Modifier.size(60.dp),
+                                                    onRemove = remove,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Box(Modifier.fillMaxWidth()) {
+                                TextField(
+                                    state = inputState,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 1.dp),
+                                    placeholder = {
+                                        Text(
+                                            "Message ${state.assistant.name}",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                                    contentPadding = PaddingValues(
+                                        start = 16.dp,
+                                        top = 12.dp,
+                                        end = 52.dp,
+                                        bottom = 12.dp,
+                                    ),
+                                    colors = TextFieldDefaults.colors().copy(
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                    ),
+                                )
+                                val action = when {
+                                    state.generating -> LastChatComposerAction.Loading
+                                    inputState.text.isNotBlank() || state.pendingAttachments.isNotEmpty() ->
+                                        LastChatComposerAction.Send
+                                    else -> LastChatComposerAction.Picker
+                                }
+                                LastChatComposerActionButton(
+                                    action = action,
+                                    onClick = {
+                                        when (action) {
+                                            LastChatComposerAction.Loading -> {
+                                                onCancelGeneration()
+                                                platformHaptics.perform(PlatformHapticPattern.Cancel)
+                                            }
+                                            LastChatComposerAction.Send -> send()
+                                            LastChatComposerAction.Picker -> {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onOpenSettings()
+                                            }
+                                            else -> Unit
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(6.dp)
+                                        .size(36.dp),
+                                    content = { currentAction ->
+                                        LastChatComposerDefaultActionContent(currentAction) {
+                                            Text(
+                                                text = state.provider.modelId.firstOrNull()?.uppercase() ?: "M",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TextButton(onClick = onPickFile, enabled = !state.generating) { Text("+") }
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        shape = AppShapes.InputField,
-                        keyboardActions = KeyboardActions(onSend = { send() }),
-                        maxLines = 5,
-                    )
-                    Button(
-                        onClick = {
-                            if (state.generating) {
-                                onCancelGeneration()
-                                platformHaptics.perform(PlatformHapticPattern.Cancel)
-                            } else {
-                                send()
-                            }
-                        },
-                        modifier = Modifier.size(52.dp),
-                        shape = AppShapes.IconButton,
-                        contentPadding = ButtonDefaults.ContentPadding,
-                    ) { Text(if (state.generating) "■" else "↑") }
                 }
             }
         },
@@ -285,101 +460,145 @@ private fun ChatPage(
 
 @Composable
 private fun MessageBubble(message: DisplayMessage) {
-    Row(
+    val attachments = message.parts.filter { part ->
+        part is UIMessagePart.Image || part is UIMessagePart.Video ||
+            part is UIMessagePart.Audio || part is UIMessagePart.Document
+    }
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.outgoing) Arrangement.End else Arrangement.Start,
+        horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        GroupedMessageBubble(
-            position = message.position,
-            role = if (message.outgoing) BubbleRole.USER else BubbleRole.ASSISTANT,
-            modifier = Modifier.fillMaxWidth(0.86f),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (message.text.isNotBlank()) Text(message.text)
-                message.parts.forEach { part ->
+        if (attachments.isNotEmpty()) {
+            LastChatMessageAttachmentRow(alignEnd = message.outgoing) {
+                items(
+                    items = attachments,
+                    key = { part -> part.hashCode() },
+                ) { part ->
                     when (part) {
                         is UIMessagePart.Image -> AsyncImage(
                             model = part.url,
                             contentDescription = null,
-                            contentScale = ContentScale.Fit,
+                            contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                                .clip(AppShapes.CardSmall)
-                                .background(MaterialTheme.colorScheme.surfaceContainer),
+                                .clip(MaterialTheme.shapes.medium)
+                                .size(72.dp),
                         )
-                        is UIMessagePart.Video -> AttachmentLabel("Video")
-                        is UIMessagePart.Audio -> AttachmentLabel("Audio")
-                        is UIMessagePart.Document -> AttachmentLabel(part.fileName)
+                        is UIMessagePart.Video -> LastChatDocumentAttachmentTile(
+                            fileName = "Video",
+                            modifier = Modifier.size(72.dp),
+                            onRemove = null,
+                        )
+                        is UIMessagePart.Audio -> LastChatDocumentAttachmentTile(
+                            fileName = "Audio",
+                            modifier = Modifier.size(72.dp),
+                            onRemove = null,
+                        )
+                        is UIMessagePart.Document -> LastChatDocumentAttachmentTile(
+                            fileName = part.fileName,
+                            modifier = Modifier.size(72.dp),
+                            onRemove = null,
+                        )
                         else -> Unit
                     }
                 }
             }
         }
+        if (message.text.isNotBlank()) {
+            GroupedMessageBubble(
+                position = message.position,
+                role = if (message.outgoing) BubbleRole.USER else BubbleRole.ASSISTANT,
+                modifier = Modifier.fillMaxWidth(0.86f),
+            ) {
+                Text(message.text)
+            }
+        }
     }
-}
-
-@Composable
-private fun AttachmentLabel(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium,
-        modifier = Modifier
-            .clip(AppShapes.Chip)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MenuPage(
     state: IosAppState,
-    onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onRenameConversation: (String, String) -> Unit,
     onDeleteConversation: (String) -> Unit,
-    onNewAssistant: () -> Unit,
     onSelectAssistant: (String) -> Unit,
+    darkTheme: Boolean,
     platformHaptics: PlatformHaptics,
-    onBack: () -> Unit,
+    onDismiss: () -> Unit,
     onSettings: () -> Unit,
     onStatistics: () -> Unit,
 ) {
-    Scaffold(
-        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
-        topBar = { TopAppBar(
-            title = { Text("Chats", fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
-        ) },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+    var searchQuery by remember { mutableStateOf("") }
+    var searchExpanded by remember { mutableStateOf(false) }
+    var showAssistantPicker by remember { mutableStateOf(false) }
+    val filteredConversations = remember(state.conversations, searchQuery) {
+        if (searchQuery.isBlank()) {
+            state.conversations
+        } else {
+            state.conversations.filter { conversation ->
+                conversation.title.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Text(
+                    text = "Chats",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                )
+            }
+            item {
+                LastChatDrawerSearch(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    expanded = searchExpanded,
+                    onExpandedChange = { searchExpanded = it },
+                    placeholder = "Search conversations",
+                    hint = "Search titles",
+                )
+            }
+            item {
+                AnimatedVisibility(
+                    visible = !searchExpanded,
+                    enter = fadeIn(animationSpec = spring(stiffness = 300f)) +
+                        expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)),
+                    exit = fadeOut(animationSpec = spring(stiffness = 500f)) +
+                        shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f)),
                 ) {
-                    state.assistants.forEach { assistant ->
-                        if (assistant.id == state.selectedAssistantId) {
-                            Button(onClick = {}) { Text(assistant.name) }
-                        } else {
-                            TextButton(onClick = {
-                                onSelectAssistant(assistant.id)
-                                onBack()
-                            }) { Text(assistant.name) }
-                        }
+                    LastChatDrawerQuickActionGroup {
+                        LastChatDrawerQuickAction(
+                            label = "Statistics",
+                            onClick = onStatistics,
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Tick) },
+                            icon = { LastChatBarChartIcon(contentDescription = null) },
+                        )
                     }
-                    TextButton(onClick = {
-                        onNewAssistant()
-                        onBack()
-                    }) { Text("New assistant") }
                 }
             }
-            item { Button(onClick = { onNewChat(); onBack() }, modifier = Modifier.fillMaxWidth()) { Text("New chat") } }
-            items(state.conversations, key = { it.id }) { conversation ->
+            if (filteredConversations.isEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        shape = AppShapes.CardSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ) {
+                        Text(
+                            text = "No conversations",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+            }
+            items(filteredConversations, key = { it.id }) { conversation ->
                 ConversationListRow(
                     title = conversation.title,
                     selected = conversation.id == state.selectedConversationId,
@@ -388,11 +607,121 @@ private fun MenuPage(
                     onDelete = { onDeleteConversation(conversation.id) },
                 ) {
                     onSelectConversation(conversation.id)
-                    onBack()
+                    onDismiss()
                 }
             }
-            item { MenuCard("Settings", "Providers, appearance, tools, and storage", onSettings) }
-            item { MenuCard("Statistics", "Conversations, messages, and token usage", onStatistics) }
+            item {
+                val actionButtonSize = 42.dp
+                val assistantAvatarSize = 30.dp
+                val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        color = itemColor,
+                        shape = AppShapes.ButtonPill,
+                        modifier = Modifier.weight(1f).height(actionButtonSize),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(start = 12.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        if (state.assistants.size > 1) showAssistantPicker = true
+                                    },
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    text = state.assistant.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IosAssistantAvatar(
+                                name = state.assistant.name,
+                                modifier = Modifier
+                                    .size(assistantAvatarSize)
+                                    .clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        onSettings()
+                                    },
+                            )
+                        }
+                    }
+                    LastChatDrawerAction(
+                        onClick = onSettings,
+                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                        containerColor = itemColor,
+                        size = actionButtonSize,
+                    ) { containerSize, iconSize ->
+                        LastChatDrawerActionIcon(
+                            containerSize = containerSize,
+                            iconSize = iconSize,
+                            contentDescription = "Settings",
+                        )
+                    }
+                }
+            }
+    }
+    if (showAssistantPicker) {
+        val pickerItems = state.assistants.map { assistant ->
+            LastChatAssistantPickerItem(
+                id = assistant.id,
+                name = assistant.name,
+                systemPrompt = assistant.systemPrompt,
+            )
+        }
+        LastChatAssistantPickerSheet(
+            assistants = pickerItems,
+            currentAssistantId = state.assistant.id,
+            title = "Assistants",
+            noSystemPromptLabel = "No system prompt",
+            isDarkMode = darkTheme,
+            onAssistantSelected = onSelectAssistant,
+            onNavigate = {
+                showAssistantPicker = false
+                onDismiss()
+            },
+            onEdit = {
+                showAssistantPicker = false
+                onSettings()
+            },
+            onDismiss = { showAssistantPicker = false },
+            onPopHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+            onThudHaptic = { platformHaptics.perform(PlatformHapticPattern.Thud) },
+            avatar = { item, modifier -> IosAssistantAvatar(item.name, modifier) },
+        )
+    }
+}
+
+@Composable
+private fun IosAssistantAvatar(
+    name: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = name.firstOrNull()?.uppercase() ?: "A",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
@@ -402,9 +731,18 @@ private fun MenuPage(
 private fun StatisticsPage(
     state: IosAppState,
     darkTheme: Boolean,
+    platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
     val messages = state.conversations.flatMap { it.messages }
+    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val heatmapData = remember(messages) {
+        messages
+            .groupingBy { message -> message.createdAt.date }
+            .eachCount()
+            .map { (date, count) -> CalendarHeatmapDay(date, count) }
+            .sortedBy { it.date }
+    }
     val promptTokens = messages.sumOf { it.usage?.promptTokens?.toLong() ?: 0L }
     val completionTokens = messages.sumOf { it.usage?.completionTokens?.toLong() ?: 0L }
     val cachedTokens = messages.sumOf { it.usage?.cachedTokens?.toLong() ?: 0L }
@@ -418,7 +756,7 @@ private fun StatisticsPage(
         topBar = {
             TopAppBar(
                 title = { Text("Statistics", fontWeight = FontWeight.Bold) },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = { IosBackButton(platformHaptics, onBack) },
             )
         },
     ) { padding ->
@@ -426,6 +764,28 @@ private fun StatisticsPage(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                LastChatActivityHeatmapCard(
+                    heatmapData = heatmapData,
+                    today = today,
+                    activityTitle = "Activity",
+                    emptyText = "No activity yet",
+                    weekdayLabels = listOf("Mon", "", "Wed", "", "Fri", "", "Sun"),
+                    lessLabel = "Less",
+                    moreLabel = "More",
+                    fallbackMonthLabel = "Activity timeline",
+                    monthName = { month, abbreviated -> englishMonthName(month, abbreviated) },
+                    messageCountText = { count ->
+                        "${formatCompactCount(count)} ${if (count == 1L) "message" else "messages"}"
+                    },
+                    showEmptyState = messages.isEmpty(),
+                    darkTheme = darkTheme,
+                    onMonthSelected = {
+                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             item {
                 LastChatStatCard(
                     title = "Conversations",
@@ -484,6 +844,24 @@ private fun StatisticsPage(
             }
         }
     }
+}
+
+private fun englishMonthName(month: CalendarMonth, abbreviated: Boolean): String {
+    val name = listOf(
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    )[month.monthNumber - 1]
+    return if (abbreviated) name.take(3) else name
 }
 
 private fun formatCompactCount(value: Long): String = when {
@@ -607,6 +985,7 @@ private fun SettingsPage(
     onNewAssistant: () -> Unit,
     onSelectAssistant: (String) -> Unit,
     onDeleteAssistant: (String) -> Unit,
+    platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
     var providerType by remember(state.provider.type) { mutableStateOf(state.provider.type) }
@@ -621,7 +1000,7 @@ private fun SettingsPage(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
         topBar = { TopAppBar(
             title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+            navigationIcon = { IosBackButton(platformHaptics, onBack) },
         ) },
     ) { padding ->
         LazyColumn(
@@ -748,6 +1127,18 @@ private fun SettingsPage(
             item { MenuCard("Data", "Conversations are stored in the iOS app container") {} }
         }
     }
+}
+
+@Composable
+private fun IosBackButton(
+    platformHaptics: PlatformHaptics,
+    onBack: () -> Unit,
+) {
+    LastChatBackButton(
+        onClick = onBack,
+        contentDescription = "Back",
+        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+    )
 }
 
 private fun IosProviderType.displayName(): String = when (this) {

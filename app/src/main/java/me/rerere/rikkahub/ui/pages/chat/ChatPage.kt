@@ -97,7 +97,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
@@ -107,6 +106,7 @@ import androidx.compose.material.icons.rounded.HistoryToggleOff
 
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
+import me.rerere.rikkahub.ui.components.nav.LastChatMenuButton
 
 import me.rerere.rikkahub.ui.components.ui.UpdateDialog
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -2743,24 +2743,19 @@ private fun ChatToolbar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!bigScreen) {
-                Surface(
+                LastChatMenuButton(
                     onClick = {
                         scope.launch { drawerState.open() }
                     },
+                    contentDescription = "Messages",
                     shape = buttonShape,
-                    color = blurredContainerColor(topContainerColor),
+                    containerColor = blurredContainerColor(topContainerColor),
                     border = topContainerBorder,
                     modifier = Modifier
                         .size(topPillSize)
-                        .lastChatBlurEffect(topContainerColor, buttonShape)
-                ) {
-                    Box(
-                        modifier = Modifier.size(topPillSize),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Rounded.Menu, "Messages")
-                    }
-                }
+                        .lastChatBlurEffect(topContainerColor, buttonShape),
+                    size = topPillSize,
+                )
             }
 
             Spacer(Modifier.weight(1f))

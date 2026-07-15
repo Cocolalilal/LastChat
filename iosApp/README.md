@@ -32,7 +32,26 @@ Google, and Claude streaming, app-container storage, per-provider
 Keychain-backed API keys, persisted assistant/system-prompt settings, and all
 six Android theme palettes with system/light/dark modes. Conversation rows use
 the production Android interaction surface and persist create, select, rename,
-and delete operations. Multiple assistant profiles retain their own system
+and delete operations. Statistics use the same production stat cards and
+activity heatmap as Android, populated from persisted iOS conversations,
+messages, token usage, and message creation dates. Child screens also use the
+same auto-mirrored rounded back control, press animation, and Pop haptic
+semantic as Android. The chat toolbar uses Android's same outlined 48 dp drawer
+button and rounded Menu glyph. It opens a real modal drawer using the same
+Android sheet shape and container color instead of navigating to an iOS-only
+full-screen menu. Drawer search uses Android's same expandable search capsule,
+focus behavior, close control, hint layout, and empty-result treatment while
+filtering persisted iOS conversation titles. The settings footer uses the same
+Android circular action Surface, press spring/alpha, rounded Settings vector,
+42 dp assistant pill, 30 dp avatar, spacing, typography, and UIKit Pop haptic.
+When multiple assistants exist, that pill opens Android's same shared picker
+sheet with grouped corner animation, selected paint, transition spinner,
+drag/click dismissal, and real persisted assistant-to-conversation handoff.
+Statistics also uses Android's grouped drawer quick-action renderer and Rounded
+BarChart vector directly beneath search, including the same Tick haptic and
+spring hide/show behavior. Imagine is intentionally not displayed until its
+real iOS generation route is available.
+Multiple assistant profiles retain their own system
 prompts and conversations, provider endpoint/model settings are retained per
 provider, and an active stream can be cancelled from the composer. It is not yet a
 complete port of every LastChat screen or Android repository. Android remains
@@ -44,5 +63,19 @@ screens as screenshot-parity complete until they pass Xcode visual QA.
 The composer can pick image, video, and audio files through the native iOS
 document picker. Selections are copied into LastChat's Application Support
 directory before the picker callback completes, pending drafts persist across
-launches, and sent image parts render from the sandboxed copy. Document prompt
+launches, and sent image parts render from the sandboxed copy. Its visible shell
+now comes from Android's production composer: the same 48 dp add control, 24 dp
+outlined capsule, text padding/five-line limit, in-capsule attachments, and
+36 dp Picker/Send/Loading action with matching depth transitions and vectors.
+That action is the same nine-state renderer used by Android's normal and
+full-screen composers; iOS currently reaches its Picker, Send, and Loading
+states while STT/questionnaire/tool controllers remain to be ported. Pending
+files now use the production Android attachment renderer too: the same 84 dp
+lazy strip and edge fades, 60 dp image previews and media/document tiles,
+pressed image scale, elevations, spacing, and removal affordances.
+Sent attachments also use Android's production full-width row above the text
+bubble, with 72 dp cropped image/file tiles, eight-dp spacing, directional
+alignment, and 32 dp animated scroll-edge fades. Native video/audio playback
+and document opening are still pending iOS controller work.
+Attachment-only sends are supported. Document prompt
 parsing and native audio/video playback remain separate parity items.

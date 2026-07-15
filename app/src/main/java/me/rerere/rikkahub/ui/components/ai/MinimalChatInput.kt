@@ -47,8 +47,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.material.icons.rounded.AudioFile
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -67,9 +65,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -171,6 +167,18 @@ import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddButton
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAction
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerActionButton
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerCapsule
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAttachmentRow
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerAudioIcon
+import me.rerere.rikkahub.ui.components.chat.LastChatDocumentAttachmentTile
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerImageAttachment
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerInputShape
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerMediaAttachment
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerRow
+import me.rerere.rikkahub.ui.components.chat.LastChatComposerVideoIcon
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionMicrophone
@@ -700,63 +708,47 @@ fun MinimalChatInput(
             }
             
             // Minimal input bar - plus button + text field with embedded action button
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            LastChatComposerRow {
                 // Plus button - 48dp pill button
                 if (!isQuestionnaireActive && !isToolApprovalActive) {
-                    Surface(
-                        shape = CircleShape,
-                        color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    LastChatComposerAddButton(
+                        onLongClick = {
+                            if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
+                                haptics.perform(HapticPattern.Pop)
+                                startSttRecording()
+                            }
+                        },
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (sttRecording) {
+                                stopSttRecording(accept = true)
+                            } else {
+                                showPicker = true
+                                keyboardController?.hide()
+                            }
+                        },
+                        containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         modifier = Modifier
                             .size(48.dp)
-                            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape)
+                            .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center, 
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .combinedClickable(
-                                    onLongClick = {
-                                        if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
-                                            haptics.perform(HapticPattern.Pop)
-                                            startSttRecording()
-                                        }
-                                    },
-                                    onClick = {
-                                        haptics.perform(HapticPattern.Pop)
-                                        if (sttRecording) {
-                                            stopSttRecording(accept = true)
-                                        } else {
-                                            showPicker = true
-                                            keyboardController?.hide()
-                                        }
-                                    }
-                                )
-                        ) {
-                            Icon(
-                                imageVector = if (sttRecording) Icons.Rounded.Stop else Icons.Rounded.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(
+                            imageVector = if (sttRecording) Icons.Rounded.Stop else Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 // Text field capsule with embedded action button
                 // Corner radius = 24dp (user confirmed this was correct)
-                val inputShape = RoundedCornerShape(24.dp)
-                Surface(
-                    shape = inputShape,  // Fixed radius - correct per user
-                    color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                val inputShape = LastChatComposerInputShape
+                LastChatComposerCapsule(
+                    containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
-                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape)
+                        .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape),
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
@@ -972,161 +964,101 @@ fun MinimalChatInput(
                                     .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
-                                    isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
-                                    isQuestionnaireActive -> "questionnaire_next"
-                                    isToolApprovalActive -> "tool_approval_deny"
-                                    state.loading -> "loading"
-                                    !state.isEmpty() -> "send"
-                                    hasSelectedSttProvider && sttRecording -> "stt_recording"
-                                    hasSelectedSttProvider && sttFinalizing -> "stt_finalizing"
-                                    hasSelectedSttProvider && settings.displaySetting.sttReplaceModelIcon -> "stt"
-                                    else -> "picker"
+                                    isQuestionnaireActive && isFinalQuestion ->
+                                        LastChatComposerAction.QuestionnaireSubmit
+                                    isQuestionnaireActive -> LastChatComposerAction.QuestionnaireNext
+                                    isToolApprovalActive -> LastChatComposerAction.ToolApprovalDeny
+                                    state.loading -> LastChatComposerAction.Loading
+                                    !state.isEmpty() -> LastChatComposerAction.Send
+                                    hasSelectedSttProvider && sttRecording ->
+                                        LastChatComposerAction.SttRecording
+                                    hasSelectedSttProvider && sttFinalizing ->
+                                        LastChatComposerAction.SttFinalizing
+                                    hasSelectedSttProvider && settings.displaySetting.sttReplaceModelIcon ->
+                                        LastChatComposerAction.Stt
+                                    else -> LastChatComposerAction.Picker
                                 }
-                                
-                                val containerColor by animateColorAsState(
-                                    targetValue = when (currentAction) {
-                                        "loading" -> MaterialTheme.colorScheme.errorContainer
-                                        "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
-                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
-                                        "send" -> MaterialTheme.colorScheme.primary
-                                        "stt_recording" -> MaterialTheme.colorScheme.primary
-                                        else -> Color.Transparent
-                                    },
-                                    animationSpec = tween(250),
-                                    label = "ActionContainerColor"
-                                )
-
-
-                                
-                                Surface(
-                                    onClick = { 
-                                        if (
-                                            currentAction == "send" ||
-                                            currentAction == "loading" ||
-                                            currentAction == "tool_approval_deny" ||
-                                            currentAction.startsWith("questionnaire_")
-                                        ) {
-                                            sendMessage()
-                                        } else if (currentAction == "stt") {
-                                            haptics.perform(HapticPattern.Pop)
-                                            startSttRecording()
-                                        } else if (currentAction == "stt_recording") {
-                                            haptics.perform(HapticPattern.Pop)
-                                            stopSttRecording(accept = true)
-                                        } else {
-                                            showPicker = true
+                                LastChatComposerActionButton(
+                                    action = currentAction,
+                                    onClick = {
+                                        when (currentAction) {
+                                            LastChatComposerAction.Send,
+                                            LastChatComposerAction.Loading,
+                                            LastChatComposerAction.ToolApprovalDeny,
+                                            LastChatComposerAction.QuestionnaireNext,
+                                            LastChatComposerAction.QuestionnaireSubmit -> sendMessage()
+                                            LastChatComposerAction.Stt -> {
+                                                haptics.perform(HapticPattern.Pop)
+                                                startSttRecording()
+                                            }
+                                            LastChatComposerAction.SttRecording -> {
+                                                haptics.perform(HapticPattern.Pop)
+                                                stopSttRecording(accept = true)
+                                            }
+                                            LastChatComposerAction.Picker,
+                                            LastChatComposerAction.SttFinalizing -> {
+                                                showPicker = true
+                                            }
                                         }
                                     },
-                                    shape = CircleShape,
-                                    color = containerColor,
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        AnimatedContent(
-                                            targetState = currentAction,
-                                            transitionSpec = {
-                                                val outFadeSpec = tween<Float>(150)
-                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
-                                                val depthScale = 0.6f
-                                                
-                                                if (targetState == "questionnaire_next") {
-                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                } else if (initialState == "questionnaire_next") {
-                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
+                                ) { action ->
+                                    when (action) {
+                                        LastChatComposerAction.Loading -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Stop,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            )
+                                        }
+                                        LastChatComposerAction.Send,
+                                        LastChatComposerAction.QuestionnaireSubmit -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowUpward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                            )
+                                        }
+                                        LastChatComposerAction.QuestionnaireNext -> {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                            )
+                                        }
+                                        LastChatComposerAction.ToolApprovalDeny -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Close,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            )
+                                        }
+                                        LastChatComposerAction.Stt,
+                                        LastChatComposerAction.SttRecording -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Mic,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = if (action == LastChatComposerAction.SttRecording) {
+                                                    MaterialTheme.colorScheme.onPrimary
                                                 } else {
-                                                    fun getRank(state: String): Int = when (state) {
-                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
-                                                        "send", "questionnaire_submit" -> 1
-                                                        "loading", "tool_approval_deny" -> 2
-                                                        else -> 1
-                                                    }
-                                                    val initialRank = getRank(initialState)
-                                                    val targetRank = getRank(targetState)
-                                                    
-                                                    if (targetRank > initialRank) {
-                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    } else if (targetRank < initialRank) {
-                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    } else {
-                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
-                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    }
-                                                }
-                                            },
-                                            contentAlignment = Alignment.Center,
-                                            label = "ActionContent"
-                                        ) { action ->
-                                            when (action) {
-                                                "loading" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Stop,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                                    )
-                                                }
-                                                "send" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.ArrowUpward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "questionnaire_next" -> {
-                                                    Icon(
-                                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "questionnaire_submit" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.ArrowUpward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "tool_approval_deny" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Close,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                                    )
-                                                }
-                                                "stt", "stt_recording" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Mic,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = if (action == "stt_recording") {
-                                                            MaterialTheme.colorScheme.onPrimary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                        }
-                                                    )
-                                                }
-                                                "stt_finalizing" -> {
-                                                    // Handled in the waveform box
-                                                }
-                                                "picker" -> {
-                                                    ModelSelector(
-                                                        modelId = assistant.chatModelId ?: settings.chatModelId,
-                                                        providers = settings.providers,
-                                                        onSelect = { onUpdateChatModel(it) },
-                                                        type = me.rerere.ai.provider.ModelType.CHAT,
-                                                        onlyIcon = true,
-                                                        modifier = Modifier.size(34.dp),
-                                                    )
-                                                }
-                                            }
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                            )
+                                        }
+                                        LastChatComposerAction.SttFinalizing -> Unit
+                                        LastChatComposerAction.Picker -> {
+                                            ModelSelector(
+                                                modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                providers = settings.providers,
+                                                onSelect = { onUpdateChatModel(it) },
+                                                type = me.rerere.ai.provider.ModelType.CHAT,
+                                                onlyIcon = true,
+                                                modifier = Modifier.size(34.dp),
+                                            )
                                         }
                                     }
                                 }
@@ -1256,132 +1188,77 @@ fun MinimalChatInput(
                                     .padding(16.dp)
                             ) {
                                 val currentAction = when {
-                                    isQuestionnaireActive && isFinalQuestion -> "questionnaire_submit"
-                                    isQuestionnaireActive -> "questionnaire_next"
-                                    isToolApprovalActive -> "tool_approval_deny"
-                                    state.loading -> "loading"
-                                    !state.isEmpty() -> "send"
-                                    else -> "picker" // Fallback but usually hidden
+                                    isQuestionnaireActive && isFinalQuestion ->
+                                        LastChatComposerAction.QuestionnaireSubmit
+                                    isQuestionnaireActive -> LastChatComposerAction.QuestionnaireNext
+                                    isToolApprovalActive -> LastChatComposerAction.ToolApprovalDeny
+                                    state.loading -> LastChatComposerAction.Loading
+                                    !state.isEmpty() -> LastChatComposerAction.Send
+                                    else -> LastChatComposerAction.Picker
                                 }
-                                
-                                val containerColor by animateColorAsState(
-                                    targetValue = when (currentAction) {
-                                        "loading" -> MaterialTheme.colorScheme.errorContainer
-                                        "questionnaire_submit", "questionnaire_next" -> MaterialTheme.colorScheme.primary
-                                        "tool_approval_deny" -> MaterialTheme.colorScheme.errorContainer
-                                        "send" -> MaterialTheme.colorScheme.primary
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    animationSpec = tween(250),
-                                    label = "ActionContainerColorExpanded"
-                                )
-                                
-                                Surface(
-                                    onClick = { 
-                                        if (
-                                            currentAction == "send" ||
-                                            currentAction == "loading" ||
-                                            currentAction == "tool_approval_deny" ||
-                                            currentAction.startsWith("questionnaire_")
-                                        ) {
-                                            sendMessage()
-                                            isExpandedFullScreen = false
+                                LastChatComposerActionButton(
+                                    action = currentAction,
+                                    onClick = {
+                                        when (currentAction) {
+                                            LastChatComposerAction.Send,
+                                            LastChatComposerAction.Loading,
+                                            LastChatComposerAction.ToolApprovalDeny,
+                                            LastChatComposerAction.QuestionnaireNext,
+                                            LastChatComposerAction.QuestionnaireSubmit -> {
+                                                sendMessage()
+                                                isExpandedFullScreen = false
+                                            }
+                                            else -> Unit
                                         }
                                     },
-                                    shape = CircleShape,
-                                    color = containerColor,
-                                    modifier = Modifier.size(56.dp) // Larger button
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        AnimatedContent(
-                                            targetState = currentAction,
-                                            transitionSpec = {
-                                                val outFadeSpec = tween<Float>(150)
-                                                val inFadeSpec = tween<Float>(150, delayMillis = 100)
-                                                val depthScale = 0.6f
-                                                
-                                                if (targetState == "questionnaire_next") {
-                                                    (slideInHorizontally(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                    (slideOutHorizontally(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                } else if (initialState == "questionnaire_next") {
-                                                    (slideInHorizontally(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                    (slideOutHorizontally(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                } else {
-                                                    fun getRank(state: String): Int = when (state) {
-                                                        "picker", "stt", "stt_recording", "stt_finalizing" -> 0
-                                                        "send", "questionnaire_submit" -> 1
-                                                        "loading", "tool_approval_deny" -> 2
-                                                        else -> 1
-                                                    }
-                                                    val initialRank = getRank(initialState)
-                                                    val targetRank = getRank(targetState)
-                                                    
-                                                    if (targetRank > initialRank) {
-                                                        (slideInVertically(tween(250)) { it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                        (slideOutVertically(tween(250)) { -it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    } else if (targetRank < initialRank) {
-                                                        (slideInVertically(tween(250)) { -it / 2 } + fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith
-                                                        (slideOutVertically(tween(250)) { it / 2 } + fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    } else {
-                                                        (fadeIn(inFadeSpec) + scaleIn(tween(250), initialScale = depthScale)) togetherWith 
-                                                        (fadeOut(outFadeSpec) + scaleOut(tween(250), targetScale = depthScale))
-                                                    }
-                                                }
-                                            },
-                                            contentAlignment = Alignment.Center,
-                                            label = "ActionContentExpanded"
-                                        ) { action ->
-                                            when (action) {
-                                                "loading" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Stop,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                                    )
-                                                }
-                                                "send" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.ArrowUpward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "questionnaire_next" -> {
-                                                    Icon(
-                                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "questionnaire_submit" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.ArrowUpward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                                "tool_approval_deny" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Close,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                                    )
-                                                }
-                                                else -> {
-                                                    // Fallback
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.ArrowUpward,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(24.dp),
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
+                                    modifier = Modifier.size(56.dp),
+                                    containerColorOverride = if (currentAction == LastChatComposerAction.Picker) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        null
+                                    },
+                                ) { action ->
+                                    when (action) {
+                                        LastChatComposerAction.Loading -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Stop,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            )
+                                        }
+                                        LastChatComposerAction.Send,
+                                        LastChatComposerAction.QuestionnaireSubmit -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowUpward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                            )
+                                        }
+                                        LastChatComposerAction.QuestionnaireNext -> {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                            )
+                                        }
+                                        LastChatComposerAction.ToolApprovalDeny -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Close,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            )
+                                        }
+                                        else -> {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowUpward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
                                         }
                                     }
                                 }
@@ -2736,207 +2613,43 @@ private fun MediaFileInputRow(
         }
     }
 
-    val listState = rememberLazyListState()
-    val canScrollLeft by remember {
-        androidx.compose.runtime.derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        }
-    }
-    val canScrollRight by remember {
-        androidx.compose.runtime.derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index < layoutInfo.totalItemsCount - 1 ||
-                lastVisibleItem.offset + lastVisibleItem.size > layoutInfo.viewportEndOffset
-        }
-    }
-    val leftFadeAlpha by animateFloatAsState(
-        targetValue = if (canScrollLeft) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(180),
-        label = "attachment_left_fade"
-    )
-    val rightFadeAlpha by animateFloatAsState(
-        targetValue = if (canScrollRight) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(180),
-        label = "attachment_right_fade"
-    )
-
-    LazyRow(
-        state = listState,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = 12.dp,
-            vertical = 12.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(84.dp)
-            .graphicsLayer {
-                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                drawContent()
-                if ((leftFadeAlpha > 0f || rightFadeAlpha > 0f) && size.width > 0f) {
-                    val fadeWidthPx = 22.dp.toPx()
-                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.35f)
-                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.65f)
-                    drawRect(
-                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
-                                leftEnd to Color.Black,
-                                rightStart to Color.Black,
-                                1f to Color.Black.copy(alpha = 1f - rightFadeAlpha),
-                            )
-                        ),
-                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
-                    )
-                }
-            }
-    ) {
+    LastChatComposerAttachmentRow {
         items(
             items = images,
             key = { attachment -> "image:${attachment.id}" }
         ) { attachment ->
             val image = attachment.part
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPressed by interactionSource.collectIsPressedAsState()
-            val scale by animateFloatAsState(
-                targetValue = if (isPressed) 0.94f else 1f,
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                label = "image_attachment_scale"
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = { onCropImage(attachment.id, image) }
-                    )
+            LastChatComposerImageAttachment(
+                onClick = { onCropImage(attachment.id, image) },
+                onRemove = { removePart(attachment.id)?.let(onDelete) },
+                removeContentDescription = stringResource(R.string.delete),
             ) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(60.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    tonalElevation = 4.dp
-                ) {
-                    AsyncImage(
-                        model = image.url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(38.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {
-                                removePart(attachment.id)?.let(onDelete)
-                            }
-                        ),
-                    contentAlignment = Alignment.TopEnd
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.94f),
-                        tonalElevation = 3.dp,
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .size(22.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.delete),
-                                modifier = Modifier.size(15.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                AsyncImage(
+                    model = image.url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
         items(
             items = videos,
             key = { attachment -> "video:${attachment.id}" }
         ) { attachment ->
-            val video = attachment.part
-            Box(
-                modifier = Modifier
+            LastChatComposerMediaAttachment(
+                onRemove = { removePart(attachment.id)?.let(onDelete) },
             ) {
-                Surface(
-                    modifier = Modifier.size(60.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    tonalElevation = 4.dp
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.VideoLibrary, null)
-                    }
-                }
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .size(24.dp)
-                        .clickable {
-                            removePart(attachment.id)?.let(onDelete)
-                        }
-                        .align(Alignment.TopEnd)
-                        .background(MaterialTheme.colorScheme.secondary),
-                    tint = MaterialTheme.colorScheme.onSecondary
-                )
+                LastChatComposerVideoIcon()
             }
         }
         items(
             items = audios,
             key = { attachment -> "audio:${attachment.id}" }
         ) { attachment ->
-            val audio = attachment.part
-            Box(
-                modifier = Modifier
+            LastChatComposerMediaAttachment(
+                onRemove = { removePart(attachment.id)?.let(onDelete) },
             ) {
-                Surface(
-                    modifier = Modifier.size(60.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    tonalElevation = 4.dp
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.AudioFile, null)
-                    }
-                }
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .size(24.dp)
-                        .clickable {
-                            removePart(attachment.id)?.let(onDelete)
-                        }
-                        .align(Alignment.TopEnd)
-                        .background(MaterialTheme.colorScheme.secondary),
-                    tint = MaterialTheme.colorScheme.onSecondary
-                )
+                LastChatComposerAudioIcon()
             }
         }
         items(
@@ -2944,9 +2657,8 @@ private fun MediaFileInputRow(
             key = { attachment -> "document:${attachment.id}" }
         ) { attachment ->
             val document = attachment.part
-            me.rerere.rikkahub.ui.components.ui.DocumentChip(
+            LastChatDocumentAttachmentTile(
                 fileName = document.fileName,
-                mimeType = document.mime,
                 modifier = Modifier.size(60.dp),
                 onRemove = {
                     removePart(attachment.id)?.let(onDelete)

@@ -3,9 +3,6 @@ package me.rerere.rikkahub.ui.pages.menu
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,9 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,15 +31,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.stats.LastChatStatCard
+import me.rerere.rikkahub.ui.components.stats.LastChatActivityHeatmapCard
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIcon
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.utils.currentAppLocale
@@ -63,11 +56,12 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.R
 import kotlinx.coroutines.delay
+import me.rerere.common.calendar.CalendarHeatmapDay
+import me.rerere.common.calendar.CalendarMonth
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
-import java.util.Locale
 
 private val StatCardMinHeight = 136.dp
 private val HeatmapCardMinHeight = 264.dp
@@ -612,364 +606,58 @@ private fun ChatHeatmapCard(
     showEmptyState: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = if (LocalDarkMode.current) {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val contentColor = MaterialTheme.colorScheme.onSurface
-    val heatmapBaseColor = MaterialTheme.colorScheme.primary
     val haptics = rememberPremiumHaptics()
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor,
-            contentColor = contentColor
+    val today = LocalDate.now()
+    val activeLocale = currentAppLocale()
+    LastChatActivityHeatmapCard(
+        heatmapData = heatmapData.map { day ->
+            CalendarHeatmapDay(
+                date = kotlinx.datetime.LocalDate(day.date.year, day.date.monthValue, day.date.dayOfMonth),
+                count = day.count,
+            )
+        },
+        today = kotlinx.datetime.LocalDate(today.year, today.monthValue, today.dayOfMonth),
+        activityTitle = stringResource(R.string.menu_activity_title),
+        emptyText = stringResource(R.string.menu_activity_empty),
+        weekdayLabels = listOf(
+            stringResource(R.string.menu_weekday_monday),
+            "",
+            stringResource(R.string.menu_weekday_wednesday),
+            "",
+            stringResource(R.string.menu_weekday_friday),
+            "",
+            stringResource(R.string.menu_weekday_sunday),
         ),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-        modifier = modifier.heightIn(min = HeatmapCardMinHeight)
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
-                .heightIn(min = HeatmapCardMinHeight - 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.menu_activity_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+        lessLabel = stringResource(R.string.menu_activity_less),
+        moreLabel = stringResource(R.string.menu_activity_more),
+        fallbackMonthLabel = stringResource(R.string.activity_timeline_title),
+        monthName = { month: CalendarMonth, abbreviated: Boolean ->
+            YearMonth.of(month.year, month.monthNumber).month.getDisplayName(
+                if (abbreviated) TextStyle.SHORT else TextStyle.FULL,
+                activeLocale,
             )
-
-            if (showEmptyState || heatmapData.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.menu_activity_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = contentColor.copy(alpha = 0.7f)
-                )
-                return@Column
-            }
-            val today = LocalDate.now()
-            val windowStart = remember(today) { today.withDayOfMonth(1).minusMonths(11) }
-            val layout = remember(heatmapData, windowStart, today) {
-                buildHeatmapLayout(
-                    heatmapData = heatmapData,
-                    windowStart = windowStart,
-                    windowEnd = today
-                )
-            }
-            val maxCount = remember(heatmapData) {
-                heatmapData.maxOfOrNull { it.count }?.coerceAtLeast(1) ?: 1
-            }
-            val cellSize = 12.dp
-            val cellSpacing = 4.dp
-            val headerHeight = 16.dp
-            val monthSpacing = 12.dp
-            val emptyColor = if (LocalDarkMode.current) {
-                contentColor.copy(alpha = 0.10f)
-            } else {
-                contentColor.copy(alpha = 0.08f)
-            }
-            val todayOutlineColor = contentColor.copy(alpha = 0.45f)
-            val currentMonth = YearMonth.from(today)
-            var selectedMonth by remember(layout.months, currentMonth) {
-                mutableStateOf(
-                    layout.months.firstOrNull { it.month == currentMonth }?.month
-                        ?: layout.months.lastOrNull()?.month
-                )
-            }
-            LaunchedEffect(layout.months, currentMonth) {
-                if (selectedMonth == null || layout.months.none { it.month == selectedMonth }) {
-                    selectedMonth = layout.months.firstOrNull { it.month == currentMonth }?.month
-                        ?: layout.months.lastOrNull()?.month
-                }
-            }
-            val selectedMonthMetadata = remember(layout.months, selectedMonth) {
-                layout.months.firstOrNull { it.month == selectedMonth }
-            }
-            val activeLocale = currentAppLocale()
-            val weekdayLabels = listOf(
-                stringResource(R.string.menu_weekday_monday),
-                "",
-                stringResource(R.string.menu_weekday_wednesday),
-                "",
-                stringResource(R.string.menu_weekday_friday),
-                "",
-                stringResource(R.string.menu_weekday_sunday),
-            )
-            val selectedMonthLabel = selectedMonthMetadata?.let {
-                "${it.month.month.getDisplayName(TextStyle.FULL, activeLocale)} ${it.month.year}"
-            } ?: stringResource(R.string.activity_timeline_title)
-            val selectedMonthCount = selectedMonthMetadata?.totalMessageCount?.toLong() ?: 0L
-            val selectedMonthCountText = pluralStringResource(
+        },
+        messageCountText = { count ->
+            pluralStringResource(
                 R.plurals.menu_messages_count,
-                selectedMonthCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                formatCount(selectedMonthCount)
+                count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                formatCount(count),
             )
-            val scrollState = rememberScrollState()
-            val density = LocalDensity.current
-            LaunchedEffect(layout.months, scrollState.maxValue, cellSize, cellSpacing, monthSpacing) {
-                val targetMonthIndex = layout.months.indexOfFirst { it.month == currentMonth }
-                if (targetMonthIndex < 0) return@LaunchedEffect
-                val targetOffset = with(density) {
-                    monthSectionOffset(
-                        months = layout.months,
-                        targetIndex = targetMonthIndex,
-                        cellSize = cellSize,
-                        cellSpacing = cellSpacing,
-                        monthSpacing = monthSpacing
-                    ).roundToPx()
-                }
-                scrollState.scrollTo(targetOffset.coerceAtMost(scrollState.maxValue))
-            }
-            val selectMonth: (YearMonth) -> Unit = remember(layout.months, selectedMonth) {
-                { month ->
-                    if (layout.months.any { it.month == month } && selectedMonth != month) {
-                        haptics.perform(HapticPattern.Pop)
-                        selectedMonth = month
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = selectedMonthLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor.copy(alpha = 0.7f)
-                )
-                Text(
-                    text = selectedMonthCountText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.6f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(top = headerHeight + cellSpacing),
-                    verticalArrangement = Arrangement.spacedBy(cellSpacing)
-                ) {
-                    weekdayLabels.forEach { label ->
-                        Box(
-                            modifier = Modifier.height(cellSize),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = contentColor.copy(alpha = 0.45f)
-                            )
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(scrollState)
-                        .padding(end = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(cellSpacing)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(monthSpacing)
-                    ) {
-                        layout.months.forEach { month ->
-                            val isSelected = month.month == selectedMonth
-                            Box(
-                                modifier = Modifier
-                                    .width(
-                                        heatmapWidthForWeeks(
-                                            weekCount = month.weekSpan,
-                                            cellSize = cellSize,
-                                            cellSpacing = cellSpacing
-                                        )
-                                    )
-                                    .height(headerHeight)
-                                    .clickable { selectMonth(month.month) }
-                                    .padding(horizontal = 2.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .wrapContentWidth(unbounded = true, align = Alignment.Start)
-                                        .clip(RoundedCornerShape(999.dp))
-                                        .background(
-                                            if (isSelected) contentColor.copy(alpha = 0.12f) else Color.Transparent
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = month.month.month.getDisplayName(TextStyle.SHORT, activeLocale),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (isSelected) contentColor else contentColor.copy(alpha = 0.55f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(monthSpacing)
-                    ) {
-                        layout.months.forEach { month ->
-                            val monthWeeks = layout.weeks.subList(month.startWeekIndex, month.endWeekIndex + 1)
-                            Row(
-                                modifier = Modifier.width(
-                                    heatmapWidthForWeeks(
-                                        weekCount = month.weekSpan,
-                                        cellSize = cellSize,
-                                        cellSpacing = cellSpacing
-                                    )
-                                ),
-                                horizontalArrangement = Arrangement.spacedBy(cellSpacing)
-                            ) {
-                                monthWeeks.forEach { week ->
-                                    Column(
-                                        modifier = Modifier.width(cellSize),
-                                        verticalArrangement = Arrangement.spacedBy(cellSpacing)
-                                    ) {
-                                        week.cells.forEach { cell ->
-                                            val isMonthCell = cell.isInWindow && cell.month == month.month
-                                            val color = when {
-                                                !isMonthCell -> Color.Transparent
-                                                cell.count == 0 -> emptyColor
-                                                else -> {
-                                                    val intensity = (cell.count.toFloat() / maxCount).coerceIn(0.2f, 1f)
-                                                    heatmapBaseColor.copy(alpha = intensity)
-                                                }
-                                            }
-                                            val boundaryColor = when {
-                                                !isMonthCell -> Color.Transparent
-                                                else -> contentColor.copy(alpha = 0.12f)
-                                            }
-
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(cellSize)
-                                                    .clip(RoundedCornerShape(3.dp))
-                                                    .background(color)
-                                                    .drawBehind {
-                                                        if (!isMonthCell || boundaryColor.alpha <= 0f) return@drawBehind
-                                                        val strokeWidth = 1.dp.toPx()
-                                                        if (cell.boundary.top) {
-                                                            drawLine(
-                                                                color = boundaryColor,
-                                                                start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                                                end = androidx.compose.ui.geometry.Offset(size.width, 0f),
-                                                                strokeWidth = strokeWidth
-                                                            )
-                                                        }
-                                                        if (cell.boundary.right) {
-                                                            drawLine(
-                                                                color = boundaryColor,
-                                                                start = androidx.compose.ui.geometry.Offset(size.width, 0f),
-                                                                end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                                                                strokeWidth = strokeWidth
-                                                            )
-                                                        }
-                                                        if (cell.boundary.bottom) {
-                                                            drawLine(
-                                                                color = boundaryColor,
-                                                                start = androidx.compose.ui.geometry.Offset(0f, size.height),
-                                                                end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                                                                strokeWidth = strokeWidth
-                                                            )
-                                                        }
-                                                        if (cell.boundary.left) {
-                                                            drawLine(
-                                                                color = boundaryColor,
-                                                                start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                                                end = androidx.compose.ui.geometry.Offset(0f, size.height),
-                                                                strokeWidth = strokeWidth
-                                                            )
-                                                        }
-                                                    }
-                                                    .then(
-                                                        if (isMonthCell) {
-                                                            Modifier.clickable { cell.month?.let(selectMonth) }
-                                                        } else {
-                                                            Modifier
-                                                        }
-                                                    )
-                                                    .then(
-                                                        if (cell.date == today && isMonthCell) {
-                                                            Modifier.border(1.dp, todayOutlineColor, RoundedCornerShape(3.dp))
-                                                        } else {
-                                                            Modifier
-                                                        }
-                                                    )
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.menu_activity_less),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.5f)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { level ->
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(
-                                if (level == 0f) emptyColor
-                                else heatmapBaseColor.copy(alpha = level.coerceAtLeast(0.2f))
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                }
-                Text(
-                    text = stringResource(R.string.menu_activity_more),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.5f)
-                )
-            }
-        }
-    }
+        },
+        showEmptyState = showEmptyState,
+        darkTheme = LocalDarkMode.current,
+        onMonthSelected = { haptics.perform(HapticPattern.Pop) },
+        modifier = modifier,
+    )
 }
 
 private fun heatmapWidthForWeeks(
     weekCount: Int,
     cellSize: Dp,
-    cellSpacing: Dp
+    cellSpacing: Dp,
 ): Dp {
     if (weekCount <= 0) return 0.dp
     return (cellSize * weekCount) + (cellSpacing * (weekCount - 1))
-}
-
-private fun monthSectionOffset(
-    months: List<HeatmapMonthMetadata>,
-    targetIndex: Int,
-    cellSize: Dp,
-    cellSpacing: Dp,
-    monthSpacing: Dp
-): Dp {
-    if (targetIndex <= 0) return 0.dp
-    return months.take(targetIndex).fold(0.dp) { acc, month ->
-        acc + heatmapWidthForWeeks(month.weekSpan, cellSize, cellSpacing) + monthSpacing
-    }
 }
 
 @Composable
