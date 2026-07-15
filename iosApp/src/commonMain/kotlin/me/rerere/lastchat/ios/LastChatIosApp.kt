@@ -50,6 +50,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
@@ -62,6 +63,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.platform.PlatformFilePicker
+import me.rerere.common.platform.PlatformAttachmentOpener
 import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.PlatformHapticPattern
 import me.rerere.common.platform.PlatformHaptics
@@ -120,6 +127,8 @@ import me.rerere.rikkahub.ui.components.stats.LastChatStatCard
 import me.rerere.rikkahub.ui.components.stats.LastChatActivityHeatmapCard
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIcon
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIconGlyph
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupItem
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.Shapes
 import me.rerere.rikkahub.ui.theme.buildLastChatTypography
@@ -134,6 +143,14 @@ import kotlinx.coroutines.launch
 
 private enum class IosRoute { Chat, Settings, Statistics }
 
+private enum class IosSettingsSection(val title: String) {
+    Home("Settings"),
+    Appearance("Display"),
+    Assistant("Assistant"),
+    Provider("Providers"),
+    Data("Data"),
+}
+
 private data class DisplayMessage(
     val text: String,
     val outgoing: Boolean,
@@ -146,6 +163,7 @@ fun LastChatIosApp(
     controller: IosAppController,
     platformHaptics: PlatformHaptics,
     filePicker: PlatformFilePicker,
+    attachmentOpener: PlatformAttachmentOpener,
     darkTheme: Boolean? = null,
 ) {
     LaunchedEffect(controller) { controller.initialize() }
@@ -209,12 +227,14 @@ fun LastChatIosApp(
                         onPickFile = { filePicker.pickFile(controller::handlePickedFile) },
                         onRemovePendingAttachment = controller::removePendingAttachment,
                         platformHaptics = platformHaptics,
+                        attachmentOpener = attachmentOpener,
                         onOpenMenu = { scope.launch { drawerState.open() } },
                         onOpenSettings = { route = IosRoute.Settings },
                     )
                 }
                 IosRoute.Settings -> SettingsPage(
                     state = state,
+                    darkTheme = useDarkTheme,
                     onSaveProvider = controller::saveProvider,
                     onClearApiKey = controller::clearApiKey,
                     onSaveAppearance = controller::saveAppearance,
@@ -245,6 +265,7 @@ private fun ChatPage(
     onPickFile: () -> Unit,
     onRemovePendingAttachment: (String) -> Unit,
     platformHaptics: PlatformHaptics,
+    attachmentOpener: PlatformAttachmentOpener,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -443,9 +464,21 @@ private fun ChatPage(
             if (state.loading) {
                 item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             } else if (messages.isEmpty()) {
-                item { MessageBubble(DisplayMessage("How can I help?", outgoing = false)) }
+                item {
+                    MessageBubble(
+                        message = DisplayMessage("How can I help?", outgoing = false),
+                        attachmentOpener = attachmentOpener,
+                        platformHaptics = platformHaptics,
+                    )
+                }
             }
-            items(messages) { MessageBubble(it) }
+            items(messages) { message ->
+                MessageBubble(
+                    message = message,
+                    attachmentOpener = attachmentOpener,
+                    platformHaptics = platformHaptics,
+                )
+            }
             if (state.generating) item {
                 GroupedMessageBubble(
                     position = BubblePosition.SINGLE,
@@ -459,7 +492,11 @@ private fun ChatPage(
 }
 
 @Composable
-private fun MessageBubble(message: DisplayMessage) {
+private fun MessageBubble(
+    message: DisplayMessage,
+    attachmentOpener: PlatformAttachmentOpener,
+    platformHaptics: PlatformHaptics,
+) {
     val attachments = message.parts.filter { part ->
         part is UIMessagePart.Image || part is UIMessagePart.Video ||
             part is UIMessagePart.Audio || part is UIMessagePart.Document
@@ -482,22 +519,35 @@ private fun MessageBubble(message: DisplayMessage) {
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .clip(MaterialTheme.shapes.medium)
-                                .size(72.dp),
+                                .size(72.dp)
+                                .clickable {
+                                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                                    attachmentOpener.open(part.url)
+                                },
                         )
                         is UIMessagePart.Video -> LastChatDocumentAttachmentTile(
                             fileName = "Video",
                             modifier = Modifier.size(72.dp),
-                            onRemove = null,
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                attachmentOpener.open(part.url)
+                            },
                         )
                         is UIMessagePart.Audio -> LastChatDocumentAttachmentTile(
                             fileName = "Audio",
                             modifier = Modifier.size(72.dp),
-                            onRemove = null,
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                attachmentOpener.open(part.url)
+                            },
                         )
                         is UIMessagePart.Document -> LastChatDocumentAttachmentTile(
                             fileName = part.fileName,
                             modifier = Modifier.size(72.dp),
-                            onRemove = null,
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                attachmentOpener.open(part.url)
+                            },
                         )
                         else -> Unit
                     }
@@ -978,6 +1028,7 @@ private fun MenuCard(title: String, subtitle: String, onClick: () -> Unit) {
 @Composable
 private fun SettingsPage(
     state: IosAppState,
+    darkTheme: Boolean,
     onSaveProvider: (IosProviderType, String, String, String) -> Unit,
     onClearApiKey: () -> Unit,
     onSaveAppearance: (String, IosColorMode) -> Unit,
@@ -988,6 +1039,7 @@ private fun SettingsPage(
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
+    var section by remember { mutableStateOf(IosSettingsSection.Home) }
     var providerType by remember(state.provider.type) { mutableStateOf(state.provider.type) }
     var baseUrl by remember(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
     var modelId by remember(state.provider.modelId) { mutableStateOf(state.provider.modelId) }
@@ -999,14 +1051,75 @@ private fun SettingsPage(
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
         topBar = { TopAppBar(
-            title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { IosBackButton(platformHaptics, onBack) },
+            title = { Text(section.title, fontWeight = FontWeight.SemiBold) },
+            navigationIcon = {
+                IosBackButton(platformHaptics) {
+                    if (section == IosSettingsSection.Home) onBack()
+                    else section = IosSettingsSection.Home
+                }
+            },
         ) },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .then(
+                    if (section == IosSettingsSection.Home) Modifier
+                    else Modifier.padding(16.dp)
+                ),
+            verticalArrangement = Arrangement.spacedBy(
+                if (section == IosSettingsSection.Home) 0.dp else 10.dp
+            ),
         ) {
+            if (section == IosSettingsSection.Home) {
+                item {
+                    LastChatSettingsGroup(title = "General settings") {
+                        LastChatSettingGroupItem(
+                            title = "Display",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Tune, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { section = IosSettingsSection.Appearance },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Assistant",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Group, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { section = IosSettingsSection.Assistant },
+                        )
+                    }
+                }
+                item {
+                    LastChatSettingsGroup(title = "Models & services") {
+                        LastChatSettingGroupItem(
+                            title = "Providers",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Cloud, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { section = IosSettingsSection.Provider },
+                        )
+                    }
+                }
+                item {
+                    LastChatSettingsGroup(title = "Data") {
+                        LastChatSettingGroupItem(
+                            title = "Chat storage",
+                            subtitle = "Conversations are stored in the iOS app container",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Storage, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { section = IosSettingsSection.Data },
+                        )
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Assistant) {
             item { Text("Assistant", style = MaterialTheme.typography.titleMedium) }
             item {
                 Row(
@@ -1049,6 +1162,8 @@ private fun SettingsPage(
                     Text("Delete assistant")
                 }
             }
+            }
+            if (section == IosSettingsSection.Provider) {
             item { Text("Provider", style = MaterialTheme.typography.titleMedium) }
             item {
                 Row(
@@ -1091,6 +1206,8 @@ private fun SettingsPage(
             if (state.hasApiKey && providerType == state.provider.type) item {
                 TextButton(onClick = onClearApiKey) { Text("Remove saved API key") }
             }
+            }
+            if (section == IosSettingsSection.Appearance) {
             item { Text("Appearance", style = MaterialTheme.typography.titleMedium) }
             item {
                 Row(
@@ -1124,7 +1241,10 @@ private fun SettingsPage(
                     }
                 }
             }
-            item { MenuCard("Data", "Conversations are stored in the iOS app container") {} }
+            }
+            if (section == IosSettingsSection.Data) {
+                item { MenuCard("Data", "Conversations are stored in the iOS app container") {} }
+            }
         }
     }
 }

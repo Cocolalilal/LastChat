@@ -60,7 +60,14 @@ and the remaining screens move behind common contracts. See
 `docs/ios-parity-matrix.md` for the exact status; do not treat the current
 screens as screenshot-parity complete until they pass Xcode visual QA.
 
-The composer can pick image, video, and audio files through the native iOS
+Settings now opens on the same compact grouped-card renderer used by Android:
+matching section typography/insets, 24 dp group clipping, 10 dp rows, paint
+tokens, 20 by 18 dp home-row padding, rounded icons, and spring press behavior.
+The available Display, Assistant, Providers, and Data rows navigate to their
+working iOS editors. Android's wide adaptive pane and the remaining settings
+destinations are not yet ported.
+
+The composer can pick images, video, audio, and general documents through the native iOS
 document picker. Selections are copied into LastChat's Application Support
 directory before the picker callback completes, pending drafts persist across
 launches, and sent image parts render from the sandboxed copy. Its visible shell
@@ -75,7 +82,8 @@ lazy strip and edge fades, 60 dp image previews and media/document tiles,
 pressed image scale, elevations, spacing, and removal affordances.
 Sent attachments also use Android's production full-width row above the text
 bubble, with 72 dp cropped image/file tiles, eight-dp spacing, directional
-alignment, and 32 dp animated scroll-edge fades. Native video/audio playback
-and document opening are still pending iOS controller work.
+alignment, and 32 dp animated scroll-edge fades. Tapping a sent tile now uses a
+platform attachment-opening contract backed by UIKit's native preview/Open In
+flow; inline Android-equivalent media controls remain separate parity work.
 Attachment-only sends are supported. Document prompt
-parsing and native audio/video playback remain separate parity items.
+parsing and inline audio/video playback remain separate parity items.

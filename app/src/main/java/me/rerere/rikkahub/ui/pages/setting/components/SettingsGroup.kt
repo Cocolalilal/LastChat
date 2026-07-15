@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupItem
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsGroup
 
 @Composable
 fun SettingsGroup(
@@ -39,25 +41,12 @@ fun SettingsGroup(
     titleStartPadding: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        modifier = Modifier.padding(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp, top = 0.dp)
-        )
-        Column(
-            modifier = Modifier
-                .padding(horizontal = horizontalPadding)
-                .clip(RoundedCornerShape(24.dp)),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            content = content
-        )
-    }
+    LastChatSettingsGroup(
+        title = title,
+        horizontalPadding = horizontalPadding,
+        titleStartPadding = titleStartPadding,
+        content = content,
+    )
 }
 
 @Composable
@@ -70,68 +59,16 @@ fun SettingGroupItem(
     onClick: (() -> Unit)? = null
 ) {
     val haptics = rememberPremiumHaptics()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "scale"
+    LastChatSettingGroupItem(
+        title = title,
+        darkTheme = LocalDarkMode.current,
+        subtitle = subtitle,
+        icon = icon,
+        trailing = trailing,
+        contentPadding = contentPadding,
+        onHaptic = { haptics.perform(HapticPattern.Pop) },
+        onClick = onClick,
     )
-    
-    Surface(
-        onClick = {
-            if (onClick != null) {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            }
-        },
-        enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(10.dp),
-        interactionSource = interactionSource,
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(contentPadding),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (icon != null) {
-                Box(
-                    modifier = Modifier.size(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    icon()
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f).padding(end = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            trailing?.invoke()
-        }
-    }
 }
 
 @Composable

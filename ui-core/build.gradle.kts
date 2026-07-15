@@ -99,6 +99,7 @@ kotlin {
         api(compose.foundation)
         api(compose.ui)
         api(compose.material3)
+        api(compose.materialIconsExtended)
         implementation(compose.components.resources)
         implementation(libs.kotlinx.datetime)
     }

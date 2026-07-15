@@ -130,7 +130,22 @@ full-width direction-aware lazy row, eight-dp gaps, 32 dp animated edge masks,
 and 72 dp document tile. Android retains zoomable image previews, archived
 grayscale state, native open intents, and attachment metadata collection in its
 adapter; iOS uses Coil thumbnails and the shared file tiles outside the text
-bubble instead of placeholder labels inside it.
+bubble instead of placeholder labels inside it. `PlatformAttachmentOpener`
+keeps tile behavior portable; the iOS implementation retains a UIKit
+`UIDocumentInteractionController` and presents the native preview/Open In flow
+from the Compose host. The iOS picker now requests general document data in
+addition to image, movie, and audio UTTypes, matching its existing PDF, DOCX,
+text, JSON, and binary MIME handling.
+Compact Settings now begins from the same source-enforced production layout on
+both platforms. `:ui-core` owns Android's section labels, 16 dp section insets,
+24 dp group clipping, four-dp row gaps, 10 dp row shape, dark/light container
+selection, 16 dp internal spacing, and 0.98 damping-0.5/stiffness-400 press
+spring. Android's existing `SettingsGroup` and `SettingGroupItem` are adapters
+over those primitives, retaining resources, navigation, and PremiumHaptics.
+iOS now opens a grouped Settings home with functional Display, Assistant,
+Providers, and Data destinations instead of placing every editor in one long
+screen. Wide adaptive navigation and the remaining Android-only destinations
+are still pending.
 The chat toolbar's drawer button is source-shared too, including its 48 dp pill
 surface, one-dp outline at 60 percent alpha, and canonical rounded Menu glyph.
 Android continues to attach its existing blur effect and blurred container

@@ -19,6 +19,7 @@ import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UIKit.UIViewController
 import platform.UniformTypeIdentifiers.UTTypeAudio
+import platform.UniformTypeIdentifiers.UTTypeData
 import platform.UniformTypeIdentifiers.UTTypeImage
 import platform.UniformTypeIdentifiers.UTTypeMovie
 import platform.darwin.NSObject
@@ -49,7 +50,7 @@ class IosPlatformFilePicker(
         }
         pendingResult = onResult
         val picker = UIDocumentPickerViewController(
-            forOpeningContentTypes = listOf(UTTypeImage, UTTypeMovie, UTTypeAudio),
+            forOpeningContentTypes = listOf(UTTypeImage, UTTypeMovie, UTTypeAudio, UTTypeData),
             asCopy = true,
         ).apply {
             allowsMultipleSelection = false
