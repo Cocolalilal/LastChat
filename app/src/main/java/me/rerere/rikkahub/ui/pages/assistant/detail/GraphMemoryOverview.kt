@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -101,10 +100,8 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -704,17 +701,10 @@ private fun GraphCanvas(
     val model = remember(memories, entities, links, maxNodes) {
         buildGraphVisualModel(memories, entities, links, maxNodes = maxNodes)
     }
-    val particleState = remember(model) { mutableStateOf<MutableList<GraphParticle>?>(null) }
-    LaunchedEffect(model) {
-        particleState.value = withContext(Dispatchers.Default) { createGraphParticles(model) }
-    }
-    val particles = particleState.value
-    if (particles == null) {
-        Box(modifier, contentAlignment = Alignment.Center) {
-            if (interactive) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
-        }
-        return
-    }
+    // Keep the prepared layout tied to the remembered visual model. A temporary asynchronous
+    // loading state is fragile here because Room can emit several graph snapshots in quick
+    // succession, repeatedly blanking the preview and starving the full-screen graph.
+    val particles = remember(model) { createGraphParticles(model) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
     var scale by remember(model) { mutableFloatStateOf(1f) }
     var translation by remember(model) { mutableStateOf(Offset.Zero) }
