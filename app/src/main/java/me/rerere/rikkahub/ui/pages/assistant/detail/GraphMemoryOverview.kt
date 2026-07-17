@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -37,10 +39,12 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -76,10 +80,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,7 +101,18 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import me.rerere.ai.memory.BuiltInMemoryEngines
 import me.rerere.ai.memory.MemoryScope
 import me.rerere.rikkahub.data.db.dao.MemoryGraphDao
@@ -227,6 +245,7 @@ internal fun GraphMemoryOverview(
     val dao = koinInject<MemoryGraphDao>()
     val transferManager = koinInject<MemoryTransferManager>()
     val scope = rememberCoroutineScope()
+    val haptics = rememberPremiumHaptics()
     val memories by repository.observeMemories(assistant.id.toString()).collectAsState(emptyList())
     val entities by repository.observeEntities(assistant.id.toString()).collectAsState(emptyList())
     val allLinks by repository.observeLinks().collectAsState(emptyList())
@@ -273,12 +292,25 @@ internal fun GraphMemoryOverview(
                 onPause = { id -> scope.launch { transferManager.pause(id) } },
                 onResume = { id -> scope.launch { transferManager.resume(id) } },
             )
-            Text("Memories", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Memory graph", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "See how memories and entities connect",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(Icons.Rounded.AccountTree, null, tint = MaterialTheme.colorScheme.primary)
+            }
             Surface(
-                modifier = Modifier.fillMaxWidth().height(270.dp).clickable { graphOpen = true },
+                modifier = Modifier.fillMaxWidth().height(224.dp).clickable {
+                    haptics.perform(HapticPattern.Pop)
+                    graphOpen = true
+                },
                 shape = AppShapes.CardLarge,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Box {
                     GraphCanvas(
@@ -287,14 +319,16 @@ internal fun GraphMemoryOverview(
                         links = links,
                         showLabels = false,
                         interactive = false,
-                        modifier = Modifier.fillMaxSize().padding(10.dp),
+                        maxNodes = 34,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
                     )
                     Surface(
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(14.dp),
                         shape = AppShapes.ButtonPill,
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = .92f),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = .96f),
+                        shadowElevation = 3.dp,
                     ) {
-                        Row(Modifier.padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.AccountTree, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Explore graph", style = MaterialTheme.typography.labelLarge)
@@ -511,10 +545,14 @@ private fun buildGraphVisualModel(
     val entitiesById = entities.associateBy { it.id }
     val selected = linkedSetOf<String>()
     val validLinks = links.filter { it.memoryId in memoriesById && it.entityId in entitiesById }
+    val memoryDegree = validLinks.groupingBy { it.memoryId }.eachCount()
+    val entityDegree = validLinks.groupingBy { it.entityId }.eachCount()
 
-    // Relations choose the visible nodes first, so the graph never becomes a ring of
-    // mostly disconnected dots. A few isolated memories are added only when room remains.
-    validLinks.forEach { link ->
+    // Build outward from the most meaningful hubs. Database order should not decide which
+    // part of a large graph happens to be visible in the bounded preview/full graph budget.
+    validLinks.sortedByDescending { link ->
+        memoryDegree.getOrDefault(link.memoryId, 0) + entityDegree.getOrDefault(link.entityId, 0)
+    }.forEach { link ->
         if (selected.size < maxNodes) selected += "m:${link.memoryId}"
         if (selected.size < maxNodes) selected += "e:${link.entityId}"
     }
@@ -648,41 +686,99 @@ private fun GraphCanvas(
     links: List<me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity>,
     showLabels: Boolean,
     interactive: Boolean,
+    maxNodes: Int = if (interactive) 72 else 42,
     onNodeClick: ((GraphVisualNode) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberPremiumHaptics()
     val motionPolicy = LocalMotionPolicy.current
     val currentOnNodeClick by rememberUpdatedState(onNodeClick)
+    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val viewConfiguration = LocalViewConfiguration.current
-    val primary = if (interactive) Color(0xFFA9D1FF) else MaterialTheme.colorScheme.primary
-    val secondary = if (interactive) Color(0xFFD0C4FF) else MaterialTheme.colorScheme.tertiary
-    val edge = if (interactive) Color.White.copy(alpha = .28f) else MaterialTheme.colorScheme.outlineVariant
-    val labelColor = if (interactive) Color.White else MaterialTheme.colorScheme.onSurface
-    val model = remember(memories, entities, links, interactive) {
-        buildGraphVisualModel(memories, entities, links, maxNodes = if (interactive) 68 else 46)
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.tertiary
+    val edge = MaterialTheme.colorScheme.outline
+    val labelColor = MaterialTheme.colorScheme.onSurface
+    val labelBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    val model = remember(memories, entities, links, maxNodes) {
+        buildGraphVisualModel(memories, entities, links, maxNodes = maxNodes)
     }
-    val particles = remember(model) { createGraphParticles(model) }
+    val particleState = remember(model) { mutableStateOf<MutableList<GraphParticle>?>(null) }
+    LaunchedEffect(model) {
+        particleState.value = withContext(Dispatchers.Default) { createGraphParticles(model) }
+    }
+    val particles = particleState.value
+    if (particles == null) {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            if (interactive) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+        }
+        return
+    }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var translation by remember { mutableStateOf(Offset.Zero) }
+    var scale by remember(model) { mutableFloatStateOf(1f) }
+    var translation by remember(model) { mutableStateOf(Offset.Zero) }
     var selectedNode by remember(model) { mutableStateOf<Int?>(null) }
     var renderTick by remember { mutableIntStateOf(0) }
     var reheatToken by remember { mutableIntStateOf(0) }
+    var cameraJob by remember { mutableStateOf<Job?>(null) }
+    var showHint by remember(model, interactive) { mutableStateOf(interactive) }
 
-    fun graphScale(): Offset = if (interactive) {
-        Offset(viewportSize.width * .46f, viewportSize.height * .36f)
-    } else {
-        val unit = min(viewportSize.width, viewportSize.height) * .42f
-        Offset(unit, unit)
-    }
+    // A single unit on both axes is important: deriving X and Y independently made the graph
+    // visibly stretch on tall phones.
+    fun graphUnit(): Float = min(viewportSize.width, viewportSize.height) * if (interactive) .4f else .36f
 
     fun worldToScreen(index: Int): Offset {
-        val graphScale = graphScale()
         val center = Offset(viewportSize.width / 2f, viewportSize.height / 2f) + translation
         val particle = particles[index]
-        return center + Offset(particle.x * graphScale.x, particle.y * graphScale.y) * scale
+        return center + Offset(particle.x, particle.y) * graphUnit() * scale
+    }
+
+    fun boundedTranslation(value: Offset, cameraScale: Float): Offset {
+        val horizontalLimit = viewportSize.width * max(cameraScale, 1f) * .9f
+        val verticalLimit = viewportSize.height * max(cameraScale, 1f) * .9f
+        return Offset(
+            value.x.coerceIn(-horizontalLimit, horizontalLimit),
+            value.y.coerceIn(-verticalLimit, verticalLimit),
+        )
+    }
+
+    fun animateCamera(targetScale: Float, targetTranslation: Offset, durationMillis: Int = 360) {
+        cameraJob?.cancel()
+        cameraJob = coroutineScope.launch {
+            val finalScale = targetScale.coerceIn(.55f, 4f)
+            val finalTranslation = boundedTranslation(targetTranslation, finalScale)
+            if (motionPolicy.reduceMotion) {
+                scale = finalScale
+                translation = finalTranslation
+                return@launch
+            }
+            val startScale = scale
+            val startTranslation = translation
+            Animatable(0f).animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing),
+            ) {
+                scale = startScale + (finalScale - startScale) * value
+                translation = Offset(
+                    startTranslation.x + (finalTranslation.x - startTranslation.x) * value,
+                    startTranslation.y + (finalTranslation.y - startTranslation.y) * value,
+                )
+            }
+        }
+    }
+
+    fun focusNode(index: Int) {
+        val particle = particles.getOrNull(index) ?: return
+        val targetScale = max(scale, 1.75f).coerceAtMost(2.6f)
+        val targetTranslation = -Offset(particle.x, particle.y) * graphUnit() * targetScale
+        animateCamera(targetScale, targetTranslation)
+    }
+
+    LaunchedEffect(interactive, model) {
+        if (!interactive) return@LaunchedEffect
+        delay(4_500)
+        showHint = false
     }
 
     LaunchedEffect(model, reheatToken, interactive) {
@@ -710,7 +806,6 @@ private fun GraphCanvas(
                 ?.takeIf { (worldToScreen(it) - down.position).getDistance() <= hitRadius }
             var didDrag = false
             var dragDistance = 0f
-            selectedNode = nodeIndex
 
             while (true) {
                 val event = awaitPointerEvent()
@@ -718,6 +813,7 @@ private fun GraphCanvas(
                 if (pressed.isEmpty()) break
 
                 if (pressed.size >= 2) {
+                    cameraJob?.cancel()
                     nodeIndex = null
                     didDrag = true
                     val currentCentroid = pressed
@@ -734,14 +830,11 @@ private fun GraphCanvas(
                     }.toFloat() / pressed.size
                     val oldScale = scale
                     val zoom = if (previousSpan > 1f) currentSpan / previousSpan else 1f
-                    val newScale = (oldScale * zoom).coerceIn(.55f, 3.2f)
+                    val newScale = (oldScale * zoom).coerceIn(.55f, 4f)
                     val viewportCenter = Offset(viewportSize.width / 2f, viewportSize.height / 2f)
                     val graphVector = previousCentroid - viewportCenter - translation
                     translation = currentCentroid - viewportCenter - graphVector * (newScale / oldScale)
-                    translation = Offset(
-                        translation.x.coerceIn(-viewportSize.width * .45f, viewportSize.width * .45f),
-                        translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
-                    )
+                    translation = boundedTranslation(translation, newScale)
                     scale = newScale
                     event.changes.forEach { it.consume() }
                 } else {
@@ -749,26 +842,27 @@ private fun GraphCanvas(
                     val delta = change.position - change.previousPosition
                     dragDistance += delta.getDistance()
                     if (!didDrag && dragDistance >= viewConfiguration.touchSlop) {
+                        cameraJob?.cancel()
                         didDrag = true
-                        if (nodeIndex != null) haptics.perform(HapticPattern.DragStart)
+                        if (nodeIndex != null) {
+                            selectedNode = nodeIndex
+                            showHint = false
+                            haptics.perform(HapticPattern.DragStart)
+                        }
                     }
                     if (didDrag) {
                         if (nodeIndex != null) {
-                            val graphScale = graphScale()
-                            if (graphScale.x > 0f && graphScale.y > 0f) {
-                                particles[nodeIndex].x += delta.x / (graphScale.x * scale)
-                                particles[nodeIndex].y += delta.y / (graphScale.y * scale)
+                            val unit = graphUnit()
+                            if (unit > 0f) {
+                                particles[nodeIndex].x += delta.x / (unit * scale)
+                                particles[nodeIndex].y += delta.y / (unit * scale)
                                 particles[nodeIndex].velocityX = 0f
                                 particles[nodeIndex].velocityY = 0f
                                 repeat(3) { relaxGraph(model, particles, pinnedNode = nodeIndex) }
                                 renderTick++
                             }
                         } else {
-                            translation += delta
-                            translation = Offset(
-                                translation.x.coerceIn(-viewportSize.width * .45f, viewportSize.width * .45f),
-                                translation.y.coerceIn(-viewportSize.height * .45f, viewportSize.height * .45f),
-                            )
+                            translation = boundedTranslation(translation + delta, scale)
                         }
                         change.consume()
                     }
@@ -777,15 +871,34 @@ private fun GraphCanvas(
 
             if (nodeIndex != null && !didDrag) {
                 haptics.perform(HapticPattern.Pop)
-                currentOnNodeClick?.invoke(model.nodes[nodeIndex])
+                showHint = false
+                if (selectedNode == nodeIndex) {
+                    currentOnNodeClick?.invoke(model.nodes[nodeIndex])
+                } else {
+                    selectedNode = nodeIndex
+                    focusNode(nodeIndex)
+                }
             } else if (nodeIndex != null) {
                 haptics.perform(HapticPattern.DragEnd)
                 reheatToken++
+            } else if (!didDrag) {
+                selectedNode = null
             }
         }
     }
 
-    Canvas(modifier.onSizeChanged { viewportSize = it }.then(interactionModifier)) {
+    Box(
+        modifier
+            .onSizeChanged { viewportSize = it }
+            .semantics {
+                contentDescription = if (interactive) {
+                    "Interactive memory graph. Drag the background to move, pinch to zoom, or drag a node to rearrange it."
+                } else {
+                    "Memory graph preview"
+                }
+            },
+    ) {
+        Canvas(Modifier.fillMaxSize().then(interactionModifier)) {
         @Suppress("UNUSED_EXPRESSION")
         renderTick
         if (model.nodes.isEmpty() || viewportSize == IntSize.Zero) return@Canvas
@@ -793,59 +906,73 @@ private fun GraphCanvas(
         model.edges.forEach { graphEdge ->
             val connectedToSelection = selectedNode == graphEdge.start || selectedNode == graphEdge.end
             drawLine(
-                color = if (connectedToSelection) primary.copy(alpha = .9f) else edge.copy(alpha = .52f),
+                color = if (connectedToSelection) primary.copy(alpha = .78f) else edge.copy(alpha = if (interactive) .3f else .2f),
                 start = positions[graphEdge.start],
                 end = positions[graphEdge.end],
-                strokeWidth = if (connectedToSelection) 3.2f else 1.7f,
+                strokeWidth = if (connectedToSelection) 2.8f else if (interactive) 1.5f else 1.1f,
             )
         }
         model.nodes.forEachIndexed { index, node ->
             val point = positions[index]
             val isEntity = node.kind == GraphNodeKind.ENTITY
             val isSelected = selectedNode == index
-            val nodeRadius = when {
-                isSelected -> 10.dp.toPx()
-                isEntity -> 6.dp.toPx()
-                else -> 7.5.dp.toPx()
-            }
+            val degreeBoost = sqrt(model.degree[index].toFloat()).coerceAtMost(3f)
+            val zoomBoost = if (interactive) sqrt(scale).coerceIn(.9f, 1.35f) else 1f
+            val nodeRadius = ((if (isEntity) 6.4f else 5.2f) +
+                degreeBoost * if (isEntity) 1.25f else .7f) * zoomBoost +
+                if (isSelected) 2.5f else 0f
             drawCircle(
                 color = if (isEntity) secondary else primary,
-                radius = nodeRadius,
+                radius = nodeRadius.dp.toPx(),
                 center = point,
             )
-            drawCircle(
-                color = labelColor.copy(alpha = if (isSelected) .55f else .2f),
-                radius = nodeRadius + 3.dp.toPx(),
-                center = point,
-                style = Stroke(if (isSelected) 2.5.dp.toPx() else 1.dp.toPx()),
-            )
+            if (isEntity || isSelected) {
+                drawCircle(
+                    color = labelColor.copy(alpha = if (isSelected) .58f else .18f),
+                    radius = nodeRadius.dp.toPx() + 3.dp.toPx(),
+                    center = point,
+                    style = Stroke(if (isSelected) 2.2.dp.toPx() else 1.dp.toPx()),
+                )
+            }
         }
 
         if (showLabels) {
-            val labelIndexes = model.nodes.indices
+            val labelLimit = when {
+                scale >= 2.2f -> 12
+                scale >= 1.4f -> 8
+                else -> 5
+            }
+            val candidates = model.nodes.indices
                 .filter { index ->
                     index == selectedNode ||
-                        (model.nodes[index].kind == GraphNodeKind.ENTITY && model.degree[index] >= 3)
+                        (model.nodes[index].kind == GraphNodeKind.ENTITY && model.degree[index] >= if (scale >= 1.4f) 2 else 3)
                 }
                 .sortedByDescending { if (it == selectedNode) Int.MAX_VALUE else model.degree[it] }
-                .take(5)
-                .reversed()
+            val labelIndexes = mutableListOf<Int>()
+            val minimumSpacing = 74.dp.toPx()
+            candidates.forEach { index ->
+                if (labelIndexes.size < labelLimit && (index == selectedNode || labelIndexes.all {
+                        (positions[it] - positions[index]).getDistance() >= minimumSpacing
+                    })) {
+                    labelIndexes += index
+                }
+            }
             val textPaint = android.graphics.Paint().apply {
-                color = android.graphics.Color.WHITE
+                color = labelColor.toArgb()
                 textSize = 12.dp.toPx()
                 isAntiAlias = true
                 typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
             }
             val backgroundPaint = android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(205, 10, 12, 16)
+                color = labelBackground.copy(alpha = .94f).toArgb()
                 isAntiAlias = true
             }
-            labelIndexes.forEach { index ->
+            labelIndexes.reversed().forEach { index ->
                 val label = model.nodes[index].label.replace('\n', ' ').take(if (index == selectedNode) 42 else 24)
                 val point = positions[index]
-                val left = point.x + 12.dp.toPx()
-                val baseline = point.y + 4.dp.toPx()
                 val width = textPaint.measureText(label)
+                val left = (point.x + 12.dp.toPx()).coerceIn(6.dp.toPx(), size.width - width - 10.dp.toPx())
+                val baseline = (point.y + 4.dp.toPx()).coerceIn(18.dp.toPx(), size.height - 8.dp.toPx())
                 drawContext.canvas.nativeCanvas.drawRoundRect(
                     left - 5.dp.toPx(),
                     baseline - 15.dp.toPx(),
@@ -856,6 +983,112 @@ private fun GraphCanvas(
                     backgroundPaint,
                 )
                 drawContext.canvas.nativeCanvas.drawText(label, left, baseline, textPaint)
+            }
+        }
+        }
+
+        if (model.nodes.isEmpty()) {
+            Text(
+                "The memory graph will grow here as memories are learned.",
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (interactive && model.nodes.isNotEmpty()) {
+            AnimatedVisibility(
+                visible = showHint,
+                modifier = Modifier.align(Alignment.TopCenter).padding(14.dp),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Surface(
+                    shape = AppShapes.ButtonPill,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = .94f),
+                    shadowElevation = 2.dp,
+                ) {
+                    Text(
+                        "Drag nodes  ·  Pinch to zoom",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                shape = AppShapes.CardMedium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f),
+                shadowElevation = 4.dp,
+            ) {
+                Column {
+                    IconButton(
+                        onClick = {
+                            val targetScale = (scale * 1.3f).coerceAtMost(4f)
+                            animateCamera(targetScale, translation * (targetScale / scale), 220)
+                        },
+                    ) { Icon(Icons.Rounded.Add, "Zoom in") }
+                    HorizontalDivider(Modifier.width(40.dp).align(Alignment.CenterHorizontally))
+                    IconButton(
+                        onClick = {
+                            val targetScale = (scale / 1.3f).coerceAtLeast(.55f)
+                            animateCamera(targetScale, translation * (targetScale / scale), 220)
+                        },
+                    ) { Icon(Icons.Rounded.Remove, "Zoom out") }
+                    HorizontalDivider(Modifier.width(40.dp).align(Alignment.CenterHorizontally))
+                    IconButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            selectedNode = null
+                            animateCamera(1f, Offset.Zero)
+                        },
+                    ) { Icon(Icons.Rounded.CenterFocusStrong, "Center graph") }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = selectedNode != null,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, end = 80.dp, bottom = 16.dp)
+                    .widthIn(max = 300.dp),
+                enter = fadeIn() + slideInVertically { it / 3 },
+                exit = fadeOut() + slideOutVertically { it / 3 },
+            ) {
+                val node = selectedNode?.let(model.nodes::getOrNull)
+                if (node != null) {
+                    Surface(
+                        modifier = Modifier.clickable {
+                            haptics.perform(HapticPattern.Pop)
+                            currentOnNodeClick?.invoke(node)
+                        },
+                        shape = AppShapes.CardMedium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = .97f),
+                        shadowElevation = 5.dp,
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (node.kind == GraphNodeKind.ENTITY) Icons.Rounded.Person else Icons.Rounded.Memory,
+                                null,
+                                tint = if (node.kind == GraphNodeKind.ENTITY) secondary else primary,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (node.kind == GraphNodeKind.ENTITY) "Entity" else "Memory",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(node.label, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                            }
+                            Icon(Icons.Rounded.ChevronRight, "Open details")
+                        }
+                    }
+                }
             }
         }
     }
@@ -872,23 +1105,34 @@ private fun FullGraphBrowser(
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
-            containerColor = Color.Black,
+            containerColor = MaterialTheme.colorScheme.surface,
             topBar = {
-                Surface(color = Color.Black, contentColor = Color.White) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
                     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, "Back") }
-                        Text("Memory graph", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Column {
+                            Text("Memory graph", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                "${memories.size} memories  ·  ${entities.size} entities",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             },
         ) { padding ->
-            Surface(Modifier.fillMaxSize().padding(padding), color = Color.Black) {
+            Surface(
+                Modifier.fillMaxSize().padding(padding),
+                color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            ) {
                 GraphCanvas(
                     memories = memories,
                     entities = entities,
                     links = links,
                     showLabels = true,
                     interactive = true,
+                    maxNodes = 84,
                     onNodeClick = { node ->
                         when (node.kind) {
                             GraphNodeKind.MEMORY -> onMemory(node.id.removePrefix("m:"))
