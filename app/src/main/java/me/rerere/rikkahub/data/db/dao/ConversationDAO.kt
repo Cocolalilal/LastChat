@@ -35,6 +35,9 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
 
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND is_consolidated = 0 ORDER BY update_at ASC LIMIT :limit")
+    suspend fun getPendingMemoryConversations(assistantId: String, limit: Int): List<ConversationEntity>
+
     @Query("SELECT * FROM conversationentity WHERE (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
     fun searchConversations(searchText: String): Flow<List<ConversationEntity>>
 

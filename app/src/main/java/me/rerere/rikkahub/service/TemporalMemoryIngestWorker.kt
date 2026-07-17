@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.BackoffPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -11,6 +12,7 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
@@ -74,17 +76,28 @@ class TemporalMemoryIngestWorker(
                     observedAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
                 )
             }
-        if (selectedMessages.isEmpty()) return Result.success()
+        if (selectedMessages.isEmpty()) {
+            conversationRepository.markAsConsolidated(conversation.id)
+            return Result.success()
+        }
         temporalMemoryRepository.recordSources(assistantId, conversationId, selectedMessages)
         temporalMemoryRepository.importLegacyMemories(assistantId)
 
         val state = temporalMemoryRepository.getIngestState(conversationId)
         val lastIndex = state?.lastMessageId?.let { id -> selectedMessages.indexOfLast { it.id == id } } ?: -1
         val pending = if (lastIndex >= 0) selectedMessages.drop(lastIndex + 1) else selectedMessages.takeLast(MAX_PENDING_MESSAGES)
-        if (pending.isEmpty()) return Result.success()
+        if (pending.isEmpty()) {
+            conversationRepository.markAsConsolidated(conversation.id)
+            return Result.success()
+        }
 
         // Searchable/basic modes still advance an evidence watermark without incurring a model call.
         val indexOnly = inputData.getBoolean(KEY_INDEX_ONLY, false)
+        if (indexOnly && assistant.enableMemoryConsolidation) {
+            // Full migration scans index evidence without silently spending model tokens. The
+            // durable incomplete flag leaves adaptive extraction for bounded reconciliation.
+            return Result.success()
+        }
         if (indexOnly || !assistant.enableMemoryConsolidation) {
             temporalMemoryRepository.applyExtraction(
                 assistantId = assistantId,
@@ -92,6 +105,7 @@ class TemporalMemoryIngestWorker(
                 messages = pending,
                 extraction = MemoryExtractionEnvelope(),
             )
+            conversationRepository.markAsConsolidated(conversation.id)
             return Result.success()
         }
 
@@ -110,8 +124,9 @@ class TemporalMemoryIngestWorker(
             params = settings.buildSummarizerGenerationParams(model = model, temperature = 0.1f),
         )
         val text = response.choices.firstOrNull()?.message?.toContentText().orEmpty()
-        val extraction = parseExtraction(text)
+        val extraction = parseExtraction(text) ?: return Result.retry()
         temporalMemoryRepository.applyExtraction(assistantId, conversationId, pending, extraction)
+        conversationRepository.markAsConsolidated(conversation.id)
         return Result.success()
     }
 
@@ -144,15 +159,15 @@ class TemporalMemoryIngestWorker(
         }}
     """.trimIndent()
 
-    private fun parseExtraction(text: String): MemoryExtractionEnvelope {
+    private fun parseExtraction(text: String): MemoryExtractionEnvelope? {
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
-        if (start < 0 || end <= start) return MemoryExtractionEnvelope()
+        if (start < 0 || end <= start) return null
         return runCatching {
             JsonInstant.decodeFromString<MemoryExtractionEnvelope>(text.substring(start, end + 1))
         }.getOrElse {
             PlatformLog.w(TAG, "Memory extraction returned invalid JSON")
-            MemoryExtractionEnvelope()
+            null
         }
     }
 
@@ -172,6 +187,7 @@ class TemporalMemoryIngestWorker(
                         KEY_INDEX_ONLY to indexOnly,
                     )
                 )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "memory-v3-$assistantId-$conversationId",

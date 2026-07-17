@@ -75,6 +75,13 @@ class ConversationRepository(
         ).map { conversationEntityToConversation(it) }
     }
 
+    suspend fun getPendingMemoryConversations(assistantId: Uuid, limit: Int = 25): List<Conversation> {
+        return conversationDAO.getPendingMemoryConversations(
+            assistantId = assistantId.toString(),
+            limit = limit,
+        ).map { conversationEntityToConversation(it) }
+    }
+
     fun getConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistant(assistantId.toString())

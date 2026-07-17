@@ -55,6 +55,7 @@ import me.rerere.search.SearchService
 import org.koin.core.qualifier.named
 
 private const val TAG = "LastChatApp"
+private const val MEMORY_MAINTENANCE_WORK_NAME = "memory_maintenance_v3"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
@@ -126,29 +127,16 @@ class LastChatApp : Application() {
                 .build()
         )
 
-        // Schedule Memory Consolidation Worker dynamically
-        get<AppScope>().launch {
-            get<SettingsStore>().settingsFlow
-                .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
-                .distinctUntilChanged()
-                .collect { (interval, idle) ->
-                    val constraints = Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .apply {
-                            if (idle) setRequiresDeviceIdle(true)
-                        }
-                        .build()
-
-                    WorkManager.getInstance(this@LastChatApp).enqueueUniquePeriodicWork(
-                        "memory_consolidation",
-                        ExistingPeriodicWorkPolicy.UPDATE,
-                        PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
-                            interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
-                        )
-                            .setConstraints(constraints)
-                            .build()
-                    )
-                }
+        // Immediate post-reply jobs do the normal work. This unconstrained periodic reconciliation
+        // is the durable safety net for process death, offline provider failures, and restored data.
+        // It only queues a bounded set of incomplete conversations; successful jobs clear the flag.
+        WorkManager.getInstance(this).apply {
+            cancelUniqueWork("memory_consolidation")
+            enqueueUniquePeriodicWork(
+                MEMORY_MAINTENANCE_WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(6, TimeUnit.HOURS).build(),
+            )
         }
 
         // Memory v3 backfills evidence indexes and legacy claims silently. The marker is written

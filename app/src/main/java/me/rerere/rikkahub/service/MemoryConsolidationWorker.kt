@@ -3,7 +3,6 @@ package me.rerere.rikkahub.service
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -16,7 +15,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 /**
- * Compatibility entry point for existing WorkManager requests and UI actions.
+ * Durable reconciliation entry point for temporal-memory work.
  *
  * The old implementation implicitly used the currently selected assistant and could therefore
  * attribute a forced conversation to the wrong character. Memory v3 always resolves the owner from
@@ -43,20 +42,6 @@ class MemoryConsolidationWorker(
 
     private suspend fun enqueueScopedWork() {
         val settings = settingsStore.settingsFlow.value
-        val forcedConversationId = inputData.getString(KEY_FORCE_CONVERSATION_ID)
-        if (forcedConversationId != null) {
-            val conversation = conversationRepository.getConversationById(Uuid.parse(forcedConversationId)) ?: return
-            val assistant = settings.getAssistantById(conversation.assistantId) ?: return
-            if (!assistant.enableMemory) return
-            temporalMemoryRepository.importLegacyMemories(assistant.id.toString())
-            TemporalMemoryIngestWorker.enqueue(
-                applicationContext,
-                assistant.id.toString(),
-                conversation.id.toString(),
-            )
-            return
-        }
-
         val fullScan = inputData.getBoolean(KEY_FULL_SCAN, false)
         settings.assistants
             .asSequence()
@@ -66,7 +51,9 @@ class MemoryConsolidationWorker(
                 val conversations = if (fullScan) {
                     conversationRepository.getConversationsOfAssistant(assistant.id).first()
                 } else {
-                    conversationRepository.getRecentConversations(assistant.id, 10)
+                    // Oldest-first bounded reconciliation prevents a repeatedly failing or very
+                    // active chat from starving older work. Successful ingest clears the flag.
+                    conversationRepository.getPendingMemoryConversations(assistant.id, RECONCILE_BATCH_SIZE)
                 }
                 conversations.forEach { conversation ->
                     TemporalMemoryIngestWorker.enqueue(
@@ -80,8 +67,8 @@ class MemoryConsolidationWorker(
     }
 
     companion object {
-        private const val TAG = "MemoryConsolidation"
-        const val KEY_FORCE_CONVERSATION_ID = "FORCE_CONVERSATION_ID"
+        private const val TAG = "MemoryMaintenance"
         const val KEY_FULL_SCAN = "FULL_SCAN"
+        private const val RECONCILE_BATCH_SIZE = 25
     }
 }
