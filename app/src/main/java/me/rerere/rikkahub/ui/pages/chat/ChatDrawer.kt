@@ -256,6 +256,9 @@ fun ChatDrawerContent(
                 onEditTitle = { conversation, title ->
                     vm.updateConversationTitle(conversation, title)
                 },
+                onConsolidate = {
+                    vm.consolidateConversation(it)
+                },
                 onDelete = {
                     vm.deleteConversation(it)
                     toaster.show(
@@ -275,6 +278,8 @@ fun ChatDrawerContent(
                 onPin = {
                     vm.updatePinnedStatus(it)
                 },
+                showUnconsolidatedDot = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
+                showConsolidateOption = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
                 // Imagine + Stats buttons (visibility handled by ConversationList)
                 quickActions = {
                     val haptics = rememberPremiumHaptics()

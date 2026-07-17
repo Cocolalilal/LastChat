@@ -28,7 +28,7 @@ fun ExportOptionsDialog(
     showLorebooksOption: Boolean,
     onConfirm: (includeMemories: Boolean, includeLorebooks: Boolean) -> Unit
 ) {
-    var includeMemories by remember { mutableStateOf(false) }
+    var includeMemories by remember { mutableStateOf(showMemoriesOption) }
     var includeLorebooks by remember { mutableStateOf(showLorebooksOption) }
 
     AlertDialog(
@@ -51,14 +51,6 @@ fun ExportOptionsDialog(
                         Text(
                             stringResource(R.string.export_include_memories),
                             modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                    if (includeMemories) {
-                        Text(
-                            "Memory exports may contain personal facts, conversation excerpts, and linked entities. Only share the file with people you trust.",
-                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(start = 12.dp, end = 8.dp, bottom = 8.dp),
                         )
                     }
                 }

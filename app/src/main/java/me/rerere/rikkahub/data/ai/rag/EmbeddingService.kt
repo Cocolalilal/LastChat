@@ -5,7 +5,6 @@ import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import kotlin.uuid.Uuid
 
 data class EmbeddingResult(
     val embeddings: List<List<Float>>,
@@ -49,18 +48,11 @@ class EmbeddingService(
         } else {
             settings.embeddingModelId
         }
-        return embedBatchForModelId(texts, modelId.toString())
-    }
-
-    /** Embeds against a snapshotted model so a concurrent settings change cannot mix vector spaces. */
-    suspend fun embedBatchForModelId(texts: List<String>, modelId: String): EmbeddingResult {
-        val settings = settingsStore.settingsFlow.value
-        val parsedModelId = Uuid.parse(modelId)
-        check(parsedModelId != DISABLED_MODEL_ID) {
+        check(modelId != DISABLED_MODEL_ID) {
             "Embedding model is disabled."
         }
 
-        val model = settings.findModelById(parsedModelId) ?: error("Embedding model not found: $modelId")
+        val model = settings.findModelById(modelId) ?: error("Embedding model not found: $modelId")
         
         // Check if provider supports embeddings
         val providerSetting = model.findProvider(settings.providers) ?: error("Provider not found for embedding model")
@@ -72,7 +64,7 @@ class EmbeddingService(
             error("Provider ${providerSetting::class.simpleName} does not support embeddings or returned empty result")
         }
         
-        return EmbeddingResult(embeddingResult, modelId)
+        return EmbeddingResult(embeddingResult, modelId.toString())
     }
 }
 

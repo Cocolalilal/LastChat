@@ -59,14 +59,11 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
-import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
 import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.memory.GraphMemoryRepository
-import me.rerere.rikkahub.data.memory.MemoryCoordinator
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.SkillExportImport
 import java.io.File
@@ -114,44 +111,7 @@ private fun extractInjectedImageParts(
 }
 
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
-    return assistant.enableMemory && (
-        if (assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH) {
-            assistant.graphSearchToolEnabled
-        } else {
-            assistant.enableMemorySearchTool
-        }
-    )
-}
-
-internal fun shouldInjectMemoryInSystemPrompt(assistant: Assistant): Boolean {
-    return assistant.enableMemory &&
-        assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.SIMPLE &&
-        !assistant.useRagMemoryRetrieval
-}
-
-internal data class PromptContextBlocks(
-    val systemPrompt: String,
-    val dynamicContext: String,
-)
-
-internal fun placeMemoryPrompt(
-    baseSystemPrompt: String,
-    memoryPrompt: String,
-    timeAwarenessPrompt: String?,
-    injectMemoryInSystemPrompt: Boolean,
-): PromptContextBlocks {
-    val systemPrompt = buildList {
-        if (baseSystemPrompt.isNotBlank()) add(baseSystemPrompt)
-        if (injectMemoryInSystemPrompt && memoryPrompt.isNotBlank()) add(memoryPrompt)
-    }.joinToString(separator = "\n")
-    val dynamicContext = buildList {
-        if (!injectMemoryInSystemPrompt && memoryPrompt.isNotBlank()) add(memoryPrompt)
-        if (!timeAwarenessPrompt.isNullOrBlank()) add(timeAwarenessPrompt)
-    }.joinToString(separator = "\n")
-    return PromptContextBlocks(
-        systemPrompt = systemPrompt,
-        dynamicContext = dynamicContext,
-    )
+    return assistant.enableMemory && assistant.enableMemorySearchTool
 }
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
@@ -493,8 +453,6 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
-    private val memoryCoordinator: MemoryCoordinator,
-    private val graphMemoryRepository: GraphMemoryRepository,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
@@ -542,13 +500,7 @@ class GenerationHandler(
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 // Add memory tools if memory is enabled for this assistant
                 if (assistant.enableMemory) {
-                    if (assistant.resolvedMemoryEngineId() == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH) {
-                        buildGraphMemoryTools(
-                            assistant = assistant,
-                            conversationId = activeConversationId?.toString(),
-                        ).let(this::addAll)
-                    } else {
-                        buildMemoryTools(
+                    buildMemoryTools(
                         onCreation = { content ->
                             memoryRepo.addMemory(assistant.id.toString(), content)
                         },
@@ -571,8 +523,7 @@ class GenerationHandler(
                         } else {
                             null
                         }
-                        ).let(this::addAll)
-                    }
+                    ).let(this::addAll)
                 }
                 createSkillManagementTool(
                     state = buildSkillToolState(
@@ -1223,21 +1174,9 @@ class GenerationHandler(
             fullMessages = messages,
             retainedMessages = orderedSelectedMessages
         )
-        val memoryPrompt = if (selectedMemories.isNotEmpty()) {
-            buildMemoryPrompt(model, selectedMemories)
-        } else {
-            ""
-        }
-        val promptContextBlocks = placeMemoryPrompt(
-            baseSystemPrompt = baseSystemPrompt,
-            memoryPrompt = memoryPrompt,
-            timeAwarenessPrompt = timeAwarenessPrompt,
-            injectMemoryInSystemPrompt = shouldInjectMemoryInSystemPrompt(assistant),
-        )
-
         val builtMessages = buildList {
-            if (promptContextBlocks.systemPrompt.isNotBlank()) {
-                add(UIMessage.system(promptContextBlocks.systemPrompt))
+            if (baseSystemPrompt.isNotBlank()) {
+                add(UIMessage.system(baseSystemPrompt))
             }
 
             fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
@@ -1249,7 +1188,14 @@ class GenerationHandler(
             // materially distinct and preserves their documented ordering.
             topOfChatSkills.forEach { add(skillMessage(it)) }
             
-            val dynamicContext = promptContextBlocks.dynamicContext
+            val dynamicContext = buildList {
+                if (selectedMemories.isNotEmpty()) {
+                    add(buildMemoryPrompt(model, selectedMemories))
+                }
+                if (!timeAwarenessPrompt.isNullOrBlank()) {
+                    add(timeAwarenessPrompt)
+                }
+            }.joinToString(separator = "\n")
 
             if (orderedSelectedMessages.isNotEmpty()) {
                 val lastMessage = orderedSelectedMessages.last()
@@ -1303,11 +1249,7 @@ class GenerationHandler(
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason,
-                engineId = memory.engineId,
-                stableId = memory.stableId,
-                source = memory.source,
-                relevanceScore = memory.relevanceScore,
+                activationReason = reason
             )
         }
         
@@ -1546,45 +1488,6 @@ class GenerationHandler(
                     Log.w(TAG, "Failed to persist token usage", e)
                 }
             }
-        }
-    }
-
-    private fun buildGraphMemoryTools(
-        assistant: Assistant,
-        conversationId: String?,
-    ) = buildList {
-        if (shouldRegisterMemorySearchTool(assistant)) {
-            add(Tool(
-                name = MEMORY_SEARCH_TOOL_NAME,
-                description = "Search this character's graph memory and current session memory.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("query", buildJsonObject { put("type", "string") })
-                            put("limit", buildJsonObject { put("type", "integer") })
-                        },
-                        required = listOf("query"),
-                    )
-                },
-                systemPrompt = { _, _ ->
-                    "Use `$MEMORY_SEARCH_TOOL_NAME` only for deliberate deeper recall when the automatically supplied memories are insufficient."
-                },
-                execute = { args ->
-                    val query = args.jsonObject["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
-                    val limit = args.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 5
-                    val hits = memoryCoordinator.recall(assistant, conversationId, query, limit.coerceIn(1, 20))
-                    buildJsonObject {
-                        put("results", JsonArray(hits.map { hit ->
-                            buildJsonObject {
-                                put("id", hit.stableId)
-                                put("memory", hit.content)
-                                put("score", hit.score)
-                                put("source", hit.source)
-                            }
-                        }))
-                    }
-                },
-            ))
         }
     }
 

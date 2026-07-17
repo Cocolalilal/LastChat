@@ -8,7 +8,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.LocalToolOptionListSerializer
 import kotlin.uuid.Uuid
-import me.rerere.ai.memory.BuiltInMemoryEngines
 
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
@@ -67,19 +66,6 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
-    /**
-     * Null preserves old assistant JSON. [resolvedMemoryEngineId] maps the legacy enableMemory flag
-     * to Off/Simple until the assistant is explicitly saved through the new selector.
-     */
-    val memoryEngineId: String? = null,
-    val lastActiveMemoryEngineId: String? = null,
-    val pendingMemoryEngineId: String? = null,
-    val graphLearnFromChats: Boolean = true,
-    val graphSearchToolEnabled: Boolean = true,
-    val graphRecallLimit: Int = 5,
-    val memoryBatchPreset: MemoryBatchPreset = MemoryBatchPreset.BALANCED,
-    val memoryBatchIdleSeconds: Int? = null,
-    val memoryBatchMessageThreshold: Int? = null,
     val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
     val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
     val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages
@@ -117,7 +103,6 @@ data class Assistant(
     val enableTimeAwareness: Boolean = false, // Inject current time and notable timeline cues into context
     val enableContextRefresh: Boolean = false, // Legacy compatibility field; manual summarization is always available
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached
-    val enableSessionMemory: Boolean = false,
 
     // Memory System Configuration & Stats
     val consolidationDelayMinutes: Int = 30, // Wait time before consolidating a chat
@@ -128,31 +113,6 @@ data class Assistant(
     // Per-assistant UI customization (null = use global setting)
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
-
-@Serializable
-enum class MemoryBatchPreset {
-    RESPONSIVE,
-    BALANCED,
-    EFFICIENT,
-}
-
-fun Assistant.resolvedMemoryEngineId(): String = memoryEngineId ?: if (enableMemory) {
-    BuiltInMemoryEngines.SIMPLE
-} else {
-    BuiltInMemoryEngines.OFF
-}
-
-fun Assistant.memoryBatchIdleSeconds(): Int = memoryBatchIdleSeconds ?: when (memoryBatchPreset) {
-    MemoryBatchPreset.RESPONSIVE -> 30
-    MemoryBatchPreset.BALANCED -> 120
-    MemoryBatchPreset.EFFICIENT -> 600
-}
-
-fun Assistant.memoryBatchMessageThreshold(): Int = memoryBatchMessageThreshold ?: when (memoryBatchPreset) {
-    MemoryBatchPreset.RESPONSIVE -> 4
-    MemoryBatchPreset.BALANCED -> 8
-    MemoryBatchPreset.EFFICIENT -> 20
-}
 
 internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
 
@@ -189,11 +149,7 @@ data class AssistantMemory(
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null, // UUID of the embedding model used (for model mismatch detection)
     val timestamp: Long = 0L, // Timestamp of the memory (e.g. creation time or episode start time)
-    val significance: Int? = null, // Significance score (1-10) for episodic memories, null for core memories
-    val engineId: String = BuiltInMemoryEngines.SIMPLE,
-    val stableId: String = id.toString(),
-    val source: String? = null,
-    val relevanceScore: Float? = null,
+    val significance: Int? = null // Significance score (1-10) for episodic memories, null for core memories
 )
 
 @Serializable

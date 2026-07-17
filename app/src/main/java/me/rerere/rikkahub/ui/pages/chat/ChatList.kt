@@ -644,8 +644,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                             id = conversation.assistantId.toString(),
                                             startRoute = "memory",
                                             initialMemoryTab = memory.memoryType,
-                                            scrollToMemoryId = memory.memoryId.takeUnless { memory.engineId == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH },
-                                            scrollToGraphMemoryId = memory.stableId.takeIf { memory.engineId == me.rerere.ai.memory.BuiltInMemoryEngines.GRAPH },
+                                            scrollToMemoryId = memory.memoryId
                                         )
                                     )
                                 },

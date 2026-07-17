@@ -153,10 +153,6 @@ val dataSourceModule = module {
     }
 
     single {
-        get<AppDatabase>().memoryGraphDao()
-    }
-
-    single {
         get<AppDatabase>().genMediaDao()
     }
 
@@ -235,9 +231,7 @@ val dataSourceModule = module {
             conversationRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
-            memorySearchService = get(),
-            memoryCoordinator = get(),
-            graphMemoryRepository = get(),
+            memorySearchService = get()
         )
     }
 

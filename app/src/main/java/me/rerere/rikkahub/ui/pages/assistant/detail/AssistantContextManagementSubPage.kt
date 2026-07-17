@@ -35,8 +35,6 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.withAutoSummaryEnabled
-import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
-import me.rerere.ai.memory.BuiltInMemoryEngines
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -99,8 +97,7 @@ fun AssistantContextManagementSubPage(
         // ═══════════════════════════════════════════════════════════════════
         
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
-            val graphMemoryActive = assistant.resolvedMemoryEngineId() == BuiltInMemoryEngines.GRAPH
-            val needsSummarizerTip = !hasSummarizerModelConfigured && !assistant.enableSessionMemory
+            val needsSummarizerTip = !hasSummarizerModelConfigured
             AnimatedVisibility(
                 visible = needsSummarizerTip,
                 enter = fadeIn() + expandVertically(),
@@ -116,39 +113,14 @@ fun AssistantContextManagementSubPage(
                     HapticSwitch(
                         checked = assistant.autoRegenerateSummary,
                         onCheckedChange = { enabled ->
-                            onUpdate(assistant.withAutoSummaryEnabled(enabled).copy(enableSessionMemory = false))
+                            onUpdate(assistant.withAutoSummaryEnabled(enabled))
                         }
                     )
                 },
                 onClick = {
-                    onUpdate(assistant.withAutoSummaryEnabled(!assistant.autoRegenerateSummary).copy(enableSessionMemory = false))
+                    onUpdate(assistant.withAutoSummaryEnabled(!assistant.autoRegenerateSummary))
                 }
             )
-
-            if (graphMemoryActive) {
-                SettingGroupItem(
-                    title = "Session memory",
-                    subtitle = "Use conversation-scoped graph memory instead of continuously rewriting a context summary.",
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.enableSessionMemory,
-                            onCheckedChange = { enabled ->
-                                onUpdate(
-                                    if (enabled) assistant.withAutoSummaryEnabled(false).copy(enableSessionMemory = true)
-                                    else assistant.copy(enableSessionMemory = false)
-                                )
-                            },
-                        )
-                    },
-                    onClick = {
-                        val enabled = !assistant.enableSessionMemory
-                        onUpdate(
-                            if (enabled) assistant.withAutoSummaryEnabled(false).copy(enableSessionMemory = true)
-                            else assistant.copy(enableSessionMemory = false)
-                        )
-                    },
-                )
-            }
 
             AnimatedVisibility(
                 visible = assistant.autoRegenerateSummary,

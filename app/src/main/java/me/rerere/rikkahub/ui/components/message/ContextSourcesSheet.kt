@@ -49,8 +49,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
-import me.rerere.ai.memory.BuiltInMemoryEngines
-import androidx.compose.material.icons.rounded.AccountTree
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
@@ -298,7 +296,6 @@ private fun MemoryItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-    val isGraph = memory.engineId == BuiltInMemoryEngines.GRAPH
     val isCore = memory.memoryType == 0
     val memoryTypeLabel = when {
         isCore -> stringResource(R.string.activity_timeline_memory_core)
@@ -354,14 +351,6 @@ private fun MemoryItem(
                 contentAlignment = Alignment.Center
             ) {
                 when {
-                    isGraph -> {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountTree,
-                            contentDescription = "Graph memory",
-                            modifier = Modifier.size(24.dp),
-                            tint = contentColor,
-                        )
-                    }
                     isCore -> {
                         Icon(
                             imageVector = Icons.Rounded.Memory,
