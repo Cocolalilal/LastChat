@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.TemporalMemoryDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
@@ -31,6 +32,14 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemoryClaimEntity
+import me.rerere.rikkahub.data.db.entity.MemoryClaimFtsEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3Entity
+import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3FtsEntity
+import me.rerere.rikkahub.data.db.entity.MemoryIngestStateEntity
+import me.rerere.rikkahub.data.db.entity.MemoryProjectionEntity
+import me.rerere.rikkahub.data.db.entity.MemorySourceV3Entity
+import me.rerere.rikkahub.data.db.entity.MemorySourceV3FtsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -56,8 +65,16 @@ import kotlinx.serialization.json.put
         ChatAttachmentEntity::class,
         ConversationAttachmentRefEntity::class,
         WorkspaceEntity::class,
+        MemoryClaimEntity::class,
+        MemoryClaimFtsEntity::class,
+        MemoryEpisodeV3Entity::class,
+        MemoryEpisodeV3FtsEntity::class,
+        MemorySourceV3Entity::class,
+        MemorySourceV3FtsEntity::class,
+        MemoryIngestStateEntity::class,
+        MemoryProjectionEntity::class,
     ],
-    version = 38,
+    version = 39,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -93,6 +110,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 35, to = 36),
         AutoMigration(from = 36, to = 37),
         AutoMigration(from = 37, to = 38, spec = Migration_37_38::class),
+        AutoMigration(from = 38, to = 39),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -104,6 +122,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationAttachmentRefDao(): ConversationAttachmentRefDao
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun temporalMemoryDao(): TemporalMemoryDao
 
     abstract fun genMediaDao(): GenMediaDAO
 

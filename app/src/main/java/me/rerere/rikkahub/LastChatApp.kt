@@ -33,7 +33,9 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
 import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
@@ -147,6 +149,18 @@ class LastChatApp : Application() {
                             .build()
                     )
                 }
+        }
+
+        // Memory v3 backfills evidence indexes and legacy claims silently. The marker is written
+        // when queued because the work itself is resumable and retries failures.
+        val memoryMigrationPrefs = getSharedPreferences("memory_v3_migration", MODE_PRIVATE)
+        if (memoryMigrationPrefs.getInt("queued_schema", 0) < 1) {
+            WorkManager.getInstance(this).enqueue(
+                OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                    .setInputData(workDataOf(MemoryConsolidationWorker.KEY_FULL_SCAN to true))
+                    .build()
+            )
+            memoryMigrationPrefs.edit().putInt("queued_schema", 1).apply()
         }
         
         // Update app shortcuts when recently used assistants change

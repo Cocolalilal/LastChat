@@ -33,7 +33,7 @@ class MemoryRepository(
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
-                entities.map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                entities.map { AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
             }
 
     /**
@@ -46,10 +46,10 @@ class MemoryRepository(
             chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
         ) { memories, episodes ->
             val coreMemories = memories.map { 
-                AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt)
+                AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt)
             }
             val episodicMemories = episodes.map { 
-                AssistantMemory(-it.id, it.content, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
+                AssistantMemory(-it.id, it.content, MemoryType.EPISODIC, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.startTime, it.significance)
             }
             coreMemories + episodicMemories
         }
@@ -64,7 +64,7 @@ class MemoryRepository(
 
     suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
         return memoryDAO.getMemoriesOfAssistant(assistantId)
-            .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+            .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
     }
 
     suspend fun getMemoryById(id: Int): AssistantMemory? {
@@ -73,7 +73,7 @@ class MemoryRepository(
             id = memory.id,
             content = memory.content,
             type = memory.type,
-            hasEmbedding = memory.embedding != null,
+            hasEmbedding = memory.embedding != null || memory.embeddingBlob != null,
             embeddingModelId = memory.embeddingModelId,
             timestamp = memory.createdAt
         )
@@ -201,7 +201,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
     suspend fun updateContent(id: Int, content: String): AssistantMemory {
         val memory = memoryDAO.getMemoryById(id) ?: error("Memory not found")
-        val newMemory = memory.copy(content = content, embedding = null) // Invalidate embedding
+        val newMemory = memory.copy(content = content, embedding = null, embeddingBlob = null, embeddingModelId = null)
         memoryDAO.updateMemory(newMemory)
 
         // Invalidate cache
@@ -219,7 +219,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
     suspend fun updateEpisodeContent(id: Int, content: String): AssistantMemory {
         val episode = chatEpisodeDAO.getEpisodeById(id) ?: error("Episode not found")
-        val newEpisode = episode.copy(content = content, embedding = null) // Invalidate embedding
+        val newEpisode = episode.copy(content = content, embedding = null, embeddingBlob = null, embeddingModelId = null)
         chatEpisodeDAO.insertEpisode(newEpisode)
 
         // Invalidate cache
@@ -445,10 +445,10 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         
         // Filter to only memories that need embedding
         val memoriesNeedingEmbedding = allMemories.filter { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
         val episodesNeedingEmbedding = allEpisodes.filter { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
         
         val total = memoriesNeedingEmbedding.size + episodesNeedingEmbedding.size
@@ -529,10 +529,10 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
         // Filter to only memories that need embedding
         val memoriesNeedingEmbedding = memories.filter { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
         val episodesNeedingEmbedding = episodes.filter { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
 
         // Process Core Memories that need embedding
@@ -598,10 +598,10 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
         
         val memoriesNeedingEmbedding = memories.count { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
         val episodesNeedingEmbedding = episodes.count { 
-            it.embedding == null || it.embeddingModelId != currentModelId 
+            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
         }
         
         return memoriesNeedingEmbedding + episodesNeedingEmbedding

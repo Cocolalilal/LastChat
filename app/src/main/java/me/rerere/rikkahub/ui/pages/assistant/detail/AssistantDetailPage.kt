@@ -454,6 +454,7 @@ fun AssistantDetailPage(
                 val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
+                    providers = settings.providers,
                     hasSummarizerModelConfigured = settings.summarizerModelId != null,
                     memories = memories,
                     onUpdateAssistant = { onUpdate(it) },

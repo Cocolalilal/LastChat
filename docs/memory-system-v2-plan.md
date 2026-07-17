@@ -1,6 +1,11 @@
 # LastChat Memory v2 — Graph Memory System: Complete Plan
 
-Status: **PLAN** (nothing implemented). Supersedes every prior memory design, including:
+> **Superseded by the v39 temporal-memory implementation.** This document is retained only as
+> historical design context. Its graph-preview and graph-screen proposals are explicitly cancelled:
+> LastChat does not expose a graph visualization. The shipped direction is an invisible temporal
+> claim/episode/source index with provenance, branch-aware ingestion, watermarks, and ranked recall.
+
+Status: **HISTORICAL PLAN** (not the current implementation). It originally superseded:
 
 - the live legacy system (`MemoryEntity` + `ChatEpisodeEntity` + `MemoryConsolidationWorker` RAG),
 - the orphaned `MemoryItemEntity`/`MemoryItemFtsEntity` two-layer WIP (dead code; deleted by this plan),

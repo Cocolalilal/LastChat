@@ -20,6 +20,8 @@ import me.rerere.rikkahub.data.model.TavernCharacterBook
 import me.rerere.rikkahub.data.model.TavernCharacterBookEntry
 import me.rerere.rikkahub.data.model.toTavernCharacterBook
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.memory.TemporalMemoryExport
+import me.rerere.rikkahub.data.memory.TemporalMemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
@@ -45,13 +47,15 @@ data class AssistantExportV1(
     // Bundled Lorebooks
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
-    val memories: List<AssistantMemory> = emptyList()
+    val memories: List<AssistantMemory> = emptyList(),
+    val temporalMemory: TemporalMemoryExport? = null,
 )
 
 object AssistantExportImport : KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
+    private val temporalMemoryRepository: TemporalMemoryRepository by inject()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -138,7 +142,10 @@ object AssistantExportImport : KoinComponent {
             avatarContent = avatarContent,
             avatarMimeType = avatarMime,
             lorebooks = bundledLorebooks,
-            memories = bundledMemories
+            memories = bundledMemories,
+            temporalMemory = if (includeMemories) {
+                temporalMemoryRepository.exportMemory(assistant.id.toString())
+            } else null,
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -250,6 +257,9 @@ object AssistantExportImport : KoinComponent {
                      )
                      chatEpisodeDAO.insertEpisode(entity)
                 }
+            }
+            export.temporalMemory?.let { temporal ->
+                temporalMemoryRepository.importMemory(assistant.id.toString(), temporal)
             }
         }
 
@@ -611,7 +621,9 @@ object AssistantExportImport : KoinComponent {
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
-                        hasMemories = export.memories.isNotEmpty(),
+                        hasMemories = export.memories.isNotEmpty() || export.temporalMemory?.let {
+                            it.claims.isNotEmpty() || it.episodes.isNotEmpty()
+                        } == true,
                         hasLorebooks = export.lorebooks.isNotEmpty(),
                         missingModels = checkMissingModels(export.assistant)
                     )

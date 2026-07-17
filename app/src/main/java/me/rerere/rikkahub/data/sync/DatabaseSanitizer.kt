@@ -70,6 +70,14 @@ object DatabaseSanitizer {
                 "GenMediaEntity",
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
+                "memory_claim",
+                "memory_claim_fts",
+                "memory_episode_v3",
+                "memory_episode_v3_fts",
+                "memory_source_v3",
+                "memory_source_v3_fts",
+                "memory_ingest_state",
+                "memory_projection",
                 "daily_activity",
                 "usage_stats"
             )

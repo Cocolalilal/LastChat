@@ -614,6 +614,7 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
+    private val temporalMemoryRepository: me.rerere.rikkahub.data.memory.TemporalMemoryRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -1170,7 +1171,7 @@ class ChatService(
                     suppressCompletionNotification = true,
                 )
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 e.printStackTrace()
                 _errorFlow.emit(e)
@@ -1283,7 +1284,7 @@ class ChatService(
                     )
                 }
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 e.printStackTrace()
                 _errorFlow.emit(e)
@@ -1403,7 +1404,7 @@ class ChatService(
                     }
                 }
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 _errorFlow.emit(e)
             }
@@ -1484,31 +1485,31 @@ class ChatService(
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
                     if (assistant.useRagMemoryRetrieval) {
-                        // RAG mode: retrieve relevant memories based on context
-                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        
-                        if (settings.enableRagLogging) {
-                            Log.d("RAG", "Query: $lastUserMessage")
-                        }
-
-                        if (lastUserMessage.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = conversation.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
-                            )
-                            if (settings.enableRagLogging) {
-                                Log.d("RAG", "Retrieved ${results.size} memories")
-                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
+                        val lastUserMessage = conversation.currentMessages
+                            .lastOrNull { it.role == MessageRole.USER }
+                            ?.toText()
+                            .orEmpty()
+                        val packet = temporalMemoryRepository.recall(
+                            assistantId = conversation.assistantId.toString(),
+                            query = lastUserMessage.ifBlank { conversation.title },
+                            limit = if (assistant.ragLimit > 50) 20 else assistant.ragLimit,
+                            rerankMode = assistant.memoryRerankMode,
+                            rerankModelId = assistant.memoryRerankModelId,
+                        )
+                        buildList {
+                            packet.projection?.takeIf { it.isNotBlank() }?.let { projection ->
+                                add(me.rerere.rikkahub.data.model.AssistantMemory(id = -2, content = projection))
                             }
-                            results
-                        } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
-                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                                .take(50)
+                            packet.items.forEachIndexed { index, item ->
+                                add(
+                                    me.rerere.rikkahub.data.model.AssistantMemory(
+                                        id = -(index + 10),
+                                        content = item.text,
+                                        type = if (item.kind == me.rerere.rikkahub.data.memory.RecallKind.EPISODE) 1 else 0,
+                                        timestamp = item.timestamp,
+                                    )
+                                )
+                            }
                         }
                     } else {
                         // Simple mode: inject recent memories
@@ -2401,6 +2402,22 @@ class ChatService(
         val normalizedConversation = normalizeConversation(conversation)
         getOrCreateConversationState(conversationId) { normalizedConversation }.value =
             normalizedConversation
+    }
+
+    private suspend fun emitGenerationDone(conversationId: Uuid) {
+        val conversation = getConversationState(conversationId)?.value
+            ?: conversationRepo.getConversationById(conversationId)
+        if (
+            conversation != null &&
+            getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+        ) {
+            TemporalMemoryIngestWorker.enqueue(
+                context = context,
+                assistantId = conversation.assistantId.toString(),
+                conversationId = conversation.id.toString(),
+            )
+        }
+        _generationDoneFlow.emit(conversationId)
     }
 
     // 检查文件删除

@@ -86,6 +86,13 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.AssistantMemoryMode
+import me.rerere.rikkahub.data.model.MemoryRerankMode
+import me.rerere.rikkahub.data.model.resolvedMemoryMode
+import me.rerere.rikkahub.data.model.withMemoryMode
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -128,6 +135,7 @@ private enum class MemorySortOrder(@StringRes val displayNameRes: Int) {
 @Composable
 fun AssistantMemorySettings(
     assistant: Assistant,
+    providers: List<ProviderSetting>,
     hasSummarizerModelConfigured: Boolean,
     memories: List<AssistantMemory>,
     onUpdateAssistant: (Assistant) -> Unit,
@@ -206,7 +214,7 @@ fun AssistantMemorySettings(
 
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
-    val currentMode = getMemoryMode(assistant)
+    val resolvedMode = assistant.resolvedMemoryMode()
 
     Column(
         modifier = Modifier
@@ -216,14 +224,35 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Mode Indicator
-        MemoryModeIndicator(mode = currentMode)
+        MemoryModeSelector(
+            mode = resolvedMode,
+            onSelected = { onUpdateAssistant(assistant.withMemoryMode(it)) },
+        )
+        if (resolvedMode == AssistantMemoryMode.SEARCHABLE || resolvedMode == AssistantMemoryMode.ADAPTIVE) {
+            MemoryRerankSelector(
+                mode = assistant.memoryRerankMode,
+                modelId = assistant.memoryRerankModelId,
+                providers = providers,
+                onSelected = { onUpdateAssistant(assistant.copy(memoryRerankMode = it)) },
+                onModelSelected = {
+                    onUpdateAssistant(
+                        assistant.copy(
+                            memoryRerankMode = MemoryRerankMode.SELECTED_MODEL,
+                            memoryRerankModelId = it,
+                        )
+                    )
+                },
+            )
+        }
         
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
         // ═══════════════════════════════════════════════════════════════════
+        // Pre-v39 boolean controls remain serialized for import compatibility.
+        if (false) {
+        Column {
         SettingsGroupHeader(title = stringResource(R.string.assistant_memory_settings_title))
-        
+
         Column(
             modifier = Modifier.clip(RoundedCornerShape(24.dp)),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -355,12 +384,14 @@ fun AssistantMemorySettings(
                 )
             }
         }
+        }
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // RAG SETTINGS (when RAG is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+            visible = false, // Legacy RAG tuning does not control the v3 recall pipeline.
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -406,7 +437,7 @@ fun AssistantMemorySettings(
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
+            visible = false, // Adaptive ingestion is automatic; there is no consolidation mode to manage.
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -428,7 +459,7 @@ fun AssistantMemorySettings(
         // MEMORY STATISTICS (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory,
+            visible = resolvedMode != AssistantMemoryMode.OFF,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -443,7 +474,7 @@ fun AssistantMemorySettings(
         // MANAGE MEMORIES (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory,
+            visible = resolvedMode != AssistantMemoryMode.OFF,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -469,7 +500,7 @@ fun AssistantMemorySettings(
         // MEMORY DEBUGGER (RAG only)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
+            visible = false, // The old embedding debugger targets the retired retrieval path.
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -582,6 +613,87 @@ private fun MemorySettingsItem(
             if (trailing != null) {
                 trailing()
             }
+        }
+    }
+}
+
+@Composable
+private fun MemoryModeSelector(
+    mode: AssistantMemoryMode,
+    onSelected: (AssistantMemoryMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Memory mode", style = MaterialTheme.typography.titleSmall)
+        Select(
+            options = AssistantMemoryMode.entries,
+            selectedOption = mode,
+            onOptionSelected = onSelected,
+            modifier = Modifier.fillMaxWidth(),
+            optionToString = {
+                when (it) {
+                    AssistantMemoryMode.OFF -> "Off"
+                    AssistantMemoryMode.BASIC -> "Basic"
+                    AssistantMemoryMode.SEARCHABLE -> "Searchable"
+                    AssistantMemoryMode.ADAPTIVE -> "Adaptive"
+                }
+            },
+        )
+        Text(
+            text = when (mode) {
+                AssistantMemoryMode.OFF -> "The character does not retain information between chats."
+                AssistantMemoryMode.BASIC -> "Only editable memory notes are retained."
+                AssistantMemoryMode.SEARCHABLE -> "Notes and past chats are recalled automatically without background learning."
+                AssistantMemoryMode.ADAPTIVE -> "The character quietly learns temporal facts, changes, plans, and meaningful scenes."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun MemoryRerankSelector(
+    mode: MemoryRerankMode,
+    modelId: kotlin.uuid.Uuid?,
+    providers: List<ProviderSetting>,
+    onSelected: (MemoryRerankMode) -> Unit,
+    onModelSelected: (kotlin.uuid.Uuid) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Recall reranking", style = MaterialTheme.typography.titleSmall)
+        Select(
+            options = MemoryRerankMode.entries,
+            selectedOption = mode,
+            onOptionSelected = onSelected,
+            modifier = Modifier.fillMaxWidth(),
+            optionToString = {
+                when (it) {
+                    MemoryRerankMode.AUTOMATIC -> "Automatic"
+                    MemoryRerankMode.OFF -> "Off"
+                    MemoryRerankMode.LOCAL -> "Local model"
+                    MemoryRerankMode.SELECTED_MODEL -> "Selected model"
+                }
+            },
+        )
+        Text(
+            when (mode) {
+                MemoryRerankMode.AUTOMATIC -> "Automatic never spends remote tokens and falls back to indexed rank fusion."
+                MemoryRerankMode.OFF -> "Uses the indexed retrieval order without a second ranking pass."
+                MemoryRerankMode.LOCAL -> "Uses on-device similarity signals and never calls a hosted chat model."
+                MemoryRerankMode.SELECTED_MODEL -> "Uses the chat model below for a final relevance pass. This can consume provider tokens."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (mode == MemoryRerankMode.SELECTED_MODEL) {
+            ModelSelector(
+                modelId = modelId,
+                providers = providers,
+                type = ModelType.CHAT,
+                allowBackendModels = true,
+                modifier = Modifier.fillMaxWidth(),
+                onSelect = { onModelSelected(it.id) },
+            )
         }
     }
 }
