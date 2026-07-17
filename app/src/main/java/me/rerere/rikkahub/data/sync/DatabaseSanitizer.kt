@@ -75,6 +75,7 @@ object DatabaseSanitizer {
                 "graph_memories",
                 "graph_entities",
                 "graph_memory_entity_links",
+                "graph_memory_relations",
                 "graph_memory_sources",
                 "graph_memory_history",
                 "memory_engine_state",

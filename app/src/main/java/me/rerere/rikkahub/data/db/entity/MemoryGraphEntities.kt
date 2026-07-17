@@ -68,6 +68,18 @@ data class GraphMemoryEntityLinkEntity(
 )
 
 @Entity(
+    tableName = "graph_memory_relations",
+    primaryKeys = ["memory_id", "related_memory_id"],
+    indices = [Index("related_memory_id")],
+)
+data class GraphMemoryRelationEntity(
+    @ColumnInfo("memory_id") val memoryId: String,
+    @ColumnInfo("related_memory_id") val relatedMemoryId: String,
+    val relation: String = "RELATED",
+    @ColumnInfo("created_at") val createdAt: Long,
+)
+
+@Entity(
     tableName = "graph_memory_sources",
     indices = [Index("memory_id"), Index("conversation_id"), Index("message_id")],
 )

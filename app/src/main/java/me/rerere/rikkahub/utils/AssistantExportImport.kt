@@ -38,6 +38,7 @@ import me.rerere.rikkahub.data.db.dao.MemoryGraphDao
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntity
 import me.rerere.rikkahub.data.db.entity.GraphEntityEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryRelationEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemorySourceEntity
 import me.rerere.rikkahub.data.model.resolvedMemoryEngineId
 import me.rerere.ai.memory.BuiltInMemoryEngines
@@ -47,6 +48,7 @@ data class GraphMemoryExportV1(
     val memories: List<GraphMemoryRecordV1> = emptyList(),
     val entities: List<GraphEntityRecordV1> = emptyList(),
     val links: List<GraphLinkRecordV1> = emptyList(),
+    val relations: List<GraphRelationRecordV1> = emptyList(),
     val sources: List<GraphSourceRecordV1> = emptyList(),
 )
 
@@ -56,6 +58,8 @@ data class GraphMemoryRecordV1(val id: String, val content: String, val contentH
 data class GraphEntityRecordV1(val id: String, val canonicalName: String, val normalizedName: String, val entityType: String, val aliasesJson: String, val createdAt: Long, val updatedAt: Long, val embeddingBlob: ByteArray? = null, val embeddingModelId: String? = null)
 @Serializable
 data class GraphLinkRecordV1(val memoryId: String, val entityId: String, val confidence: Float, val createdAt: Long)
+@Serializable
+data class GraphRelationRecordV1(val memoryId: String, val relatedMemoryId: String, val relation: String, val createdAt: Long)
 @Serializable
 data class GraphSourceRecordV1(val memoryId: String, val sourceType: String, val sourceId: String?, val conversationId: String?, val messageId: String?, val speaker: String?, val excerpt: String, val observedAt: Long)
 
@@ -167,6 +171,7 @@ object AssistantExportImport : KoinComponent {
                 memories = snapshot.memories.map { GraphMemoryRecordV1(it.id, it.content, it.contentHash, it.lemmatizedText, it.attributedTo, it.origin, it.createdAt, it.updatedAt, it.expirationAt, it.embeddingBlob, it.embeddingModelId) },
                 entities = snapshot.entities.map { GraphEntityRecordV1(it.id, it.canonicalName, it.normalizedName, it.entityType, it.aliasesJson, it.createdAt, it.updatedAt, it.embeddingBlob, it.embeddingModelId) },
                 links = snapshot.links.map { GraphLinkRecordV1(it.memoryId, it.entityId, it.confidence, it.createdAt) },
+                relations = snapshot.relations.map { GraphRelationRecordV1(it.memoryId, it.relatedMemoryId, it.relation, it.createdAt) },
                 sources = snapshot.memories.flatMap { memory -> graphMemoryRepository.sources(memory.id) }
                     .map { GraphSourceRecordV1(it.memoryId, it.sourceType, it.sourceId, it.conversationId, it.messageId, it.speaker, it.excerpt, it.observedAt) },
             )
@@ -335,6 +340,12 @@ object AssistantExportImport : KoinComponent {
                     val entityId = entityIds[item.entityId] ?: return@forEach
                     memoryGraphDao.insertLink(GraphMemoryEntityLinkEntity(memoryId, entityId, item.confidence, item.createdAt))
                 }
+                val relations = graph.relations.mapNotNull { item ->
+                    val memoryId = memoryIds[item.memoryId] ?: return@mapNotNull null
+                    val relatedMemoryId = memoryIds[item.relatedMemoryId] ?: return@mapNotNull null
+                    GraphMemoryRelationEntity(memoryId, relatedMemoryId, item.relation, item.createdAt)
+                }
+                if (relations.isNotEmpty()) memoryGraphDao.insertRelations(relations)
                 graph.sources.forEach { item ->
                     val memoryId = memoryIds[item.memoryId] ?: return@forEach
                     memoryGraphDao.insertSource(

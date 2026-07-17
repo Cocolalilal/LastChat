@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.db.entity.GraphEntityEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryHistoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryRelationEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemorySourceEntity
 import me.rerere.rikkahub.data.db.entity.MemoryActivityEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEngineStateEntity
@@ -76,6 +77,7 @@ import kotlinx.serialization.json.put
         GraphMemoryEntityLinkEntity::class,
         GraphMemorySourceEntity::class,
         GraphMemoryHistoryEntity::class,
+        GraphMemoryRelationEntity::class,
         MemoryEngineStateEntity::class,
         MemoryTransferJobEntity::class,
         MemoryTransferLinkEntity::class,
@@ -86,7 +88,7 @@ import kotlinx.serialization.json.put
         MemoryScopeMessageEntity::class,
         GraphEmbeddingCacheEntity::class,
     ],
-    version = 36,
+    version = 37,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -120,6 +122,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 33, to = 35),
         AutoMigration(from = 34, to = 35, spec = Migration_34_35::class),
         AutoMigration(from = 35, to = 36),
+        AutoMigration(from = 36, to = 37),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

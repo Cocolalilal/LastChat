@@ -11,6 +11,7 @@ import me.rerere.rikkahub.data.db.entity.GraphEntityEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryEntityLinkEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemoryHistoryEntity
+import me.rerere.rikkahub.data.db.entity.GraphMemoryRelationEntity
 import me.rerere.rikkahub.data.db.entity.GraphMemorySourceEntity
 import me.rerere.rikkahub.data.db.entity.MemoryActivityEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEngineStateEntity
@@ -57,8 +58,19 @@ interface MemoryGraphDao {
     @Query("DELETE FROM graph_memories WHERE assistant_id = :assistantId")
     suspend fun deleteAssistantMemories(assistantId: String)
 
+    @Query("UPDATE graph_memories SET embedding_blob = :embeddingBlob, embedding_model_id = :modelId WHERE id = :id AND updated_at = :expectedUpdatedAt")
+    suspend fun updateMemoryEmbeddingIfUnchanged(
+        id: String,
+        expectedUpdatedAt: Long,
+        embeddingBlob: ByteArray,
+        modelId: String,
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEntity(entity: GraphEntityEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertEntities(entities: List<GraphEntityEntity>)
 
     @Query("""
         SELECT * FROM graph_entities WHERE assistant_id = :assistantId AND scope_kind = :scopeKind
@@ -76,8 +88,19 @@ interface MemoryGraphDao {
     @Query("DELETE FROM graph_entities WHERE id = :id")
     suspend fun deleteEntity(id: String)
 
+    @Query("UPDATE graph_entities SET embedding_blob = :embeddingBlob, embedding_model_id = :modelId WHERE id = :id AND updated_at = :expectedUpdatedAt")
+    suspend fun updateEntityEmbeddingIfUnchanged(
+        id: String,
+        expectedUpdatedAt: Long,
+        embeddingBlob: ByteArray,
+        modelId: String,
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertLink(link: GraphMemoryEntityLinkEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLinks(links: List<GraphMemoryEntityLinkEntity>)
 
     @Query("SELECT * FROM graph_memory_entity_links")
     fun observeLinks(): Flow<List<GraphMemoryEntityLinkEntity>>
@@ -88,14 +111,35 @@ interface MemoryGraphDao {
     @Query("SELECT * FROM graph_memory_entity_links WHERE entity_id = :entityId")
     suspend fun getLinksForEntity(entityId: String): List<GraphMemoryEntityLinkEntity>
 
+    @Query("SELECT * FROM graph_memory_entity_links WHERE entity_id IN (:entityIds)")
+    suspend fun getLinksForEntities(entityIds: List<String>): List<GraphMemoryEntityLinkEntity>
+
     @Query("DELETE FROM graph_memory_entity_links WHERE memory_id = :memoryId")
     suspend fun deleteLinksForMemory(memoryId: String)
 
     @Query("DELETE FROM graph_memory_entity_links WHERE entity_id = :entityId")
     suspend fun deleteLinksForEntity(entityId: String)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRelations(relations: List<GraphMemoryRelationEntity>)
+
+    @Query("SELECT * FROM graph_memory_relations")
+    fun observeMemoryRelations(): Flow<List<GraphMemoryRelationEntity>>
+
+    @Query("SELECT * FROM graph_memory_relations WHERE memory_id = :memoryId OR related_memory_id = :memoryId")
+    suspend fun getRelationsForMemory(memoryId: String): List<GraphMemoryRelationEntity>
+
+    @Query("DELETE FROM graph_memory_relations WHERE memory_id = :memoryId")
+    suspend fun deleteOutgoingRelations(memoryId: String)
+
+    @Query("DELETE FROM graph_memory_relations WHERE memory_id = :memoryId OR related_memory_id = :memoryId")
+    suspend fun deleteRelationsForMemory(memoryId: String)
+
     @Insert
     suspend fun insertSource(source: GraphMemorySourceEntity)
+
+    @Insert
+    suspend fun insertSources(sources: List<GraphMemorySourceEntity>)
 
     @Query("SELECT * FROM graph_memory_sources WHERE memory_id = :memoryId ORDER BY observed_at DESC")
     suspend fun getSources(memoryId: String): List<GraphMemorySourceEntity>
@@ -106,11 +150,17 @@ interface MemoryGraphDao {
     @Insert
     suspend fun insertHistory(history: GraphMemoryHistoryEntity)
 
+    @Insert
+    suspend fun insertHistories(history: List<GraphMemoryHistoryEntity>)
+
     @Query("SELECT * FROM graph_memory_history WHERE memory_id = :memoryId ORDER BY created_at DESC")
     suspend fun getHistory(memoryId: String): List<GraphMemoryHistoryEntity>
 
     @Insert
     suspend fun insertActivity(activity: MemoryActivityEntity)
+
+    @Insert
+    suspend fun insertActivities(activities: List<MemoryActivityEntity>)
 
     @Query("SELECT * FROM memory_activity WHERE assistant_id = :assistantId ORDER BY created_at DESC LIMIT :limit")
     fun observeActivity(assistantId: String, limit: Int = 200): Flow<List<MemoryActivityEntity>>
@@ -157,6 +207,9 @@ interface MemoryGraphDao {
     @Query("DELETE FROM memory_suppressions WHERE assistant_id = :assistantId AND kind = 'ENTITY'")
     suspend fun clearEntitySuppressions(assistantId: String)
 
+    @Query("DELETE FROM memory_suppressions WHERE assistant_id = :assistantId AND kind = :kind AND normalized_value = :normalizedValue")
+    suspend fun deleteSuppression(assistantId: String, kind: String, normalizedValue: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSessionCursor(cursor: SessionMemoryCursorEntity)
 
@@ -196,15 +249,31 @@ interface MemoryGraphDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertGraphEmbedding(embedding: GraphEmbeddingCacheEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGraphEmbeddings(embeddings: List<GraphEmbeddingCacheEntity>)
+
     @Query("SELECT * FROM graph_embedding_cache WHERE owner_id = :ownerId AND owner_kind = :ownerKind AND model_id = :modelId")
     suspend fun getGraphEmbedding(ownerId: String, ownerKind: String, modelId: String): GraphEmbeddingCacheEntity?
+
+    @Query("SELECT * FROM graph_embedding_cache WHERE owner_id IN (:ownerIds) AND owner_kind = :ownerKind AND model_id = :modelId")
+    suspend fun getGraphEmbeddings(ownerIds: List<String>, ownerKind: String, modelId: String): List<GraphEmbeddingCacheEntity>
 
     @Query("DELETE FROM graph_embedding_cache WHERE owner_id = :ownerId")
     suspend fun deleteGraphEmbeddings(ownerId: String)
 
+    @Query("DELETE FROM graph_embedding_cache WHERE owner_id IN (:ownerIds)")
+    suspend fun deleteGraphEmbeddings(ownerIds: List<String>)
+
+    @Query("SELECT id FROM graph_entities WHERE assistant_id = :assistantId AND NOT EXISTS (SELECT 1 FROM graph_memory_entity_links WHERE entity_id = graph_entities.id)")
+    suspend fun getOrphanEntityIds(assistantId: String): List<String>
+
+    @Query("DELETE FROM graph_entities WHERE id IN (:entityIds)")
+    suspend fun deleteEntities(entityIds: List<String>)
+
     @Transaction
     suspend fun deleteMemoryGraph(id: String) {
         deleteLinksForMemory(id)
+        deleteRelationsForMemory(id)
         deleteSources(id)
         deleteMemory(id)
     }
