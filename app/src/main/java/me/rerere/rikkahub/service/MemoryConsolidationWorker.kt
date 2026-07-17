@@ -56,7 +56,7 @@ class MemoryConsolidationWorker(
                     conversationRepository.getPendingMemoryConversations(assistant.id, RECONCILE_BATCH_SIZE)
                 }
                 conversations.forEach { conversation ->
-                    TemporalMemoryIngestWorker.enqueue(
+                    TemporalMemoryIngestWorker.enqueueReconciliation(
                         applicationContext,
                         assistant.id.toString(),
                         conversation.id.toString(),

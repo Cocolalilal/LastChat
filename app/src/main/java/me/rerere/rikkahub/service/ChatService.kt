@@ -119,6 +119,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
+private const val ADAPTIVE_MEMORY_MESSAGE_THRESHOLD = 8
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
 
@@ -734,6 +735,9 @@ class ChatService(
         )
         appScope.launch {
             delay(500)
+            if (referenceCount == 0) {
+                enqueuePendingAdaptiveMemory(conversationId, forceNow = true)
+            }
             checkAllConversationsReferences()
         }
     }
@@ -2411,13 +2415,56 @@ class ChatService(
             conversation != null &&
             getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
         ) {
-            TemporalMemoryIngestWorker.enqueue(
+            val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
+            TemporalMemoryIngestWorker.enqueueEvidence(
                 context = context,
                 assistantId = conversation.assistantId.toString(),
                 conversationId = conversation.id.toString(),
             )
+            if (assistant?.enableMemoryConsolidation == true) {
+                enqueuePendingAdaptiveMemory(conversationId, forceNow = false)
+            }
         }
         _generationDoneFlow.emit(conversationId)
+    }
+
+    private suspend fun enqueuePendingAdaptiveMemory(conversationId: Uuid, forceNow: Boolean) {
+        if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) return
+        val conversation = getConversationState(conversationId)?.value
+            ?: conversationRepo.getConversationById(conversationId)
+            ?: return
+        val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
+            ?: return
+        if (!assistant.enableMemory || !assistant.enableMemoryConsolidation) return
+
+        val memoryMessages = conversation.currentMessages.filter { message ->
+            (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
+                message.toText().isNotBlank()
+        }
+        val state = temporalMemoryRepository.getIngestState(conversation.id.toString())
+        val lastProcessedIndex = state?.lastMessageId?.let { id ->
+            memoryMessages.indexOfLast { it.id.toString() == id }
+        } ?: -1
+        val pendingCount = if (lastProcessedIndex >= 0) {
+            memoryMessages.size - lastProcessedIndex - 1
+        } else {
+            memoryMessages.size.coerceAtMost(20)
+        }
+        if (pendingCount <= 0) return
+
+        if (forceNow || pendingCount >= ADAPTIVE_MEMORY_MESSAGE_THRESHOLD) {
+            TemporalMemoryIngestWorker.enqueueAdaptiveNow(
+                context,
+                conversation.assistantId.toString(),
+                conversation.id.toString(),
+            )
+        } else {
+            TemporalMemoryIngestWorker.enqueueAdaptiveAfterInactivity(
+                context,
+                conversation.assistantId.toString(),
+                conversation.id.toString(),
+            )
+        }
     }
 
     // 检查文件删除

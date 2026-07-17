@@ -178,7 +178,67 @@ class TemporalMemoryIngestWorker(
         const val KEY_CONVERSATION_ID = "conversation_id"
         const val KEY_INDEX_ONLY = "index_only"
 
-        fun enqueue(context: Context, assistantId: String, conversationId: String, indexOnly: Boolean = false) {
+        fun enqueueEvidence(context: Context, assistantId: String, conversationId: String) {
+            enqueue(
+                context = context,
+                assistantId = assistantId,
+                conversationId = conversationId,
+                indexOnly = true,
+                initialDelayMinutes = 0,
+                workName = "memory-v3-index-$assistantId-$conversationId",
+            )
+        }
+
+        fun enqueueAdaptiveAfterInactivity(context: Context, assistantId: String, conversationId: String) {
+            enqueue(
+                context = context,
+                assistantId = assistantId,
+                conversationId = conversationId,
+                indexOnly = false,
+                initialDelayMinutes = ADAPTIVE_INACTIVITY_MINUTES,
+                workName = "memory-v3-adapt-$assistantId-$conversationId",
+            )
+        }
+
+        fun enqueueAdaptiveNow(context: Context, assistantId: String, conversationId: String) {
+            enqueue(
+                context = context,
+                assistantId = assistantId,
+                conversationId = conversationId,
+                indexOnly = false,
+                initialDelayMinutes = 0,
+                workName = "memory-v3-adapt-$assistantId-$conversationId",
+            )
+        }
+
+        fun enqueueReconciliation(
+            context: Context,
+            assistantId: String,
+            conversationId: String,
+            indexOnly: Boolean,
+        ) {
+            enqueue(
+                context = context,
+                assistantId = assistantId,
+                conversationId = conversationId,
+                indexOnly = indexOnly,
+                initialDelayMinutes = 0,
+                workName = if (indexOnly) {
+                    "memory-v3-index-$assistantId-$conversationId"
+                } else {
+                    "memory-v3-adapt-$assistantId-$conversationId"
+                },
+            )
+        }
+
+        private fun enqueue(
+            context: Context,
+            assistantId: String,
+            conversationId: String,
+            indexOnly: Boolean,
+            initialDelayMinutes: Long,
+            workName: String,
+        ) {
             val request = OneTimeWorkRequestBuilder<TemporalMemoryIngestWorker>()
                 .setInputData(
                     workDataOf(
@@ -187,13 +247,16 @@ class TemporalMemoryIngestWorker(
                         KEY_INDEX_ONLY to indexOnly,
                     )
                 )
+                .setInitialDelay(initialDelayMinutes, TimeUnit.MINUTES)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "memory-v3-$assistantId-$conversationId",
-                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                workName,
+                ExistingWorkPolicy.REPLACE,
                 request,
             )
         }
+
+        private const val ADAPTIVE_INACTIVITY_MINUTES = 10L
     }
 }
