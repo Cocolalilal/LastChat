@@ -1496,9 +1496,13 @@ class ChatService(
                         val packet = temporalMemoryRepository.recall(
                             assistantId = conversation.assistantId.toString(),
                             query = lastUserMessage.ifBlank { conversation.title },
-                            limit = if (assistant.ragLimit > 50) 20 else assistant.ragLimit,
+                            limit = assistant.ragLimit.coerceIn(1, 20),
                             rerankMode = assistant.memoryRerankMode,
                             rerankModelId = assistant.memoryRerankModelId,
+                            minimumRelevance = assistant.ragSimilarityThreshold,
+                            includeCore = assistant.ragIncludeCore,
+                            includeEpisodes = assistant.ragIncludeEpisodes,
+                            includePastChats = assistant.enableRecentChatsReference,
                         )
                         buildList {
                             packet.projection?.takeIf { it.isNotBlank() }?.let { projection ->
@@ -1514,7 +1518,7 @@ class ChatService(
                                     )
                                 )
                             }
-                        }
+                        }.take(assistant.ragLimit.coerceIn(1, 20))
                     } else {
                         // Simple mode: inject recent memories
                         memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())

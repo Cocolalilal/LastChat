@@ -454,8 +454,6 @@ fun AssistantDetailPage(
                 val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
-                    providers = settings.providers,
-                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
                     memories = memories,
                     onUpdateAssistant = { onUpdate(it) },
                     onDeleteMemory = { vm.deleteMemory(it) },
@@ -470,7 +468,7 @@ fun AssistantDetailPage(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
-                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
+                    onNavigateToDefaultModels = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }
 

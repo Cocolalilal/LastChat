@@ -23,13 +23,16 @@ class MemoryReranker(
         query: String,
         candidates: List<TemporalRecallItem>,
     ): List<TemporalRecallItem> {
-        if (candidates.size < 2 || mode != MemoryRerankMode.SELECTED_MODEL || selectedModelId == null) {
+        if (candidates.size < 2 || mode != MemoryRerankMode.SELECTED_MODEL) {
             // OFF is rank fusion only. LOCAL/AUTOMATIC use the local/selected embedding score already
             // present in first-stage retrieval and never silently invoke a remote generation model.
             return candidates.sortedByDescending { it.score }
         }
         val settings = settingsStore.settingsFlow.value
-        val model = settings.findModelById(selectedModelId) ?: return candidates
+        // The Default Models choice is authoritative. Keep the old per-assistant id only as a
+        // silent compatibility fallback for users who configured reranking before this setting.
+        val effectiveModelId = settings.memoryRerankModelId ?: selectedModelId
+        val model = effectiveModelId?.let(settings::findModelById) ?: return candidates
         val providerSetting = model.findProvider(settings.providers) ?: return candidates
         val provider = providerManager.getProviderByType(providerSetting)
         val prompt = buildString {

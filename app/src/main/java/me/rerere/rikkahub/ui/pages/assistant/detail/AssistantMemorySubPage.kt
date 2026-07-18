@@ -54,7 +54,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
-import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -86,19 +85,12 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.data.model.AssistantMemoryMode
 import me.rerere.rikkahub.data.model.MemoryRerankMode
-import me.rerere.rikkahub.data.model.resolvedMemoryMode
-import me.rerere.rikkahub.data.model.withMemoryMode
-import me.rerere.ai.provider.ModelType
-import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
@@ -135,8 +127,6 @@ private enum class MemorySortOrder(@StringRes val displayNameRes: Int) {
 @Composable
 fun AssistantMemorySettings(
     assistant: Assistant,
-    providers: List<ProviderSetting>,
-    hasSummarizerModelConfigured: Boolean,
     memories: List<AssistantMemory>,
     onUpdateAssistant: (Assistant) -> Unit,
     onAddMemory: (AssistantMemory) -> Unit,
@@ -151,7 +141,7 @@ fun AssistantMemorySettings(
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
-    onNavigateToSummarizerSettings: () -> Unit = {}
+    onNavigateToDefaultModels: () -> Unit = {}
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
         if (it.id == 0) {
@@ -214,7 +204,10 @@ fun AssistantMemorySettings(
 
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
-    val resolvedMode = assistant.resolvedMemoryMode()
+    val currentMode = getMemoryMode(assistant)
+    val onUpdateCustomized: (Assistant) -> Unit = { updated ->
+        onUpdateAssistant(updated.copy(memoryMode = null))
+    }
 
     Column(
         modifier = Modifier
@@ -224,33 +217,18 @@ fun AssistantMemorySettings(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        MemoryModeSelector(
-            mode = resolvedMode,
-            onSelected = { onUpdateAssistant(assistant.withMemoryMode(it)) },
-        )
-        if (resolvedMode == AssistantMemoryMode.SEARCHABLE || resolvedMode == AssistantMemoryMode.ADAPTIVE) {
+        MemoryModeIndicator(mode = currentMode)
+        if (assistant.enableMemory && assistant.useRagMemoryRetrieval) {
             MemoryRerankSelector(
                 mode = assistant.memoryRerankMode,
-                modelId = assistant.memoryRerankModelId,
-                providers = providers,
-                onSelected = { onUpdateAssistant(assistant.copy(memoryRerankMode = it)) },
-                onModelSelected = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            memoryRerankMode = MemoryRerankMode.SELECTED_MODEL,
-                            memoryRerankModelId = it,
-                        )
-                    )
-                },
+                onSelected = { onUpdateCustomized(assistant.copy(memoryRerankMode = it)) },
+                onNavigateToDefaultModels = onNavigateToDefaultModels,
             )
         }
         
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        // Pre-v39 boolean controls remain serialized for import compatibility.
-        if (false) {
-        Column {
         SettingsGroupHeader(title = stringResource(R.string.assistant_memory_settings_title))
 
         Column(
@@ -265,7 +243,7 @@ fun AssistantMemorySettings(
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableMemory,
-                        onCheckedChange = { onUpdateAssistant(assistant.copy(enableMemory = it)) }
+                        onCheckedChange = { onUpdateCustomized(assistant.copy(enableMemory = it)) }
                     )
                 }
             )
@@ -295,7 +273,7 @@ fun AssistantMemorySettings(
                                 checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
                                 onCheckedChange = {
                                     if (!isLockedByConsolidation) {
-                                        onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
+                                        onUpdateCustomized(assistant.copy(enableRecentChatsReference = it))
                                     }
                                 },
                                 enabled = !isLockedByConsolidation
@@ -319,7 +297,7 @@ fun AssistantMemorySettings(
                         HapticSwitch(
                             checked = assistant.enableMemorySearchTool,
                             onCheckedChange = { enabled ->
-                                onUpdateAssistant(assistant.copy(enableMemorySearchTool = enabled))
+                                onUpdateCustomized(assistant.copy(enableMemorySearchTool = enabled))
                             }
                         )
                     }
@@ -341,12 +319,12 @@ fun AssistantMemorySettings(
                             checked = assistant.useRagMemoryRetrieval,
                             onCheckedChange = { enabled ->
                                 if (!enabled) {
-                                    onUpdateAssistant(assistant.copy(
+                                    onUpdateCustomized(assistant.copy(
                                         useRagMemoryRetrieval = false,
                                         enableMemoryConsolidation = false
                                     ))
                                 } else {
-                                    onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true))
+                                    onUpdateCustomized(assistant.copy(useRagMemoryRetrieval = true))
                                 }
                             }
                         )
@@ -369,11 +347,11 @@ fun AssistantMemorySettings(
                             checked = assistant.enableMemoryConsolidation,
                             onCheckedChange = { enabled ->
                                 if (!enabled) {
-                                    onUpdateAssistant(assistant.copy(
+                                    onUpdateCustomized(assistant.copy(
                                         enableMemoryConsolidation = false
                                     ))
                                 } else {
-                                    onUpdateAssistant(assistant.copy(
+                                    onUpdateCustomized(assistant.copy(
                                         enableMemoryConsolidation = true,
                                         enableRecentChatsReference = true
                                     ))
@@ -384,20 +362,18 @@ fun AssistantMemorySettings(
                 )
             }
         }
-        }
-        }
 
         // ═══════════════════════════════════════════════════════════════════
         // RAG SETTINGS (when RAG is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = false, // Legacy RAG tuning does not control the v3 recall pipeline.
+            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
-                RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+                RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateCustomized)
 
                 // Regenerate embeddings button (visible when embeddings are missing or outdated)
                 AnimatedVisibility(
@@ -436,30 +412,11 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = false, // Adaptive ingestion is automatic; there is no consolidation mode to manage.
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                SettingsGroupHeader(title = stringResource(R.string.assistant_memory_advanced_settings))
-
-                ConsolidationSettingsCard(
-                    assistant = assistant,
-                    onUpdateAssistant = onUpdateAssistant,
-                    onConsolidate = { assistantDetailVM.consolidateMemories(true) },
-                    showSummarizerWarning = !hasSummarizerModelConfigured,
-                    onNavigateToSummarizerSettings = onNavigateToSummarizerSettings
-                )
-            }
-        }
-
-
         // ═══════════════════════════════════════════════════════════════════
         // MEMORY STATISTICS (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = resolvedMode != AssistantMemoryMode.OFF,
+            visible = assistant.enableMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -474,7 +431,7 @@ fun AssistantMemorySettings(
         // MANAGE MEMORIES (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
-            visible = resolvedMode != AssistantMemoryMode.OFF,
+            visible = assistant.enableMemory,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -514,6 +471,7 @@ fun AssistantMemorySettings(
                 }
             }
         }
+
     }
 }
 
@@ -618,46 +576,10 @@ private fun MemorySettingsItem(
 }
 
 @Composable
-private fun MemoryModeSelector(
-    mode: AssistantMemoryMode,
-    onSelected: (AssistantMemoryMode) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Memory mode", style = MaterialTheme.typography.titleSmall)
-        Select(
-            options = AssistantMemoryMode.entries,
-            selectedOption = mode,
-            onOptionSelected = onSelected,
-            modifier = Modifier.fillMaxWidth(),
-            optionToString = {
-                when (it) {
-                    AssistantMemoryMode.OFF -> "Off"
-                    AssistantMemoryMode.BASIC -> "Basic"
-                    AssistantMemoryMode.SEARCHABLE -> "Searchable"
-                    AssistantMemoryMode.ADAPTIVE -> "Adaptive"
-                }
-            },
-        )
-        Text(
-            text = when (mode) {
-                AssistantMemoryMode.OFF -> "The character does not retain information between chats."
-                AssistantMemoryMode.BASIC -> "Only editable memory notes are retained."
-                AssistantMemoryMode.SEARCHABLE -> "Notes and past chats are recalled automatically without background learning."
-                AssistantMemoryMode.ADAPTIVE -> "The character quietly learns temporal facts, changes, plans, and meaningful scenes."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun MemoryRerankSelector(
     mode: MemoryRerankMode,
-    modelId: kotlin.uuid.Uuid?,
-    providers: List<ProviderSetting>,
     onSelected: (MemoryRerankMode) -> Unit,
-    onModelSelected: (kotlin.uuid.Uuid) -> Unit,
+    onNavigateToDefaultModels: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Recall reranking", style = MaterialTheme.typography.titleSmall)
@@ -671,7 +593,7 @@ private fun MemoryRerankSelector(
                     MemoryRerankMode.AUTOMATIC -> "Automatic"
                     MemoryRerankMode.OFF -> "Off"
                     MemoryRerankMode.LOCAL -> "Local model"
-                    MemoryRerankMode.SELECTED_MODEL -> "Selected model"
+                    MemoryRerankMode.SELECTED_MODEL -> "Default reranker model"
                 }
             },
         )
@@ -680,20 +602,15 @@ private fun MemoryRerankSelector(
                 MemoryRerankMode.AUTOMATIC -> "Automatic never spends remote tokens and falls back to indexed rank fusion."
                 MemoryRerankMode.OFF -> "Uses the indexed retrieval order without a second ranking pass."
                 MemoryRerankMode.LOCAL -> "Uses on-device similarity signals and never calls a hosted chat model."
-                MemoryRerankMode.SELECTED_MODEL -> "Uses the chat model below for a final relevance pass. This can consume provider tokens."
+                MemoryRerankMode.SELECTED_MODEL -> "Uses the reranker selected on the Default Models page. This can consume provider tokens."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (mode == MemoryRerankMode.SELECTED_MODEL) {
-            ModelSelector(
-                modelId = modelId,
-                providers = providers,
-                type = ModelType.CHAT,
-                allowBackendModels = true,
-                modifier = Modifier.fillMaxWidth(),
-                onSelect = { onModelSelected(it.id) },
-            )
+            TextButton(onClick = onNavigateToDefaultModels) {
+                Text("Open default models")
+            }
         }
     }
 }
@@ -817,93 +734,70 @@ private fun RagSettingsCard(
                 }
             }
         }
+        RecallTuningControls(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
     }
 }
 
 @Composable
-private fun ConsolidationSettingsCard(
+private fun RecallTuningControls(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
-    onConsolidate: () -> Unit,
-    showSummarizerWarning: Boolean = false,
-    onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    Surface(
+        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = RoundedCornerShape(24.dp),
     ) {
-        AnimatedVisibility(
-            visible = showSummarizerWarning,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
-        }
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        stringResource(R.string.assistant_memory_consolidation_delay_label),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.assistant_memory_consolidation_delay_value,
-                            assistant.consolidationDelayMinutes
-                        ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Maximum recalled items", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = stringResource(R.string.assistant_memory_consolidation_delay_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Slider(
-                    value = assistant.consolidationDelayMinutes.toFloat(),
-                    onValueChange = { onUpdateAssistant(assistant.copy(consolidationDelayMinutes = it.toInt())) },
-                    valueRange = 0f..240f,
-                    steps = 23,
-                    modifier = Modifier.padding(top = 8.dp)
+                    text = assistant.ragLimit.coerceIn(1, 20).toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
-        }
-
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onConsolidate,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.assistant_memory_consolidate_now))
-                }
-
-                if (assistant.lastConsolidationTime > 0) {
-                    val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDateTime()
-                        .toLocalString()
-                    Text(
-                        text = stringResource(R.string.assistant_memory_last_run, time),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            Text(
+                "This cap includes the current-understanding summary, so the displayed number is the real maximum.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = assistant.ragLimit.coerceIn(1, 20).toFloat(),
+                onValueChange = { value ->
+                    onUpdateAssistant(assistant.copy(ragLimit = value.toInt().coerceIn(1, 20)))
+                },
+                valueRange = 1f..20f,
+                steps = 18,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
+
+    MemorySettingsItem(
+        title = "Include current facts and notes",
+        subtitle = "Recall the character's current understanding and editable core memories",
+        position = "FIRST",
+        trailing = {
+            HapticSwitch(
+                checked = assistant.ragIncludeCore,
+                onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeCore = it)) },
+            )
+        },
+    )
+    MemorySettingsItem(
+        title = "Include episodes",
+        subtitle = "Recall summarized scenes and meaningful events",
+        position = "LAST",
+        trailing = {
+            HapticSwitch(
+                checked = assistant.ragIncludeEpisodes,
+                onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeEpisodes = it)) },
+            )
+        },
+    )
 }
 
 @Composable

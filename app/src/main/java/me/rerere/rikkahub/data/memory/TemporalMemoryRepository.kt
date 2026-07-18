@@ -240,48 +240,52 @@ class TemporalMemoryRepository(
         timeEnd: Long? = null,
         rerankMode: MemoryRerankMode = MemoryRerankMode.AUTOMATIC,
         rerankModelId: Uuid? = null,
+        minimumRelevance: Float = 0f,
+        includeCore: Boolean = true,
+        includeEpisodes: Boolean = true,
+        includePastChats: Boolean = true,
     ): TemporalRecallPacket = withContext(Dispatchers.IO) {
         importLegacyMemories(assistantId)
         val boundedLimit = limit.coerceIn(1, 20)
         val candidateLimit = (boundedLimit * 5).coerceAtMost(80)
         val ftsQuery = query.toFtsQuery()
-        val lexicalClaims = if (ftsQuery.isBlank()) emptyList() else {
+        val lexicalClaims = if (!includeCore || ftsQuery.isBlank()) emptyList() else {
             runCatching { dao.searchClaimsFts(assistantId, ftsQuery, candidateLimit) }.getOrDefault(emptyList())
         }
-        val temporalClaims = if (timeStart != null && timeEnd != null) {
+        val temporalClaims = if (includeCore && timeStart != null && timeEnd != null) {
             dao.searchClaimsByTime(assistantId, timeStart, timeEnd, candidateLimit)
         } else emptyList()
-        val currentClaims = dao.getCurrentClaims(assistantId, candidateLimit)
+        val currentClaims = if (includeCore) dao.getCurrentClaims(assistantId, candidateLimit) else emptyList()
         val claimPool = (lexicalClaims + temporalClaims + currentClaims).distinctBy { it.id }
 
         val queryEmbedding = runCatching { embeddingService.embed(query, assistantId).toFloatArray() }.getOrNull()
         val claimScores = claimPool.map { claim ->
-            val lexicalRank = lexicalClaims.indexOfFirst { it.id == claim.id }.rankScore()
-            val temporalRank = temporalClaims.indexOfFirst { it.id == claim.id }.rankScore()
+            val lexicalRank = lexicalClaims.indexOfFirst { it.id == claim.id }.retrievalRankScore(0.72f)
+            val temporalRank = temporalClaims.indexOfFirst { it.id == claim.id }.retrievalRankScore(0.72f)
             val semantic = if (queryEmbedding != null && claim.embeddingBlob != null) {
                 claim.embeddingBlob.toListOfFloatArrays().maxOfOrNull {
                     VectorEngine.cosineSimilarity(queryEmbedding, it)
                 }?.coerceIn(0f, 1f) ?: 0f
             } else 0f
             val currentBoost = if (claim.status == MemoryClaimStatus.ACTIVE) 0.08f else 0f
-            val score = lexicalRank + temporalRank + semantic + currentBoost + claim.importance * 0.02f
+            val score = maxOf(lexicalRank, temporalRank, semantic) + currentBoost + claim.importance * 0.02f
             claim to score
         }
 
-        val lexicalEpisodes = if (ftsQuery.isBlank()) emptyList() else {
+        val lexicalEpisodes = if (!includeEpisodes || ftsQuery.isBlank()) emptyList() else {
             runCatching { dao.searchEpisodesFts(assistantId, ftsQuery, candidateLimit) }.getOrDefault(emptyList())
         }
-        val recentEpisodes = dao.getRecentEpisodes(assistantId, 3)
+        val recentEpisodes = if (includeEpisodes) dao.getRecentEpisodes(assistantId, 3) else emptyList()
         val episodeScores = (lexicalEpisodes + recentEpisodes).distinctBy { it.id }.map { episode ->
-            val lexicalRank = lexicalEpisodes.indexOfFirst { it.id == episode.id }.rankScore()
-            val recencyRank = recentEpisodes.indexOfFirst { it.id == episode.id }.rankScore() * 0.4f
-            episode to (lexicalRank + recencyRank + episode.importance * 0.02f)
+            val lexicalRank = lexicalEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.72f)
+            val recencyRank = recentEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.35f)
+            episode to (maxOf(lexicalRank, recencyRank) + episode.importance * 0.02f)
         }
 
-        val sourceScores = if (ftsQuery.isBlank()) emptyList() else {
+        val sourceScores = if (!includePastChats || ftsQuery.isBlank()) emptyList() else {
             runCatching { dao.searchSourcesFts(assistantId, ftsQuery, candidateLimit) }
                 .getOrDefault(emptyList())
-                .mapIndexed { index, source -> source to (index.rankScore() + 0.03f) }
+                .mapIndexed { index, source -> source to (index.retrievalRankScore(0.72f) + 0.03f) }
         }
 
         val rankedCandidates = buildList {
@@ -328,7 +332,8 @@ class TemporalMemoryRepository(
             }
         }.sortedByDescending { it.score }
             .distinctBy { it.text.lowercase().replace(Regex("\\s+"), " ") }
-        val selected = reranker.rerank(rerankMode, rerankModelId, query, rankedCandidates)
+        val relevantCandidates = rankedCandidates.filter { it.score >= minimumRelevance.coerceIn(0f, 1f) }
+        val selected = reranker.rerank(rerankMode, rerankModelId, query, relevantCandidates)
             .take(boundedLimit)
 
         val now = System.currentTimeMillis()
@@ -339,7 +344,7 @@ class TemporalMemoryRepository(
             .takeIf { it.isNotEmpty() }
             ?.let { dao.markEpisodesRetrieved(it, now) }
         TemporalRecallPacket(
-            projection = dao.getProjection(assistantId)?.content,
+            projection = if (includeCore) dao.getProjection(assistantId)?.content else null,
             items = selected,
         )
     }
@@ -479,7 +484,8 @@ data class SourceMessage(
     val observedAt: Long,
 )
 
-private fun Int.rankScore(): Float = if (this < 0) 0f else 1f / (60f + this)
+private fun Int.retrievalRankScore(base: Float): Float =
+    if (this < 0) 0f else base / (1f + this * 0.15f)
 
 private fun String.toFtsQuery(): String = lowercase()
     .split(Regex("[^\\p{L}\\p{N}_-]+"))

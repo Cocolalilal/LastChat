@@ -1342,7 +1342,20 @@ class GenerationHandler(
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
             activeConversationId = activeConversationId,
         )
-        var uiMessages = messages
+        val usedLorebookEntries = buildResult.activatedLorebookEntries
+        val usedModes = buildResult.usedModes
+        val usedMemories = buildResult.usedMemories
+        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
+        var uiMessages = if (hasContextSources) {
+            messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
+        } else {
+            messages
+        }
+        if (uiMessages != messages) {
+            // Publish the context stack as soon as prompt assembly finishes instead of waiting
+            // for the provider stream to complete.
+            onUpdateMessages(uiMessages)
+        }
         val transformedInput = buildResult.messages.transformInput(
             transformers = transformers,
             context = context,
@@ -1357,10 +1370,6 @@ class GenerationHandler(
             },
         )
         val internalMessages = transformedInput.messages
-        val usedLorebookEntries = buildResult.activatedLorebookEntries
-        val usedModes = buildResult.usedModes
-        val usedMemories = buildResult.usedMemories
-        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
 
         var messages: List<UIMessage> = uiMessages
         if (transformedInput.annotations.isNotEmpty()) {
@@ -1421,17 +1430,7 @@ class GenerationHandler(
             }
             // Attach all context sources to the last assistant message after streaming completes
             if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
+                messages = messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
                 onUpdateMessages(messages)
             }
         } else {
@@ -1460,17 +1459,7 @@ class GenerationHandler(
             }
             // Attach all context sources to the last assistant message
             if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
+                messages = messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
             }
             onUpdateMessages(messages)
         }
@@ -1487,6 +1476,26 @@ class GenerationHandler(
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to persist token usage", e)
                 }
+            }
+        }
+    }
+
+    private fun List<UIMessage>.attachUsedContext(
+        usedLorebookEntries: List<me.rerere.ai.ui.UsedLorebookEntry>,
+        usedModes: List<me.rerere.ai.ui.UsedMode>,
+        usedMemories: List<me.rerere.ai.ui.UsedMemory>,
+    ): List<UIMessage> {
+        val assistantIndex = indexOfLast { it.role == MessageRole.ASSISTANT }
+        if (assistantIndex < 0) return this
+        return mapIndexed { index, message ->
+            if (index == assistantIndex) {
+                message.copy(
+                    usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                    usedModes = usedModes.ifEmpty { null },
+                    usedMemories = usedMemories.ifEmpty { null },
+                )
+            } else {
+                message
             }
         }
     }

@@ -30,7 +30,7 @@ import kotlin.math.min
 import kotlin.uuid.Uuid
 
 private const val MEMORY_SEARCH_MAX_LIMIT = 8
-private const val MEMORY_SEARCH_CHAT_SUMMARY_LIMIT = 2
+private const val STRONG_INDEXED_RECALL_SCORE = 45
 private const val MEMORY_SEARCH_MAX_QUERIES = 8
 
 internal data class ConversationRecallSpan(
@@ -417,35 +417,29 @@ class MemorySearchService(
             warnings += "Stored memory search fell back with no results."
             emptyList()
         }
-        val chatSpans = runCatching {
-            searchPastChatSpans(
-                assistant = assistant,
-                activeConversationId = activeConversationId,
-                queries = recallQueries,
-                limit = boundedLimit,
-                timeRange = parsedTimeRange,
-            )
-        }.getOrElse { throwable ->
-            if (throwable is CancellationException) throw throwable
-            warnings += "Past chat search fell back with no results."
+        val hasStrongIndexedRecall = memoryResults.size >= boundedLimit &&
+            memoryResults.any { (it.score ?: 0) >= STRONG_INDEXED_RECALL_SCORE }
+        val chatSpans = if (hasStrongIndexedRecall) {
             emptyList()
+        } else {
+            runCatching {
+                searchPastChatSpans(
+                    assistant = assistant,
+                    activeConversationId = activeConversationId,
+                    queries = recallQueries,
+                    limit = boundedLimit,
+                    timeRange = parsedTimeRange,
+                )
+            }.getOrElse { throwable ->
+                if (throwable is CancellationException) throw throwable
+                warnings += "Past chat search fell back with no results."
+                emptyList()
+            }
         }
 
-        val chatResults = chatSpans.take(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
-            val summary = summarizeChatSpan(settings, assistant, span, trimmedQuery)
-                ?: buildFallbackRecallSummary(span)
-            RecallResult(
-                source = "past_chat",
-                id = span.conversationId.toString(),
-                summary = summary,
-                content = summary,
-                timestampMillis = span.timestampMillis,
-                confidence = confidenceFromScore(span.score),
-                title = span.conversationTitle.takeIf { it.isNotBlank() },
-                matchedText = span.matchedText,
-                score = span.score,
-            )
-        } + chatSpans.drop(MEMORY_SEARCH_CHAT_SUMMARY_LIMIT).map { span ->
+        val chatResults = chatSpans.map { span ->
+            // Final synthesis sees the matched excerpt and surrounding messages together, so a
+            // separate hosted-model call for every span only adds latency without more evidence.
             val summary = buildFallbackRecallSummary(span)
             RecallResult(
                 source = "past_chat",
@@ -506,6 +500,10 @@ class MemorySearchService(
             timeEnd = timeRange?.endMillis,
             rerankMode = assistant.memoryRerankMode,
             rerankModelId = assistant.memoryRerankModelId,
+            minimumRelevance = 0.2f,
+            includeCore = true,
+            includeEpisodes = true,
+            includePastChats = true,
         )
         return packet.items.map { item ->
             RecallResult(

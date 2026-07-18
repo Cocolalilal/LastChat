@@ -91,6 +91,7 @@ class SettingsStore(
         val SUMMARIZER_THINKING_BUDGET = intPreferencesKey("summarizer_thinking_budget")
         val SUBAGENT_MODEL = stringPreferencesKey("subagent_model")
         val SUBAGENT_THINKING_BUDGET = intPreferencesKey("subagent_thinking_budget")
+        val MEMORY_RERANK_MODEL = stringPreferencesKey("memory_rerank_model")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val SUGGESTION_THINKING_BUDGET = intPreferencesKey("suggestion_thinking_budget")
@@ -194,6 +195,7 @@ class SettingsStore(
                     summarizerThinkingBudget = preferences[SUMMARIZER_THINKING_BUDGET] ?: 0,
                     subagentModelId = preferences[SUBAGENT_MODEL]?.let { Uuid.parse(it) },
                     subagentThinkingBudget = preferences[SUBAGENT_THINKING_BUDGET] ?: 0,
+                    memoryRerankModelId = preferences[MEMORY_RERANK_MODEL]?.let { Uuid.parse(it) },
                     translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                         ?: GEMINI_2_5_FLASH_ID,
                     suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
@@ -540,6 +542,9 @@ class SettingsStore(
                 preferences[SUBAGENT_MODEL] = it.toString()
             } ?: preferences.remove(SUBAGENT_MODEL)
             preferences[SUBAGENT_THINKING_BUDGET] = normalizedSettings.subagentThinkingBudget
+            normalizedSettings.memoryRerankModelId?.let {
+                preferences[MEMORY_RERANK_MODEL] = it.toString()
+            } ?: preferences.remove(MEMORY_RERANK_MODEL)
             preferences[TRANSLATE_MODEL] = normalizedSettings.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = normalizedSettings.suggestionModelId.toString()
             preferences[SUGGESTION_THINKING_BUDGET] = normalizedSettings.suggestionThinkingBudget
