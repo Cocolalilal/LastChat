@@ -40,8 +40,10 @@ jobs:
             :iosApp:compileKotlinIosArm64 \
             :iosApp:compileKotlinIosSimulatorArm64 \
             :iosApp:compileKotlinIosX64 \
+            :iosApp:iosSimulatorArm64Test \
+            :tts:allTests \
             :ui-core:testDebugUnitTest \
-            :shared:testDebugUnitTest
+            :shared:allTests
 
       - name: Build simulator app
         run: |

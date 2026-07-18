@@ -4,6 +4,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -30,6 +35,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -39,6 +45,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -51,7 +60,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
@@ -59,15 +70,46 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Collections
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.PhoneIphone
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -79,6 +121,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -110,6 +153,11 @@ import me.rerere.rikkahub.ui.components.chat.LastChatDocumentAttachmentTile
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerImageAttachment
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerMediaAttachment
 import me.rerere.rikkahub.ui.components.chat.LastChatMessageAttachmentRow
+import me.rerere.rikkahub.ui.components.message.LastChatTtsAction
+import me.rerere.rikkahub.ui.components.memory.LastChatMemoryGroupPosition
+import me.rerere.rikkahub.ui.components.memory.LastChatMemoryModeCard
+import me.rerere.rikkahub.ui.components.memory.LastChatMemoryRow
+import me.rerere.rikkahub.ui.components.memory.LastChatMemorySettingsItem
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerRow
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerVideoIcon
 import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerItem
@@ -129,6 +177,17 @@ import me.rerere.rikkahub.ui.components.stats.LastChatStatIcon
 import me.rerere.rikkahub.ui.components.stats.LastChatStatIconGlyph
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupItem
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingsGroup
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsNavigationPane
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsPaneEntry
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsPaneGroup
+import me.rerere.rikkahub.ui.components.settings.LastChatFormItem
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupInputItem
+import me.rerere.rikkahub.ui.components.settings.LastChatAboutContent
+import me.rerere.rikkahub.ui.components.settings.LastChatGroupedModelRow
+import me.rerere.rikkahub.ui.components.settings.LastChatModelFeatureCard
+import me.rerere.rikkahub.ui.components.settings.LastChatModelGroupPosition
+import me.rerere.rikkahub.ui.components.settings.LastChatProviderTab
+import me.rerere.rikkahub.ui.components.settings.LastChatProvidersBottomBar
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.Shapes
 import me.rerere.rikkahub.ui.theme.buildLastChatTypography
@@ -141,14 +200,21 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlinx.coroutines.launch
 
-private enum class IosRoute { Chat, Settings, Statistics }
+private enum class IosRoute { Chat, Settings, Statistics, ImageGeneration }
 
 private enum class IosSettingsSection(val title: String) {
     Home("Settings"),
     Appearance("Display"),
     Assistant("Assistant"),
+    Memory("Memory"),
+    Tools("Tools"),
     Provider("Providers"),
+    Models("Default model"),
+    Search("Search service"),
+    Tts("Text-to-speech"),
     Data("Data"),
+    About("About"),
+    Unavailable("Unavailable"),
 }
 
 private data class DisplayMessage(
@@ -216,6 +282,12 @@ fun LastChatIosApp(
                                         route = IosRoute.Statistics
                                     }
                                 },
+                                onImageGeneration = {
+                                    scope.launch {
+                                        drawerState.close()
+                                        route = IosRoute.ImageGeneration
+                                    }
+                                },
                             )
                         }
                     },
@@ -224,8 +296,11 @@ fun LastChatIosApp(
                         state = state,
                         onSend = controller::send,
                         onCancelGeneration = controller::cancelGeneration,
+                        onSubmitQuestionnaire = controller::submitQuestionnaire,
                         onPickFile = { filePicker.pickFile(controller::handlePickedFile) },
                         onRemovePendingAttachment = controller::removePendingAttachment,
+                        onSpeak = controller::speak,
+                        onStopSpeaking = controller::stopTts,
                         platformHaptics = platformHaptics,
                         attachmentOpener = attachmentOpener,
                         onOpenMenu = { scope.launch { drawerState.open() } },
@@ -237,17 +312,39 @@ fun LastChatIosApp(
                     darkTheme = useDarkTheme,
                     onSaveProvider = controller::saveProvider,
                     onClearApiKey = controller::clearApiKey,
+                    onSelectDefaultModel = controller::selectDefaultModel,
+                    onSaveSearch = controller::saveSearch,
+                    onClearSearchApiKey = controller::clearSearchApiKey,
+                    onSaveTts = controller::saveTts,
+                    onClearTtsApiKey = controller::clearTtsApiKey,
+                    onSaveImageGeneration = controller::saveImageGeneration,
                     onSaveAppearance = controller::saveAppearance,
                     onSaveAssistant = controller::saveAssistant,
                     onNewAssistant = controller::newAssistant,
                     onSelectAssistant = controller::selectAssistant,
                     onDeleteAssistant = controller::deleteAssistant,
+                    onSaveMemorySettings = controller::saveMemorySettings,
+                    onAddMemory = controller::addMemory,
+                    onUpdateMemory = controller::updateMemory,
+                    onDeleteMemory = controller::deleteMemory,
+                    onRegenerateMemoryEmbeddings = controller::regenerateMemoryEmbeddings,
+                    onSaveLocalTools = controller::saveLocalTools,
                     platformHaptics = platformHaptics,
                     onBack = { route = IosRoute.Chat },
                 )
                 IosRoute.Statistics -> StatisticsPage(
                     state = state,
                     darkTheme = useDarkTheme,
+                    platformHaptics = platformHaptics,
+                    onBack = { route = IosRoute.Chat },
+                )
+                IosRoute.ImageGeneration -> IosImageGenerationPage(
+                    state = state,
+                    onGenerate = controller::generateImages,
+                    onCancel = controller::cancelImageGeneration,
+                    onDelete = controller::deleteGeneratedImage,
+                    onOpenSettings = { route = IosRoute.Settings },
+                    attachmentOpener = attachmentOpener,
                     platformHaptics = platformHaptics,
                     onBack = { route = IosRoute.Chat },
                 )
@@ -262,14 +359,37 @@ private fun ChatPage(
     state: IosAppState,
     onSend: (String) -> Unit,
     onCancelGeneration: () -> Unit,
+    onSubmitQuestionnaire: (Map<String, String>, Map<String, String>, Boolean) -> Unit,
     onPickFile: () -> Unit,
     onRemovePendingAttachment: (String) -> Unit,
+    onSpeak: (String) -> Unit,
+    onStopSpeaking: () -> Unit,
     platformHaptics: PlatformHaptics,
     attachmentOpener: PlatformAttachmentOpener,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val inputState = remember { TextFieldState() }
+    val pendingQuestionnaire = state.pendingQuestionnaire
+    var questionnaireIndex by remember(pendingQuestionnaire?.toolCallId) { mutableStateOf(0) }
+    var questionnaireSelectedOptions by remember(pendingQuestionnaire?.toolCallId) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    var questionnaireCustomAnswers by remember(pendingQuestionnaire?.toolCallId) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    val currentQuestion = pendingQuestionnaire?.questions?.getOrNull(questionnaireIndex)
+    LaunchedEffect(currentQuestion?.id) {
+        inputState.setTextAndPlaceCursorAtEnd(
+            currentQuestion?.let { questionnaireCustomAnswers[it.id].orEmpty() }.orEmpty()
+        )
+    }
+    LaunchedEffect(currentQuestion?.id, inputState.text.toString()) {
+        currentQuestion?.let { question ->
+            questionnaireCustomAnswers = questionnaireCustomAnswers +
+                (question.id to inputState.text.toString())
+        }
+    }
     val orderedPendingAttachments = remember(state.pendingAttachments) {
         PlatformPickedFileKind.entries.flatMap { kind ->
             state.pendingAttachments.filter { attachment -> attachment.kind == kind }
@@ -283,6 +403,10 @@ private fun ChatPage(
             }
         }
     val messages = conversationMessages.mapIndexed { index, message ->
+        val rawText = message.toText()
+        val markdownImages = GENERATED_MARKDOWN_IMAGE_REGEX.findAll(rawText).map { match ->
+            UIMessagePart.Image(match.groupValues[1])
+        }.toList()
         val outgoing = message.role == MessageRole.USER
         val sameBefore = conversationMessages.getOrNull(index - 1)?.role == message.role
         val sameAfter = conversationMessages.getOrNull(index + 1)?.role == message.role
@@ -293,10 +417,10 @@ private fun ChatPage(
             else -> BubblePosition.MIDDLE
         }
         DisplayMessage(
-            text = message.toText(),
+            text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
             outgoing = outgoing,
             position = position,
-            parts = message.parts,
+            parts = message.parts + markdownImages,
         )
     }
     fun send() {
@@ -305,6 +429,14 @@ private fun ChatPage(
         onSend(text)
         inputState.setTextAndPlaceCursorAtEnd("")
         platformHaptics.perform(PlatformHapticPattern.Send)
+    }
+    fun submitQuestionnaire(dismissed: Boolean) {
+        val currentCustomAnswers = currentQuestion?.let { question ->
+            questionnaireCustomAnswers + (question.id to inputState.text.toString())
+        } ?: questionnaireCustomAnswers
+        onSubmitQuestionnaire(questionnaireSelectedOptions, currentCustomAnswers, dismissed)
+        inputState.setTextAndPlaceCursorAtEnd("")
+        platformHaptics.perform(if (dismissed) PlatformHapticPattern.Pop else PlatformHapticPattern.Send)
     }
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
@@ -328,11 +460,33 @@ private fun ChatPage(
                     .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                pendingQuestionnaire?.let { questionnaire ->
+                    IosCharacterQuestionsCard(
+                        questionnaire = questionnaire,
+                        currentIndex = questionnaireIndex,
+                        selectedOptionLabel = currentQuestion?.let { questionnaireSelectedOptions[it.id] },
+                        onPrevious = { questionnaireIndex = (questionnaireIndex - 1).coerceAtLeast(0) },
+                        onNext = {
+                            questionnaireIndex = (questionnaireIndex + 1)
+                                .coerceAtMost(questionnaire.questions.lastIndex)
+                        },
+                        onDismiss = { submitQuestionnaire(dismissed = true) },
+                        onSelectOption = { option ->
+                            currentQuestion?.let { question ->
+                                questionnaireSelectedOptions = questionnaireSelectedOptions +
+                                    (question.id to option.label)
+                            }
+                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                        },
+                    )
+                }
                 LastChatComposerRow {
                     LastChatComposerAddButton(
                         onClick = {
-                            platformHaptics.perform(PlatformHapticPattern.Pop)
-                            onPickFile()
+                            if (pendingQuestionnaire == null) {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                onPickFile()
+                            }
                         },
                         onLongClick = {},
                     ) {
@@ -394,7 +548,8 @@ private fun ChatPage(
                                         .defaultMinSize(minHeight = 1.dp),
                                     placeholder = {
                                         Text(
-                                            "Message ${state.assistant.name}",
+                                            if (pendingQuestionnaire != null) "Type another answer"
+                                            else "Message ${state.assistant.name}",
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -414,6 +569,10 @@ private fun ChatPage(
                                     ),
                                 )
                                 val action = when {
+                                    pendingQuestionnaire != null &&
+                                        questionnaireIndex < pendingQuestionnaire.questions.lastIndex ->
+                                        LastChatComposerAction.QuestionnaireNext
+                                    pendingQuestionnaire != null -> LastChatComposerAction.QuestionnaireSubmit
                                     state.generating -> LastChatComposerAction.Loading
                                     inputState.text.isNotBlank() || state.pendingAttachments.isNotEmpty() ->
                                         LastChatComposerAction.Send
@@ -428,6 +587,13 @@ private fun ChatPage(
                                                 platformHaptics.perform(PlatformHapticPattern.Cancel)
                                             }
                                             LastChatComposerAction.Send -> send()
+                                            LastChatComposerAction.QuestionnaireNext -> {
+                                                questionnaireIndex = (questionnaireIndex + 1)
+                                                    .coerceAtMost(pendingQuestionnaire?.questions?.lastIndex ?: 0)
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            }
+                                            LastChatComposerAction.QuestionnaireSubmit ->
+                                                submitQuestionnaire(dismissed = false)
                                             LastChatComposerAction.Picker -> {
                                                 platformHaptics.perform(PlatformHapticPattern.Pop)
                                                 onOpenSettings()
@@ -469,6 +635,10 @@ private fun ChatPage(
                         message = DisplayMessage("How can I help?", outgoing = false),
                         attachmentOpener = attachmentOpener,
                         platformHaptics = platformHaptics,
+                        isTtsSpeaking = state.ttsSpeaking,
+                        isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
+                        onSpeak = onSpeak,
+                        onStopSpeaking = onStopSpeaking,
                     )
                 }
             }
@@ -477,6 +647,10 @@ private fun ChatPage(
                     message = message,
                     attachmentOpener = attachmentOpener,
                     platformHaptics = platformHaptics,
+                    isTtsSpeaking = state.ttsSpeaking,
+                    isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
+                    onSpeak = onSpeak,
+                    onStopSpeaking = onStopSpeaking,
                 )
             }
             if (state.generating) item {
@@ -492,10 +666,125 @@ private fun ChatPage(
 }
 
 @Composable
+private fun IosCharacterQuestionsCard(
+    questionnaire: IosPendingQuestionnaire,
+    currentIndex: Int,
+    selectedOptionLabel: String?,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelectOption: (IosAskUserOption) -> Unit,
+) {
+    val question = questionnaire.questions.getOrNull(currentIndex) ?: return
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(onClick = onPrevious, enabled = currentIndex > 0, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous")
+                    }
+                    Text(
+                        "${currentIndex + 1} of ${questionnaire.questions.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    IconButton(
+                        onClick = onNext,
+                        enabled = currentIndex < questionnaire.questions.lastIndex,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next")
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Dismiss")
+                }
+            }
+            Text(question.question, style = MaterialTheme.typography.titleMedium)
+            question.options.forEach { option ->
+                IosCharacterQuestionOptionRow(
+                    option = option,
+                    selected = selectedOptionLabel == option.label,
+                    onClick = { onSelectOption(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosCharacterQuestionOptionRow(
+    option: IosAskUserOption,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "question_option_scale",
+    )
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        ),
+        interactionSource = interactionSource,
+        modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale },
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                option.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+            )
+            option.description?.takeIf(String::isNotBlank)?.let { description ->
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MessageBubble(
     message: DisplayMessage,
     attachmentOpener: PlatformAttachmentOpener,
     platformHaptics: PlatformHaptics,
+    isTtsSpeaking: Boolean,
+    isTtsAvailable: Boolean,
+    onSpeak: (String) -> Unit,
+    onStopSpeaking: () -> Unit,
 ) {
     val attachments = message.parts.filter { part ->
         part is UIMessagePart.Image || part is UIMessagePart.Video ||
@@ -562,6 +851,17 @@ private fun MessageBubble(
             ) {
                 Text(message.text)
             }
+            if (!message.outgoing) {
+                LastChatTtsAction(
+                    isSpeaking = isTtsSpeaking,
+                    isAvailable = isTtsAvailable,
+                    contentDescription = "Text to speech",
+                    onClick = {
+                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                        if (isTtsSpeaking) onStopSpeaking() else onSpeak(message.text)
+                    },
+                )
+            }
         }
     }
 }
@@ -579,6 +879,7 @@ private fun MenuPage(
     onDismiss: () -> Unit,
     onSettings: () -> Unit,
     onStatistics: () -> Unit,
+    onImageGeneration: () -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -623,6 +924,12 @@ private fun MenuPage(
                         shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f)),
                 ) {
                     LastChatDrawerQuickActionGroup {
+                        LastChatDrawerQuickAction(
+                            label = "Imagine",
+                            onClick = onImageGeneration,
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Tick) },
+                            icon = { Icon(Icons.Rounded.Image, contentDescription = null) },
+                        )
                         LastChatDrawerQuickAction(
                             label = "Statistics",
                             onClick = onStatistics,
@@ -778,6 +1085,187 @@ private fun IosAssistantAvatar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun IosImageGenerationPage(
+    state: IosAppState,
+    onGenerate: (String, String, Int) -> Unit,
+    onCancel: () -> Unit,
+    onDelete: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+    attachmentOpener: PlatformAttachmentOpener,
+    platformHaptics: PlatformHaptics,
+    onBack: () -> Unit,
+) {
+    var showGallery by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var prompt by remember { mutableStateOf("") }
+    var aspectRatio by remember { mutableStateOf("square") }
+    var count by remember { mutableStateOf(1) }
+    val images = state.generatedImages.asReversed()
+    Scaffold(
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
+        topBar = {
+            TopAppBar(
+                navigationIcon = { LastChatBackButton(onClick = onBack, contentDescription = "Back") },
+                title = { Text(if (showGallery) "Gallery" else "Imagine") },
+                actions = {
+                    IconButton(onClick = {
+                        platformHaptics.perform(PlatformHapticPattern.Tick)
+                        showGallery = !showGallery
+                    }) {
+                        Icon(
+                            if (showGallery) Icons.Rounded.AutoAwesome else Icons.Rounded.Collections,
+                            contentDescription = if (showGallery) "Imagine" else "Gallery",
+                        )
+                    }
+                    if (!showGallery) IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "Generation settings")
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (!showGallery) {
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth().imePadding().navigationBarsPadding()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextField(
+                            value = prompt,
+                            onValueChange = { prompt = it },
+                            placeholder = { Text("Describe an image") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(20.dp),
+                            maxLines = 5,
+                            colors = TextFieldDefaults.colors().copy(
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                        )
+                        Surface(
+                            onClick = {
+                                if (state.imageGenerating) {
+                                    onCancel()
+                                    platformHaptics.perform(PlatformHapticPattern.Cancel)
+                                } else if (prompt.isNotBlank()) {
+                                    onGenerate(prompt, aspectRatio, count)
+                                    platformHaptics.perform(PlatformHapticPattern.Send)
+                                }
+                            },
+                            shape = CircleShape,
+                            color = if (state.imageGenerating) MaterialTheme.colorScheme.errorContainer
+                            else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (state.imageGenerating) Icon(Icons.Rounded.Stop, "Stop")
+                                else Icon(Icons.Rounded.AutoAwesome, "Generate")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        AnimatedContent(
+            targetState = showGallery,
+            transitionSpec = { fadeIn(spring(dampingRatio = 0.6f, stiffness = 400f)) togetherWith
+                fadeOut(spring(dampingRatio = 0.6f, stiffness = 400f)) },
+            modifier = Modifier.fillMaxSize().padding(padding),
+            label = "image_view_crossfade",
+        ) { gallery ->
+            if (gallery) {
+                if (images.isEmpty()) IosImageEmptyState("Your generated images will appear here")
+                else LazyVerticalGrid(
+                    columns = GridCells.Adaptive(160.dp),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    gridItems(images, key = { it.path }) { image ->
+                        Box {
+                            AsyncImage(
+                                model = image.uri,
+                                contentDescription = image.prompt,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .clickable { attachmentOpener.open(image.uri) },
+                            )
+                            IconButton(onClick = { onDelete(image.path) }, modifier = Modifier.align(Alignment.TopEnd)) {
+                                Icon(Icons.Rounded.Delete, "Delete")
+                            }
+                        }
+                    }
+                }
+            } else if (images.isEmpty()) IosImageEmptyState("Describe what you want to imagine")
+            else LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 190.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                items(images, key = { it.path }) { image ->
+                    AsyncImage(
+                        model = image.uri,
+                        contentDescription = image.prompt,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { attachmentOpener.open(image.uri) },
+                    )
+                }
+            }
+        }
+    }
+    if (showSettings) ModalBottomSheet(onDismissRequest = { showSettings = false }) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp).navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Generation settings", style = MaterialTheme.typography.titleLarge)
+            Text("Aspect ratio", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("square", "landscape", "portrait").forEach { ratio ->
+                    if (aspectRatio == ratio) Button(onClick = {}) { Text(ratio.replaceFirstChar { it.uppercase() }) }
+                    else TextButton(onClick = { aspectRatio = ratio }) { Text(ratio.replaceFirstChar { it.uppercase() }) }
+                }
+            }
+            Text("Images", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..4).forEach { value ->
+                    if (count == value) Button(onClick = {}) { Text(value.toString()) }
+                    else TextButton(onClick = { count = value }) { Text(value.toString()) }
+                }
+            }
+            TextButton(onClick = onOpenSettings) { Text("Configure image model") }
+        }
+    }
+}
+
+@Composable
+private fun IosImageEmptyState(message: String) {
+    Box(Modifier.fillMaxSize().padding(bottom = 160.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun StatisticsPage(
     state: IosAppState,
     darkTheme: Boolean,
@@ -921,6 +1409,8 @@ private fun formatCompactCount(value: Long): String = when {
     else -> value.toString()
 }
 
+private val GENERATED_MARKDOWN_IMAGE_REGEX = Regex("!\\[[^]]*]\\(([^)]+)\\)")
+
 @Composable
 private fun ConversationListRow(
     title: String,
@@ -1031,15 +1521,46 @@ private fun SettingsPage(
     darkTheme: Boolean,
     onSaveProvider: (IosProviderType, String, String, String) -> Unit,
     onClearApiKey: () -> Unit,
+    onSelectDefaultModel: (IosProviderType, String) -> Unit,
+    onSaveSearch: (IosSearchProviderType, Boolean, Int, String) -> Unit,
+    onClearSearchApiKey: () -> Unit,
+    onSaveTts: (IosTtsPreferences, String) -> Unit,
+    onClearTtsApiKey: () -> Unit,
+    onSaveImageGeneration: (IosImageGenerationPreferences) -> Unit,
     onSaveAppearance: (String, IosColorMode) -> Unit,
     onSaveAssistant: (String, String) -> Unit,
     onNewAssistant: () -> Unit,
     onSelectAssistant: (String) -> Unit,
     onDeleteAssistant: (String) -> Unit,
+    onSaveMemorySettings: (IosMemoryMode, IosProviderType, String, Float, Int) -> Unit,
+    onAddMemory: (String) -> Unit,
+    onUpdateMemory: (Int, String) -> Unit,
+    onDeleteMemory: (Int) -> Unit,
+    onRegenerateMemoryEmbeddings: () -> Unit,
+    onSaveLocalTools: (Set<IosLocalToolOption>) -> Unit,
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
     var section by remember { mutableStateOf(IosSettingsSection.Home) }
+    var activeDestinationId by remember { mutableStateOf("") }
+    var unavailableDestinationId by remember { mutableStateOf("") }
+    var unavailableDestinationTitle by remember { mutableStateOf("Unavailable") }
+    var showModelPicker by remember { mutableStateOf(false) }
+    var modelSearchQuery by remember { mutableStateOf("") }
+    var searchProvider by remember(state.search.provider) {
+        mutableStateOf(state.search.provider)
+    }
+    var searchEnabled by remember(state.search.enabled) {
+        mutableStateOf(state.search.enabled)
+    }
+    var searchResultSize by remember(state.search.resultSize) {
+        mutableStateOf(state.search.resultSize.toString())
+    }
+    var searchApiKey by remember { mutableStateOf("") }
+    var ttsPreferences by remember(state.tts) { mutableStateOf(state.tts) }
+    var imageGeneration by remember(state.imageGeneration) { mutableStateOf(state.imageGeneration) }
+    var ttsApiKey by remember { mutableStateOf("") }
+    var ttsSpeed by remember(state.tts.speed) { mutableStateOf(state.tts.speed.toString()) }
     var providerType by remember(state.provider.type) { mutableStateOf(state.provider.type) }
     var baseUrl by remember(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
     var modelId by remember(state.provider.modelId) { mutableStateOf(state.provider.modelId) }
@@ -1048,17 +1569,138 @@ private fun SettingsPage(
     var colorMode by remember(state.appearance.colorMode) { mutableStateOf(state.appearance.colorMode) }
     var assistantName by remember(state.assistant.name) { mutableStateOf(state.assistant.name) }
     var systemPrompt by remember(state.assistant.systemPrompt) { mutableStateOf(state.assistant.systemPrompt) }
+    var memoryMode by remember(state.assistant.memoryMode) { mutableStateOf(state.assistant.memoryMode) }
+    var embeddingProviderType by remember(state.assistant.embeddingProviderType) {
+        mutableStateOf(state.assistant.embeddingProviderType)
+    }
+    var embeddingModelId by remember(state.assistant.embeddingModelId) {
+        mutableStateOf(state.assistant.embeddingModelId)
+    }
+    var memoryThreshold by remember(state.assistant.ragSimilarityThreshold) {
+        mutableStateOf(state.assistant.ragSimilarityThreshold.toString())
+    }
+    var memoryLimit by remember(state.assistant.ragLimit) {
+        mutableStateOf(state.assistant.ragLimit.toString())
+    }
+    var localTools by remember(state.assistant.localTools) {
+        mutableStateOf(state.assistant.localTools)
+    }
+    var memorySearch by remember { mutableStateOf("") }
+    var editingMemory by remember { mutableStateOf<IosMemoryRecord?>(null) }
+    var editingMemoryContent by remember { mutableStateOf("") }
+    fun openSettingsDestination(destinationId: String, title: String) {
+        activeDestinationId = destinationId
+        when (destinationId) {
+            "Display" -> section = IosSettingsSection.Appearance
+            "Assistants" -> section = IosSettingsSection.Assistant
+            "AssistantMemory" -> section = IosSettingsSection.Memory
+            "AssistantTools" -> section = IosSettingsSection.Tools
+            "Providers", "ProviderModels" -> section = IosSettingsSection.Provider
+            "Models" -> section = IosSettingsSection.Models
+            "Search" -> section = IosSettingsSection.Search
+            "Tts" -> section = IosSettingsSection.Tts
+            "ChatStorage" -> section = IosSettingsSection.Data
+            "About" -> section = IosSettingsSection.About
+            else -> {
+                unavailableDestinationId = destinationId
+                unavailableDestinationTitle = title
+                section = IosSettingsSection.Unavailable
+            }
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val useWideLayout = maxWidth >= 840.dp && maxHeight >= 600.dp &&
+            section != IosSettingsSection.Home
+        val selectedPaneId = when (section) {
+            IosSettingsSection.Appearance -> activeDestinationId.ifBlank { "Display" }
+            IosSettingsSection.Assistant -> activeDestinationId.ifBlank { "Assistants" }
+            IosSettingsSection.Memory -> "AssistantMemory"
+            IosSettingsSection.Tools -> "AssistantTools"
+            IosSettingsSection.Provider -> activeDestinationId.ifBlank { "Providers" }
+            IosSettingsSection.Models -> "Models"
+            IosSettingsSection.Search -> "Search"
+            IosSettingsSection.Tts -> "Tts"
+            IosSettingsSection.Data -> activeDestinationId.ifBlank { "ChatStorage" }
+            IosSettingsSection.About -> "About"
+            IosSettingsSection.Unavailable -> unavailableDestinationId
+            IosSettingsSection.Home -> ""
+        }
+        val selectedMainId = iosSettingsMainDestination(selectedPaneId)
+        val paneGroups = remember { iosSettingsPaneGroups() }
+        Row(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        ) {
+            if (useWideLayout) {
+                LastChatSettingsNavigationPane(
+                    groups = paneGroups,
+                    selectedId = selectedPaneId,
+                    selectedMainId = selectedMainId,
+                    title = "Settings",
+                    onBack = onBack,
+                    onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                    onNavigate = { destinationId ->
+                        openSettingsDestination(
+                            destinationId = destinationId,
+                            title = paneGroups.titleFor(destinationId) ?: "Unavailable",
+                        )
+                    },
+                )
+            }
     Scaffold(
-        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
+        modifier = (if (useWideLayout) {
+            Modifier.weight(1f).fillMaxHeight()
+        } else {
+            Modifier.fillMaxSize()
+        }).windowInsetsPadding(WindowInsets.safeContent),
         topBar = { TopAppBar(
-            title = { Text(section.title, fontWeight = FontWeight.SemiBold) },
+            title = {
+                Text(
+                    if (section == IosSettingsSection.Unavailable) {
+                        unavailableDestinationTitle
+                    } else {
+                        section.title
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
+            },
             navigationIcon = {
-                IosBackButton(platformHaptics) {
-                    if (section == IosSettingsSection.Home) onBack()
-                    else section = IosSettingsSection.Home
+                if (!useWideLayout) {
+                    IosBackButton(platformHaptics) {
+                        if (section == IosSettingsSection.Home) onBack()
+                        else section = IosSettingsSection.Home
+                    }
                 }
             },
         ) },
+        bottomBar = {
+            val selectedProviderTab = when {
+                section == IosSettingsSection.Provider -> "Models"
+                section == IosSettingsSection.Search -> "Search"
+                section == IosSettingsSection.Tts -> "Tts"
+                else -> null
+            }
+            if (selectedProviderTab != null) {
+                LastChatProvidersBottomBar(
+                    tabs = listOf(
+                        LastChatProviderTab("Models", Icons.Rounded.Cloud),
+                        LastChatProviderTab("Search", Icons.Rounded.Public),
+                        LastChatProviderTab("Tts", Icons.AutoMirrored.Rounded.VolumeUp),
+                    ),
+                    selectedId = selectedProviderTab,
+                    useWideLayout = useWideLayout,
+                    onHaptic = {
+                        platformHaptics.perform(PlatformHapticPattern.Tick)
+                    },
+                    onSelect = { tab ->
+                        when (tab) {
+                            "Models" -> openSettingsDestination("Providers", "Providers")
+                            "Search" -> openSettingsDestination("Search", "Search service")
+                            "Tts" -> openSettingsDestination("Tts", "Text-to-speech")
+                        }
+                    },
+                )
+            }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1081,7 +1723,7 @@ private fun SettingsPage(
                             icon = { Icon(Icons.Rounded.Tune, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { section = IosSettingsSection.Appearance },
+                            onClick = { openSettingsDestination("Display", "Display") },
                         )
                         LastChatSettingGroupItem(
                             title = "Assistant",
@@ -1089,164 +1731,1376 @@ private fun SettingsPage(
                             icon = { Icon(Icons.Rounded.Group, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { section = IosSettingsSection.Assistant },
+                            onClick = { openSettingsDestination("Assistants", "Assistant") },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Prompt injections",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Category, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("PromptInjections", "Prompt injections") },
                         )
                     }
                 }
                 item {
                     LastChatSettingsGroup(title = "Models & services") {
                         LastChatSettingGroupItem(
+                            title = "Default model",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.AccountTree, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("Models", "Default model") },
+                        )
+                        LastChatSettingGroupItem(
                             title = "Providers",
                             darkTheme = darkTheme,
                             icon = { Icon(Icons.Rounded.Cloud, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { section = IosSettingsSection.Provider },
+                            onClick = { openSettingsDestination("Providers", "Providers") },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "MCP",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Code, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("Mcp", "MCP") },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Web server",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Language, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("Web", "Web server") },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Android integration",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.PhoneAndroid, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("AndroidIntegration", "Android integration") },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Workspaces",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Code, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("Workspaces", "Workspaces") },
                         )
                     }
                 }
                 item {
-                    LastChatSettingsGroup(title = "Data") {
+                    LastChatSettingsGroup(title = "Data settings") {
+                        LastChatSettingGroupItem(
+                            title = "Backup",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.CloudUpload, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("Backup", "Backup") },
+                        )
                         LastChatSettingGroupItem(
                             title = "Chat storage",
-                            subtitle = "Conversations are stored in the iOS app container",
                             darkTheme = darkTheme,
                             icon = { Icon(Icons.Rounded.Storage, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { section = IosSettingsSection.Data },
+                            onClick = { openSettingsDestination("ChatStorage", "Chat storage") },
+                        )
+                    }
+                }
+                item {
+                    LastChatSettingsGroup(title = "About") {
+                        LastChatSettingGroupItem(
+                            title = "About",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Info, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("About", "About") },
                         )
                     }
                 }
             }
             if (section == IosSettingsSection.Assistant) {
-            item { Text("Assistant", style = MaterialTheme.typography.titleMedium) }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    state.assistants.forEach { assistant ->
-                        if (assistant.id == state.selectedAssistantId) {
-                            Button(onClick = {}) { Text(assistant.name) }
-                        } else {
-                            TextButton(onClick = { onSelectAssistant(assistant.id) }) {
-                                Text(assistant.name)
+                item {
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Assistant",
+                            subtitle = "Profile and system instructions",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(label = { Text("Profile") }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    state.assistants.forEach { assistant ->
+                                        if (assistant.id == state.selectedAssistantId) {
+                                            Button(onClick = {}) { Text(assistant.name) }
+                                        } else {
+                                            TextButton(onClick = { onSelectAssistant(assistant.id) }) {
+                                                Text(assistant.name)
+                                            }
+                                        }
+                                    }
+                                    TextButton(onClick = onNewAssistant) { Text("New assistant") }
+                                }
+                            }
+                            LastChatFormItem(label = { Text("Name") }) {
+                                OutlinedTextField(
+                                    value = assistantName,
+                                    onValueChange = { assistantName = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            LastChatFormItem(label = { Text("System prompt") }) {
+                                OutlinedTextField(
+                                    value = systemPrompt,
+                                    onValueChange = { systemPrompt = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    minLines = 3,
+                                    maxLines = 8,
+                                )
+                            }
+                            Button(
+                                onClick = { onSaveAssistant(assistantName, systemPrompt) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save assistant") }
+                            TextButton(
+                                onClick = { openSettingsDestination("AssistantMemory", "Memory") },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Memory, null, Modifier.size(18.dp))
+                                Text("Manage memory")
+                            }
+                            TextButton(
+                                onClick = { openSettingsDestination("AssistantTools", "Tools") },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Extension, null, Modifier.size(18.dp))
+                                Text("Manage tools")
+                            }
+                            if (state.assistants.size > 1) {
+                                TextButton(onClick = { onDeleteAssistant(state.assistant.id) }) {
+                                    Text("Delete assistant")
+                                }
                             }
                         }
                     }
-                    TextButton(onClick = onNewAssistant) { Text("New assistant") }
                 }
             }
-            item { OutlinedTextField(
-                value = assistantName,
-                onValueChange = { assistantName = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Name") },
-                singleLine = true,
-            ) }
-            item { OutlinedTextField(
-                value = systemPrompt,
-                onValueChange = { systemPrompt = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("System prompt") },
-                minLines = 3,
-                maxLines = 8,
-            ) }
-            item { Button(
-                onClick = { onSaveAssistant(assistantName, systemPrompt) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save assistant") } }
-            if (state.assistants.size > 1) item {
-                TextButton(onClick = { onDeleteAssistant(state.assistant.id) }) {
-                    Text("Delete assistant")
+            if (section == IosSettingsSection.Memory) {
+                item {
+                    val modeTitle = when (memoryMode) {
+                        IosMemoryMode.OFF -> "Memory: Off"
+                        IosMemoryMode.BASIC -> "Memory: Basic"
+                        IosMemoryMode.SEARCHABLE -> "Memory: Searchable"
+                        IosMemoryMode.ADAPTIVE -> "Memory: Adaptive"
+                    }
+                    val modeDescription = when (memoryMode) {
+                        IosMemoryMode.OFF -> "No memories are added to this assistant's context"
+                        IosMemoryMode.BASIC -> "All core memories are included in the stable system prompt"
+                        IosMemoryMode.SEARCHABLE -> "Relevant memories are retrieved with provider embeddings"
+                        IosMemoryMode.ADAPTIVE -> "Searchable recall plus automatic evidence-bound episodic memory"
+                    }
+                    LastChatMemoryModeCard(
+                        enabled = memoryMode != IosMemoryMode.OFF,
+                        title = modeTitle,
+                        description = modeDescription,
+                        darkTheme = darkTheme,
+                    )
                 }
-            }
-            }
-            if (section == IosSettingsSection.Provider) {
-            item { Text("Provider", style = MaterialTheme.typography.titleMedium) }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    IosProviderType.entries.forEach { type ->
-                        if (type == providerType) {
-                            Button(onClick = {}) { Text(type.displayName()) }
-                        } else {
-                            TextButton(onClick = {
-                                providerType = type
-                                val saved = state.providerConfigurations.firstOrNull { it.type == type }
-                                baseUrl = saved?.baseUrl ?: type.defaultBaseUrl()
-                                modelId = saved?.modelId ?: type.defaultModelId()
-                                apiKey = ""
-                            }) { Text(type.displayName()) }
+                item {
+                    LastChatSettingsGroup(
+                        title = "Memory settings",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatMemorySettingsItem(
+                            title = "Memory mode",
+                            subtitle = "Stored separately for ${state.assistant.name}",
+                            darkTheme = darkTheme,
+                            position = LastChatMemoryGroupPosition.Single,
+                            trailing = {
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    listOf(
+                                        IosMemoryMode.OFF to "Off",
+                                        IosMemoryMode.BASIC to "Basic",
+                                        IosMemoryMode.SEARCHABLE to "Searchable",
+                                        IosMemoryMode.ADAPTIVE to "Adaptive",
+                                    ).forEach { (mode, label) ->
+                                        if (memoryMode == mode) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = { memoryMode = mode }) { Text(label) }
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+                if (memoryMode == IosMemoryMode.SEARCHABLE || memoryMode == IosMemoryMode.ADAPTIVE) {
+                    item {
+                        LastChatSettingsGroup(
+                            title = "Recall settings",
+                            horizontalPadding = 0.dp,
+                            titleStartPadding = 0.dp,
+                        ) {
+                            LastChatSettingGroupInputItem(
+                                title = "Embeddings",
+                                subtitle = "Vectors are stored with each memory in the iOS app container",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(label = { Text("Embedding provider") }) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf(IosProviderType.OPENAI, IosProviderType.GOOGLE).forEach { type ->
+                                            if (embeddingProviderType == type) {
+                                                Button(onClick = {}) { Text(type.displayName()) }
+                                            } else {
+                                                TextButton(onClick = {
+                                                    embeddingProviderType = type
+                                                    embeddingModelId = if (type == IosProviderType.OPENAI) {
+                                                        "text-embedding-3-small"
+                                                    } else {
+                                                        "text-embedding-004"
+                                                    }
+                                                }) { Text(type.displayName()) }
+                                            }
+                                        }
+                                    }
+                                }
+                                LastChatFormItem(label = { Text("Embedding model") }) {
+                                    OutlinedTextField(
+                                        value = embeddingModelId,
+                                        onValueChange = { embeddingModelId = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(
+                                    label = { Text("Similarity threshold") },
+                                    description = { Text("Between 0 and 1") },
+                                ) {
+                                    OutlinedTextField(
+                                        value = memoryThreshold,
+                                        onValueChange = { value ->
+                                            memoryThreshold = value.filter { it.isDigit() || it == '.' }.take(4)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(
+                                    label = { Text("Maximum recalled items") },
+                                    description = { Text("Between 1 and 20") },
+                                ) {
+                                    OutlinedTextField(
+                                        value = memoryLimit,
+                                        onValueChange = { value -> memoryLimit = value.filter(Char::isDigit).take(2) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Button(
+                        onClick = {
+                            onSaveMemorySettings(
+                                memoryMode,
+                                embeddingProviderType,
+                                embeddingModelId,
+                                memoryThreshold.toFloatOrNull() ?: 0.45f,
+                                memoryLimit.toIntOrNull() ?: 10,
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Save memory settings") }
+                }
+                item {
+                    val visibleMemories = state.assistantMemories
+                        .filter { memorySearch.isBlank() || it.content.contains(memorySearch, ignoreCase = true) }
+                        .sortedByDescending(IosMemoryRecord::timestampEpochMs)
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Manage memory", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Row {
+                                if (memoryMode == IosMemoryMode.SEARCHABLE || memoryMode == IosMemoryMode.ADAPTIVE) {
+                                    IconButton(onClick = onRegenerateMemoryEmbeddings) {
+                                        Icon(Icons.Rounded.Refresh, "Regenerate embeddings")
+                                    }
+                                }
+                                IconButton(onClick = {
+                                    editingMemory = IosMemoryRecord(
+                                        id = 0,
+                                        assistantId = state.assistant.id,
+                                        content = "",
+                                    )
+                                    editingMemoryContent = ""
+                                }) {
+                                    Icon(Icons.Rounded.Add, "Add memory")
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = memorySearch,
+                            onValueChange = { memorySearch = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.SearchField,
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            placeholder = { Text("Search memories") },
+                            singleLine = true,
+                        )
+                        Column(
+                            modifier = Modifier.clip(AppShapes.CardMedium),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            visibleMemories.forEachIndexed { index, memory ->
+                                val position = when {
+                                    visibleMemories.size == 1 -> LastChatMemoryGroupPosition.Single
+                                    index == 0 -> LastChatMemoryGroupPosition.First
+                                    index == visibleMemories.lastIndex -> LastChatMemoryGroupPosition.Last
+                                    else -> LastChatMemoryGroupPosition.Middle
+                                }
+                                val searchableMemory = memoryMode == IosMemoryMode.SEARCHABLE ||
+                                    memoryMode == IosMemoryMode.ADAPTIVE
+                                val missingEmbedding = searchableMemory && memory.embeddings.isNullOrEmpty()
+                                val outdatedEmbedding = searchableMemory &&
+                                    !missingEmbedding && memory.embeddingModelId != embeddingModelId
+                                LastChatMemoryRow(
+                                    content = memory.content,
+                                    darkTheme = darkTheme,
+                                    position = position,
+                                    onEdit = {
+                                        editingMemory = memory
+                                        editingMemoryContent = memory.content
+                                    },
+                                    onDelete = if (memory.type == 0) ({ onDeleteMemory(memory.id) }) else null,
+                                    deleteTitle = "Delete",
+                                    deleteLabel = "Delete",
+                                    cancelLabel = "Cancel",
+                                    deleteConfirmation = "Delete this memory?",
+                                    embeddingWarning = when {
+                                        missingEmbedding -> "No embedding"
+                                        outdatedEmbedding -> "Outdated embedding"
+                                        else -> null
+                                    },
+                                    embeddingWarningIsError = missingEmbedding,
+                                    typeLabel = if (memory.type == 1) "Episodic" else "Core",
+                                    typeIsCore = memory.type == 0,
+                                    onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                )
+                            }
+                            if (visibleMemories.isEmpty()) {
+                                Surface(
+                                    color = if (darkTheme) MaterialTheme.colorScheme.surfaceContainerLow
+                                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    shape = AppShapes.CardMedium,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        if (memorySearch.isBlank()) "No memories yet" else "No matching memories",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(24.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-            item { OutlinedTextField(baseUrl, { baseUrl = it }, Modifier.fillMaxWidth(), label = { Text("Base URL") }, singleLine = true) }
-            item { OutlinedTextField(modelId, { modelId = it }, Modifier.fillMaxWidth(), label = { Text("Model ID") }, singleLine = true) }
-            item { OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (state.hasApiKey && providerType == state.provider.type) "API key (saved in Keychain)" else "API key") },
-                placeholder = {
-                    if (state.hasApiKey && providerType == state.provider.type) {
-                        Text("Leave blank to keep current key")
+            if (section == IosSettingsSection.Tools) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Local tools",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupItem(
+                            title = "Notifications",
+                            subtitle = "Allow this assistant to post LastChat notifications",
+                            darkTheme = darkTheme,
+                            trailing = {
+                                Switch(
+                                    checked = IosLocalToolOption.NOTIFICATIONS in localTools,
+                                    onCheckedChange = { enabled ->
+                                        localTools = if (enabled) {
+                                            localTools + IosLocalToolOption.NOTIFICATIONS
+                                        } else localTools - IosLocalToolOption.NOTIFICATIONS
+                                        onSaveLocalTools(localTools)
+                                    },
+                                )
+                            },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Text-to-speech",
+                            subtitle = "Allow spoken output through the selected TTS provider",
+                            darkTheme = darkTheme,
+                            trailing = {
+                                Switch(
+                                    checked = IosLocalToolOption.TTS in localTools,
+                                    onCheckedChange = { enabled ->
+                                        localTools = if (enabled) {
+                                            localTools + IosLocalToolOption.TTS
+                                        } else localTools - IosLocalToolOption.TTS
+                                        onSaveLocalTools(localTools)
+                                    },
+                                )
+                            },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Character questions",
+                            subtitle = "Allow structured interactive questions in the composer",
+                            darkTheme = darkTheme,
+                            trailing = {
+                                Switch(
+                                    checked = IosLocalToolOption.ASK_USER in localTools,
+                                    onCheckedChange = { enabled ->
+                                        localTools = if (enabled) {
+                                            localTools + IosLocalToolOption.ASK_USER
+                                        } else localTools - IosLocalToolOption.ASK_USER
+                                        onSaveLocalTools(localTools)
+                                    },
+                                )
+                            },
+                        )
+                        LastChatSettingGroupItem(
+                            title = "Image generation",
+                            subtitle = "Allow the selected image model to create gallery images",
+                            darkTheme = darkTheme,
+                            trailing = {
+                                Switch(
+                                    checked = IosLocalToolOption.IMAGE_GENERATION in localTools,
+                                    onCheckedChange = { enabled ->
+                                        localTools = if (enabled) {
+                                            localTools + IosLocalToolOption.IMAGE_GENERATION
+                                        } else localTools - IosLocalToolOption.IMAGE_GENERATION
+                                        onSaveLocalTools(localTools)
+                                    },
+                                )
+                            },
+                        )
                     }
-                },
-                singleLine = true,
-            ) }
-            item { Button(
-                onClick = { onSaveProvider(providerType, baseUrl, modelId, apiKey); apiKey = "" },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save provider") } }
-            if (state.hasApiKey && providerType == state.provider.type) item {
-                TextButton(onClick = onClearApiKey) { Text("Remove saved API key") }
+                }
+                item {
+                    Text(
+                        "QuickJS is not enabled until its full iOS runtime path is available.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
+            if (section == IosSettingsSection.Models) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Conversation",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatModelFeatureCard(
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.AutoMirrored.Rounded.Chat, null) },
+                            title = { Text("Default chat model", maxLines = 1) },
+                            description = { Text("Model used for new conversations") },
+                            actions = {
+                                Box(Modifier.weight(1f)) {
+                                    TextButton(onClick = { showModelPicker = true }) {
+                                        Surface(
+                                            modifier = Modifier.size(36.dp),
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    state.provider.modelId.firstOrNull()
+                                                        ?.uppercase() ?: "M",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            state.provider.modelId,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                        LastChatSettingGroupInputItem(
+                            title = "Image generation model",
+                            subtitle = if (imageGeneration.enabled) imageGeneration.modelId
+                            else "Not configured",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("Enable image generation") },
+                                tail = {
+                                    Switch(
+                                        checked = imageGeneration.enabled,
+                                        onCheckedChange = { enabled ->
+                                            imageGeneration = imageGeneration.copy(enabled = enabled)
+                                        },
+                                    )
+                                },
+                            )
+                            LastChatFormItem(
+                                label = { Text("Provider") },
+                                description = { Text("Uses the provider endpoint and Keychain key configured above") },
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf(IosProviderType.OPENAI, IosProviderType.GOOGLE).forEach { type ->
+                                        if (imageGeneration.providerType == type) {
+                                            Button(onClick = {}) { Text(type.displayName()) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                imageGeneration = imageGeneration.copy(
+                                                    providerType = type,
+                                                    modelId = if (type == IosProviderType.GOOGLE) {
+                                                        "imagen-3.0-generate-002"
+                                                    } else "gpt-image-1",
+                                                )
+                                            }) { Text(type.displayName()) }
+                                        }
+                                    }
+                                }
+                            }
+                            LastChatFormItem(label = { Text("Model ID") }) {
+                                OutlinedTextField(
+                                    value = imageGeneration.modelId,
+                                    onValueChange = { imageGeneration = imageGeneration.copy(modelId = it) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            Button(
+                                onClick = { onSaveImageGeneration(imageGeneration) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save image model") }
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Provider) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = providerType.displayName(),
+                            subtitle = "Provider endpoint, model, and secure credentials",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(label = { Text("Provider type") }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    IosProviderType.entries.forEach { type ->
+                                        if (type == providerType) {
+                                            Button(onClick = {}) { Text(type.displayName()) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                providerType = type
+                                                val saved = state.providerConfigurations.firstOrNull {
+                                                    it.type == type
+                                                }
+                                                baseUrl = saved?.baseUrl ?: type.defaultBaseUrl()
+                                                modelId = saved?.modelId ?: type.defaultModelId()
+                                                apiKey = ""
+                                            }) { Text(type.displayName()) }
+                                        }
+                                    }
+                                }
+                            }
+                            LastChatFormItem(label = { Text("Base URL") }) {
+                                OutlinedTextField(
+                                    value = baseUrl,
+                                    onValueChange = { baseUrl = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            LastChatFormItem(label = { Text("Model ID") }) {
+                                OutlinedTextField(
+                                    value = modelId,
+                                    onValueChange = { modelId = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            LastChatFormItem(
+                                label = {
+                                    Text(
+                                        if (state.hasApiKey && providerType == state.provider.type) {
+                                            "API key (saved in Keychain)"
+                                        } else {
+                                            "API key"
+                                        }
+                                    )
+                                },
+                                description = {
+                                    if (state.hasApiKey && providerType == state.provider.type) {
+                                        Text("Leave blank to keep the current key")
+                                    }
+                                },
+                            ) {
+                                OutlinedTextField(
+                                    value = apiKey,
+                                    onValueChange = { apiKey = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveProvider(providerType, baseUrl, modelId, apiKey)
+                                    apiKey = ""
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save provider") }
+                            if (state.hasApiKey && providerType == state.provider.type) {
+                                TextButton(onClick = onClearApiKey) {
+                                    Text("Remove saved API key")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Search) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = searchProvider.displayName(),
+                            subtitle = "Web search tool available to chat models",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("Enable web search") },
+                                description = {
+                                    Text("The model decides when current information is needed")
+                                },
+                                tail = {
+                                    Switch(
+                                        checked = searchEnabled,
+                                        onCheckedChange = { searchEnabled = it },
+                                    )
+                                },
+                            )
+                            LastChatFormItem(label = { Text("Search provider") }) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    IosSearchProviderType.entries.forEach { type ->
+                                        if (type == searchProvider) {
+                                            Button(onClick = {}) { Text(type.displayName()) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                searchProvider = type
+                                                searchApiKey = ""
+                                            }) { Text(type.displayName()) }
+                                        }
+                                    }
+                                }
+                            }
+                            LastChatFormItem(
+                                label = { Text("Result count") },
+                                description = { Text("Between 1 and 10 results") },
+                            ) {
+                                OutlinedTextField(
+                                    value = searchResultSize,
+                                    onValueChange = { value ->
+                                        searchResultSize = value.filter(Char::isDigit).take(2)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            if (searchProvider != IosSearchProviderType.BING) {
+                                LastChatFormItem(
+                                    label = {
+                                        Text(
+                                            if (state.hasSearchApiKey &&
+                                                searchProvider == state.search.provider
+                                            ) {
+                                                "API key (saved in Keychain)"
+                                            } else {
+                                                "API key"
+                                            },
+                                        )
+                                    },
+                                    description = {
+                                        if (state.hasSearchApiKey &&
+                                            searchProvider == state.search.provider
+                                        ) {
+                                            Text("Leave blank to keep the current key")
+                                        }
+                                    },
+                                ) {
+                                    OutlinedTextField(
+                                        value = searchApiKey,
+                                        onValueChange = { searchApiKey = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveSearch(
+                                        searchProvider,
+                                        searchEnabled,
+                                        searchResultSize.toIntOrNull() ?: 5,
+                                        searchApiKey,
+                                    )
+                                    searchApiKey = ""
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save search settings") }
+                            if (searchProvider != IosSearchProviderType.BING &&
+                                state.hasSearchApiKey && searchProvider == state.search.provider
+                            ) {
+                                TextButton(onClick = onClearSearchApiKey) {
+                                    Text("Remove saved API key")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Tts) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = ttsPreferences.type.displayName(),
+                            subtitle = "Cloud speech synthesis and native playback",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("Enable text-to-speech") },
+                                description = { Text("Adds Android's speech action to assistant messages") },
+                                tail = {
+                                    Switch(
+                                        checked = ttsPreferences.enabled,
+                                        onCheckedChange = { enabled ->
+                                            ttsPreferences = ttsPreferences.copy(enabled = enabled)
+                                        },
+                                    )
+                                },
+                            )
+                            LastChatFormItem(label = { Text("TTS provider") }) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    IosTtsProviderType.entries.forEach { type ->
+                                        if (type == ttsPreferences.type) {
+                                            Button(onClick = {}) { Text(type.displayName()) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                val enabled = ttsPreferences.enabled
+                                                ttsPreferences = type.defaultPreferences().copy(
+                                                    enabled = enabled,
+                                                )
+                                                ttsSpeed = ttsPreferences.speed.toString()
+                                                ttsApiKey = ""
+                                            }) { Text(type.displayName()) }
+                                        }
+                                    }
+                                }
+                            }
+                            if (ttsPreferences.type != IosTtsProviderType.ELEVENLABS) {
+                                LastChatFormItem(label = { Text("Base URL") }) {
+                                    OutlinedTextField(
+                                        value = ttsPreferences.baseUrl,
+                                        onValueChange = { value ->
+                                            ttsPreferences = ttsPreferences.copy(baseUrl = value)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            LastChatFormItem(
+                                label = {
+                                    Text(
+                                        if (ttsPreferences.type == IosTtsProviderType.PLAY_HT) {
+                                            "Voice engine"
+                                        } else {
+                                            "Model"
+                                        }
+                                    )
+                                },
+                            ) {
+                                OutlinedTextField(
+                                    value = ttsPreferences.model,
+                                    onValueChange = { value ->
+                                        ttsPreferences = ttsPreferences.copy(model = value)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            LastChatFormItem(
+                                label = {
+                                    Text(
+                                        when (ttsPreferences.type) {
+                                            IosTtsProviderType.FISH_AUDIO -> "Reference ID"
+                                            IosTtsProviderType.PLAY_HT -> "Voice manifest URI"
+                                            else -> "Voice"
+                                        }
+                                    )
+                                },
+                            ) {
+                                OutlinedTextField(
+                                    value = ttsPreferences.voice,
+                                    onValueChange = { value ->
+                                        ttsPreferences = ttsPreferences.copy(voice = value)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            if (ttsPreferences.type == IosTtsProviderType.PLAY_HT) {
+                                LastChatFormItem(label = { Text("User ID") }) {
+                                    OutlinedTextField(
+                                        value = ttsPreferences.secondary,
+                                        onValueChange = { value ->
+                                            ttsPreferences = ttsPreferences.copy(secondary = value)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            if (ttsPreferences.type in setOf(
+                                    IosTtsProviderType.QWEN,
+                                    IosTtsProviderType.FISH_AUDIO,
+                                    IosTtsProviderType.CARTESIA,
+                                )
+                            ) {
+                                LastChatFormItem(
+                                    label = {
+                                        Text(
+                                            if (ttsPreferences.type == IosTtsProviderType.FISH_AUDIO) {
+                                                "Audio format"
+                                            } else {
+                                                "Language"
+                                            }
+                                        )
+                                    },
+                                ) {
+                                    OutlinedTextField(
+                                        value = ttsPreferences.language,
+                                        onValueChange = { value ->
+                                            ttsPreferences = ttsPreferences.copy(language = value)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            if (ttsPreferences.type == IosTtsProviderType.MINIMAX ||
+                                ttsPreferences.type == IosTtsProviderType.CARTESIA
+                            ) {
+                                LastChatFormItem(label = { Text("Emotion") }) {
+                                    OutlinedTextField(
+                                        value = ttsPreferences.emotion,
+                                        onValueChange = { value ->
+                                            ttsPreferences = ttsPreferences.copy(emotion = value)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            if (ttsPreferences.type in setOf(
+                                    IosTtsProviderType.MINIMAX,
+                                    IosTtsProviderType.FISH_AUDIO,
+                                    IosTtsProviderType.CARTESIA,
+                                    IosTtsProviderType.PLAY_HT,
+                                )
+                            ) {
+                                LastChatFormItem(
+                                    label = { Text("Speed") },
+                                    description = { Text("Between 0.5 and 2.0") },
+                                ) {
+                                    OutlinedTextField(
+                                        value = ttsSpeed,
+                                        onValueChange = { value ->
+                                            ttsSpeed = value.filter { it.isDigit() || it == '.' }.take(4)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            LastChatFormItem(
+                                label = {
+                                    Text(
+                                        if (state.hasTtsApiKey &&
+                                            ttsPreferences.type == state.tts.type
+                                        ) {
+                                            "API key (saved in Keychain)"
+                                        } else {
+                                            "API key"
+                                        }
+                                    )
+                                },
+                                description = {
+                                    if (state.hasTtsApiKey &&
+                                        ttsPreferences.type == state.tts.type
+                                    ) {
+                                        Text("Leave blank to keep the current key")
+                                    }
+                                },
+                            ) {
+                                OutlinedTextField(
+                                    value = ttsApiKey,
+                                    onValueChange = { ttsApiKey = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveTts(
+                                        ttsPreferences.copy(
+                                            speed = ttsSpeed.toFloatOrNull() ?: 1.0f,
+                                        ),
+                                        ttsApiKey,
+                                    )
+                                    ttsApiKey = ""
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save TTS provider") }
+                            if (state.hasTtsApiKey && ttsPreferences.type == state.tts.type) {
+                                TextButton(onClick = onClearTtsApiKey) {
+                                    Text("Remove saved API key")
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if (section == IosSettingsSection.Appearance) {
-            item { Text("Appearance", style = MaterialTheme.typography.titleMedium) }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    listOf(
-                        "seafoam_mint" to "Seafoam",
-                        "ocean" to "Ocean",
-                        "sakura" to "Sakura",
-                        "spring" to "Spring",
-                        "autumn" to "Autumn",
-                        "black" to "Black",
-                    ).forEach { (id, label) ->
-                        if (themeId == id) Button(onClick = {}) { Text(label) }
-                        else TextButton(onClick = {
-                            themeId = id
-                            onSaveAppearance(themeId, colorMode)
-                        }) { Text(label) }
+                item {
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Appearance",
+                            subtitle = "Theme and system color mode",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(label = { Text("Theme") }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    listOf(
+                                        "seafoam_mint" to "Seafoam",
+                                        "ocean" to "Ocean",
+                                        "sakura" to "Sakura",
+                                        "spring" to "Spring",
+                                        "autumn" to "Autumn",
+                                        "black" to "Black",
+                                    ).forEach { (id, label) ->
+                                        if (themeId == id) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                themeId = id
+                                                onSaveAppearance(themeId, colorMode)
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
+                            }
+                            LastChatFormItem(label = { Text("Color mode") }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    IosColorMode.entries.forEach { mode ->
+                                        val label = mode.name.lowercase().replaceFirstChar {
+                                            it.uppercase()
+                                        }
+                                        if (colorMode == mode) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                colorMode = mode
+                                                onSaveAppearance(themeId, colorMode)
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    IosColorMode.entries.forEach { mode ->
-                        if (colorMode == mode) Button(onClick = {}) { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        else TextButton(onClick = {
-                            colorMode = mode
-                            onSaveAppearance(themeId, colorMode)
-                        }) { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                    }
-                }
-            }
             }
             if (section == IosSettingsSection.Data) {
-                item { MenuCard("Data", "Conversations are stored in the iOS app container") {} }
+                item {
+                    LastChatSettingsGroup(
+                        title = "Storage",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Data",
+                            subtitle = "Conversations are stored in the iOS app container",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("App data") },
+                                description = {
+                                    Text("Provider credentials are stored separately in Keychain")
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.About) {
+                item {
+                    val platformInfo = currentIosPlatformInfo()
+                    LastChatAboutContent(
+                        appName = "LastChat",
+                        versionName = "1.4.5",
+                        darkTheme = darkTheme,
+                        platformTitle = "iOS Version",
+                        platformSubtitle = platformInfo.systemVersion,
+                        platformIcon = Icons.Rounded.PhoneIphone,
+                        deviceSubtitle = platformInfo.device,
+                        deviceIcon = Icons.Rounded.PhoneIphone,
+                        architectureSubtitle = platformInfo.architecture,
+                        architectureIcon = Icons.Rounded.Memory,
+                        onSourceCode = {
+                            openIosExternalUrl("https://github.com/Cocolalilal/LastChat")
+                        },
+                        onHaptic = {
+                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                        },
+                    )
+                }
+            }
+            if (section == IosSettingsSection.Unavailable) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.CardMedium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                unavailableDestinationTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "This settings destination is not available on iOS yet.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        editingMemory?.let { memory ->
+            AlertDialog(
+                onDismissRequest = { editingMemory = null },
+                title = { Text("Manage memory") },
+                text = {
+                    OutlinedTextField(
+                        value = editingMemoryContent,
+                        onValueChange = { editingMemoryContent = it },
+                        minLines = 1,
+                        maxLines = 8,
+                        shape = AppShapes.InputField,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val content = editingMemoryContent.trim()
+                            if (content.isNotBlank()) {
+                                if (memory.id == 0) onAddMemory(content)
+                                else onUpdateMemory(memory.id, content)
+                            }
+                            editingMemory = null
+                        },
+                    ) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingMemory = null }) { Text("Cancel") }
+                },
+            )
+        }
+        if (showModelPicker) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val visibleConfigurations = state.providerConfigurations.filter { configuration ->
+                modelSearchQuery.isBlank() ||
+                    configuration.modelId.contains(modelSearchQuery, ignoreCase = true) ||
+                    configuration.type.displayName().contains(modelSearchQuery, ignoreCase = true)
+            }
+            ModalBottomSheet(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                onDismissRequest = { showModelPicker = false },
+                sheetState = sheetState,
+                sheetGesturesEnabled = false,
+                dragHandle = {
+                    IconButton(onClick = { showModelPicker = false }) {
+                        Icon(Icons.Rounded.KeyboardArrowDown, null)
+                    }
+                },
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxHeight(0.8f).imePadding(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    OutlinedTextField(
+                        value = modelSearchQuery,
+                        onValueChange = { modelSearchQuery = it },
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        shape = AppShapes.SearchField,
+                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                        placeholder = { Text("Search models") },
+                        singleLine = true,
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = 32.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        visibleConfigurations.forEach { configuration ->
+                            item("model-provider-${configuration.type}") {
+                                Text(
+                                    configuration.type.displayName(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(top = 12.dp, bottom = 4.dp),
+                                )
+                            }
+                            item("model-${configuration.type}-${configuration.modelId}") {
+                                LastChatGroupedModelRow(
+                                    title = configuration.modelId,
+                                    selected = configuration.type == state.provider.type &&
+                                        configuration.modelId == state.provider.modelId,
+                                    darkTheme = darkTheme,
+                                    position = LastChatModelGroupPosition.Single,
+                                    onClick = {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        onSelectDefaultModel(
+                                            configuration.type,
+                                            configuration.modelId,
+                                        )
+                                        showModelPicker = false
+                                    },
+                                    icon = {
+                                        Surface(
+                                            modifier = Modifier.size(32.dp),
+                                            shape = CircleShape,
+                                            color = Color.Transparent,
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    configuration.type.displayName()
+                                                        .first().uppercase(),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    metadata = {
+                                        Text(
+                                            configuration.type.displayName(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+        }
+    }
+}
+
+private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
+    val assistantChildren = listOf(
+        LastChatSettingsPaneEntry("AssistantMemory", "Memory", Icons.Rounded.Memory),
+        LastChatSettingsPaneEntry("AssistantTools", "Tools", Icons.Rounded.Extension),
+    )
+    val displayChildren = listOf(
+        LastChatSettingsPaneEntry("Fonts", "Fonts", Icons.Rounded.Tune),
+        LastChatSettingsPaneEntry("UiCustomization", "UI customization", Icons.Rounded.Brush),
+        LastChatSettingsPaneEntry("RpOptimizations", "Roleplay optimizations", Icons.Rounded.AutoAwesome),
+    )
+    val providerChildren = listOf(
+        LastChatSettingsPaneEntry("ProviderModels", "Provider models", Icons.Rounded.Cloud),
+        LastChatSettingsPaneEntry("Search", "Search service", Icons.Rounded.Public),
+        LastChatSettingsPaneEntry("Tts", "Text-to-speech", Icons.AutoMirrored.Rounded.VolumeUp),
+    )
+    val promptChildren = listOf(
+        LastChatSettingsPaneEntry("Skills", "Skills", Icons.Rounded.Code),
+        LastChatSettingsPaneEntry("Lorebooks", "Lorebooks", Icons.Rounded.Folder),
+    )
+    val backupChildren = listOf(
+        LastChatSettingsPaneEntry("BackupWebDav", "WebDAV backup", Icons.Rounded.CloudUpload),
+        LastChatSettingsPaneEntry("BackupLocal", "Import and export", Icons.Rounded.FileUpload),
+    )
+    return listOf(
+        LastChatSettingsPaneGroup(
+            id = "general",
+            title = "General settings",
+            entries = listOf(
+                LastChatSettingsPaneEntry("Display", "Display", Icons.Rounded.Tune, children = displayChildren),
+                LastChatSettingsPaneEntry(
+                    "Assistants",
+                    "Assistant",
+                    Icons.Rounded.Group,
+                    children = assistantChildren,
+                ),
+                LastChatSettingsPaneEntry(
+                    "PromptInjections",
+                    "Prompt injections",
+                    Icons.Rounded.Extension,
+                    children = promptChildren,
+                ),
+            ),
+        ),
+        LastChatSettingsPaneGroup(
+            id = "models_services",
+            title = "Models & services",
+            entries = listOf(
+                LastChatSettingsPaneEntry("Models", "Default model", Icons.Rounded.AccountTree),
+                LastChatSettingsPaneEntry("Providers", "Providers", Icons.Rounded.Cloud, children = providerChildren),
+                LastChatSettingsPaneEntry("Mcp", "MCP", Icons.Rounded.Code),
+                LastChatSettingsPaneEntry("Web", "Web server", Icons.Rounded.Language),
+                LastChatSettingsPaneEntry("AndroidIntegration", "Android integration", Icons.Rounded.PhoneAndroid),
+                LastChatSettingsPaneEntry("Workspaces", "Workspaces", Icons.Rounded.Code),
+            ),
+        ),
+        LastChatSettingsPaneGroup(
+            id = "data",
+            title = "Data",
+            entries = listOf(
+                LastChatSettingsPaneEntry("Backup", "Backup", Icons.Rounded.CloudUpload, children = backupChildren),
+                LastChatSettingsPaneEntry("ChatStorage", "Chat storage", Icons.Rounded.Storage),
+            ),
+        ),
+        LastChatSettingsPaneGroup(
+            id = "about",
+            title = "About",
+            entries = listOf(
+                LastChatSettingsPaneEntry("About", "About", Icons.Rounded.Info),
+            ),
+        ),
+    )
+}
+
+private fun iosSettingsMainDestination(destinationId: String): String = when (destinationId) {
+    "AssistantMemory" -> "Assistants"
+    "AssistantTools" -> "Assistants"
+    "Fonts", "UiCustomization", "RpOptimizations" -> "Display"
+    "ProviderModels", "Search", "Tts" -> "Providers"
+    "Skills", "Lorebooks" -> "PromptInjections"
+    "BackupWebDav", "BackupLocal" -> "Backup"
+    else -> destinationId
+}
+
+private fun List<LastChatSettingsPaneGroup>.titleFor(destinationId: String): String? {
+    fun LastChatSettingsPaneEntry.findTitle(): String? {
+        if (id == destinationId) return title
+        for (child in children) child.findTitle()?.let { return it }
+        return null
+    }
+    for (group in this) {
+        for (entry in group.entries) entry.findTitle()?.let { return it }
+    }
+    return null
 }
 
 @Composable

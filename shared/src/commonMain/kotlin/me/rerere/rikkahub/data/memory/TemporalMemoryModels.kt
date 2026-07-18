@@ -35,17 +35,10 @@ data class MemoryWriteOperation(
 
 @Serializable
 enum class MemoryOperationType {
-    @SerialName("add")
-    ADD,
-
-    @SerialName("reinforce")
-    REINFORCE,
-
-    @SerialName("supersede")
-    SUPERSEDE,
-
-    @SerialName("close")
-    CLOSE,
+    @SerialName("add") ADD,
+    @SerialName("reinforce") REINFORCE,
+    @SerialName("supersede") SUPERSEDE,
+    @SerialName("close") CLOSE,
 }
 
 @Serializable
@@ -103,6 +96,13 @@ data class ExportedTemporalEpisode(
     val confidence: Float,
 )
 
+data class SourceMessage(
+    val id: String,
+    val role: Int,
+    val text: String,
+    val observedAt: Long,
+)
+
 data class TemporalRecallItem(
     val stableId: String,
     val text: String,
@@ -147,3 +147,36 @@ data class TemporalRecallPacket(
         }
     }.trim()
 }
+
+/** Exact evidence-bound extraction prompt consumed by Android and iOS. */
+fun buildTemporalMemoryExtractionPrompt(
+    pending: List<SourceMessage>,
+    existing: List<TemporalRecallItem>,
+): String = """
+    You are LastChat's evidence-bound temporal memory encoder for one AI character.
+    Extract only durable personal facts, preferences, relationships, plans, meaningful changes, and one coherent scene from NEW_MESSAGES.
+    Never invent. Never infer sensitive traits. Treat jokes, hypothetical discussion, and roleplay as non-real and label reality accordingly.
+    Resolve relative dates from each message's observed_at timestamp, not from today's date.
+    Existing memories are only for deduplication and detecting changes.
+
+    Operations:
+    - add: a new claim
+    - reinforce: the same claim is confirmed
+    - supersede: a current state changed; include replaces_claim_id only when an id is known
+    - close: a plan/state ended
+
+    Use concise snake_case predicates. A scene should span the new messages and be omitted for trivial filler.
+    Output strict JSON only:
+    {"operations":[{"op":"add","subject":"user","predicate":"likes","object":"tea","statement":"User likes tea.","kind":"durative","reality":"real","confidence":0.9,"importance":3,"valid_from":null,"valid_until":null,"replaces_claim_id":null,"sensitive":false,"source_message_id":"..."}],"episode":{"title":"...","summary":"...","scene_key":"stable-topic-key","importance":3,"reality":"real","frame":null,"event_start":null,"event_end":null}}
+
+    EXISTING_MEMORIES:
+    ${existing.joinToString("\n") { item ->
+        val claimId = item.stableId.removePrefix("claim:").toLongOrNull()
+        if (claimId != null) "- claim_id=$claimId ${item.text}" else "- ${item.text}"
+    }}
+
+    NEW_MESSAGES:
+    ${pending.joinToString("\n") { message ->
+        "id=${message.id} observed_at=${message.observedAt} role=${if (message.role == 0) "user" else "assistant"}: ${message.text.take(2_000)}"
+    }}
+""".trimIndent()

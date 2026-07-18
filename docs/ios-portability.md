@@ -50,7 +50,26 @@ The portability report now flags `java.math`, `java.security`, `java.time`, `jav
 
 `:highlight` now separates the portable highlighter contract, token model, serializer, and Compose rendering from the Android QuickJS runtime. Android DI binds `Highlighter` to `AndroidHighlighter`, which owns `Context`, Prism raw-resource loading, QuickJS initialization, and serialized QuickJS access through a coroutine dispatcher instead of a JVM executor. Android highlighter diagnostics now use Kotlin class labels instead of JVM `Class` names. The portability report treats `me.rerere.highlight` as a shared candidate and excludes only `me.rerere.highlight.android`.
 
-Cloud TTS provider transport is now platform-ready. OpenAI, Gemini, MiniMax, ElevenLabs, Qwen, Fish Audio, Cartesia, and PlayHT TTS providers call through `PlatformHttpClient` and build payloads with kotlinx.serialization; wire-shape regression tests cover their provider-specific request fields. The Android `TTSManager` is the remaining OkHttp composition boundary and preserves the existing provider-specific timeouts using Kotlin durations. Gemini and Qwen audio decoding now use Kotlin Base64 APIs, and cloud TTS diagnostics use `PlatformLog` instead of Android `Log`. The `TTSProvider` contract no longer accepts Android `Context`; Android `TTSManager` and local TTS discovery now live in `me.rerere.tts.provider.android`, while Android system synthesis lives in `me.rerere.tts.provider.providers.android`. Android system synthesis diagnostics also use `PlatformLog`, and utterance IDs use Kotlin `Uuid` instead of JVM `UUID`. System TTS still writes the same temporary WAV files through the Android temp-folder boundary, but no longer exposes direct JVM `File` imports in the provider. `TtsSynthesizer` now combines streamed audio chunks without `java.io.ByteArrayOutputStream`, and Android playback wraps PCM bytes into WAV with deterministic Kotlin byte-array assembly instead of JVM streams. TTS chunk IDs now use Kotlin `Uuid` instead of JVM `UUID`, `TtsController` diagnostics now use `PlatformLog`, and controller queue/cache state now uses Kotlin collections instead of JVM concurrent collections, preserving playback ordering and synthesis caching while keeping chunk orchestration more portable. The portability report now treats `me.rerere.tts.model`, `me.rerere.tts.provider`, and cloud `me.rerere.tts.provider.providers` as shared candidates, with Android adapter subpackages explicitly excluded. The remaining `:tts` portability findings are Android-boundary playback and platform integration: system `TextToSpeech`, Media3 audio playback/controller code, and the Android HTTP adapter construction in `TTSManager`.
+Cloud TTS transport and orchestration are platform-ready. OpenAI, Gemini, MiniMax, ElevenLabs, Qwen, Fish Audio, Cartesia, and PlayHT call through `PlatformHttpClient`; `CloudTtsManager` dispatches those providers on iOS, while Android's `TTSManager` preserves its provider-specific OkHttp timeouts and system-TTS branch. Wire-shape regression tests cover provider-specific request fields. Gemini and Qwen decoding use Kotlin Base64, and diagnostics use `PlatformLog`. `TtsController`, `TtsSynthesizer`, chunking, retry/prefetch queues, cache state, and unified playback state are common code behind `TtsSpeechGenerator` and `TtsAudioPlayer`. Android implements playback with Media3; iOS implements it with AVFoundation, including PCM-to-WAV conversion, play/pause/resume/stop, seeking, speed, duration, and position updates. Android system synthesis remains intentionally Android-only. The portability report treats common TTS models, controllers, provider contracts, and cloud providers as shared candidates and excludes only platform adapters.
+
+Memory portability now has a working Adaptive vertical slice. `MemoryVectorMath` and
+`PortableMemoryChunker` live in `:shared`, and Android's existing vector,
+keyword-score, and chunking entry points delegate to them. `:ui-core` owns the
+production memory mode card, settings row, and editable memory row used by both
+platforms. The iOS controller persists core memories per assistant, injects the
+Basic memory prompt without polluting stored messages, creates OpenAI or Google
+embeddings from existing Keychain credentials, performs hybrid Searchable
+recall with the same scoring/threshold/limit semantics, and exposes model-driven
+create/edit/delete/search tools. The structured temporal extraction models and
+evidence-bound prompt are source-shared with Android. iOS persists a
+conversation-scoped evidence watermark, uses Android's same eight-message or
+ten-minute trigger, applies add/reinforce/supersede/close claim operations, and
+upserts read-only-managed episodes under the conversation's owning assistant.
+Android retains WorkManager and its Room/FTS temporal repository. iOS registers
+a permitted `BGAppRefreshTask`, submits the earliest pending Adaptive deadline,
+processes all pending conversations under their owning assistants, and
+reschedules after completion or state changes. The in-process inactivity job
+remains as a fallback when iOS declines or delays a background request.
 
 As of the latest report, `:ai`, `:common`, `:search`, and the cloud-provider
 portion of `:tts` have no shared-candidate hotspots. Android-boundary findings remain
@@ -144,8 +163,36 @@ spring. Android's existing `SettingsGroup` and `SettingGroupItem` are adapters
 over those primitives, retaining resources, navigation, and PremiumHaptics.
 iOS now opens a grouped Settings home with functional Display, Assistant,
 Providers, and Data destinations instead of placing every editor in one long
-screen. Wide adaptive navigation and the remaining Android-only destinations
-are still pending.
+screen. The compact home now mirrors Android's complete top-level hierarchy;
+unported routes open an explicit unavailable detail instead of silently doing
+nothing. `LastChatSettingsNavigationPane` also source-shares Android's 336 dp
+wide pane, 32 dp shell, status-bar inset, 840 by 600 dp breakpoint, grouped
+corner morphing, selected paints, child expansion, 48/58 dp row heights,
+80/90/120/140 ms motion, and 0.96 press scale. Android retains resource lookup,
+navigation, PremiumHaptics, and scroll restoration. iOS uses the same full
+parent/child hierarchy and keeps unavailable destinations visibly selected.
+The production settings input-card and form-row implementations are shared as
+well: Android's `SettingGroupInputItem` and `FormItem` now delegate to
+`:ui-core`, and the working iOS Assistant, Provider, Appearance, and Data
+details consume those same container colors, 10 dp shape, 16 dp padding,
+12 dp field rhythm, label typography, description alpha, and eight-dp row gap.
+Platform code continues to own state, secure persistence, navigation, and
+controls whose behavior differs; the surrounding detail geometry no longer
+has an iOS-only approximation.
+The About page body is also a single shared renderer. Both platforms use the
+same Android launcher foreground asset, 240 dp logo footprint, version pill,
+section spacing, grouped 10 dp rows, icon paints, 0.98 press spring, and
+credits. Android injects its existing system information, source intent, and
+hidden update-check action; iOS injects live UIKit system/device data, native
+CPU architecture, external URL opening, and UIKit haptics.
+Default-model settings now share Android's production `ModelFeatureCard` and
+grouped model-row implementation as well. This includes the 10 dp feature card,
+16 dp content rhythm, grouped 24/10 dp corners, animated 50 dp selected pill,
+dark-mode black row paint, typography, and click/long-click hit geometry.
+Android's existing `SettingModelPage` and `ModelList` delegate to these common
+primitives. iOS exposes a functional searchable Default model destination and
+persists the chosen per-provider model as the active generation configuration,
+including recalculating the selected provider's Keychain credential state.
 The chat toolbar's drawer button is source-shared too, including its 48 dp pill
 surface, one-dp outline at 60 percent alpha, and canonical rounded Menu glyph.
 Android continues to attach its existing blur effect and blurred container
@@ -205,10 +252,11 @@ locale month names, and number formatting. iOS groups the creation dates of its
 persisted messages into the same shared calendar model and renders that data
 through the same composable.
 
-The portable `:tts` source set currently includes its models, settings,
-contracts, voice resolution, all eight cloud providers, text chunking, and
-PCM/WAV helpers. Android system TTS, `TTSManager`, and Media3 playback remain in
-`androidMain` until AVFoundation synthesis and playback adapters are available.
+The portable `:tts` source set includes its models, settings, provider and
+playback contracts, voice resolution, all eight cloud providers, queue
+controller, synthesizer, text chunking, and PCM/WAV helpers. Android system
+TTS, Android provider composition, and Media3 stay in `androidMain`; the iOS
+source set supplies AVFoundation playback.
 
 Current blockers in those packages should be tracked with:
 
@@ -243,9 +291,41 @@ The current shared boundary should stay green with:
 - `TimeAwarenessRuntimeInfo`: keep time-awareness prompt assembly independent from Android/JVM `ZonedDateTime`, timezone display APIs, and locale-specific zone labels. Android currently maps the system clock and zone through `AndroidTimeAwarenessRuntimeInfo`; iOS can provide the same neutral timestamp/zone snapshot while reusing the shared prompt logic.
 - `GenerationRuntimeInfo`: keep generation-time prompt decisions independent from JVM date/time APIs. Android currently maps recent-conversation "today" checks and episodic-memory grouping through `AndroidGenerationRuntimeInfo`; iOS can provide native calendar/clock behavior while preserving the exact generated prompt labels.
 - `LocalToolPlatform`: keep local-tool helper behavior independent from JVM hashing, file existence checks, Android gallery file persistence, Android content URI parsing, notification posting, notification listening, and WorkManager scheduling. Android currently owns SHA-256 sandbox suffixes, generated-image gallery writes, Python sandbox content/file URIs, assistant notifications, recent-notification snapshots, and scheduled follow-up work through `AndroidLocalToolPlatform`, `AndroidGeneratedToolImageSaver`, `AndroidLocalToolPythonSandbox`, and `AndroidLocalToolNotificationPlatform`; iOS can provide native equivalents while preserving tool JSON, sandbox filenames, generated file links, and attachment-import behavior.
+
+iOS now persists per-assistant local-tool selection and offers the production
+`send_notification` and `text_to_speech` schemas through the same model-driven
+tool loop. `IosUserNotificationPlatform` requests native authorization, posts
+through UserNotifications, and the Swift app delegate presents foreground
+notifications. TTS delegates to the source-shared controller and selected
+Keychain-backed provider. Device-wide notification reading is not available to
+iOS apps, so `get_notifications` returns only LastChat's persisted notification
+history. `schedule_message` is behaviorally implemented rather than reduced to
+a local alarm: scheduled records survive relaunches, foreground timers and a
+permitted `BGAppRefreshTask` share one delivery path, recent conversation and
+memory context feed the configured model, successful output is posted through
+UserNotifications, and transient failures use persisted bounded backoff.
+The per-assistant Character Questions toggle now exposes `ask_user` through the
+normal iOS model tool loop. Generation suspends while a persisted structured
+questionnaire replaces the composer mode, uses Android's card dimensions,
+colors, option motion, and shared questionnaire action renderer, normalizes
+option/custom/skipped answers to the Android payload contract, and resumes from
+the saved tool call after a process relaunch when no in-memory waiter survives.
+The iOS assistant image tool now uses the same `generate_image` schema, system
+guidance, aspect/count normalization, shared OpenAI/Google provider calls, and
+tool-result JSON as Android. Base64 output is decoded through Kotlin's portable
+encoder into app-container `images/` storage, with prompt/model/time metadata
+persisted as iOS gallery state. Returned markdown image links are promoted to
+the same tappable attachment row used for native image message parts. The
+drawer Imagine action and standalone generator/gallery route now use that same
+repository state, including the generator/gallery crossfade, Android-shaped
+floating prompt surface, aspect/count configuration sheet, cancellation,
+preview opening, persistent adaptive grid, and deletion. Image-to-image input
+and the ComfyUI workflow editor remain explicit parity work.
 - `ChatDatabase`: keep Room on Android, introduce repository interfaces that an iOS SQLite/SQLDelight implementation can satisfy.
 - `PlatformHaptics`: keep `PremiumHaptics` as the Android implementation and add an iOS implementation that maps `Pop`, `Thud`, and `Success` to native feedback generators.
-- `PlatformAudio`: keep Media3/TextToSpeech on Android and use AVFoundation on iOS.
+- `TtsAudioPlayer`: Media3 remains the Android implementation and AVFoundation
+  is the iOS implementation of the shared TTS playback contract. System
+  `TextToSpeech` remains an Android-only provider rather than a cloud parity requirement.
 
 Android adapter seeds currently exist in `me.rerere.common.platform.android` for `PlatformHttpClient`, `PlatformFileStore`, and `PlatformMediaEncoder`. The Android HTTP adapter owns OkHttp, SSE bridging, coroutine request awaiting, and HTTP proxy/proxy-auth wiring. Android DI now registers this adapter as a reusable `PlatformHttpClient`; provider code, model-catalog refreshes, shared-webpage fallback scraping, chat remote-image saving, dynamic shortcut remote-avatar loading, assistant widget remote-avatar loading, assistant Material You remote palette extraction, update-check release metadata fetching, automatic icon-cache downloads, LobeHub icon search, settings-side ElevenLabs voice discovery, Bing search, and the app-wide Coil image loader consume DI-owned platform/network adapters instead of constructing or importing their own HTTP runtime. Downloaded model-catalog persistence now uses `PlatformFileStore`, preserving the same app-private path and refresh timestamp behavior while removing direct `File`/`Files` ownership from `ModelCatalogService`. The Android media encoder owns BitmapFactory, file URI decoding, JPEG conversion, and base64 encoding. New shared-candidate code should use the common contracts and receive these Android adapters through DI rather than importing OkHttp, Android graphics APIs, or `java.io.File` directly.
 
@@ -289,6 +369,16 @@ Current iOS app status:
 - conversations, provider preferences, appearance, assistant name, and system
   prompt persist in the app container, while provider secrets persist in Keychain;
 - production provider networking and streaming chat orchestration are wired;
+- Search settings expose 14 portable providers (all except the advanced
+  SearXNG configuration), keep API keys in Keychain, and feed a real
+  `search_web` tool into the OpenAI, Google, and Claude generation loop. Tool
+  calls and results use the normal message protocol with Android's 256-step
+  safety limit rather than a keyword-triggered search mode;
+- all eight cloud TTS providers are configurable on iOS with Keychain-only
+  credentials. Android and iOS now share the same chunking, prefetch, retry,
+  queue, pause/resume, seeking, and playback-state controller; Android retains
+  Media3 and iOS supplies AVFoundation through `TtsAudioPlayer`. Assistant
+  messages consume one source-shared play/stop action on both platforms;
 - generation can be cancelled from the composer without retaining a blank
   assistant message, multiple assistant profiles persist with conversation
   ownership, and endpoint/model preferences persist independently per provider;
@@ -298,7 +388,7 @@ Current iOS app status:
 - iOS state writes are serialized through a mutex and streaming messages use
   the same one-second persistence checkpoint interval as Android, preventing an
   older asynchronous save from overwriting newer conversation or draft state;
-- attachments, audio playback, memory, tools, local models, and the remaining
+- inline attachment audio, remaining tools, local models, and the remaining
   screens still require iOS adapters or portable repositories before the iOS
   app is feature-complete.
 

@@ -34,6 +34,8 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
+import me.rerere.rikkahub.ui.components.settings.LastChatProviderTab
+import me.rerere.rikkahub.ui.components.settings.LastChatProvidersBottomBar
 
 enum class ProvidersTab(
     val screen: Screen,
@@ -55,76 +57,25 @@ fun ProvidersBottomBar(
 ) {
     val haptics = rememberPremiumHaptics()
     val useWideLayout = LocalSettingsWideLayout.current
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-    ) {
-        if (!useWideLayout) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    ProvidersTab.entries.forEach { tab ->
-                        val selected = tab == selectedTab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (selected) {
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                } else {
-                                    Modifier.clickable {
-                                        haptics.perform(HapticPattern.Tick)
-                                        if (onTabSelected != null) {
-                                            onTabSelected(tab)
-                                        } else {
-                                            navController.navigate(tab.screen) {
-                                                popUpTo(selectedTab.screen) { inclusive = true }
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    }
-                                }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = null,
-                                tint = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
+    LastChatProvidersBottomBar(
+        tabs = ProvidersTab.entries.map { LastChatProviderTab(it.name, it.icon) },
+        selectedId = selectedTab.name,
+        useWideLayout = useWideLayout,
+        modifier = modifier,
+        onHaptic = { haptics.perform(HapticPattern.Tick) },
+        onSelect = { id ->
+            val tab = ProvidersTab.valueOf(id)
+            if (onTabSelected != null) {
+                onTabSelected(tab)
+            } else {
+                navController.navigate(tab.screen) {
+                    popUpTo(selectedTab.screen) { inclusive = true }
+                    launchSingleTop = true
                 }
             }
-        }
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            actions()
-        }
-    }
+        },
+        actions = actions,
+    )
 }
 
 @Composable

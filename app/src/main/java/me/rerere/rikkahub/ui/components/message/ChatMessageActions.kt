@@ -159,29 +159,20 @@ fun ColumnScope.ChatMessageActionButtons(
             val tts = LocalTTSState.current
             val isSpeaking by tts.isSpeaking.collectAsState()
             val isAvailable by tts.isAvailable.collectAsState()
-            Icon(
-                imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
+            LastChatTtsAction(
+                isSpeaking = isSpeaking,
+                isAvailable = isAvailable,
                 contentDescription = stringResource(R.string.tts),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(
-                        enabled = isAvailable,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = LocalIndication.current,
-                        onClick = {
-                            if (!isSpeaking) {
-                                tts.speak(
-                                    text = message.toContentText(),
-                                    overrideSetting = ttsProviderOverride,
-                                )
-                            } else {
-                                tts.stop()
-                            }
-                        }
-                    )
-                    .padding(8.dp)
-                    .size(16.dp),
-                tint = if (isAvailable) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+                onClick = {
+                    if (!isSpeaking) {
+                        tts.speak(
+                            text = message.toContentText(),
+                            overrideSetting = ttsProviderOverride,
+                        )
+                    } else {
+                        tts.stop()
+                    }
+                },
             )
         }
 

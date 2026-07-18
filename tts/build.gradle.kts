@@ -29,8 +29,6 @@ kotlin {
             kotlin.exclude("me/rerere/tts/provider/android/**")
             kotlin.exclude("me/rerere/tts/provider/providers/android/**")
             kotlin.exclude("me/rerere/tts/controller/AudioPlayer.kt")
-            kotlin.exclude("me/rerere/tts/controller/TtsController.kt")
-            kotlin.exclude("me/rerere/tts/controller/TtsSynthesizer.kt")
             dependencies {
                 api(project(":common"))
                 implementation(libs.kotlinx.serialization.json)
@@ -46,8 +44,6 @@ kotlin {
             kotlin.include("me/rerere/tts/provider/android/**")
             kotlin.include("me/rerere/tts/provider/providers/android/**")
             kotlin.include("me/rerere/tts/controller/AudioPlayer.kt")
-            kotlin.include("me/rerere/tts/controller/TtsController.kt")
-            kotlin.include("me/rerere/tts/controller/TtsSynthesizer.kt")
             dependencies {
                 implementation(libs.okhttp)
                 implementation(libs.androidx.media3.exoplayer)

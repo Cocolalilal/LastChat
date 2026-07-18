@@ -8,9 +8,12 @@ plugins {
 }
 
 val generatedComposeResources = layout.buildDirectory.dir("generated/composeResources")
-val prepareSharedFontResources by tasks.registering(Sync::class) {
+val prepareSharedResources by tasks.registering(Sync::class) {
     from(rootProject.file("app/src/main/res/font/google_sans_flex.ttf")) {
         into("font")
+    }
+    from(rootProject.file("app/src/main/res/mipmap-xxxhdpi/ic_launcher_lastchat_foreground.png")) {
+        into("drawable")
     }
     into(generatedComposeResources)
 }
@@ -120,12 +123,12 @@ compose.resources {
 }
 
 tasks.matching {
-    it.name != "prepareSharedFontResources" && (
+    it.name != "prepareSharedResources" && (
         it.name.contains("Resource", ignoreCase = true) ||
             it.name.contains("ComposeResources", ignoreCase = true)
     )
 }.configureEach {
-    dependsOn(prepareSharedFontResources)
+    dependsOn(prepareSharedResources)
 }
 
 tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }

@@ -124,3 +124,58 @@ fun LastChatSettingGroupItem(
         }
     }
 }
+
+/** Production settings input card used by display, provider-adjacent, and assistant screens. */
+@Composable
+fun LastChatSettingGroupInputItem(
+    title: String,
+    darkTheme: Boolean,
+    subtitle: String? = null,
+    icon: (@Composable () -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        color = if (darkTheme) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (icon != null) {
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { icon() }
+                }
+                Column(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                trailing?.invoke()
+            }
+            content()
+        }
+    }
+}

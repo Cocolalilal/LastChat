@@ -26,8 +26,8 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.memory.MemoryExtractionEnvelope
 import me.rerere.rikkahub.data.memory.SourceMessage
-import me.rerere.rikkahub.data.memory.TemporalRecallItem
 import me.rerere.rikkahub.data.memory.TemporalMemoryRepository
+import me.rerere.rikkahub.data.memory.buildTemporalMemoryExtractionPrompt
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.component.KoinComponent
@@ -120,7 +120,7 @@ class TemporalMemoryIngestWorker(
         )
         val response = provider.generateText(
             providerSetting = providerSetting,
-            messages = listOf(UIMessage.user(buildExtractionPrompt(pending, nearby.items))),
+            messages = listOf(UIMessage.user(buildTemporalMemoryExtractionPrompt(pending, nearby.items))),
             params = settings.buildSummarizerGenerationParams(model = model, temperature = 0.1f),
         )
         val text = response.choices.firstOrNull()?.message?.toContentText().orEmpty()
@@ -129,35 +129,6 @@ class TemporalMemoryIngestWorker(
         conversationRepository.markAsConsolidated(conversation.id)
         return Result.success()
     }
-
-    private fun buildExtractionPrompt(pending: List<SourceMessage>, existing: List<TemporalRecallItem>): String = """
-        You are LastChat's evidence-bound temporal memory encoder for one AI character.
-        Extract only durable personal facts, preferences, relationships, plans, meaningful changes, and one coherent scene from NEW_MESSAGES.
-        Never invent. Never infer sensitive traits. Treat jokes, hypothetical discussion, and roleplay as non-real and label reality accordingly.
-        Resolve relative dates from each message's observed_at timestamp, not from today's date.
-        Existing memories are only for deduplication and detecting changes.
-
-        Operations:
-        - add: a new claim
-        - reinforce: the same claim is confirmed
-        - supersede: a current state changed; include replaces_claim_id only when an id is known
-        - close: a plan/state ended
-
-        Use concise snake_case predicates. A scene should span the new messages and be omitted for trivial filler.
-        Output strict JSON only:
-        {"operations":[{"op":"add","subject":"user","predicate":"likes","object":"tea","statement":"User likes tea.","kind":"durative","reality":"real","confidence":0.9,"importance":3,"valid_from":null,"valid_until":null,"replaces_claim_id":null,"sensitive":false,"source_message_id":"..."}],"episode":{"title":"...","summary":"...","scene_key":"stable-topic-key","importance":3,"reality":"real","frame":null,"event_start":null,"event_end":null}}
-
-        EXISTING_MEMORIES:
-        ${existing.joinToString("\n") { item ->
-            val claimId = item.stableId.removePrefix("claim:").toLongOrNull()
-            if (claimId != null) "- claim_id=$claimId ${item.text}" else "- ${item.text}"
-        }}
-
-        NEW_MESSAGES:
-        ${pending.joinToString("\n") { message ->
-            "id=${message.id} observed_at=${message.observedAt} role=${if (message.role == 0) "user" else "assistant"}: ${message.text.take(2_000)}"
-        }}
-    """.trimIndent()
 
     private fun parseExtraction(text: String): MemoryExtractionEnvelope? {
         val start = text.indexOf('{')

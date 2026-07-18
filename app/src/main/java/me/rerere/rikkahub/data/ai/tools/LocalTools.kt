@@ -37,6 +37,7 @@ import me.rerere.rikkahub.data.datastore.TtsFilterMode
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.controller.TtsController
+import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.provider.android.TTSManager
 import kotlin.uuid.Uuid
 
@@ -244,7 +245,7 @@ class LocalTools(
         )
     }
 
-    private val ttsController by lazy { TtsController(context, ttsManager) }
+    private val ttsController by lazy { TtsController(ttsManager, AudioPlayer(context)) }
 
     val ttsTool by lazy {
         Tool(

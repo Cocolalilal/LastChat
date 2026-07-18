@@ -477,13 +477,6 @@ class TemporalMemoryRepository(
     }
 }
 
-data class SourceMessage(
-    val id: String,
-    val role: Int,
-    val text: String,
-    val observedAt: Long,
-)
-
 private fun Int.retrievalRankScore(base: Float): Float =
     if (this < 0) 0f else base / (1f + this * 0.15f)
 

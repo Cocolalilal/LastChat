@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.ai.rag.toListOfFloatArrays
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import me.rerere.ai.memory.MemoryVectorMath
 
 class MemoryRepository(
     private val memoryDAO: MemoryDAO,
@@ -177,14 +178,7 @@ class MemoryRepository(
      */
 
     private fun calculateKeywordScore(query: String, content: String): Float {
-        val queryWords = query.lowercase().split(Regex("\\W+")).filter { it.isNotBlank() }
-        if (queryWords.isEmpty()) return 0f
-        val contentLower = content.lowercase()
-        var matches = 0
-        for (word in queryWords) {
-            if (contentLower.contains(word)) matches++
-        }
-        return matches.toFloat() / queryWords.size.toFloat()
+        return MemoryVectorMath.keywordScore(query, content)
     }
 
 suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistantId: String): Boolean {

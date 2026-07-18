@@ -88,6 +88,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.components.settings.LastChatModelFeatureCard
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -1204,52 +1205,12 @@ private fun ModelFeatureCard(
     title: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit
 ) {
-    Card(
+    LastChatModelFeatureCard(
+        darkTheme = LocalDarkMode.current,
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
-        )
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        icon()
-                        ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                            title()
-                        }
-                    }
-                    ProvideTextStyle(
-                        MaterialTheme.typography.bodySmall.copy(
-                            color = LocalContentColor.current.copy(
-                                alpha = 0.7f
-                            )
-                        )
-                    ) {
-                        description()
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                actions()
-            }
-        }
-    }
+        description = description,
+        icon = icon,
+        title = title,
+        actions = actions,
+    )
 }

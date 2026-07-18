@@ -1,41 +1,16 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Brush
@@ -47,17 +22,12 @@ import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -70,12 +40,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import me.rerere.rikkahub.R
@@ -84,22 +50,15 @@ import me.rerere.rikkahub.ui.components.nav.LocalBackButtonVisible
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsNavigationPane
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsPaneEntry
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingsPaneGroup
 
 val LocalSettingsWideLayout = staticCompositionLocalOf { false }
 
 private var settingsPaneScrollIndex = 0
 private var settingsPaneScrollOffset = 0
 private var lastSettingsPaneSelected: SettingsDestination? = null
-
-private const val SettingsPanePressMillis = 80
-private const val SettingsPaneFadeMillis = 90
-private const val SettingsPaneShapeMillis = 120
-private const val SettingsPaneExpandMillis = 140
-
-private val SettingsPaneItemOuterRadius = 24.dp
-private val SettingsPaneItemInnerRadius = 8.dp
-private val SettingsPaneChildOuterRadius = 20.dp
-private val SettingsPaneChildInnerRadius = 8.dp
 
 enum class SettingsDestination {
     Display,
@@ -204,74 +163,21 @@ private fun SettingsNavigationPane(
         }
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxHeight()
-            .width(336.dp)
-            .statusBarsPadding()
-            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
-        shape = RoundedCornerShape(32.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp,
-    ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    val haptics = rememberPremiumHaptics()
-                    IconButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            handleSettingsPaneBack(navController)
-                        }
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                    Text(
-                        text = stringResource(R.string.settings),
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+    val haptics = rememberPremiumHaptics()
+    LastChatSettingsNavigationPane(
+        groups = settingsPaneGroupsForRenderer(groups),
+        selectedId = displayedSelected.name,
+        selectedMainId = selectedMain.name,
+        title = stringResource(R.string.settings),
+        listState = listState,
+        onBack = { handleSettingsPaneBack(navController) },
+        onHaptic = { haptics.perform(HapticPattern.Pop) },
+        onNavigate = { destinationId ->
+            findSettingsPaneEntry(groups, destinationId)?.let { destination ->
+                navigateSettingsPane(navController, destination)
             }
-
-            groups.forEach { group ->
-                item(key = group.titleRes) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(group.titleRes),
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 4.dp)
-                        )
-                        SettingsPaneSection(
-                            group = group,
-                            selected = displayedSelected,
-                            selectedMain = selectedMain,
-                            onNavigate = { destination ->
-                                navigateSettingsPane(navController, destination)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
+        },
+    )
 }
 
 private data class SettingsPaneEntry(
@@ -287,6 +193,50 @@ private data class SettingsPaneGroup(
     val titleRes: Int,
     val entries: List<SettingsPaneEntry>,
 )
+
+@Composable
+private fun settingsPaneGroupsForRenderer(
+    groups: List<SettingsPaneGroup>,
+): List<LastChatSettingsPaneGroup> = buildList {
+    for (group in groups) {
+        add(
+            LastChatSettingsPaneGroup(
+                id = group.titleRes.toString(),
+                title = stringResource(group.titleRes),
+                entries = buildList {
+                    for (entry in group.entries) add(entry.forRenderer())
+                },
+            )
+        )
+    }
+}
+
+@Composable
+private fun SettingsPaneEntry.forRenderer(): LastChatSettingsPaneEntry =
+    LastChatSettingsPaneEntry(
+        id = destination.name,
+        title = stringResource(titleRes),
+        description = descriptionRes?.let { stringResource(it) },
+        icon = icon,
+        children = buildList {
+            for (child in children) add(child.forRenderer())
+        },
+    )
+
+private fun findSettingsPaneEntry(
+    groups: List<SettingsPaneGroup>,
+    destinationId: String,
+): SettingsPaneEntry? {
+    fun SettingsPaneEntry.find(): SettingsPaneEntry? {
+        if (destination.name == destinationId) return this
+        for (child in children) child.find()?.let { return it }
+        return null
+    }
+    for (group in groups) {
+        for (entry in group.entries) entry.find()?.let { return it }
+    }
+    return null
+}
 
 private fun navigateSettingsPane(
     navController: NavHostController,
@@ -335,313 +285,6 @@ private fun isSettingsPaneRoute(route: String?): Boolean {
             route.contains("Backup") ||
             route.contains("Workspace")
         )
-}
-
-@Composable
-private fun SettingsPaneSection(
-    group: SettingsPaneGroup,
-    selected: SettingsDestination,
-    selectedMain: SettingsDestination,
-    onNavigate: (SettingsPaneEntry) -> Unit,
-) {
-    val expandedEntry = group.entries.firstOrNull { entry ->
-        selectedMain == entry.destination && entry.children.isNotEmpty()
-    }
-    val hasExpandedEntry = expandedEntry != null
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = SettingsPaneExpandMillis,
-                    easing = FastOutSlowInEasing
-                )
-            ),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        group.entries.forEachIndexed { index, entry ->
-            val expanded = entry == expandedEntry
-            val groupedWithSection = !hasExpandedEntry
-            val topRadius = when {
-                expanded -> SettingsPaneItemOuterRadius
-                groupedWithSection && index == 0 -> SettingsPaneItemOuterRadius
-                groupedWithSection -> SettingsPaneItemInnerRadius
-                else -> SettingsPaneItemOuterRadius
-            }
-            val bottomRadius = when {
-                expanded -> SettingsPaneItemInnerRadius
-                groupedWithSection && index == group.entries.lastIndex -> SettingsPaneItemOuterRadius
-                groupedWithSection -> SettingsPaneItemInnerRadius
-                else -> SettingsPaneItemOuterRadius
-            }
-            val itemPadding by animateDpAsState(
-                targetValue = if (hasExpandedEntry && !expanded) 8.dp else 0.dp,
-                animationSpec = tween(
-                    durationMillis = SettingsPaneShapeMillis,
-                    easing = FastOutSlowInEasing
-                ),
-                label = "settings_pane_section_item_padding"
-            )
-
-            SettingsPaneEntryGroup(
-                entry = entry,
-                selected = selected,
-                selectedMain = selectedMain,
-                expanded = expanded,
-                topRadius = topRadius,
-                bottomRadius = bottomRadius,
-                verticalPadding = itemPadding,
-                onNavigate = onNavigate,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsPaneEntryGroup(
-    entry: SettingsPaneEntry,
-    selected: SettingsDestination,
-    selectedMain: SettingsDestination,
-    expanded: Boolean,
-    topRadius: Dp,
-    bottomRadius: Dp,
-    verticalPadding: Dp,
-    onNavigate: (SettingsPaneEntry) -> Unit,
-) {
-    val selectedInGroup = selected == entry.destination
-    val groupPadding by animateDpAsState(
-        targetValue = if (expanded) 4.dp else verticalPadding,
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_entry_group_padding"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = groupPadding.coerceAtLeast(0.dp) / 2)
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = SettingsPaneExpandMillis,
-                    easing = FastOutSlowInEasing
-                )
-            ),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        SettingsPaneItem(
-            entry = entry,
-            selected = selectedInGroup,
-            expanded = expanded,
-            showDescription = false,
-            isChild = false,
-            topRadius = topRadius,
-            bottomRadius = bottomRadius,
-            onClick = { onNavigate(entry) }
-        )
-
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(
-                animationSpec = tween(
-                    durationMillis = SettingsPaneFadeMillis,
-                    easing = LinearOutSlowInEasing
-                )
-            ) + expandVertically(
-                animationSpec = tween(
-                    durationMillis = SettingsPaneExpandMillis,
-                    easing = FastOutSlowInEasing
-                )
-            ),
-            exit = fadeOut(
-                animationSpec = tween(durationMillis = SettingsPaneFadeMillis)
-            ) + shrinkVertically(
-                animationSpec = tween(
-                    durationMillis = SettingsPaneExpandMillis,
-                    easing = FastOutSlowInEasing
-                )
-            ),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                entry.children.forEachIndexed { index, child ->
-                    SettingsPaneItem(
-                        entry = child,
-                        selected = selected == child.destination,
-                        expanded = false,
-                        showDescription = false,
-                        isChild = true,
-                        topRadius = SettingsPaneChildInnerRadius,
-                        bottomRadius = if (index == entry.children.lastIndex) {
-                            SettingsPaneChildOuterRadius
-                        } else {
-                            SettingsPaneChildInnerRadius
-                        },
-                        onClick = { onNavigate(child) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsPaneItem(
-    entry: SettingsPaneEntry,
-    selected: Boolean,
-    expanded: Boolean,
-    showDescription: Boolean,
-    isChild: Boolean,
-    topRadius: Dp,
-    bottomRadius: Dp,
-    onClick: () -> Unit,
-) {
-    val haptics = rememberPremiumHaptics()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = tween(
-            durationMillis = SettingsPanePressMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_scale"
-    )
-    val animatedTopRadius by animateDpAsState(
-        targetValue = topRadius,
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_top_radius"
-    )
-    val animatedBottomRadius by animateDpAsState(
-        targetValue = bottomRadius,
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_bottom_radius"
-    )
-    val itemHeight by animateDpAsState(
-        targetValue = when {
-            showDescription -> 78.dp
-            isChild -> 48.dp
-            else -> 58.dp
-        },
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_height"
-    )
-    val targetContainerColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
-    }
-    val targetContentColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val containerColor by animateColorAsState(
-        targetValue = targetContainerColor,
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_container_color"
-    )
-    val contentColor by animateColorAsState(
-        targetValue = targetContentColor,
-        animationSpec = tween(
-            durationMillis = SettingsPaneShapeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "settings_pane_item_content_color"
-    )
-
-    Surface(
-        onClick = {
-            if (!selected) {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            } else if (entry.children.isNotEmpty()) {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            }
-        },
-        interactionSource = interactionSource,
-        shape = RoundedCornerShape(
-            topStart = animatedTopRadius,
-            topEnd = animatedTopRadius,
-            bottomStart = animatedBottomRadius,
-            bottomEnd = animatedBottomRadius,
-        ),
-        color = containerColor,
-        contentColor = contentColor,
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-    ) {
-        Row(
-            modifier = Modifier
-                .height(itemHeight)
-                .padding(horizontal = if (isChild) 16.dp else 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                modifier = Modifier.size(if (isChild) 28.dp else 34.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(entry.icon, null, modifier = Modifier.size(if (isChild) 16.dp else 19.dp))
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = stringResource(entry.titleRes),
-                    style = if (isChild) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (showDescription && entry.descriptionRes != null) {
-                    Text(
-                        text = stringResource(entry.descriptionRes),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = contentColor.copy(alpha = 0.78f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (entry.children.isNotEmpty()) {
-                if (expanded) {
-                    Icon(
-                        Icons.Rounded.KeyboardArrowDown,
-                        null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-    }
 }
 
 private fun SettingsDestination.mainDestination(): SettingsDestination {

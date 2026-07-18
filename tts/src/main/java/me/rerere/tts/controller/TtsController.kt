@@ -1,6 +1,5 @@
 package me.rerere.tts.controller
 
-import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -22,7 +21,8 @@ import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSProviderSetting
-import me.rerere.tts.provider.android.TTSManager
+import me.rerere.tts.provider.TtsSpeechGenerator
+import me.rerere.tts.provider.ttsIoDispatcher
 
 private const val TAG = "TtsController"
 
@@ -32,8 +32,8 @@ private const val TAG = "TtsController"
  * - 对外 API 与原版兼容
  */
 class TtsController(
-    context: Context,
-    private val ttsManager: TTSManager
+    private val ttsManager: TtsSpeechGenerator,
+    private val audio: TtsAudioPlayer,
 ) {
     // 协程作用域
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -41,7 +41,6 @@ class TtsController(
     // 组件
     private val chunker = TextChunker(maxChunkLength = 160)
     private val synthesizer = TtsSynthesizer(ttsManager)
-    private val audio = AudioPlayer(context)
 
     // Provider & 作业
     private var currentProvider: TTSProviderSetting? = null
@@ -507,7 +506,7 @@ class TtsController(
         provider: TTSProviderSetting,
     ): Deferred<TTSResponse> {
         return cache.getOrPut(TtsCacheKey(chunk.text, provider)) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
+            scope.async(ttsIoDispatcher) { synthesizer.synthesize(provider, chunk) }
         }
     }
     // endregion

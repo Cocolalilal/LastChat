@@ -33,6 +33,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupItem
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingsGroup
+import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupInputItem
 
 @Composable
 fun SettingsGroup(
@@ -79,57 +80,12 @@ fun SettingGroupInputItem(
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
-        color = if (LocalDarkMode.current) {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
-        },
-        shape = RoundedCornerShape(10.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (icon != null) {
-                    Box(
-                        modifier = Modifier.size(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        icon()
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (subtitle != null) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                trailing?.invoke()
-            }
-
-            content()
-        }
-    }
+    LastChatSettingGroupInputItem(
+        title = title,
+        darkTheme = LocalDarkMode.current,
+        subtitle = subtitle,
+        icon = icon,
+        trailing = trailing,
+        content = content,
+    )
 }

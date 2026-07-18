@@ -116,6 +116,8 @@ import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.extendColors
+import me.rerere.rikkahub.ui.components.settings.LastChatGroupedModelRow
+import me.rerere.rikkahub.ui.components.settings.LastChatModelGroupPosition
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
@@ -913,89 +915,11 @@ private fun groupItemPosition(index: Int, groupSize: Int): ModelItemPosition = w
     else -> ModelItemPosition.MIDDLE
 }
 
-private data class ModelItemCornerRadii(
-    val topStart: Dp,
-    val topEnd: Dp,
-    val bottomStart: Dp,
-    val bottomEnd: Dp
-)
-
-private fun groupedModelItemCornerRadii(
-    select: Boolean,
-    position: ModelItemPosition
-): ModelItemCornerRadii {
-    if (select) {
-        return ModelItemCornerRadii(
-            topStart = 50.dp,
-            topEnd = 50.dp,
-            bottomStart = 50.dp,
-            bottomEnd = 50.dp
-        )
-    }
-
-    return when (position) {
-        ModelItemPosition.FIRST -> ModelItemCornerRadii(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp
-        )
-        ModelItemPosition.MIDDLE -> ModelItemCornerRadii(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp
-        )
-        ModelItemPosition.LAST -> ModelItemCornerRadii(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp
-        )
-        ModelItemPosition.SINGLE -> ModelItemCornerRadii(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp
-        )
-    }
-}
-
-@Composable
-private fun rememberAnimatedGroupedModelItemShape(
-    select: Boolean,
-    position: ModelItemPosition
-): RoundedCornerShape {
-    val targetCornerRadii = remember(select, position) {
-        groupedModelItemCornerRadii(select = select, position = position)
-    }
-    val topStart by animateDpAsState(
-        targetValue = targetCornerRadii.topStart,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_top_start"
-    )
-    val topEnd by animateDpAsState(
-        targetValue = targetCornerRadii.topEnd,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_top_end"
-    )
-    val bottomStart by animateDpAsState(
-        targetValue = targetCornerRadii.bottomStart,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_bottom_start"
-    )
-    val bottomEnd by animateDpAsState(
-        targetValue = targetCornerRadii.bottomEnd,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_bottom_end"
-    )
-
-    return RoundedCornerShape(
-        topStart = topStart,
-        topEnd = topEnd,
-        bottomStart = bottomStart,
-        bottomEnd = bottomEnd
-    )
+private fun ModelItemPosition.toSharedPosition(): LastChatModelGroupPosition = when (this) {
+    ModelItemPosition.FIRST -> LastChatModelGroupPosition.First
+    ModelItemPosition.MIDDLE -> LastChatModelGroupPosition.Middle
+    ModelItemPosition.LAST -> LastChatModelGroupPosition.Last
+    ModelItemPosition.SINGLE -> LastChatModelGroupPosition.Single
 }
 
 @Composable
@@ -1106,81 +1030,47 @@ private fun ModelItem(
     position: ModelItemPosition = ModelItemPosition.SINGLE
 ) {
     val navController = LocalNavController.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val groupedItemShape = rememberAnimatedGroupedModelItemShape(
-        select = select,
-        position = position
-    )
 
     if(inGroup) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = modifier
-                .fillMaxWidth()
-                .clip(groupedItemShape)
-                .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer
-                    else if (LocalDarkMode.current) Color.Black
-                    else MaterialTheme.colorScheme.surfaceContainerHigh,
-                )
-                .padding(vertical = 12.dp, horizontal = 16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .combinedClickable(
-                        enabled = true,
-                        onLongClick = {
-                            onDismiss()
-                            navController.navigate(
-                                Screen.SettingProviderDetail(
-                                    providerSetting.id.toString()
-                                )
-                            )
-                        },
-                        onClick = { onSelect(model) },
-                        interactionSource = interactionSource,
-                        indication = LocalIndication.current
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+        LastChatGroupedModelRow(
+            title = model.displayName,
+            selected = select,
+            darkTheme = LocalDarkMode.current,
+            position = position.toSharedPosition(),
+            onClick = { onSelect(model) },
+            onLongClick = {
+                onDismiss()
+                navController.navigate(Screen.SettingProviderDetail(providerSetting.id.toString()))
+            },
+            modifier = modifier,
+            icon = {
                 ModelIcon(
                     model = model,
                     provider = providerSetting,
                     modifier = Modifier.size(32.dp),
                     color = Color.Transparent,
-                    contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    contentColor = if (select) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
+            },
+            metadata = {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text(
-                        text = model.displayName,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                    )
-
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        ModelModalityTag(model = model)
-
-                        ModelAbilityTag(model = model)
-                    }
+                    ModelModalityTag(model = model)
+                    ModelAbilityTag(model = model)
                 }
-                tail()
-            }
-            dragHandle?.let { it() }
-        }
+            },
+            tail = tail,
+            dragHandle = dragHandle,
+        )
     } else {
+        val interactionSource = remember { MutableInteractionSource() }
         Card(
             modifier = modifier,
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
