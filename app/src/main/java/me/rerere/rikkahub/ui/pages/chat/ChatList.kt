@@ -125,6 +125,7 @@ import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.resolveBidiDirection
+import me.rerere.rikkahub.utils.navigateToChatPage
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.style.TextDirection
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
@@ -639,14 +640,28 @@ private fun SharedTransitionScope.ChatListNormal(
                                     navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
                                 },
                                 onMemoryClick = { memory ->
-                                    navController.navigate(
-                                        Screen.AssistantDetail(
-                                            id = conversation.assistantId.toString(),
-                                            startRoute = "memory",
-                                            initialMemoryTab = memory.memoryType,
-                                            scrollToMemoryId = memory.memoryId
+                                    val opensSourceChat = memory.stableId?.let { stableId ->
+                                        stableId.startsWith("source:") || stableId.startsWith("conversation:")
+                                    } == true
+                                    val sourceConversationId = memory.sourceConversationId
+                                        ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+                                    if (opensSourceChat && sourceConversationId != null) {
+                                        navigateToChatPage(
+                                            navController = navController,
+                                            chatId = sourceConversationId,
+                                            focusLatestMessageKey = memory.sourceMessageId,
                                         )
-                                    )
+                                    } else {
+                                        navController.navigate(
+                                            Screen.AssistantDetail(
+                                                id = conversation.assistantId.toString(),
+                                                startRoute = "memory",
+                                                initialMemoryTab = memory.memoryType,
+                                                scrollToMemoryId = memory.memoryId.takeIf { memory.stableId == null },
+                                                scrollToMemoryStableId = memory.stableId,
+                                            )
+                                        )
+                                    }
                                 },
                                 showRegenerate = showRegenerate,
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {

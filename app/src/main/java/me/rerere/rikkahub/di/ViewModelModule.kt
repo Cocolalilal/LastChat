@@ -52,6 +52,7 @@ val viewModelModule = module {
             conversationRepository = get(),
             context = get(),
             chatEpisodeDAO = get(),
+            temporalMemoryDao = get(),
             providerManager = get(),
             appStorageRepository = get(),
         )

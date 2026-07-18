@@ -1506,15 +1506,24 @@ class ChatService(
                         )
                         buildList {
                             packet.projection?.takeIf { it.isNotBlank() }?.let { projection ->
-                                add(me.rerere.rikkahub.data.model.AssistantMemory(id = -2, content = projection))
+                                add(
+                                    me.rerere.rikkahub.data.model.AssistantMemory(
+                                        id = -2,
+                                        content = projection,
+                                        stableId = "projection",
+                                    )
+                                )
                             }
                             packet.items.forEachIndexed { index, item ->
                                 add(
                                     me.rerere.rikkahub.data.model.AssistantMemory(
-                                        id = -(index + 10),
+                                        id = item.legacyMemoryId ?: -(index + 10),
                                         content = item.text,
                                         type = if (item.kind == me.rerere.rikkahub.data.memory.RecallKind.EPISODE) 1 else 0,
                                         timestamp = item.timestamp,
+                                        stableId = item.stableId.takeUnless { item.legacyMemoryId != null },
+                                        sourceConversationId = item.sourceConversationId,
+                                        sourceMessageId = item.sourceMessageId,
                                     )
                                 )
                             }

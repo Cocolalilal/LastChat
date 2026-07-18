@@ -287,7 +287,10 @@ data class UsedMemory(
     val memoryContent: String,  // First line/truncated content for display
     val memoryType: Int,  // 0 = CORE, 1 = EPISODIC
     val priority: Int = 0,
-    val activationReason: String? = null  // "Contextually relevant", "Always included", "Recent episode boost"
+    val activationReason: String? = null,  // "Contextually relevant", "Always included", "Recent episode boost"
+    val stableId: String? = null,
+    val sourceConversationId: String? = null,
+    val sourceMessageId: String? = null,
 )
 
 

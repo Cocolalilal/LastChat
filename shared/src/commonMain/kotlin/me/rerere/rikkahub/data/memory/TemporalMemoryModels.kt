@@ -111,6 +111,9 @@ data class TemporalRecallItem(
     val kind: RecallKind,
     val confidence: Float,
     val validUntil: Long? = null,
+    val sourceConversationId: String? = null,
+    val sourceMessageId: String? = null,
+    val legacyMemoryId: Int? = null,
 )
 
 enum class RecallKind {

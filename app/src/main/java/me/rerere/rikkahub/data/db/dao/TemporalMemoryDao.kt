@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.entity.MemoryClaimEntity
 import me.rerere.rikkahub.data.db.entity.MemoryClaimFtsEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3Entity
@@ -46,6 +47,9 @@ interface TemporalMemoryDao {
 
     @Query("SELECT * FROM memory_claim WHERE assistant_id = :assistantId ORDER BY recorded_at")
     suspend fun getAllClaims(assistantId: String): List<MemoryClaimEntity>
+
+    @Query("SELECT * FROM memory_claim WHERE assistant_id = :assistantId AND legacy_memory_id IS NULL AND status IN (0, 1, 3) ORDER BY COALESCE(valid_from, observed_at) DESC")
+    fun observeBrowsableClaims(assistantId: String): Flow<List<MemoryClaimEntity>>
 
     @Query("SELECT * FROM memory_claim WHERE assistant_id = :assistantId AND subject = :subject AND predicate = :predicate AND status IN (0, 1) ORDER BY last_confirmed_at DESC")
     suspend fun findCurrentClaims(assistantId: String, subject: String, predicate: String): List<MemoryClaimEntity>
@@ -95,6 +99,9 @@ interface TemporalMemoryDao {
     @Query("SELECT * FROM memory_projection WHERE assistant_id = :assistantId")
     suspend fun getProjection(assistantId: String): MemoryProjectionEntity?
 
+    @Query("SELECT * FROM memory_projection WHERE assistant_id = :assistantId")
+    fun observeProjection(assistantId: String): Flow<MemoryProjectionEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEpisode(episode: MemoryEpisodeV3Entity): Long
 
@@ -109,6 +116,9 @@ interface TemporalMemoryDao {
 
     @Query("SELECT * FROM memory_episode_v3 WHERE assistant_id = :assistantId ORDER BY event_start")
     suspend fun getAllEpisodes(assistantId: String): List<MemoryEpisodeV3Entity>
+
+    @Query("SELECT * FROM memory_episode_v3 WHERE assistant_id = :assistantId AND status IN (0, 1, 3) ORDER BY event_start DESC")
+    fun observeBrowsableEpisodes(assistantId: String): Flow<List<MemoryEpisodeV3Entity>>
 
     @Query("SELECT memory_episode_v3.* FROM memory_episode_v3 JOIN memory_episode_v3_fts ON memory_episode_v3.id = memory_episode_v3_fts.rowid WHERE memory_episode_v3.assistant_id = :assistantId AND memory_episode_v3.status IN (0, 1, 3) AND memory_episode_v3_fts MATCH :query ORDER BY memory_episode_v3.importance DESC, memory_episode_v3.event_start DESC LIMIT :limit")
     suspend fun searchEpisodesFts(assistantId: String, query: String, limit: Int): List<MemoryEpisodeV3Entity>

@@ -132,6 +132,7 @@ private enum class MemorySortOrder(@StringRes val displayNameRes: Int) {
 fun AssistantMemorySettings(
     assistant: Assistant,
     memories: List<AssistantMemory>,
+    temporalMemories: List<TemporalMemoryBrowserItem>,
     onUpdateAssistant: (Assistant) -> Unit,
     onAddMemory: (AssistantMemory) -> Unit,
     onUpdateMemory: (AssistantMemory) -> Unit,
@@ -145,6 +146,8 @@ fun AssistantMemorySettings(
     needsEmbeddingRegeneration: Boolean = false,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
+    scrollToMemoryStableId: String? = null,
+    onOpenSourceConversation: (String, String?) -> Unit = { _, _ -> },
     onNavigateToDefaultModels: () -> Unit = {}
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
@@ -427,6 +430,7 @@ fun AssistantMemorySettings(
             MemoryStatisticsCard(
                 assistant = assistant,
                 memories = memories,
+                temporalMemories = temporalMemories,
                 estimatedMemoryCapacity = estimatedMemoryCapacity
             )
         }
@@ -441,6 +445,7 @@ fun AssistantMemorySettings(
         ) {
             ManageMemoriesSection(
                 memories = memories,
+                temporalMemories = temporalMemories,
                 assistant = assistant,
                 onAddMemory = { memoryDialogState.open(AssistantMemory(0, "")) },
                 onEditMemory = { memoryDialogState.open(it) },
@@ -451,6 +456,8 @@ fun AssistantMemorySettings(
                 showMemoryTypes = assistant.enableMemoryConsolidation,
                 initialMemoryTab = initialMemoryTab,
                 scrollToMemoryId = scrollToMemoryId,
+                scrollToMemoryStableId = scrollToMemoryStableId,
+                onOpenSourceConversation = onOpenSourceConversation,
                 onRegenerateEmbeddings = onRegenerateEmbeddings,
                 embeddingProgress = embeddingProgress,
                 needsEmbeddingRegeneration = needsEmbeddingRegeneration
@@ -689,10 +696,17 @@ private fun RecallTuningControls(
 private fun MemoryStatisticsCard(
     assistant: Assistant,
     memories: List<AssistantMemory>,
+    temporalMemories: List<TemporalMemoryBrowserItem>,
     estimatedMemoryCapacity: Int
 ) {
-    val coreMemories = memories.count { it.type == 0 }
-    val episodicMemories = memories.count { it.type == 1 }
+    val temporalFacts = temporalMemories.count {
+        it.kind == TemporalMemoryBrowserKind.CURRENT_FACT ||
+            it.kind == TemporalMemoryBrowserKind.HISTORICAL_FACT
+    }
+    val temporalEpisodes = temporalMemories.count { it.kind == TemporalMemoryBrowserKind.EPISODE }
+    val coreMemories = memories.count { it.type == 0 } + temporalFacts
+    val episodicMemories = memories.count { it.type == 1 } + temporalEpisodes
+    val totalMemories = coreMemories + episodicMemories
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
@@ -732,7 +746,7 @@ private fun MemoryStatisticsCard(
                     )
                 } else {
                     StatItem(
-                        value = memories.size.toString(),
+                        value = totalMemories.toString(),
                         label = stringResource(R.string.assistant_memory_total),
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -789,6 +803,7 @@ private fun StatItem(
 @Composable
 private fun ManageMemoriesSection(
     memories: List<AssistantMemory>,
+    temporalMemories: List<TemporalMemoryBrowserItem>,
     assistant: Assistant,
     onAddMemory: () -> Unit,
     onEditMemory: (AssistantMemory) -> Unit,
@@ -799,6 +814,8 @@ private fun ManageMemoriesSection(
     showMemoryTypes: Boolean,
     initialMemoryTab: Int? = null,
     scrollToMemoryId: Int? = null,
+    scrollToMemoryStableId: String? = null,
+    onOpenSourceConversation: (String, String?) -> Unit,
     onRegenerateEmbeddings: (() -> Unit)? = null,
     embeddingProgress: EmbeddingProgress? = null,
     needsEmbeddingRegeneration: Boolean = false
@@ -807,6 +824,32 @@ private fun ManageMemoriesSection(
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var selectedTemporalMemory by remember { mutableStateOf<TemporalMemoryBrowserItem?>(null) }
+
+    selectedTemporalMemory?.let { memory ->
+        AlertDialog(
+            onDismissRequest = { selectedTemporalMemory = null },
+            title = { Text(memory.kind.displayName()) },
+            text = { Text(memory.content) },
+            confirmButton = {
+                TextButton(onClick = { selectedTemporalMemory = null }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = memory.sourceConversationId?.let { conversationId ->
+                {
+                    TextButton(
+                        onClick = {
+                            selectedTemporalMemory = null
+                            onOpenSourceConversation(conversationId, memory.sourceMessageId)
+                        }
+                    ) {
+                        Text("Open source chat")
+                    }
+                }
+            },
+        )
+    }
     
     // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
@@ -825,6 +868,12 @@ private fun ManageMemoriesSection(
         }
     }
 
+    LaunchedEffect(scrollToMemoryStableId, temporalMemories) {
+        if (scrollToMemoryStableId != null) {
+            selectedTemporalMemory = temporalMemories.find { it.stableId == scrollToMemoryStableId }
+        }
+    }
+
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     
@@ -838,6 +887,18 @@ private fun ManageMemoriesSection(
         memories
     }.filter { memory ->
         memorySearchQuery.isBlank() || memory.content.contains(memorySearchQuery, ignoreCase = true)
+    }.let { list ->
+        when (sortOrder) {
+            MemorySortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestamp }
+            MemorySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
+            MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
+        }
+    }
+    val displayTemporalMemories = temporalMemories.filter { memory ->
+        !showMemoryTypes || when (selectedTab) {
+            0 -> memory.kind != TemporalMemoryBrowserKind.EPISODE
+            else -> memory.kind == TemporalMemoryBrowserKind.EPISODE
+        }
     }.let { list ->
         when (sortOrder) {
             MemorySortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestamp }
@@ -964,6 +1025,53 @@ private fun ManageMemoriesSection(
             )
         )
 
+        if (displayTemporalMemories.isNotEmpty()) {
+            Text(
+                text = "Automatic memory",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .animateContentSize(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                displayTemporalMemories.forEachIndexed { index, memory ->
+                    key(memory.stableId) {
+                        LastChatMemoryRow(
+                            content = memory.content,
+                            darkTheme = LocalDarkMode.current,
+                            position = when {
+                                displayTemporalMemories.size == 1 -> LastChatMemoryGroupPosition.Single
+                                index == 0 -> LastChatMemoryGroupPosition.First
+                                index == displayTemporalMemories.lastIndex -> LastChatMemoryGroupPosition.Last
+                                else -> LastChatMemoryGroupPosition.Middle
+                            },
+                            onEdit = { selectedTemporalMemory = memory },
+                            onDelete = null,
+                            deleteTitle = "",
+                            deleteLabel = "",
+                            cancelLabel = "",
+                            deleteConfirmation = "",
+                            typeLabel = memory.kind.displayName(),
+                            typeIsCore = memory.kind != TemporalMemoryBrowserKind.EPISODE,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (displayMemories.isNotEmpty()) {
+            Text(
+                text = "Saved memories",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+
         // Memory list with animation
         Column(
             modifier = Modifier
@@ -991,7 +1099,7 @@ private fun ManageMemoriesSection(
                 }
             }
             
-            if (displayMemories.isEmpty()) {
+            if (displayMemories.isEmpty() && displayTemporalMemories.isEmpty()) {
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = RoundedCornerShape(24.dp),
@@ -1011,6 +1119,13 @@ private fun ManageMemoriesSection(
             }
         }
     }
+}
+
+private fun TemporalMemoryBrowserKind.displayName(): String = when (this) {
+    TemporalMemoryBrowserKind.PROJECTION -> "Current understanding"
+    TemporalMemoryBrowserKind.CURRENT_FACT -> "Current fact"
+    TemporalMemoryBrowserKind.HISTORICAL_FACT -> "Historical fact"
+    TemporalMemoryBrowserKind.EPISODE -> "Episode"
 }
 
 private fun String.toSharedMemoryPosition(): LastChatMemoryGroupPosition = when (this) {

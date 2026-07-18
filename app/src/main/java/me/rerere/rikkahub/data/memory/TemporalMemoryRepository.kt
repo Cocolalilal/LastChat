@@ -303,6 +303,9 @@ class TemporalMemoryRepository(
                         },
                         confidence = claim.confidence,
                         validUntil = claim.validUntil,
+                        sourceConversationId = claim.sourceConversationId,
+                        sourceMessageId = claim.sourceMessageId,
+                        legacyMemoryId = claim.legacyMemoryId,
                     )
                 )
             }
@@ -315,6 +318,7 @@ class TemporalMemoryRepository(
                         score = score,
                         kind = RecallKind.EPISODE,
                         confidence = episode.confidence,
+                        sourceConversationId = episode.conversationId,
                     )
                 )
             }
@@ -327,6 +331,8 @@ class TemporalMemoryRepository(
                         score = score,
                         kind = RecallKind.PAST_CHAT,
                         confidence = 1f,
+                        sourceConversationId = source.conversationId,
+                        sourceMessageId = source.messageId,
                     )
                 )
             }

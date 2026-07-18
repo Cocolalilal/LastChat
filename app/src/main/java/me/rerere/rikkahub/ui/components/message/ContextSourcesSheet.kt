@@ -296,8 +296,17 @@ private fun MemoryItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-    val isCore = memory.memoryType == 0
+    val isPastChat = memory.stableId?.startsWith("source:") == true
+    val isRecentChat = memory.stableId?.startsWith("conversation:") == true
+    val isChatReference = isPastChat || isRecentChat
+    val isProjection = memory.stableId == "projection"
+    val isTemporalEpisode = memory.stableId?.startsWith("episode:") == true
+    val isCore = memory.memoryType == 0 && !isChatReference
     val memoryTypeLabel = when {
+        isPastChat -> "Past chat"
+        isRecentChat -> stringResource(R.string.context_sources_recent_chat)
+        isProjection -> "Current understanding"
+        isTemporalEpisode -> stringResource(R.string.activity_timeline_memory_episodic)
         isCore -> stringResource(R.string.activity_timeline_memory_core)
         memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
         else -> stringResource(R.string.activity_timeline_memory_episodic)
@@ -351,6 +360,14 @@ private fun MemoryItem(
                 contentAlignment = Alignment.Center
             ) {
                 when {
+                    isChatReference -> {
+                        Icon(
+                            imageVector = Icons.Rounded.History,
+                            contentDescription = memoryTypeLabel,
+                            modifier = Modifier.size(24.dp),
+                            tint = contentColor
+                        )
+                    }
                     isCore -> {
                         Icon(
                             imageVector = Icons.Rounded.Memory,

@@ -78,6 +78,8 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastAction
+import me.rerere.rikkahub.utils.navigateToChatPage
+import kotlin.uuid.Uuid
 
 
 // Sub-routes within assistant detail
@@ -100,7 +102,8 @@ fun AssistantDetailPage(
     id: String,
     startRoute: String? = null,
     initialMemoryTab: Int? = null,
-    scrollToMemoryId: Int? = null
+    scrollToMemoryId: Int? = null,
+    scrollToMemoryStableId: String? = null,
 ) {
     val vm: AssistantDetailVM = koinViewModel(
         parameters = {
@@ -118,6 +121,7 @@ fun AssistantDetailPage(
     val mcpServerConfigs by vm.mcpServerConfigs.collectAsStateWithLifecycle()
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
+    val temporalMemories by vm.temporalMemories.collectAsStateWithLifecycle()
     val providers by vm.providers.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
@@ -455,6 +459,7 @@ fun AssistantDetailPage(
                 AssistantMemorySettings(
                     assistant = assistant,
                     memories = memories,
+                    temporalMemories = temporalMemories,
                     onUpdateAssistant = { onUpdate(it) },
                     onDeleteMemory = { vm.deleteMemory(it) },
                     onAddMemory = { vm.addMemory(it) },
@@ -468,6 +473,16 @@ fun AssistantDetailPage(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
+                    scrollToMemoryStableId = scrollToMemoryStableId,
+                    onOpenSourceConversation = { conversationId, messageId ->
+                        runCatching { Uuid.parse(conversationId) }.getOrNull()?.let { parsedId ->
+                            navigateToChatPage(
+                                navController = rootNavController,
+                                chatId = parsedId,
+                                focusLatestMessageKey = messageId,
+                            )
+                        }
+                    },
                     onNavigateToDefaultModels = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }

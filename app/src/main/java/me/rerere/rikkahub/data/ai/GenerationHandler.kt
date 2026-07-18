@@ -1016,7 +1016,9 @@ class GenerationHandler(
                         id = -1,
                         content = "Participated in conversation: ${conversation.title}",
                         type = 1,
-                        timestamp = conversation.updateAt.toEpochMilli()
+                        timestamp = conversation.updateAt.toEpochMilli(),
+                        stableId = "conversation:${conversation.id}",
+                        sourceConversationId = conversation.id.toString(),
                     )
                 }
             } else {
@@ -1249,7 +1251,10 @@ class GenerationHandler(
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason
+                activationReason = reason,
+                stableId = memory.stableId,
+                sourceConversationId = memory.sourceConversationId,
+                sourceMessageId = memory.sourceMessageId,
             )
         }
         
