@@ -1980,12 +1980,6 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Separator
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 8.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-        )
-        
         // Model picker - uses actual model icon, full-width clickable
         val currentModel = currentChatModel
         val provider = currentModel?.findProvider(providers = settings.providers)
