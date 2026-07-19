@@ -1313,7 +1313,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = shape,
-                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 Row(
                                     modifier = Modifier

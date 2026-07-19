@@ -1076,8 +1076,7 @@ private fun ModelItem(
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
             colors = CardDefaults.cardColors(
                 containerColor = if (select) MaterialTheme.colorScheme.primaryContainer
-                    else if (LocalDarkMode.current) Color.Black
-                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    else MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             )
         ) {

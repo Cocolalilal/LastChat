@@ -220,7 +220,7 @@ private fun ModeItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier
@@ -336,7 +336,7 @@ private fun MemoryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier
@@ -459,7 +459,7 @@ private fun LorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier

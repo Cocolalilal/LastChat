@@ -176,7 +176,7 @@ fun McpPicker(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             ) {
                 Row(

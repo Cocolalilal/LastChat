@@ -696,7 +696,7 @@ private fun ProviderListView(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Row(
                             modifier = Modifier
@@ -1440,7 +1440,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(24.dp),
-                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1534,7 +1534,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = shape,
-                            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1632,11 +1632,7 @@ private fun ProviderItemContent(
     else 
         MaterialTheme.colorScheme.surfaceContainerHigh
     
-    // Disabled cards: transparent background (black in dark mode) with outline
-    val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        Color.Black 
-    else 
-        MaterialTheme.colorScheme.surface
+    val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
     
     Row(
         modifier = Modifier

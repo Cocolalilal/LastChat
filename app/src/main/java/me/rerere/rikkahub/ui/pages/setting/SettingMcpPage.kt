@@ -589,7 +589,7 @@ private fun McpConnectionsSheet(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = shape,
-                        color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -671,11 +671,7 @@ private fun McpServerItem(
         else 
             MaterialTheme.colorScheme.surfaceContainerHigh
         
-        // Disabled cards: transparent background (black in dark mode) with outline
-        val disabledBackground = if (LocalDarkMode.current) 
-            Color.Black 
-        else 
-            MaterialTheme.colorScheme.surface
+        val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
         
         // Grayscale modifier for disabled items
         val saturationMatrix = remember { 

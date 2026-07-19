@@ -2438,8 +2438,7 @@ private fun MinimalFileButtonGrouped(
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black 
-                      else MaterialTheme.colorScheme.surfaceContainerHigh
+    val buttonColor = MaterialTheme.colorScheme.surfaceContainerHighest
     
     Surface(
         onClick = onClick,
@@ -2480,8 +2479,7 @@ private fun MinimalFileButtonGroupedIconOnly(
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black 
-                      else MaterialTheme.colorScheme.surfaceContainerHigh
+    val buttonColor = MaterialTheme.colorScheme.surfaceContainerHighest
     
     Surface(
         onClick = onClick,

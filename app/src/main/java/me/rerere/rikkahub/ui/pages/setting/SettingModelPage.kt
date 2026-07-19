@@ -1153,7 +1153,7 @@ private fun HelperReasoningSettings(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(
-                    color = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
                 .clickable {
                     haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)

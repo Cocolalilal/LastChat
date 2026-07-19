@@ -30,8 +30,11 @@ class LastChatDesignTokensTest {
         assertEquals(Color(0xFF8E4955), sakuraColorScheme(false).primary)
         assertEquals(Color(0xFF0E6B58), seafoamMintColorScheme(false).primary)
         assertEquals(Color(0xFF86D6BE), seafoamMintColorScheme(true).primary)
-        assertEquals(Color.Black, sakuraColorScheme(true).withLastChatAmoledSurface(true).background)
-        assertEquals(Color.Black, sakuraColorScheme(true).withLastChatAmoledSurface(true).surface)
+        val amoledScheme = sakuraColorScheme(true).withLastChatAmoledSurface(true)
+        assertEquals(Color.Black, amoledScheme.background)
+        assertEquals(Color.Black, amoledScheme.surface)
+        assertEquals(sakuraColorScheme(true).surfaceContainerHighest, amoledScheme.surfaceContainerHighest)
+        assertNotEquals(Color.Black, amoledScheme.surfaceContainerHighest)
     }
 
     @Test

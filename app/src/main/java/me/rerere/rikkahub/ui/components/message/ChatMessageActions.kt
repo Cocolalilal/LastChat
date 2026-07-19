@@ -211,12 +211,7 @@ fun ChatMessageActionsSheet(
     onDismissRequest: () -> Unit
 ) {
     val haptics = rememberPremiumHaptics()
-    val isDarkMode = LocalDarkMode.current
-    val groupContainerColor = if (isDarkMode) {
-        androidx.compose.ui.graphics.Color.Black
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
+    val groupContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
         .any { it.text.isNotBlank() }
 

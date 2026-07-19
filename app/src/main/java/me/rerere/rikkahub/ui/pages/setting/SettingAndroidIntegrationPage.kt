@@ -505,7 +505,7 @@ private fun PreviewCard(
                 .fillMaxWidth()
                 .padding(vertical = 8.dp), // No horizontal padding - edge to edge
             shape = QuickAskOuterShape,
-            color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 8.dp
         ) {
             Column(
@@ -599,8 +599,7 @@ private fun PreviewActionButton(
                 scaleY = scale
             },
         shape = shape,
-        // Use true Color.Black to match popup exactly
-        color = if (isBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
         tonalElevation = if (isBlack) 0.dp else 6.dp,
         onClick = onClick
     ) {

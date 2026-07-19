@@ -173,7 +173,7 @@ internal fun SkillsPickerSheet(
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                             ),
                             shape = shape
                         ) {
@@ -325,7 +325,7 @@ internal fun LorebooksPickerSheet(
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                             ),
                             shape = shape,
                             onClick = { onNavigateToLorebook(lorebook.id.toString()) }

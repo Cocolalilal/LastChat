@@ -244,7 +244,7 @@ private fun ReasoningOptionItem(
             .fillMaxWidth()
             .clip(itemShape)
             .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
             )
             .clickable {
                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
@@ -293,7 +293,7 @@ private fun ReasoningLevelCard(
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
     
-    val defaultContainerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val defaultContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val resolvedContainerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else (containerColor ?: defaultContainerColor)
     
     val defaultContentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
