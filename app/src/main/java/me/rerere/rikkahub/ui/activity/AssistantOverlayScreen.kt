@@ -138,6 +138,7 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.copyMessageToClipboard
+import me.rerere.rikkahub.utils.toLocalInferenceUserMessage
 import org.koin.compose.koinInject
 import kotlin.math.PI
 import kotlin.math.cos
@@ -230,7 +231,7 @@ fun AssistantOverlayScreen(
     // Surface ChatService errors as toasts.
     LaunchedEffect(Unit) {
         viewModel.errorFlow.collect { error ->
-            toaster.show(error.message ?: "Error", type = ToastType.Error)
+            toaster.show(error.toLocalInferenceUserMessage(context) ?: "Error", type = ToastType.Error)
         }
     }
 

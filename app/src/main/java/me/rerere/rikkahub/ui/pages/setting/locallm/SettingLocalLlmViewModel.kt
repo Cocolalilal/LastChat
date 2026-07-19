@@ -15,6 +15,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.common.inference.LocalInferenceManager
+import me.rerere.common.inference.LocalInferenceWorkload
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LiteRtCatalog
 import me.rerere.locallm.LiteRtEmbedder
@@ -46,6 +48,8 @@ data class LocalLlmUiState(
     val backendModelIds: Set<String> = emptySet(),
     /** Installed model ids that have a newer revision available. */
     val updates: Set<String> = emptySet(),
+    val activeWorkload: LocalInferenceWorkload? = null,
+    val queuedTasks: Int = 0,
 )
 
 class SettingLocalLlmViewModel(
@@ -56,6 +60,7 @@ class SettingLocalLlmViewModel(
     private val runtime: LiteRtRuntime,
     private val install: ModelInstall,
     private val embedder: LiteRtEmbedder,
+    private val inferenceManager: LocalInferenceManager,
     private val settingsStore: SettingsStore,
     private val modelCatalogService: ModelCatalogService,
     private val secretKeyManager: me.rerere.rikkahub.data.datastore.SecretKeyManager,
@@ -73,13 +78,18 @@ class SettingLocalLlmViewModel(
         secretKeyManager.setHuggingFaceToken(token)
     }
 
+    private val runtimeAndQueue = combine(runtime.state, inferenceManager.queueState) { runtimeState, queue ->
+        runtimeState to queue
+    }
+
     val uiState: StateFlow<LocalLlmUiState> = combine(
         store.models,
         catalogFlow,
         downloadManager.downloads,
-        runtime.state,
+        runtimeAndQueue,
         settingsStore.settingsFlow,
-    ) { installed, cat, downloads, runtimeState, settings ->
+    ) { installed, cat, downloads, runtimeQueue, settings ->
+        val (runtimeState, queue) = runtimeQueue
         val installedIds = installed.map { it.id }.toSet()
         // Hide on-device embedding models where the device ABI can't run the RAG native libraries.
         val embeddingSupported = embedder.isSupported
@@ -104,6 +114,8 @@ class SettingLocalLlmViewModel(
                 .map { it.modelId }
                 .toSet(),
             updates = updates,
+            activeWorkload = queue.active?.workload,
+            queuedTasks = queue.waiting.size,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocalLlmUiState(deviceRamGb = deviceRamGb))
 

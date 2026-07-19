@@ -26,6 +26,8 @@ import me.rerere.asr.calculateRmsAmplitude
 import me.rerere.asr.local.InstalledSherpaModel
 import me.rerere.asr.local.SherpaModelStore
 import me.rerere.asr.local.SherpaSttRuntime
+import me.rerere.common.inference.LocalInferenceManager
+import me.rerere.common.inference.LocalInferenceWorkload
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -35,6 +37,7 @@ class SherpaASRController(
     private val modelId: String,
     private val store: SherpaModelStore,
     private val runtime: SherpaSttRuntime,
+    private val inferenceManager: LocalInferenceManager,
 ) : ASRController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(ASRState(isAvailable = true))
@@ -55,15 +58,17 @@ class SherpaASRController(
         callback = onTranscriptChange
         _state.value = ASRState(status = ASRStatus.Connecting, isAvailable = true)
         sessionJob = scope.launch(Dispatchers.IO) {
-            runCatching {
-                val model = store.get(modelId) ?: error("Local speech model is not installed")
-                if (stopRequested) {
-                    finishIdle("")
-                    return@runCatching
+            inferenceManager.withLease(LocalInferenceWorkload.SPEECH, modelId) {
+                runCatching {
+                    val model = store.get(modelId) ?: error("Local speech model is not installed")
+                    if (stopRequested) {
+                        finishIdle("")
+                        return@runCatching
+                    }
+                    if (model.streaming) runOnline(model) else runOffline(model)
+                }.onFailure { error ->
+                    if (error !is kotlinx.coroutines.CancellationException) fail(error.message ?: "Local transcription failed")
                 }
-                if (model.streaming) runOnline(model) else runOffline(model)
-            }.onFailure { error ->
-                if (error !is kotlinx.coroutines.CancellationException) fail(error.message ?: "Local transcription failed")
             }
         }
     }

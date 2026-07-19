@@ -163,7 +163,7 @@ class LiteRtRuntime(
     companion object {
         private const val KEY_PENDING_GPU = "pending_gpu_model"
 
-        private fun resolveKvCacheSize(model: InstalledLocalModel): Int {
+        private fun requestedKvCacheSize(model: InstalledLocalModel): Int {
             val maxTokens = model.config.maxTokens ?: model.defaultConfig.maxTokens
             val userContextLength = model.config.contextLength
             val modelMaxContext = model.defaultConfig.maxContextLength
@@ -179,5 +179,11 @@ class LiteRtRuntime(
 
         private fun loadKey(model: InstalledLocalModel, backends: ResolvedBackends, kvCacheTokens: Int): String =
             listOf(model.filePath, backends.effective.name, kvCacheTokens.toString()).joinToString("|")
+    }
+
+    private fun resolveKvCacheSize(model: InstalledLocalModel): Int {
+        val requested = requestedKvCacheSize(model)
+        val safeCap = MemoryGuard.safeContextTokenCap(MemoryGuard.deviceTotalRamGb(context))
+        return minOf(requested, safeCap)
     }
 }

@@ -49,6 +49,7 @@ import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.inference.LocalInferenceManager
 import me.rerere.rikkahub.di.SEARCH_PLATFORM_HTTP_CLIENT
 import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.search.SearchService
@@ -243,6 +244,20 @@ class LastChatApp : Application() {
     override fun onTerminate() {
         super.onTerminate()
         get<AppScope>().cancel()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        ) {
+            get<LocalInferenceManager>().requestEviction()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        get<LocalInferenceManager>().requestEviction()
     }
 }
 

@@ -98,6 +98,7 @@ val viewModelModule = module {
             runtime = get(),
             install = get(),
             embedder = get(),
+            inferenceManager = get(),
             settingsStore = get(),
             modelCatalogService = get(),
             secretKeyManager = get(),

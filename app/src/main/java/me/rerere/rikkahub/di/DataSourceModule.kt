@@ -412,12 +412,20 @@ val dataSourceModule = module {
     }
     single { me.rerere.locallm.LiteRtRuntime(context = get(), store = get()) }
     single { me.rerere.locallm.LiteRtEmbedder(context = get()) }
+    single<me.rerere.common.inference.LocalInferenceManager> {
+        me.rerere.rikkahub.data.ai.local.AndroidLocalInferenceManager(
+            liteRtRuntime = get(),
+            embedder = get(),
+            speechRuntime = get(),
+        )
+    }
     single {
         me.rerere.locallm.litert.LiteRtProvider(
             context = get(),
             runtime = get(),
             store = get(),
             embedder = get(),
+            inferenceManager = get(),
         )
     }
 

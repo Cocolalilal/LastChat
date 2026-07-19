@@ -155,3 +155,14 @@ class InstalledLocalModelMetadataTest {
         assertTrue(reconciled.supportsThinking)
     }
 }
+
+class MemoryGuardPolicyTest {
+    @Test
+    fun `context ceiling grows conservatively with device memory`() {
+        assertEquals(4_096, MemoryGuard.safeContextTokenCap(4))
+        assertEquals(4_096, MemoryGuard.safeContextTokenCap(6))
+        assertEquals(8_192, MemoryGuard.safeContextTokenCap(8))
+        assertEquals(16_384, MemoryGuard.safeContextTokenCap(12))
+        assertEquals(32_768, MemoryGuard.safeContextTokenCap(16))
+    }
+}

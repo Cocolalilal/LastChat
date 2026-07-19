@@ -66,6 +66,15 @@ class LiteRtEmbedder(@Suppress("unused") private val context: Context) {
     /** Whether an embedding model is currently loaded (used to release memory on deletion). */
     fun currentModelKey(): String? = loaded?.key
 
+    /**
+     * Drops the resident embedding runtime before another heavyweight local workload starts.
+     * GemmaEmbeddingModel currently exposes no close API, so clearing the last strong reference is
+     * the most deterministic release available to the host.
+     */
+    suspend fun unload() = mutex.withLock {
+        loaded = null
+    }
+
     private fun acquireLocked(model: InstalledLocalModel, tokenizerPath: String): GemmaEmbeddingModel {
         // The RAG GPU delegate is less stable than CPU on many devices and gives little benefit for a
         // 300M embedder; only opt into GPU when the user explicitly forces it.

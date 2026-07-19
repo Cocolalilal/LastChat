@@ -12,6 +12,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
@@ -23,6 +25,8 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.platform.PlatformLog
+import me.rerere.common.inference.LocalInferenceManager
+import me.rerere.common.inference.LocalInferenceWorkload
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LiteRtEmbedder
 import me.rerere.locallm.LiteRtRuntime
@@ -35,6 +39,7 @@ class LiteRtProvider(
     private val runtime: LiteRtRuntime,
     private val store: LocalModelStore,
     private val embedder: LiteRtEmbedder,
+    private val inferenceManager: LocalInferenceManager,
 ) : Provider<ProviderSetting.LiteRtLocal> {
 
     private val gson = Gson()
@@ -48,37 +53,39 @@ class LiteRtProvider(
         params: TextGenerationParams,
     ): MessageChunk {
         val installed = requireInstalled(params)
-        val loaded = runtime.acquire(installed)
-        val effective = loaded.model
-        val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
-        val conversation = loaded.engine.createConversation(
-            buildConversationConfig(effective, preparedMessages.messages, params)
-        )
-        runtime.setGenerating(effective)
-        try {
-            val sendable = preparedMessages.sendable
-            val reply = conversation.sendMessage(toSendableMessage(effective, sendable), emptyMap())
-            val (reasoning, text) = splitThink(reply.textString())
-            val parts = buildList {
-                if (reasoning.isNotBlank()) add(UIMessagePart.Reasoning(reasoning = reasoning))
-                if (text.isNotBlank()) add(UIMessagePart.Text(text))
-                addAll(reply.toolCalls.toUiToolCalls(gson))
-            }
-            return MessageChunk(
-                id = Uuid.random().toString(),
-                model = params.model.modelId,
-                choices = listOf(
-                    UIMessageChoice(
-                        index = 0,
-                        delta = null,
-                        message = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
-                        finishReason = if (reply.toolCalls.isNotEmpty()) "tool_calls" else "stop",
-                    )
-                ),
+        return inferenceManager.withLease(LocalInferenceWorkload.CHAT, installed.id) {
+            val loaded = runtime.acquire(installed)
+            val effective = loaded.model
+            val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
+            val conversation = loaded.engine.createConversation(
+                buildConversationConfig(effective, preparedMessages.messages, params)
             )
-        } finally {
-            runtime.setReady(effective, loaded.backends.effective)
-            runCatching { conversation.close() }
+            runtime.setGenerating(effective)
+            try {
+                val sendable = preparedMessages.sendable
+                val reply = conversation.sendMessage(toSendableMessage(effective, sendable), emptyMap())
+                val (reasoning, text) = splitThink(reply.textString())
+                val parts = buildList {
+                    if (reasoning.isNotBlank()) add(UIMessagePart.Reasoning(reasoning = reasoning))
+                    if (text.isNotBlank()) add(UIMessagePart.Text(text))
+                    addAll(reply.toolCalls.toUiToolCalls(gson))
+                }
+                MessageChunk(
+                    id = Uuid.random().toString(),
+                    model = params.model.modelId,
+                    choices = listOf(
+                        UIMessageChoice(
+                            index = 0,
+                            delta = null,
+                            message = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
+                            finishReason = if (reply.toolCalls.isNotEmpty()) "tool_calls" else "stop",
+                        )
+                    ),
+                )
+            } finally {
+                runtime.setReady(effective, loaded.backends.effective)
+                runCatching { conversation.close() }
+            }
         }
     }
 
@@ -88,83 +95,97 @@ class LiteRtProvider(
         params: TextGenerationParams,
     ): Flow<MessageChunk> {
         val installed = requireInstalled(params)
-        val loaded = runtime.acquire(installed)
-        val effective = loaded.model
-        val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
-        val conversation = loaded.engine.createConversation(
-            buildConversationConfig(effective, preparedMessages.messages, params)
-        )
-        val sendable = preparedMessages.sendable
-        val modelId = params.model.modelId
-
-        return callbackFlow {
-            runtime.setGenerating(effective)
-            var accumulated = ""
-            var emittedReasoning = ""
-            var emittedText = ""
-            var lastToolCalls: List<ToolCall> = emptyList()
-
-            fun emitTextChunk(reasoningDelta: String, textDelta: String) {
-                if (reasoningDelta.isEmpty() && textDelta.isEmpty()) return
-                val parts = buildList {
-                    if (reasoningDelta.isNotEmpty()) add(UIMessagePart.Reasoning(reasoning = reasoningDelta, finishedAt = null))
-                    if (textDelta.isNotEmpty()) add(UIMessagePart.Text(textDelta))
-                }
-                trySend(
-                    MessageChunk(
-                        id = modelId,
-                        model = modelId,
-                        choices = listOf(
-                            UIMessageChoice(index = 0, delta = UIMessage(role = MessageRole.ASSISTANT, parts = parts), message = null, finishReason = null)
-                        ),
-                    )
+        return flow {
+            inferenceManager.withLease(LocalInferenceWorkload.CHAT, installed.id) {
+                val loaded = runtime.acquire(installed)
+                val effective = loaded.model
+                val preparedMessages = prepareLiteRtConversationMessages(effective, messages)
+                val conversation = loaded.engine.createConversation(
+                    buildConversationConfig(effective, preparedMessages.messages, params)
                 )
-            }
+                val sendable = preparedMessages.sendable
+                val modelId = params.model.modelId
 
-            val job = launch {
-                conversation.sendMessageAsync(toSendableMessage(effective, sendable), emptyMap())
-                    .catch { close(it) }
-                    .collect { msg ->
-                        val raw = msg.textString()
-                        accumulated = when {
-                            raw.isEmpty() -> accumulated
-                            raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw
-                            else -> accumulated + raw
+                emitAll(callbackFlow {
+                    runtime.setGenerating(effective)
+                    var accumulated = ""
+                    var emittedReasoning = ""
+                    var emittedText = ""
+                    var lastToolCalls: List<ToolCall> = emptyList()
+
+                    fun emitTextChunk(reasoningDelta: String, textDelta: String) {
+                        if (reasoningDelta.isEmpty() && textDelta.isEmpty()) return
+                        val parts = buildList {
+                            if (reasoningDelta.isNotEmpty()) {
+                                add(UIMessagePart.Reasoning(reasoning = reasoningDelta, finishedAt = null))
+                            }
+                            if (textDelta.isNotEmpty()) add(UIMessagePart.Text(textDelta))
                         }
-                        if (msg.toolCalls.isNotEmpty()) lastToolCalls = msg.toolCalls
-
-                        val (reasoningFull, textFull) = splitThink(accumulated)
-                        val reasoningDelta = reasoningFull.removePrefixSafe(emittedReasoning)
-                        val textDelta = textFull.removePrefixSafe(emittedText)
-                        emittedReasoning = reasoningFull
-                        emittedText = textFull
-                        emitTextChunk(reasoningDelta, textDelta)
+                        trySend(
+                            MessageChunk(
+                                id = modelId,
+                                model = modelId,
+                                choices = listOf(
+                                    UIMessageChoice(
+                                        index = 0,
+                                        delta = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
+                                        message = null,
+                                        finishReason = null,
+                                    )
+                                ),
+                            )
+                        )
                     }
 
-                val toolParts = lastToolCalls.toUiToolCalls(gson)
-                trySend(
-                    MessageChunk(
-                        id = modelId,
-                        model = modelId,
-                        choices = listOf(
-                            UIMessageChoice(
-                                index = 0,
-                                delta = if (toolParts.isEmpty()) UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
-                                else UIMessage(role = MessageRole.ASSISTANT, parts = toolParts),
-                                message = null,
-                                finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
-                            )
-                        ),
-                    )
-                )
-                close()
-            }
+                    val job = launch {
+                        conversation.sendMessageAsync(toSendableMessage(effective, sendable), emptyMap())
+                            .catch { close(it) }
+                            .collect { msg ->
+                                val raw = msg.textString()
+                                accumulated = when {
+                                    raw.isEmpty() -> accumulated
+                                    raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw
+                                    else -> accumulated + raw
+                                }
+                                if (msg.toolCalls.isNotEmpty()) lastToolCalls = msg.toolCalls
 
-            awaitClose {
-                runCatching { conversation.cancelProcess() }
-                job.cancel()
-                runtime.setReady(effective, loaded.backends.effective)
-                runCatching { conversation.close() }
+                                val (reasoningFull, textFull) = splitThink(accumulated)
+                                val reasoningDelta = reasoningFull.removePrefixSafe(emittedReasoning)
+                                val textDelta = textFull.removePrefixSafe(emittedText)
+                                emittedReasoning = reasoningFull
+                                emittedText = textFull
+                                emitTextChunk(reasoningDelta, textDelta)
+                            }
+
+                        val toolParts = lastToolCalls.toUiToolCalls(gson)
+                        trySend(
+                            MessageChunk(
+                                id = modelId,
+                                model = modelId,
+                                choices = listOf(
+                                    UIMessageChoice(
+                                        index = 0,
+                                        delta = if (toolParts.isEmpty()) {
+                                            UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                                        } else {
+                                            UIMessage(role = MessageRole.ASSISTANT, parts = toolParts)
+                                        },
+                                        message = null,
+                                        finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
+                                    )
+                                ),
+                            )
+                        )
+                        close()
+                    }
+
+                    awaitClose {
+                        runCatching { conversation.cancelProcess() }
+                        job.cancel()
+                        runtime.setReady(effective, loaded.backends.effective)
+                        runCatching { conversation.close() }
+                    }
+                })
             }
         }
     }
@@ -185,7 +206,9 @@ class LiteRtProvider(
         val installed = store.get(model.modelId)
             ?: throw IllegalStateException("model_not_installed:${model.modelId}")
         check(installed.kind == LocalModelKind.EMBEDDING) { "not_embedding_model:${model.modelId}" }
-        return embedder.embed(installed, input)
+        return inferenceManager.withLease(LocalInferenceWorkload.EMBEDDING, installed.id) {
+            embedder.embed(installed, input)
+        }
     }
 
     private suspend fun requireInstalled(params: TextGenerationParams): InstalledLocalModel {

@@ -22,8 +22,9 @@ sealed interface MemoryCheck {
  * and lets the user proceed, because available RAM fluctuates with background processes and is not
  * a reliable indicator of whether a model will load successfully.
  *
- * We also keep a secondary safety check: if the model file size alone exceeds 80% of total RAM,
- * block the load (the model literally cannot fit regardless of what the allowlist says).
+ * We also keep process-safety checks for current memory pressure and a conservative working-set
+ * estimate. Those checks turn a likely native OOM into a recoverable error while leaving ordinary
+ * fluctuations alone when the model still has sufficient headroom.
  */
 object MemoryGuard {
 
@@ -47,7 +48,7 @@ object MemoryGuard {
     fun check(
         context: Context,
         modelSizeBytes: Long,
-        @Suppress("UNUSED_PARAMETER") kvCacheTokens: Int = 4096,
+        kvCacheTokens: Int = 4096,
         minDeviceMemoryGb: Int? = null,
     ): MemoryCheck {
         val totalRamGb = deviceTotalRamGb(context)
@@ -72,9 +73,35 @@ object MemoryGuard {
             )
         }
 
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        val reserveBytes = maxOf(MIN_SYSTEM_RESERVE_BYTES, totalRamBytes * SYSTEM_RESERVE_PERCENT / 100)
+        val estimatedWorkingSet = modelSizeBytes * MODEL_OVERHEAD_PERCENT / 100 +
+            kvCacheTokens.toLong() * ESTIMATED_KV_BYTES_PER_TOKEN + reserveBytes
+        if (info.lowMemory || info.availMem < estimatedWorkingSet) {
+            return MemoryCheck.Insufficient(
+                requiredMb = estimatedWorkingSet / (1024 * 1024),
+                modelMb = modelSizeBytes / (1024 * 1024),
+                availableMb = info.availMem / (1024 * 1024),
+            )
+        }
+
         return MemoryCheck.Ok
+    }
+
+    /** Conservative automatic context ceiling for phones that meet a model's basic allowlist. */
+    fun safeContextTokenCap(totalRamGb: Int): Int = when {
+        totalRamGb <= 6 -> 4_096
+        totalRamGb <= 8 -> 8_192
+        totalRamGb <= 12 -> 16_384
+        else -> 32_768
     }
 
     /** Default minimum device RAM when the model's allowlist entry doesn't specify one. */
     private const val DEFAULT_MIN_DEVICE_MEMORY_GB = 6
+    private const val MODEL_OVERHEAD_PERCENT = 110L
+    private const val SYSTEM_RESERVE_PERCENT = 15L
+    private const val ESTIMATED_KV_BYTES_PER_TOKEN = 64L * 1024L
+    private const val MIN_SYSTEM_RESERVE_BYTES = 512L * 1024L * 1024L
 }

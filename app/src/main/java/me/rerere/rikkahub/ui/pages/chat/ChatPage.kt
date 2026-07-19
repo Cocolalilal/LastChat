@@ -146,6 +146,7 @@ import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.rikkahub.utils.toLocalInferenceUserMessage
 import kotlinx.coroutines.Dispatchers
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -544,7 +545,7 @@ fun ChatPage(
     // Handle Error
     LaunchedEffect(vm) {
         vm.errorFlow.collect { error ->
-            toaster.show(error.message ?: genericErrorMessage, type = ToastType.Error)
+            toaster.show(error.toLocalInferenceUserMessage(context) ?: genericErrorMessage, type = ToastType.Error)
         }
     }
 

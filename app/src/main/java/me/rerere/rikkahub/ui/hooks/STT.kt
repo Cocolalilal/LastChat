@@ -23,6 +23,7 @@ import me.rerere.asr.providers.OpenAICompatibleASRController
 import me.rerere.asr.local.SherpaModelStore
 import me.rerere.asr.local.SherpaSttRuntime
 import me.rerere.asr.providers.SherpaASRController
+import me.rerere.common.inference.LocalInferenceManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
@@ -35,10 +36,17 @@ fun rememberCustomSttState(): CustomSttState {
     val httpClient = koinInject<OkHttpClient>()
     val sherpaStore = koinInject<SherpaModelStore>()
     val sherpaRuntime = koinInject<SherpaSttRuntime>()
+    val inferenceManager = koinInject<LocalInferenceManager>()
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
     val sttState = remember {
-        CustomSttStateImpl(context.applicationContext, httpClient, sherpaStore, sherpaRuntime)
+        CustomSttStateImpl(
+            context.applicationContext,
+            httpClient,
+            sherpaStore,
+            sherpaRuntime,
+            inferenceManager,
+        )
     }
 
     val sttModelId = settings.sttModelId
@@ -78,6 +86,7 @@ private class CustomSttStateImpl(
     private val httpClient: OkHttpClient,
     private val sherpaStore: SherpaModelStore,
     private val sherpaRuntime: SherpaSttRuntime,
+    private val inferenceManager: LocalInferenceManager,
 ) : CustomSttState {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var controller: ASRController? = null
@@ -154,6 +163,7 @@ private class CustomSttStateImpl(
                     modelId = model.modelId,
                     store = sherpaStore,
                     runtime = sherpaRuntime,
+                    inferenceManager = inferenceManager,
                 )
                 else -> null
             }

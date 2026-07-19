@@ -70,6 +70,7 @@ import me.rerere.locallm.LocalModelConfig
 import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalModelMetadata
 import me.rerere.locallm.LocalRuntimeState
+import me.rerere.common.inference.LocalInferenceWorkload
 import me.rerere.asr.local.InstalledSherpaModel
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
@@ -114,7 +115,7 @@ fun SettingLocalLlmPage(
     val huggingFaceToken by vm.huggingFaceToken.collectAsStateWithLifecycle()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-    val runtimeStatus = runtimeStatusText(state.runtime)
+    val runtimeStatus = runtimeStatusText(state.runtime, state.activeWorkload, state.queuedTasks)
     val installedModelsStartIndex = (if (runtimeStatus != null) 1 else 0) + 1
     val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
         val fromIndex = from.index - installedModelsStartIndex
@@ -1029,12 +1030,27 @@ private fun SliderRow(
     }
 }
 
-private fun runtimeStatusText(state: LocalRuntimeState): String? = when (state) {
+private fun runtimeStatusText(
+    state: LocalRuntimeState,
+    activeWorkload: LocalInferenceWorkload?,
+    queuedTasks: Int,
+): String? {
+    val activeText = when (state) {
     is LocalRuntimeState.LoadingModel -> "Loading ${state.displayName}…"
     is LocalRuntimeState.Generating -> "Generating with ${state.displayName}…"
     is LocalRuntimeState.SwitchedToCpu -> "Switched ${state.displayName} to CPU"
     is LocalRuntimeState.Error -> "Error: ${state.message}"
-    LocalRuntimeState.Idle -> null
-    is LocalRuntimeState.Ready -> null
+        LocalRuntimeState.Idle,
+        is LocalRuntimeState.Ready -> when (activeWorkload) {
+            LocalInferenceWorkload.CHAT -> "Preparing local chat model…"
+            LocalInferenceWorkload.EMBEDDING -> "Building local memory embeddings…"
+            LocalInferenceWorkload.SPEECH -> "Local speech recognition active…"
+            null -> null
+        }
+    }
+    val queueText = queuedTasks.takeIf { it > 0 }?.let {
+        "$it local ${if (it == 1) "task" else "tasks"} queued"
+    }
+    return listOfNotNull(activeText, queueText).joinToString(" • ").ifBlank { null }
 }
 
