@@ -2964,7 +2964,6 @@ private fun SettingsPage(
                                     title = configuration.modelId,
                                     selected = configuration.type == state.provider.type &&
                                         configuration.modelId == state.provider.modelId,
-                                    darkTheme = darkTheme,
                                     position = LastChatModelGroupPosition.Single,
                                     onClick = {
                                         platformHaptics.perform(PlatformHapticPattern.Pop)

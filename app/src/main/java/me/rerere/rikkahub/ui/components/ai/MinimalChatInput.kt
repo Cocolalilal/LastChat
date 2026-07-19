@@ -104,6 +104,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -120,6 +121,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -377,6 +379,12 @@ fun MinimalChatInput(
     var isFocused by remember { mutableStateOf(false) }
     var isExpandedFullScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
+    var pendingAttachmentImports by remember { mutableIntStateOf(0) }
+    val isImportingAttachments = pendingAttachmentImports > 0
+    val onAttachmentImportStarted = { pendingAttachmentImports += 1 }
+    val onAttachmentImportFinished = {
+        pendingAttachmentImports = (pendingAttachmentImports - 1).coerceAtLeast(0)
+    }
 
     LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
         if (questionnaire == null) {
@@ -690,12 +698,17 @@ fun MinimalChatInput(
                         transferableContent.hasMediaType(MediaType.Image) -> {
                             transferableContent.consume { item ->
                                 item.uri?.let { uri ->
+                                    onAttachmentImportStarted()
                                     scope.launch {
-                                        val importedUris = withContext(Dispatchers.IO) {
-                                            ChatAttachmentManager.importChatFiles(listOf(uri))
-                                        }
-                                        if (importedUris.isNotEmpty()) {
-                                            state.addImages(importedUris)
+                                        try {
+                                            val importedUris = withContext(Dispatchers.IO) {
+                                                ChatAttachmentManager.importChatFiles(listOf(uri))
+                                            }
+                                            if (importedUris.isNotEmpty()) {
+                                                state.addImages(importedUris)
+                                            }
+                                        } finally {
+                                            onAttachmentImportFinished()
                                         }
                                     }
                                 }
@@ -963,7 +976,10 @@ fun MinimalChatInput(
                                     .align(Alignment.BottomEnd)
                                     .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
                             ) {
-                                val currentAction = when {
+                                AttachmentImportAction(
+                                    isImporting = isImportingAttachments,
+                                ) {
+                                    val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion ->
                                         LastChatComposerAction.QuestionnaireSubmit
                                     isQuestionnaireActive -> LastChatComposerAction.QuestionnaireNext
@@ -1061,6 +1077,7 @@ fun MinimalChatInput(
                                             )
                                         }
                                     }
+                                }
                                 }
                             }
                         }  // Box for TextField + Action button ends
@@ -1187,7 +1204,11 @@ fun MinimalChatInput(
                                     .align(Alignment.BottomEnd)
                                     .padding(16.dp)
                             ) {
-                                val currentAction = when {
+                                AttachmentImportAction(
+                                    isImporting = isImportingAttachments,
+                                    modifier = Modifier.size(56.dp),
+                                ) {
+                                    val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion ->
                                         LastChatComposerAction.QuestionnaireSubmit
                                     isQuestionnaireActive -> LastChatComposerAction.QuestionnaireNext
@@ -1262,6 +1283,7 @@ fun MinimalChatInput(
                                         }
                                     }
                                 }
+                                }
                             }
                         }
                     }
@@ -1296,8 +1318,34 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onNavigateToLorebook = onNavigateToLorebook,
                 onRefreshContext = onRefreshContext,
                 importScope = scope,
+                onAttachmentImportStarted = onAttachmentImportStarted,
+                onAttachmentImportFinished = onAttachmentImportFinished,
                 onDismiss = { showPicker = false }
             )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentImportAction(
+    isImporting: Boolean,
+    modifier: Modifier = Modifier.size(36.dp),
+    idleContent: @Composable () -> Unit,
+) {
+    AnimatedContent(
+        targetState = isImporting,
+        modifier = modifier,
+        transitionSpec = {
+            (fadeIn(tween(150)) + scaleIn(tween(250), initialScale = 0.6f)) togetherWith
+                (fadeOut(tween(150)) + scaleOut(tween(250), targetScale = 0.6f))
+        },
+        contentAlignment = Alignment.Center,
+        label = "AttachmentImportAction",
+    ) { importing ->
+        if (importing) {
+            ContainedLoadingIndicator(modifier = Modifier.fillMaxSize())
+        } else {
+            idleContent()
         }
     }
 }
@@ -1686,6 +1734,8 @@ private fun MinimalPickerContent(
     onNavigateToLorebook: (String) -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     importScope: CoroutineScope,
+    onAttachmentImportStarted: () -> Unit,
+    onAttachmentImportFinished: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1774,17 +1824,22 @@ private fun MinimalPickerContent(
             return
         }
 
+        onAttachmentImportStarted()
         importScope.launch {
-            val importedUris = withContext(Dispatchers.IO) {
-                ChatAttachmentManager.importChatFiles(uris)
+            try {
+                val importedUris = withContext(Dispatchers.IO) {
+                    ChatAttachmentManager.importChatFiles(uris)
+                }
+                if (importedUris.isEmpty()) {
+                    Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")
+                    toaster.show(context.getString(R.string.chat_input_selected_image_failed))
+                } else {
+                    state.addImages(importedUris)
+                }
+            } finally {
+                onAttachmentImportFinished()
+                onFinally()
             }
-            if (importedUris.isEmpty()) {
-                Log.w("MinimalChatInput", "Failed to import ${uris.size} selected image(s)")
-                toaster.show(context.getString(R.string.chat_input_selected_image_failed))
-            } else {
-                state.addImages(importedUris)
-            }
-            onFinally()
         }
     }
     
@@ -1828,31 +1883,36 @@ private fun MinimalPickerContent(
         if (selectedUris.isNotEmpty()) {
             onDismiss()
             val isWorkspaceEnabled = assistant.workspaceId != null
+            onAttachmentImportStarted()
             importScope.launch {
-                val importedFiles = withContext(Dispatchers.IO) {
-                    context.prepareImportedPickerFiles(
-                        selectedUris = selectedUris,
-                        isWorkspaceEnabled = isWorkspaceEnabled,
-                    )
-                }
-
-                importedFiles.unsupportedFileNames.forEach { fileName ->
-                    toaster.show(
-                        context.getString(
-                            R.string.chat_input_unsupported_file_type,
-                            fileName
+                try {
+                    val importedFiles = withContext(Dispatchers.IO) {
+                        context.prepareImportedPickerFiles(
+                            selectedUris = selectedUris,
+                            isWorkspaceEnabled = isWorkspaceEnabled,
                         )
-                    )
-                }
-                importedFiles.failedFileNames.forEach { fileName ->
-                    toaster.show(context.getString(R.string.chat_input_add_file_failed, fileName))
-                }
+                    }
 
-                if (importedFiles.imageUris.isNotEmpty()) {
-                    state.addImages(importedFiles.imageUris)
-                }
-                if (importedFiles.documents.isNotEmpty()) {
-                    state.addFiles(importedFiles.documents)
+                    importedFiles.unsupportedFileNames.forEach { fileName ->
+                        toaster.show(
+                            context.getString(
+                                R.string.chat_input_unsupported_file_type,
+                                fileName
+                            )
+                        )
+                    }
+                    importedFiles.failedFileNames.forEach { fileName ->
+                        toaster.show(context.getString(R.string.chat_input_add_file_failed, fileName))
+                    }
+
+                    if (importedFiles.imageUris.isNotEmpty()) {
+                        state.addImages(importedFiles.imageUris)
+                    }
+                    if (importedFiles.documents.isNotEmpty()) {
+                        state.addFiles(importedFiles.documents)
+                    }
+                } finally {
+                    onAttachmentImportFinished()
                 }
             }
         }

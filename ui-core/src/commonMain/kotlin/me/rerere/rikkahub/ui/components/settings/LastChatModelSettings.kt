@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -90,7 +89,6 @@ enum class LastChatModelGroupPosition { First, Middle, Last, Single }
 fun LastChatGroupedModelRow(
     title: String,
     selected: Boolean,
-    darkTheme: Boolean,
     position: LastChatModelGroupPosition,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -135,8 +133,7 @@ fun LastChatGroupedModelRow(
             .clip(RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart))
             .background(
                 if (selected) MaterialTheme.colorScheme.primaryContainer
-                else if (darkTheme) Color.Black
-                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                else MaterialTheme.colorScheme.surfaceContainerHighest,
             )
             .padding(vertical = 12.dp, horizontal = 16.dp),
     ) {

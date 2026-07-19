@@ -1035,7 +1035,6 @@ private fun ModelItem(
         LastChatGroupedModelRow(
             title = model.displayName,
             selected = select,
-            darkTheme = LocalDarkMode.current,
             position = position.toSharedPosition(),
             onClick = { onSelect(model) },
             onLongClick = {
