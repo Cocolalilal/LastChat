@@ -256,7 +256,12 @@ class TemporalMemoryRepository(
             dao.searchClaimsByTime(assistantId, timeStart, timeEnd, candidateLimit)
         } else emptyList()
         val currentClaims = if (includeCore) dao.getCurrentClaims(assistantId, candidateLimit) else emptyList()
-        val claimPool = (lexicalClaims + temporalClaims + currentClaims).distinctBy { it.id }
+        val claimPool = (lexicalClaims + temporalClaims + currentClaims)
+            .distinctBy { it.id }
+            .filter { claim ->
+                if (timeStart == null || timeEnd == null) true
+                else (claim.validFrom ?: claim.observedAt) in timeStart..timeEnd
+            }
 
         val queryEmbedding = runCatching { embeddingService.embed(query, assistantId).toFloatArray() }.getOrNull()
         val claimScores = claimPool.map { claim ->
@@ -276,15 +281,25 @@ class TemporalMemoryRepository(
             runCatching { dao.searchEpisodesFts(assistantId, ftsQuery, candidateLimit) }.getOrDefault(emptyList())
         }
         val recentEpisodes = if (includeEpisodes) dao.getRecentEpisodes(assistantId, 3) else emptyList()
-        val episodeScores = (lexicalEpisodes + recentEpisodes).distinctBy { it.id }.map { episode ->
-            val lexicalRank = lexicalEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.72f)
-            val recencyRank = recentEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.35f)
-            episode to (maxOf(lexicalRank, recencyRank) + episode.importance * 0.02f)
-        }
+        val episodeScores = (lexicalEpisodes + recentEpisodes)
+            .distinctBy { it.id }
+            .filter { episode ->
+                if (timeStart == null || timeEnd == null) true
+                else episode.eventStart in timeStart..timeEnd
+            }
+            .map { episode ->
+                val lexicalRank = lexicalEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.72f)
+                val recencyRank = recentEpisodes.indexOfFirst { it.id == episode.id }.retrievalRankScore(0.35f)
+                episode to (maxOf(lexicalRank, recencyRank) + episode.importance * 0.02f)
+            }
 
         val sourceScores = if (!includePastChats || ftsQuery.isBlank()) emptyList() else {
             runCatching { dao.searchSourcesFts(assistantId, ftsQuery, candidateLimit) }
                 .getOrDefault(emptyList())
+                .filter { source ->
+                    if (timeStart == null || timeEnd == null) true
+                    else source.observedAt in timeStart..timeEnd
+                }
                 .mapIndexed { index, source -> source to (index.retrievalRankScore(0.72f) + 0.03f) }
         }
 
