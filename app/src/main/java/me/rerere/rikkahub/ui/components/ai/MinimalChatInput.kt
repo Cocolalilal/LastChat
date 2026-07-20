@@ -1928,7 +1928,8 @@ private fun MinimalPickerContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp),
+                .height(80.dp)
+                .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // Camera button - icon only, no label
