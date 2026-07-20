@@ -1638,7 +1638,10 @@ private fun ProviderItemContent(
     else 
         MaterialTheme.colorScheme.surfaceContainerHigh
     
-    val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
+        androidx.compose.ui.graphics.Color.Black 
+    else 
+        MaterialTheme.colorScheme.surfaceContainerHighest
     
     Row(
         modifier = Modifier

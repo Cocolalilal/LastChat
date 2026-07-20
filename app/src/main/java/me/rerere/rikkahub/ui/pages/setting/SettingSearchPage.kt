@@ -1154,12 +1154,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     AutoAIIconWithUrl(
                                         name = preset.name,
                                         customIconUri = catalogSnapshot?.searchProviderIconUri(preset.name),
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier.size(40.dp),
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = preset.name,
-                                            style = MaterialTheme.typography.titleMedium
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                         )
                                         Text(
                                             text = context.getString(preset.descriptionRes),

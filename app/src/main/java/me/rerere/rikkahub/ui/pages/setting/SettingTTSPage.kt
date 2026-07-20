@@ -1330,21 +1330,24 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                             Icon(
                                                 imageVector = Icons.Rounded.PhoneAndroid,
                                                 contentDescription = null,
-                                                modifier = Modifier.size(24.dp)
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onSurface,
                                             )
                                         }
                                     } else {
                                         AutoAIIconWithUrl(
                                             name = preset.name,
                                             customIconUri = preset.customIconUri,
-                                            modifier = Modifier.size(40.dp)
+                                            modifier = Modifier.size(40.dp),
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
                                         )
                                     }
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = preset.name,
-                                            style = MaterialTheme.typography.titleMedium
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                         )
                                     }
 
