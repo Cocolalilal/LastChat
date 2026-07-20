@@ -171,7 +171,7 @@ fun CodexProviderConfigure(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = AppShapes.CardMedium,
+            shape = AppShapes.CardLargeInner12,
             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
@@ -222,7 +222,7 @@ private fun CodexAccountCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = AppShapes.CardMedium,
+        shape = AppShapes.CardLargeInner12,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),

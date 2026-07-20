@@ -80,7 +80,6 @@ fun LastChatAssistantPickerSheet(
     onThudHaptic: () -> Unit,
     avatar: @Composable (LastChatAssistantPickerItem, Modifier) -> Unit,
     tags: List<LastChatAssistantPickerTag> = emptyList(),
-    isDarkMode: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -198,8 +197,7 @@ fun LastChatAssistantPickerSheet(
                             .clip(RoundedCornerShape(topCorner, topCorner, bottomCorner, bottomCorner))
                             .background(
                                 if (checked) MaterialTheme.colorScheme.primaryContainer
-                                else if (isDarkMode) Color.Black
-                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                else MaterialTheme.colorScheme.surfaceContainerHighest,
                             )
                             .clickable(enabled = !isTransitioning) {
                                 if (!checked) {

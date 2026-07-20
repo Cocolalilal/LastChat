@@ -417,9 +417,16 @@ fun SettingLocalLlmPage(
                     Spacer(Modifier.height(8.dp))
                     SectionHeader("Download speech recognition models")
                 }
-                items(sttState.downloadable, key = { "sherpa-download-${it.id}" }) { model ->
+                itemsIndexed(sttState.downloadable, key = { _, model -> "sherpa-download-${model.id}" }) { index, model ->
+                    val shape = when {
+                        sttState.downloadable.size == 1 -> RoundedCornerShape(24.dp)
+                        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                        index == sttState.downloadable.lastIndex -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                        else -> RoundedCornerShape(10.dp)
+                    }
                     SherpaDownloadableModelCard(
                         model = model,
+                        shape = shape,
                         download = sttState.downloads[model.id],
                         onDownload = {
                             haptics.perform(HapticPattern.Pop)

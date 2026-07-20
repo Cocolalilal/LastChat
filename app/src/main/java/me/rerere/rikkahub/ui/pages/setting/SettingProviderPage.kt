@@ -710,18 +710,21 @@ private fun ProviderListView(
                                     imageVector = Icons.Rounded.PhoneAndroid,
                                     contentDescription = null,
                                     modifier = Modifier.size(40.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             } else {
                                 AutoAIIconWithUrl(
                                     name = matchingPreset.name,
                                     customIconUri = matchingPreset.customIconUri,
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(40.dp),
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = matchingPreset.name,
-                                    style = MaterialTheme.typography.titleMedium
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
                                     text = matchingPreset.description,
@@ -1453,9 +1456,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         imageVector = Icons.Rounded.PhoneAndroid,
                                         contentDescription = null,
                                         modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = preset.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(text = preset.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                                         Text(
                                             text = preset.description,
                                             style = MaterialTheme.typography.bodySmall,
@@ -1546,12 +1550,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 AutoAIIconWithUrl(
                                     name = preset.name,
                                     customIconUri = preset.customIconUri,
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(40.dp),
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = preset.name,
-                                        style = MaterialTheme.typography.titleMedium
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
                                         text = preset.description,

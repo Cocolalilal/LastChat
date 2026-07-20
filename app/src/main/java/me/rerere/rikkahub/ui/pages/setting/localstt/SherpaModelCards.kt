@@ -3,15 +3,20 @@ package me.rerere.rikkahub.ui.pages.setting.localstt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -67,7 +72,7 @@ fun SherpaInstalledModelCard(
             containerColor = if (isDark) {
                 MaterialTheme.colorScheme.surfaceContainerLow
             } else {
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerHighest
             },
         ),
     ) {
@@ -118,30 +123,36 @@ fun SherpaDownloadableModelCard(
     onCancel: () -> Unit,
     onDismissFailure: () -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = AppShapes.CardMedium,
 ) {
     val isDark = LocalDarkMode.current
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = AppShapes.CardMedium,
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = if (isDark) {
                 MaterialTheme.colorScheme.surfaceContainerLow
             } else {
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerHighest
             },
         ),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(model.name, style = MaterialTheme.typography.titleMedium)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        model.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         text = listOf(
                             formatBytes(model.archiveSizeBytes),
@@ -150,11 +161,6 @@ fun SherpaDownloadableModelCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                if (download == null || download is SherpaDownload.Failed) {
-                    Button(onClick = onDownload) {
-                        Text(if (download is SherpaDownload.Failed) "Retry" else "Download")
-                    }
                 }
             }
             Text(
@@ -167,6 +173,19 @@ fun SherpaDownloadableModelCard(
                 onCancel = onCancel,
                 onDismissFailure = onDismissFailure,
             )
+            if (download == null || download is SherpaDownload.Failed) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = onDownload) {
+                        Icon(
+                            imageVector = if (download is SherpaDownload.Failed) Icons.Rounded.Refresh else Icons.Rounded.DownloadForOffline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (download is SherpaDownload.Failed) "Retry" else "Download")
+                    }
+                }
+            }
         }
     }
 }

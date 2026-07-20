@@ -1044,7 +1044,6 @@ private fun MenuPage(
             currentAssistantId = state.assistant.id,
             title = "Assistants",
             noSystemPromptLabel = "No system prompt",
-            isDarkMode = darkTheme,
             onAssistantSelected = onSelectAssistant,
             onNavigate = {
                 showAssistantPicker = false

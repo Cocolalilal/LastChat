@@ -72,7 +72,6 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerItem
 import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerTag
 import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerSheet
@@ -177,7 +176,6 @@ fun AssistantPickerSheet(
         title = stringResource(R.string.assistant_page_title),
         noSystemPromptLabel = noSystemPromptLabel,
         tags = pickerTags,
-        isDarkMode = LocalDarkMode.current,
         onAssistantSelected = { id -> assistantsById[id]?.let(onAssistantSelected) },
         onNavigate = { id -> assistantsById[id]?.let(onNavigate) },
         onEdit = { id -> navController.navigate(Screen.AssistantDetail(id)) },
