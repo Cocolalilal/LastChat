@@ -469,6 +469,7 @@ class GenerationHandler(
         enabledModeIds: Set<Uuid> = emptySet(),
         enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
+        contextSummary: String? = null,
     ): Flow<GenerationChunk> = channelFlow {
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
@@ -577,6 +578,7 @@ class GenerationHandler(
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
                 conversationEnabledLorebookIds = enabledLorebookIds,
                 activeConversationId = activeConversationId,
+                contextSummary = contextSummary,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -704,6 +706,7 @@ class GenerationHandler(
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
+        contextSummary: String? = null,
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -1191,6 +1194,9 @@ class GenerationHandler(
             topOfChatSkills.forEach { add(skillMessage(it)) }
             
             val dynamicContext = buildList {
+                if (!contextSummary.isNullOrBlank()) {
+                    add("[Conversation Summary (Earlier context)]:\n$contextSummary")
+                }
                 if (selectedMemories.isNotEmpty()) {
                     add(buildMemoryPrompt(model, selectedMemories))
                 }
@@ -1333,6 +1339,7 @@ class GenerationHandler(
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
+        contextSummary: String? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1346,6 +1353,7 @@ class GenerationHandler(
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
             activeConversationId = activeConversationId,
+            contextSummary = contextSummary,
         )
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes

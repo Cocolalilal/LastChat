@@ -1552,6 +1552,7 @@ class ChatService(
                 enabledModeIds = conversation.enabledModeIds,
                 enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
+                contextSummary = conversation.contextSummary,
             ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
