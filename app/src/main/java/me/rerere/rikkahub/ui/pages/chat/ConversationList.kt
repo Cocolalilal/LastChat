@@ -440,7 +440,7 @@ private fun ConversationItem(
                     modifier = Modifier
                         .padding(start = 8.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
+                        .background(LocalContentColor.current)
                         .size(7.dp)
                 )
             }
