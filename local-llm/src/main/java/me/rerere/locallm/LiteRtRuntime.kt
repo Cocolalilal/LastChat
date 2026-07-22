@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import me.rerere.common.platform.PlatformLog
 
 /** An engine that is loaded and ready, together with the model + backends it was loaded with. */
 class LoadedEngine internal constructor(
@@ -53,11 +54,15 @@ class LiteRtRuntime(
 
         disposeLocked()
 
-        when (val mem = MemoryGuard.check(context, model.sizeInBytes, kvCacheTokens, model.minDeviceMemoryGb)) {
+        when (val mem = MemoryGuard.check(context, model.sizeInBytes, model.minDeviceMemoryGb)) {
             is MemoryCheck.Insufficient -> {
                 _state.value = LocalRuntimeState.Error(model.id, "insufficient_memory")
                 throw InsufficientMemoryException(mem)
             }
+            is MemoryCheck.Advisory -> PlatformLog.w(
+                TAG,
+                "Attempting ${model.id} on ${mem.deviceMb} MB total RAM; allowlist recommends ${mem.recommendedMb} MB",
+            )
             MemoryCheck.Ok -> Unit
         }
 
@@ -161,6 +166,7 @@ class LiteRtRuntime(
     class InsufficientMemoryException(val info: MemoryCheck.Insufficient) : Exception("insufficient_memory")
 
     companion object {
+        private const val TAG = "LiteRtRuntime"
         private const val KEY_PENDING_GPU = "pending_gpu_model"
 
         private fun requestedKvCacheSize(model: InstalledLocalModel): Int {

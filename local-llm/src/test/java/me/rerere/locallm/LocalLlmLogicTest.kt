@@ -165,4 +165,26 @@ class MemoryGuardPolicyTest {
         assertEquals(16_384, MemoryGuard.safeContextTokenCap(12))
         assertEquals(32_768, MemoryGuard.safeContextTokenCap(16))
     }
+
+    @Test
+    fun `allowlist memory shortfall is advisory like Edge Gallery`() {
+        val result = MemoryGuard.evaluate(
+            totalRamGb = 8,
+            modelSizeBytes = 3_659_530_240L,
+            minDeviceMemoryGb = 12,
+        )
+
+        assertTrue(result is MemoryCheck.Advisory)
+    }
+
+    @Test
+    fun `compatible device is allowed without an available memory estimate`() {
+        val result = MemoryGuard.evaluate(
+            totalRamGb = 8,
+            modelSizeBytes = 2_588_147_712L,
+            minDeviceMemoryGb = 8,
+        )
+
+        assertEquals(MemoryCheck.Ok, result)
+    }
 }

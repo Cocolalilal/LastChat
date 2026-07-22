@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,6 +99,7 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.utils.Version
 import me.rerere.rikkahub.utils.onSuccess
 import coil3.compose.AsyncImage
+import kotlin.uuid.Uuid
 
 @Composable
 fun ChatDrawerContent(
@@ -137,6 +139,16 @@ fun ChatDrawerContent(
     val conversationJobs by vm.conversationJobs.collectAsStateWithLifecycle(
         initialValue = emptyMap(),
     )
+    var completedGenerationIds by remember { mutableStateOf(emptySet<Uuid>()) }
+
+    LaunchedEffect(vm) {
+        vm.generationDoneFlow.collect { conversationId ->
+            completedGenerationIds = completedGenerationIds + conversationId
+        }
+    }
+    LaunchedEffect(conversationJobs.keys.toSet()) {
+        completedGenerationIds = completedGenerationIds - conversationJobs.keys
+    }
 
     val recentlyRestoredIds by vm.recentlyRestoredIds.collectAsStateWithLifecycle()
 
@@ -235,6 +247,7 @@ fun ChatDrawerContent(
                 current = current,
                 conversations = conversations,
                 conversationJobs = conversationJobs.keys,
+                completedGenerationIds = completedGenerationIds,
                 recentlyRestoredIds = recentlyRestoredIds,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { vm.updateSearchQuery(it) },
@@ -244,6 +257,7 @@ fun ChatDrawerContent(
                     .fillMaxWidth()
                     .weight(1f),
                 onClick = {
+                    completedGenerationIds = completedGenerationIds - it.id
                     // Only pass search query if the match was from message content (not title)
                     // This scrolls to the matching message; for title matches, just open normally
                     val titleMatches = searchQuery.isNotBlank() && it.title.contains(searchQuery, ignoreCase = true)

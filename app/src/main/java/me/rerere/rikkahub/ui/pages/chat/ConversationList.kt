@@ -29,7 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -70,7 +72,6 @@ import me.rerere.rikkahub.ui.components.nav.LastChatDrawerSearch
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
@@ -95,6 +96,7 @@ fun ColumnScope.ConversationList(
     current: Conversation,
     conversations: LazyPagingItems<ConversationListItem>,
     conversationJobs: Collection<Uuid>,
+    completedGenerationIds: Set<Uuid> = emptySet(),
     recentlyRestoredIds: Set<Uuid> = emptySet(),
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
@@ -212,6 +214,7 @@ fun ColumnScope.ConversationList(
                             conversation = item.conversation,
                             selected = item.conversation.id == current.id,
                             loading = item.conversation.id in conversationJobs,
+                            generationComplete = item.conversation.id in completedGenerationIds,
                             isRecentlyRestored = item.conversation.id in recentlyRestoredIds,
                             onClick = onClick,
                             onDelete = onDelete,
@@ -328,6 +331,7 @@ private fun ConversationItem(
     conversation: Conversation,
     selected: Boolean,
     loading: Boolean,
+    generationComplete: Boolean,
     isRecentlyRestored: Boolean = false,
     modifier: Modifier = Modifier,
     onDelete: (Conversation) -> Unit = {},
@@ -421,14 +425,25 @@ private fun ConversationItem(
                 )
             }
             AnimatedVisibility(loading) {
-                Box(
+                CircularProgressIndicator(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.extendColors.green6)
-                        .size(4.dp)
+                        .padding(start = 8.dp)
+                        .size(14.dp)
                         .semantics {
                             contentDescription = loadingDescription
-                        }
+                        },
+                    color = LocalContentColor.current,
+                    trackColor = Color.Transparent,
+                    strokeWidth = 2.dp,
+                )
+            }
+            AnimatedVisibility(!loading && generationComplete) {
+                Box(
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .size(7.dp)
                 )
             }
             DropdownMenu(

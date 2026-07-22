@@ -8,6 +8,13 @@ import android.os.Build
 sealed interface MemoryCheck {
     data object Ok : MemoryCheck
 
+    /** The allowlist recommends more total RAM, but the model may still be attempted. */
+    data class Advisory(
+        val recommendedMb: Long,
+        val modelMb: Long,
+        val deviceMb: Long,
+    ) : MemoryCheck
+
     data class Insufficient(
         val requiredMb: Long,
         val modelMb: Long,
@@ -22,9 +29,10 @@ sealed interface MemoryCheck {
  * and lets the user proceed, because available RAM fluctuates with background processes and is not
  * a reliable indicator of whether a model will load successfully.
  *
- * We also keep process-safety checks for current memory pressure and a conservative working-set
- * estimate. Those checks turn a likely native OOM into a recoverable error while leaving ordinary
- * fluctuations alone when the model still has sufficient headroom.
+ * Do not hard-block based on [ActivityManager.MemoryInfo.availMem]. Android reclaims cached process
+ * memory on demand, LiteRT can memory-map model data, and Gallery deliberately avoids treating that
+ * fluctuating snapshot as the amount a model can load. Runtime serialization, idle eviction, and
+ * the adaptive context cap provide the actual process-safety controls.
  */
 object MemoryGuard {
 
@@ -48,20 +56,19 @@ object MemoryGuard {
     fun check(
         context: Context,
         modelSizeBytes: Long,
-        kvCacheTokens: Int = 4096,
+        minDeviceMemoryGb: Int? = null,
+    ): MemoryCheck = evaluate(
+        totalRamGb = deviceTotalRamGb(context),
+        modelSizeBytes = modelSizeBytes,
+        minDeviceMemoryGb = minDeviceMemoryGb,
+    )
+
+    internal fun evaluate(
+        totalRamGb: Int,
+        modelSizeBytes: Long,
         minDeviceMemoryGb: Int? = null,
     ): MemoryCheck {
-        val totalRamGb = deviceTotalRamGb(context)
         val requiredGb = minDeviceMemoryGb ?: DEFAULT_MIN_DEVICE_MEMORY_GB
-
-        // Primary check: device total RAM must meet the model's minimum (same as Edge Gallery).
-        if (totalRamGb < requiredGb) {
-            return MemoryCheck.Insufficient(
-                requiredMb = requiredGb.toLong() * 1024,
-                modelMb = modelSizeBytes / (1024 * 1024),
-                availableMb = totalRamGb.toLong() * 1024,
-            )
-        }
 
         // Secondary safety: if the model file alone is >80% of total RAM, it physically cannot fit.
         val totalRamBytes = totalRamGb.toLong() * 1_000_000_000L
@@ -73,17 +80,11 @@ object MemoryGuard {
             )
         }
 
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val info = ActivityManager.MemoryInfo()
-        am.getMemoryInfo(info)
-        val reserveBytes = maxOf(MIN_SYSTEM_RESERVE_BYTES, totalRamBytes * SYSTEM_RESERVE_PERCENT / 100)
-        val estimatedWorkingSet = modelSizeBytes * MODEL_OVERHEAD_PERCENT / 100 +
-            kvCacheTokens.toLong() * ESTIMATED_KV_BYTES_PER_TOKEN + reserveBytes
-        if (info.lowMemory || info.availMem < estimatedWorkingSet) {
-            return MemoryCheck.Insufficient(
-                requiredMb = estimatedWorkingSet / (1024 * 1024),
+        if (totalRamGb < requiredGb) {
+            return MemoryCheck.Advisory(
+                recommendedMb = requiredGb.toLong() * 1024,
                 modelMb = modelSizeBytes / (1024 * 1024),
-                availableMb = info.availMem / (1024 * 1024),
+                deviceMb = totalRamGb.toLong() * 1024,
             )
         }
 
@@ -100,8 +101,4 @@ object MemoryGuard {
 
     /** Default minimum device RAM when the model's allowlist entry doesn't specify one. */
     private const val DEFAULT_MIN_DEVICE_MEMORY_GB = 6
-    private const val MODEL_OVERHEAD_PERCENT = 110L
-    private const val SYSTEM_RESERVE_PERCENT = 15L
-    private const val ESTIMATED_KV_BYTES_PER_TOKEN = 64L * 1024L
-    private const val MIN_SYSTEM_RESERVE_BYTES = 512L * 1024L * 1024L
 }
