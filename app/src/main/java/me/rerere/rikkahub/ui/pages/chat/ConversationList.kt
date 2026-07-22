@@ -29,9 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -425,16 +425,14 @@ private fun ConversationItem(
                 )
             }
             AnimatedVisibility(loading) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier
                         .padding(start = 8.dp)
-                        .size(14.dp)
+                        .size(18.dp)
                         .semantics {
                             contentDescription = loadingDescription
                         },
                     color = LocalContentColor.current,
-                    trackColor = Color.Transparent,
-                    strokeWidth = 2.dp,
                 )
             }
             AnimatedVisibility(!loading && generationComplete) {

@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 
 /**
  * The shared interaction surface used by the production conversation list.
@@ -48,7 +49,11 @@ fun ConversationRowSurface(
         label = "conversation_alpha",
     )
     val backgroundColor = if (selected) {
-        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
+        if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
+        }
     } else {
         Color.Transparent
     }
