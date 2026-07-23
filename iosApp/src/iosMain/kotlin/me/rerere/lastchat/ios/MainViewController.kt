@@ -20,6 +20,8 @@ private val controller = run {
     IosAppController(
         fileStore = platformServices.fileStore,
         secureStore = platformServices.secureSettingsStore,
+        httpClient = platformServices.httpClient,
+        javaScriptExecutor = IosJavaScriptCoreExecutor(),
         providerManager = ProviderManager(
             platformHttpClient = platformServices.httpClient,
             platformMediaEncoder = platformServices.mediaEncoder,

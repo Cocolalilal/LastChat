@@ -319,8 +319,13 @@ the same tappable attachment row used for native image message parts. The
 drawer Imagine action and standalone generator/gallery route now use that same
 repository state, including the generator/gallery crossfade, Android-shaped
 floating prompt surface, aspect/count configuration sheet, cancellation,
-preview opening, persistent adaptive grid, and deletion. Image-to-image input
-and the ComfyUI workflow editor remain explicit parity work.
+  preview opening, persistent adaptive grid, and deletion. The same route now
+  supports optional image-to-image input for multimodal image models and a
+  complete ComfyUI API-workflow configuration path (server URL, checkpoint,
+  workflow JSON, and prompt/model node mappings). Per-assistant JavaScript
+  execution also uses the Android `eval_javascript` tool contract. Android
+  keeps QuickJS; iOS creates an isolated Apple JavaScriptCore context per call
+  and exposes no browser, filesystem, or network globals.
 - `ChatDatabase`: keep Room on Android, introduce repository interfaces that an iOS SQLite/SQLDelight implementation can satisfy.
 - `PlatformHaptics`: keep `PremiumHaptics` as the Android implementation and add an iOS implementation that maps `Pop`, `Thud`, and `Success` to native feedback generators.
 - `TtsAudioPlayer`: Media3 remains the Android implementation and AVFoundation
@@ -388,7 +393,14 @@ Current iOS app status:
 - iOS state writes are serialized through a mutex and streaming messages use
   the same one-second persistence checkpoint interval as Android, preventing an
   older asynchronous save from overwriting newer conversation or draft state;
-- inline attachment audio, remaining tools, local models, and the remaining
+- Roleplay optimization rules now persist on iOS and use the Android pattern
+  contract for Markdown emphasis, headings, blockquotes, inline code, and
+  custom paired delimiters. Add/edit/delete/toggle controls feed the live chat
+  renderer rather than a preview-only settings state;
+- the Fonts destination applies its persisted phone-system-font toggle to the
+  entire Material theme and previews app and code typography. The bundled
+  Google Sans Flex family remains the default, matching Android;
+- inline attachment audio, local models, and the remaining
   screens still require iOS adapters or portable repositories before the iOS
   app is feature-complete.
 

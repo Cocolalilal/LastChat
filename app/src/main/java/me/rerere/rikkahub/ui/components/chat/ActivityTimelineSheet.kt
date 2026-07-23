@@ -426,7 +426,7 @@ internal fun ActivityTimelinePanel(
     var deleteTarget by remember { mutableStateOf<MemoryDeleteTarget?>(null) }
     var deletedMemoryIds by remember { mutableStateOf(setOf<Int>()) }
     val context = LocalContext.current
-    val toaster = runCatching { LocalToaster.current }.getOrNull()
+    val toaster = LocalToaster.current
     val entryIds = remember(entries) { entries.map { it.id } }
     val currentEntryIndex = remember(entries) {
         findCurrentEntryIndex(entries)

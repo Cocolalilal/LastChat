@@ -69,6 +69,7 @@ private data class OAuthClientRegistration(
     val redirectUri: String? = null,
     val registrationEndpoint: String? = null,
     val scope: String? = null,
+    val tokenEndpointAuthMethod: String = "none",
 )
 
 @Serializable
@@ -104,6 +105,7 @@ private data class AuthorizationServerMetadata(
     val tokenEndpoint: String,
     val registrationEndpoint: String?,
     val scopes: List<String>,
+    val tokenEndpointAuthMethods: List<String>,
 )
 
 class McpOAuthManager(
@@ -167,7 +169,10 @@ class McpOAuthManager(
 
     fun authorizationHeaders(serverId: Uuid): Map<String, String> {
         val tokens = loadTokens(serverId) ?: return emptyMap()
-        return mapOf("Authorization" to "${tokens.tokenType} ${tokens.accessToken}")
+        val authorizationScheme = tokens.tokenType.trim()
+            .let { if (it.equals("bearer", ignoreCase = true)) "Bearer" else it }
+            .ifBlank { "Bearer" }
+        return mapOf("Authorization" to "$authorizationScheme ${tokens.accessToken.trim()}")
     }
 
     fun invalidateCredentials(serverId: Uuid) {
@@ -258,16 +263,23 @@ class McpOAuthManager(
             ?: error("The authorization server does not support automatic client registration")
         val scopes = resourceMetadata.scopes.ifEmpty { serverMetadata.scopes }
         val registrationScope = scopes.joinToString(" ")
+        val tokenEndpointAuthMethod = when {
+            "none" in serverMetadata.tokenEndpointAuthMethods -> "none"
+            "client_secret_post" in serverMetadata.tokenEndpointAuthMethods -> "client_secret_post"
+            else -> error("The authorization server does not support a compatible token authentication method")
+        }
         val registration = loadRegistration(config.id)
             ?.takeIf {
                 it.redirectUri == redirectUri &&
                     it.registrationEndpoint == registrationEndpoint &&
-                    it.scope == registrationScope
+                    it.scope == registrationScope &&
+                    it.tokenEndpointAuthMethod == tokenEndpointAuthMethod
             }
             ?: registerClient(
                 endpoint = registrationEndpoint,
                 redirectUri = redirectUri,
                 scope = scopes,
+                tokenEndpointAuthMethod = tokenEndpointAuthMethod,
             ).also { saveRegistration(config.id, it) }
 
         val verifier = randomUrlSafe(64)
@@ -471,6 +483,8 @@ class McpOAuthManager(
                 ?: error("OAuth metadata is missing the token endpoint"),
             registrationEndpoint = json.string("registration_endpoint"),
             scopes = json.arrayStrings("scopes_supported"),
+            tokenEndpointAuthMethods = json.arrayStrings("token_endpoint_auth_methods_supported")
+                .ifEmpty { listOf("none") },
         )
     }
 
@@ -478,10 +492,11 @@ class McpOAuthManager(
         endpoint: String,
         redirectUri: String,
         scope: List<String>,
+        tokenEndpointAuthMethod: String,
     ): OAuthClientRegistration {
         val body = buildJsonObject {
             put("client_name", "LastChat")
-            put("token_endpoint_auth_method", "none")
+            put("token_endpoint_auth_method", tokenEndpointAuthMethod)
             put("redirect_uris", JsonArray(listOf(JsonPrimitive(redirectUri))))
             put("grant_types", JsonArray(listOf(JsonPrimitive("authorization_code"), JsonPrimitive("refresh_token"))))
             put("response_types", JsonArray(listOf(JsonPrimitive("code"))))
@@ -508,6 +523,7 @@ class McpOAuthManager(
             redirectUri = redirectUri,
             registrationEndpoint = endpoint,
             scope = scope.joinToString(" "),
+            tokenEndpointAuthMethod = tokenEndpointAuthMethod,
         )
     }
 
@@ -534,7 +550,9 @@ class McpOAuthManager(
         return OAuthTokens(
             accessToken = json.string("access_token") ?: error("The OAuth response did not include an access token"),
             refreshToken = json.string("refresh_token"),
-            tokenType = json.string("token_type") ?: "Bearer",
+            tokenType = json.string("token_type")
+                ?.let { if (it.equals("bearer", ignoreCase = true)) "Bearer" else it }
+                ?: "Bearer",
             expiresAtEpochSeconds = expiresIn?.let { Clock.System.now().epochSeconds + it },
             scope = json.string("scope"),
         )

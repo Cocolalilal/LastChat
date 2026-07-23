@@ -38,11 +38,15 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.ImageAspectRatio
+import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.common.platform.PlatformFileStore
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.SecureSettingsStore
@@ -84,6 +88,18 @@ enum class IosColorMode { SYSTEM, LIGHT, DARK }
 data class IosAppearancePreferences(
     val themeId: String = "seafoam_mint",
     val colorMode: IosColorMode = IosColorMode.SYSTEM,
+    val usePhoneSystemFont: Boolean = false,
+    val showAssistantBubbles: Boolean = true,
+    val fontSizeRatio: Float = 1.0f,
+    val rpStyleRules: List<IosRpStyleRule> = emptyList(),
+)
+
+@Serializable
+data class IosRpStyleRule(
+    val id: String = Uuid.random().toString(),
+    val pattern: String = "*",
+    val colorHex: String = "#808080",
+    val enabled: Boolean = true,
 )
 
 @Serializable
@@ -100,7 +116,7 @@ data class IosAssistantPreferences(
 )
 
 @Serializable
-enum class IosLocalToolOption { NOTIFICATIONS, TTS, ASK_USER, IMAGE_GENERATION }
+enum class IosLocalToolOption { JAVASCRIPT, NOTIFICATIONS, TTS, ASK_USER, IMAGE_GENERATION }
 
 @Serializable
 enum class IosMemoryMode { OFF, BASIC, SEARCHABLE, ADAPTIVE }
@@ -161,8 +177,23 @@ data class IosTtsPreferences(
 @Serializable
 data class IosImageGenerationPreferences(
     val enabled: Boolean = false,
-    val providerType: IosProviderType = IosProviderType.OPENAI,
+    val providerType: IosImageProviderType = IosImageProviderType.OPENAI,
     val modelId: String = "gpt-image-1",
+    val method: ImageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+    val comfyUi: IosComfyUiPreferences = IosComfyUiPreferences(),
+)
+
+@Serializable
+enum class IosImageProviderType { OPENAI, GOOGLE, COMFY_UI }
+
+@Serializable
+data class IosComfyUiPreferences(
+    val baseUrl: String = "http://127.0.0.1:8188",
+    val workflowJson: String = "",
+    val promptNodeId: String = "",
+    val promptInputName: String = "text",
+    val modelNodeId: String = "",
+    val modelInputName: String = "ckpt_name",
 )
 
 @Serializable
@@ -264,6 +295,8 @@ data class IosAppState(
 class IosAppController(
     private val fileStore: PlatformFileStore,
     private val secureStore: SecureSettingsStore,
+    private val httpClient: PlatformHttpClient,
+    private val javaScriptExecutor: IosJavaScriptExecutor,
     private val providerManager: ProviderManager,
     private val ttsController: TtsController,
     private val notificationPlatform: IosLocalNotificationPlatform,
@@ -669,13 +702,44 @@ class IosAppController(
             mutableState.update { it.copy(error = "Select an image generation model first.") }
             return
         }
+        if (
+            preferences.enabled &&
+            preferences.providerType == IosImageProviderType.COMFY_UI &&
+            preferences.comfyUi.workflowJson.isBlank()
+        ) {
+            mutableState.update { it.copy(error = "Import a ComfyUI API workflow JSON first.") }
+            return
+        }
         mutableState.update {
-            it.copy(imageGeneration = preferences.copy(modelId = modelId), error = null)
+            it.copy(
+                imageGeneration = preferences.copy(
+                    modelId = modelId,
+                    method = if (preferences.providerType == IosImageProviderType.COMFY_UI) {
+                        ImageGenerationMethod.DIFFUSION
+                    } else {
+                        preferences.method
+                    },
+                    comfyUi = preferences.comfyUi.copy(
+                        baseUrl = preferences.comfyUi.baseUrl.trim(),
+                        workflowJson = preferences.comfyUi.workflowJson.trim(),
+                        promptNodeId = preferences.comfyUi.promptNodeId.trim(),
+                        promptInputName = preferences.comfyUi.promptInputName.trim().ifBlank { "text" },
+                        modelNodeId = preferences.comfyUi.modelNodeId.trim(),
+                        modelInputName = preferences.comfyUi.modelInputName.trim().ifBlank { "ckpt_name" },
+                    ),
+                ),
+                error = null,
+            )
         }
         persistAsync()
     }
 
-    fun generateImages(prompt: String, aspectRatio: String, count: Int = 1) {
+    fun generateImages(
+        prompt: String,
+        aspectRatio: String,
+        count: Int = 1,
+        inputImage: PlatformPickedFile? = null,
+    ) {
         val normalizedPrompt = prompt.trim()
         if (normalizedPrompt.isBlank() || mutableState.value.imageGenerating) return
         imageGenerationJob = scope.launch {
@@ -685,7 +749,7 @@ class IosAppController(
                     put("prompt", normalizedPrompt)
                     put("aspect_ratio", aspectRatio)
                     put("count", count.coerceIn(1, 4))
-                })
+                }, inputImage)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
@@ -728,7 +792,52 @@ class IosAppController(
 
     fun saveAppearance(themeId: String, colorMode: IosColorMode) {
         mutableState.update {
-            it.copy(appearance = IosAppearancePreferences(themeId, colorMode))
+            it.copy(
+                appearance = it.appearance.copy(
+                    themeId = themeId,
+                    colorMode = colorMode,
+                )
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveUiCustomization(showAssistantBubbles: Boolean, fontSizeRatio: Float) {
+        mutableState.update {
+            it.copy(
+                appearance = it.appearance.copy(
+                    showAssistantBubbles = showAssistantBubbles,
+                    fontSizeRatio = fontSizeRatio.coerceIn(0.5f, 2.0f),
+                )
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveFontSettings(usePhoneSystemFont: Boolean) {
+        mutableState.update {
+            it.copy(
+                appearance = it.appearance.copy(
+                    usePhoneSystemFont = usePhoneSystemFont,
+                )
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveRpStyleRules(rules: List<IosRpStyleRule>) {
+        mutableState.update {
+            it.copy(
+                appearance = it.appearance.copy(
+                    rpStyleRules = rules.mapNotNull { rule ->
+                        val pattern = rule.pattern.trim()
+                        val colorHex = normalizeIosColorHex(rule.colorHex) ?: return@mapNotNull null
+                        rule.copy(pattern = pattern, colorHex = colorHex).takeIf {
+                            pattern.isNotEmpty()
+                        }
+                    },
+                )
+            )
         }
         persistAsync()
     }
@@ -2015,6 +2124,29 @@ class IosAppController(
             put("type", "string")
             put("description", description)
         }
+        if (IosLocalToolOption.JAVASCRIPT in assistant.localTools) {
+            add(
+                Tool(
+                    name = "eval_javascript",
+                    description = "Execute JavaScript code with QuickJS. If use this tool to calculate math, better to add `toFixed` to the code.",
+                    parameters = {
+                        InputSchema.Obj(
+                            properties = buildJsonObject {
+                                put("code", stringProperty("The JavaScript code to execute"))
+                            },
+                        )
+                    },
+                    execute = { arguments ->
+                        val code = ((arguments as? JsonObject)?.get("code") as? JsonPrimitive)
+                            ?.content
+                            ?: error("code is required")
+                        buildJsonObject {
+                            put("result", javaScriptExecutor.execute(code))
+                        }
+                    },
+                )
+            )
+        }
         if (IosLocalToolOption.NOTIFICATIONS in assistant.localTools) {
             add(
                 Tool(
@@ -2277,7 +2409,10 @@ class IosAppController(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun generateToolImages(arguments: JsonElement): JsonObject {
+    private suspend fun generateToolImages(
+        arguments: JsonElement,
+        inputImage: PlatformPickedFile? = null,
+    ): JsonObject {
         val params = arguments as? JsonObject ?: error("arguments must be an object")
         val prompt = (params["prompt"] as? JsonPrimitive)?.content?.trim().orEmpty()
         require(prompt.isNotBlank()) { "prompt is required" }
@@ -2290,54 +2425,111 @@ class IosAppController(
         val snapshot = mutableState.value
         val imagePreferences = snapshot.imageGeneration
         require(imagePreferences.enabled) { "No image generation model selected" }
-        require(imagePreferences.providerType != IosProviderType.CLAUDE) {
-            "Claude does not support image generation"
-        }
-        val providerPreferences = snapshot.providerConfigurations
-            .firstOrNull { it.type == imagePreferences.providerType }
-            ?: error("Image generation provider not found")
-        val apiKey = secureStore.readString(apiKeyName(imagePreferences.providerType)).orEmpty()
-        require(apiKey.isNotBlank()) { "Configure the image provider API key first" }
-        val model = Model(
+        val configuredModel = Model(
             modelId = imagePreferences.modelId,
             displayName = imagePreferences.modelId,
             type = ModelType.IMAGE,
-            inputModalities = listOf(Modality.TEXT),
+            inputModalities = if (inputImage == null) {
+                listOf(Modality.TEXT)
+            } else {
+                listOf(Modality.TEXT, Modality.IMAGE)
+            },
             outputModalities = listOf(Modality.IMAGE),
-            imageGenerationMethod = ImageGenerationMethod.DIFFUSION,
+            imageGenerationMethod = imagePreferences.method,
         )
+        val model = if (imagePreferences.providerType == IosImageProviderType.COMFY_UI) {
+            configuredModel.withComfyDefaults()
+        } else {
+            configuredModel
+        }
         val providerSetting: ProviderSetting = when (imagePreferences.providerType) {
-            IosProviderType.OPENAI -> ProviderSetting.OpenAI(
+            IosImageProviderType.OPENAI -> {
+                val providerPreferences = snapshot.providerConfigurations
+                    .firstOrNull { it.type == IosProviderType.OPENAI }
+                    ?: error("OpenAI image provider not found")
+                val apiKey = secureStore.readString(apiKeyName(IosProviderType.OPENAI)).orEmpty()
+                require(apiKey.isNotBlank()) { "Configure the OpenAI API key first" }
+                ProviderSetting.OpenAI(
                 name = "OpenAI compatible",
                 apiKey = apiKey,
                 baseUrl = providerPreferences.baseUrl,
                 models = listOf(model),
             )
-            IosProviderType.GOOGLE -> ProviderSetting.Google(
+            }
+            IosImageProviderType.GOOGLE -> {
+                val providerPreferences = snapshot.providerConfigurations
+                    .firstOrNull { it.type == IosProviderType.GOOGLE }
+                    ?: error("Google image provider not found")
+                val apiKey = secureStore.readString(apiKeyName(IosProviderType.GOOGLE)).orEmpty()
+                require(apiKey.isNotBlank()) { "Configure the Google API key first" }
+                ProviderSetting.Google(
                 name = "Google",
                 apiKey = apiKey,
                 baseUrl = providerPreferences.baseUrl,
                 models = listOf(model),
             )
-            IosProviderType.CLAUDE -> error("Claude does not support image generation")
+            }
+            IosImageProviderType.COMFY_UI -> ProviderSetting.ComfyUI(
+                baseUrl = imagePreferences.comfyUi.baseUrl,
+                workflowJson = imagePreferences.comfyUi.workflowJson,
+                promptNodeId = imagePreferences.comfyUi.promptNodeId,
+                promptInputName = imagePreferences.comfyUi.promptInputName,
+                modelNodeId = imagePreferences.comfyUi.modelNodeId,
+                modelInputName = imagePreferences.comfyUi.modelInputName,
+                models = listOf(model),
+            )
         }
-        val items = providerManager.getProviderByType(providerSetting).generateImage(
-            providerSetting = providerSetting,
-            params = ImageGenerationParams(
-                model = model,
-                prompt = prompt,
-                numOfImages = count,
-                aspectRatio = aspectRatio,
-            ),
-        ).items.take(count)
+        val provider = providerManager.getProviderByType(providerSetting)
+        val items = when (model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION) {
+            ImageGenerationMethod.DIFFUSION -> provider.generateImage(
+                providerSetting = providerSetting,
+                params = ImageGenerationParams(
+                    model = model,
+                    prompt = prompt,
+                    numOfImages = count,
+                    aspectRatio = aspectRatio,
+                ),
+            ).items
+            ImageGenerationMethod.MULTIMODAL -> {
+                val parts = buildList {
+                    if (inputImage != null) {
+                        val bytes = fileStore.readBytes(inputImage.storagePath)
+                            ?: error("The selected input image is no longer available")
+                        add(
+                            UIMessagePart.Image(
+                                "data:${inputImage.mimeType};base64,${Base64.Default.encode(bytes)}"
+                            )
+                        )
+                    }
+                    add(UIMessagePart.Text(prompt))
+                }
+                val result = provider.generateText(
+                    providerSetting = providerSetting,
+                    messages = listOf(UIMessage(role = MessageRole.USER, parts = parts)),
+                    params = TextGenerationParams(
+                        model = model.copy(
+                            outputModalities = (model.outputModalities + Modality.IMAGE).distinct()
+                        ),
+                        tools = emptyList(),
+                    ),
+                )
+                result.choices.flatMap { choice ->
+                    choice.message?.parts.orEmpty().mapNotNull { part ->
+                        (part as? UIMessagePart.Image)?.let {
+                            ImageGenerationItem(data = it.url, mimeType = imageMimeTypeFromDataUrl(it.url))
+                        }
+                    }
+                }
+            }
+        }.take(count)
         require(items.isNotEmpty()) { "No images generated" }
         val saved = items.mapIndexed { index, item ->
-            val encoded = item.data.substringAfter("base64,", item.data).trim()
-            val bytes = Base64.Default.decode(encoded)
+            val bytes = readGeneratedImageBytes(item)
             val safeModel = imagePreferences.modelId.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 .take(48).ifBlank { "image" }
             val createdAt = Clock.System.now().toEpochMilliseconds()
-            val path = "images/${createdAt}_${safeModel}_tool_$index.png"
+            val extension = imageExtension(item.mimeType)
+            val path = "images/${createdAt}_${safeModel}_tool_$index.$extension"
             fileStore.writeBytes(path, bytes)
             val uri = fileStore.localUrl(path) ?: error("Generated image URL is unavailable")
             IosGeneratedImage(uri, path, prompt, imagePreferences.modelId, createdAt)
@@ -2358,6 +2550,20 @@ class IosAppController(
             }))
             put("note", "Include images[].markdown_image in your reply so the generated image appears in chat.")
         }
+    }
+
+    private suspend fun readGeneratedImageBytes(item: ImageGenerationItem): ByteArray {
+        val source = item.data.trim()
+        if (source.startsWith("http://") || source.startsWith("https://")) {
+            val response = httpClient.execute(PlatformHttpRequest(method = "GET", url = source))
+            require(response.statusCode in 200..299) {
+                "Generated image download failed: HTTP ${response.statusCode}"
+            }
+            return response.body
+        }
+        val encoded = source.substringAfter("base64,", source).trim()
+        return runCatching { Base64.Default.decode(encoded) }
+            .getOrElse { error("The image provider returned unsupported image data") }
     }
 
     private suspend fun buildSearchTool(preferences: IosSearchPreferences): Tool? {
@@ -2651,6 +2857,21 @@ internal fun IosSearchProviderType.displayName(): String = when (this) {
     IosSearchProviderType.OLLAMA -> "Ollama"
     IosSearchProviderType.GROK -> "Grok"
     IosSearchProviderType.NANOGPT -> "NanoGPT"
+}
+
+internal fun imageMimeTypeFromDataUrl(value: String): String {
+    if (!value.startsWith("data:", ignoreCase = true)) return "image/png"
+    return value.substringAfter("data:")
+        .substringBefore(';')
+        .takeIf { it.startsWith("image/") }
+        ?: "image/png"
+}
+
+internal fun imageExtension(mimeType: String): String = when (mimeType.lowercase().substringBefore(';')) {
+    "image/jpeg", "image/jpg" -> "jpg"
+    "image/webp" -> "webp"
+    "image/gif" -> "gif"
+    else -> "png"
 }
 
 internal fun IosSearchProviderType.requiresApiKey(): Boolean = this != IosSearchProviderType.BING

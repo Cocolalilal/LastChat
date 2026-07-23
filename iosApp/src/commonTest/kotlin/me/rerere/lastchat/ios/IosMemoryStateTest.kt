@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class IosMemoryStateTest {
     @Test
@@ -182,12 +183,90 @@ class IosMemoryStateTest {
     fun imageGenerationSelectionPersistsWithoutCredentials() {
         val preferences = IosImageGenerationPreferences(
             enabled = true,
-            providerType = IosProviderType.GOOGLE,
+            providerType = IosImageProviderType.GOOGLE,
             modelId = "imagen-3.0-generate-002",
         )
         val encoded = Json.encodeToString(preferences)
         assertEquals(preferences, Json.decodeFromString<IosImageGenerationPreferences>(encoded))
         assertFalse(encoded.contains("apiKey", ignoreCase = true))
         assertFalse(encoded.contains("secret", ignoreCase = true))
+    }
+
+    @Test
+    fun comfyUiImageWorkflowPersistsWithoutCredentials() {
+        val preferences = IosImageGenerationPreferences(
+            enabled = true,
+            providerType = IosImageProviderType.COMFY_UI,
+            modelId = "dreamshaper.safetensors",
+            comfyUi = IosComfyUiPreferences(
+                baseUrl = "http://192.168.1.10:8188",
+                workflowJson = """{"3":{"class_type":"KSampler","inputs":{}}}""",
+                promptNodeId = "6",
+                modelNodeId = "4",
+            ),
+        )
+        val encoded = Json.encodeToString(preferences)
+        assertEquals(preferences, Json.decodeFromString<IosImageGenerationPreferences>(encoded))
+        assertFalse(encoded.contains("apiKey", ignoreCase = true))
+        assertFalse(encoded.contains("secret", ignoreCase = true))
+    }
+
+    @Test
+    fun imageDataHelpersPreserveMimeAndExtension() {
+        assertEquals("image/webp", imageMimeTypeFromDataUrl("data:image/webp;base64,AAAA"))
+        assertEquals("jpg", imageExtension("image/jpeg"))
+        assertEquals("png", imageExtension("application/octet-stream"))
+    }
+
+    @Test
+    fun uiCustomizationRoundTripsWithAppearance() {
+        val appearance = IosAppearancePreferences(
+            themeId = "black",
+            colorMode = IosColorMode.DARK,
+            usePhoneSystemFont = true,
+            showAssistantBubbles = false,
+            fontSizeRatio = 1.5f,
+            rpStyleRules = listOf(
+                IosRpStyleRule(
+                    id = "italic",
+                    pattern = "*",
+                    colorHex = "#87CEEB",
+                )
+            ),
+        )
+        assertEquals(
+            appearance,
+            Json.decodeFromString<IosAppearancePreferences>(Json.encodeToString(appearance)),
+        )
+    }
+
+    @Test
+    fun roleplayStylingMatchesStandardAndCustomPairedPatterns() {
+        val styled = buildIosRoleplayText(
+            text = "*waves* and ||quietly||",
+            rules = listOf(
+                IosRpStyleRule(id = "italic", pattern = "*", colorHex = "#87CEEB"),
+                IosRpStyleRule(id = "custom", pattern = "||", colorHex = "#FFB6C1"),
+            ),
+        )
+
+        assertEquals("waves and quietly", styled.text)
+        assertTrue(styled.spanStyles.any { it.start == 0 && it.end == 5 })
+        assertTrue(styled.spanStyles.any { it.start == 10 && it.end == 17 })
+    }
+
+    @Test
+    fun roleplayStylingColorsHeadingsAndBlockquotes() {
+        val styled = buildIosRoleplayText(
+            text = "# Scene\n> A quiet room",
+            rules = listOf(
+                IosRpStyleRule(id = "heading", pattern = "#", colorHex = "#FFD700"),
+                IosRpStyleRule(id = "quote", pattern = ">", colorHex = "#90EE90"),
+            ),
+        )
+
+        assertEquals("Scene\nA quiet room", styled.text)
+        assertEquals("#AABBCC", normalizeIosColorHex("aabbcc"))
+        assertNull(normalizeIosColorHex("#not-a-color"))
     }
 }
