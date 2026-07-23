@@ -1,10 +1,19 @@
 package me.rerere.rikkahub.data.ai.mcp
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class McpOAuthDiscoveryTest {
+    @Test
+    fun recognizesNotionForItsAppCallbackCompatibilityPath() {
+        assertTrue(isNotionMcpResource("https://mcp.notion.com/mcp"))
+        assertTrue(isNotionMcpResource("https://MCP.NOTION.COM/mcp"))
+        assertFalse(isNotionMcpResource("https://mcp.linear.app/mcp"))
+    }
+
     @Test
     fun readsQuotedResourceMetadataFromChallenge() {
         val result = parseMcpResourceMetadataHeader(

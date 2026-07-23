@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -527,6 +528,7 @@ private fun McpConnectionsSheet(
                 "Add a connection",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                textAlign = TextAlign.Center,
             )
             OutlinedTextField(
                 value = searchQuery,
@@ -561,14 +563,11 @@ private fun McpConnectionsSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(Icons.Rounded.Add, null, modifier = Modifier.size(40.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Custom MCP server", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "Enter a URL, transport, and optional headers yourself.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
-                            }
+                            Text(
+                                "Custom MCP server",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -580,7 +579,7 @@ private fun McpConnectionsSheet(
                         filtered.size == 1 -> AppShapes.CardMedium
                         index == 0 -> AppShapes.ListItemFirst
                         index == filtered.lastIndex -> AppShapes.ListItemLast
-                        else -> AppShapes.ListItem
+                        else -> AppShapes.ListItemMiddle
                     }
                     Surface(
                         onClick = {
@@ -747,9 +746,9 @@ private fun McpServerItem(
                     style = MaterialTheme.typography.titleMedium,
                 )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                     // Show disabled tag only for disabled items (with gray styling)
                     if (!item.commonOptions.enable) {
                         Tag(type = TagType.DEFAULT) {
@@ -771,9 +770,25 @@ private fun McpServerItem(
                     Tag(type = TagType.SUCCESS) {
                         when (item) {
                             is McpServerConfig.SseTransportServer -> Text(stringResource(R.string.setting_mcp_transport_sse))
-                            is McpServerConfig.StreamableHTTPServer -> Text(stringResource(R.string.setting_mcp_transport_streamable_http))
+                            is McpServerConfig.StreamableHTTPServer -> Text("HTTP")
                         }
                     }
+                }
+                val currentOAuthStatus = oauthStatus
+                val currentStatus = status
+                val errorMessage = when {
+                    currentOAuthStatus is McpOAuthStatus.Error -> currentOAuthStatus.message
+                    currentStatus is McpStatus.Error -> currentStatus.message
+                    else -> null
+                }
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
 

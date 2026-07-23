@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,6 +58,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import androidx.compose.material.icons.Icons
@@ -118,6 +121,7 @@ fun ColumnScope.ConversationList(
         onExpandedChange = onSearchExpandedChange,
         placeholder = stringResource(id = R.string.chat_page_search_placeholder),
         hint = stringResource(R.string.chat_page_search_hint),
+        modifier = Modifier.zIndex(1f),
     )
 
 
@@ -240,13 +244,15 @@ fun ColumnScope.ConversationList(
             }
         }
 
-        // Top Fade - only show when can scroll backward
+        // Let the scrim begin before the search surface and become fully opaque
+        // around its midpoint, while keeping the floating search above it.
         if (canScrollBackward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .size(32.dp)
+                    .height(64.dp)
+                    .offset(y = (-36).dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(
@@ -258,13 +264,15 @@ fun ColumnScope.ConversationList(
             )
         }
 
-        // Bottom Fade - only show when can scroll forward
+        // Begin fading before the bottom controls, reaching the solid drawer
+        // background around the assistant/settings surfaces' midpoint.
         if (canScrollForward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .size(32.dp)
+                    .height(64.dp)
+                    .offset(y = 29.dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colors = listOf(

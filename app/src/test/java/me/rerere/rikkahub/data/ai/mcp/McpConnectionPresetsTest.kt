@@ -16,13 +16,15 @@ class McpConnectionPresetsTest {
         )
         assertTrue(POPULAR_MCP_CONNECTIONS.all { it.url.startsWith("https://") })
         assertTrue(POPULAR_MCP_CONNECTIONS.all { it.name.isNotBlank() && it.description.isNotBlank() })
-        assertEquals(12, POPULAR_MCP_CONNECTIONS.size)
+        assertEquals(14, POPULAR_MCP_CONNECTIONS.size)
         assertTrue(
             POPULAR_MCP_CONNECTIONS.all {
                 it.authMode == McpAuthMode.OAUTH || it.authMode == McpAuthMode.NONE
             }
         )
-        assertEquals(9, POPULAR_MCP_CONNECTIONS.count { it.authMode == McpAuthMode.OAUTH })
+        assertEquals(10, POPULAR_MCP_CONNECTIONS.count { it.authMode == McpAuthMode.OAUTH })
+        assertTrue(POPULAR_MCP_CONNECTIONS.none { it.id in setOf("stripe", "paypal") })
+        assertTrue(POPULAR_MCP_CONNECTIONS.all { it.iconUri.startsWith("icons/") && it.iconUri.endsWith(".svg") })
     }
 
     @Test

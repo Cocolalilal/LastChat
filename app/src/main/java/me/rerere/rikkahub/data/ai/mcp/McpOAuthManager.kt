@@ -14,8 +14,11 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -31,6 +34,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.common.http.urlEncode
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
@@ -46,6 +50,7 @@ import kotlin.uuid.Uuid
 private const val TAG = "McpOAuthManager"
 private const val TOKEN_REFRESH_SKEW_SECONDS = 60L
 private const val CALLBACK_PORTS_UNAVAILABLE = "OAuth callback ports are unavailable"
+private const val NOTION_OAUTH_REDIRECT_URI = "lastchat://mcp-oauth-callback"
 private val CALLBACK_PORTS = listOf(1460, 1461, 1462)
 
 sealed class McpOAuthStatus {
@@ -113,6 +118,8 @@ class McpOAuthManager(
     private val refreshLocks = mutableMapOf<Uuid, Mutex>()
     private val _statuses = MutableStateFlow<Map<Uuid, McpOAuthStatus>>(emptyMap())
     val statuses: StateFlow<Map<Uuid, McpOAuthStatus>> = _statuses.asStateFlow()
+    private val _credentialChanges = MutableSharedFlow<Uuid>(extraBufferCapacity = 16)
+    val credentialChanges: SharedFlow<Uuid> = _credentialChanges.asSharedFlow()
 
     fun startAuthorization(config: McpServerConfig) {
         scope.launch(Dispatchers.IO) {
@@ -125,19 +132,25 @@ class McpOAuthManager(
     }
 
     fun handleRedirect(uri: Uri?) {
-        if (uri?.scheme != "lastchat" || uri.host != "mcp") return
-        if (uri.getQueryParameter("status") == "complete") return
-        val serverId = uri.lastPathSegment
-            ?.takeUnless { it == "oauth" }
-            ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
-            ?: return
+        if (uri?.scheme != "lastchat") return
+        if (uri.host == "mcp" && uri.getQueryParameter("status") == "complete") return
+        val returnedState = uri.getQueryParameter("state")
+        val serverId = when (uri.host) {
+            "mcp" -> uri.lastPathSegment
+                ?.takeUnless { it == "oauth" }
+                ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+            "mcp-oauth-callback" -> settingsStore.settingsFlow.value.mcpServers
+                .firstOrNull { config -> loadSession(config.id)?.state == returnedState }
+                ?.id
+            else -> null
+        } ?: return
 
         scope.launch(Dispatchers.IO) {
             runCatching {
                 finishAuthorization(
                     serverId = serverId,
                     code = uri.getQueryParameter("code"),
-                    state = uri.getQueryParameter("state"),
+                    state = returnedState,
                     returnedIssuer = uri.getQueryParameter("iss"),
                     oauthError = uri.getQueryParameter("error"),
                     errorDescription = uri.getQueryParameter("error_description"),
@@ -157,6 +170,10 @@ class McpOAuthManager(
         return mapOf("Authorization" to "${tokens.tokenType} ${tokens.accessToken}")
     }
 
+    fun invalidateCredentials(serverId: Uuid) {
+        clearTokens(serverId)
+    }
+
     suspend fun refreshIfNeeded(serverId: Uuid) {
         refreshLock(serverId).withLock {
             // Re-read after acquiring the lock. Refresh tokens can rotate, so parallel tool
@@ -164,35 +181,54 @@ class McpOAuthManager(
             val tokens = loadTokens(serverId) ?: return@withLock
             val expiresAt = tokens.expiresAtEpochSeconds ?: return@withLock
             if (Clock.System.now().epochSeconds + TOKEN_REFRESH_SKEW_SECONDS < expiresAt) return@withLock
-            val refreshToken = tokens.refreshToken ?: run {
-                clearTokens(serverId)
-                error("MCP sign-in expired; please sign in again")
-            }
-            val pending = loadSession(serverId) ?: return@withLock
-
-            val refreshed = runCatching {
-                requestTokens(
-                    endpoint = pending.tokenEndpoint,
-                    fields = buildMap {
-                        put("grant_type", "refresh_token")
-                        put("refresh_token", refreshToken)
-                        put("client_id", pending.clientId)
-                        pending.clientSecret?.let { put("client_secret", it) }
-                        put("resource", pending.resource)
-                        tokens.scope?.let { put("scope", it) }
-                    },
-                )
-            }.getOrElse { error ->
-                if (error.message?.contains(Regex("HTTP (400|401)")) == true) {
-                    clearTokens(serverId)
-                }
-                throw error
-            }
-            saveTokens(
-                serverId,
-                refreshed.copy(refreshToken = refreshed.refreshToken ?: refreshToken),
-            )
+            refreshTokensLocked(serverId, tokens)
         }
+    }
+
+    /**
+     * Refresh after the resource server rejects an access token, even when its local expiry
+     * has not elapsed. OAuth resource servers can revoke access tokens early.
+     */
+    suspend fun refreshAfterUnauthorized(serverId: Uuid): Boolean =
+        refreshLock(serverId).withLock {
+            val tokens = loadTokens(serverId) ?: return@withLock false
+            if (tokens.refreshToken.isNullOrBlank()) {
+                clearTokens(serverId)
+                return@withLock false
+            }
+            refreshTokensLocked(serverId, tokens)
+            true
+        }
+
+    private suspend fun refreshTokensLocked(serverId: Uuid, tokens: OAuthTokens) {
+        val refreshToken = tokens.refreshToken ?: run {
+            clearTokens(serverId)
+            error("MCP sign-in expired; please sign in again")
+        }
+        val pending = loadSession(serverId) ?: error("MCP sign-in metadata is missing; please sign in again")
+
+        val refreshed = runCatching {
+            requestTokens(
+                endpoint = pending.tokenEndpoint,
+                fields = buildMap {
+                    put("grant_type", "refresh_token")
+                    put("refresh_token", refreshToken)
+                    put("client_id", pending.clientId)
+                    pending.clientSecret?.let { put("client_secret", it) }
+                    put("resource", pending.resource)
+                    tokens.scope?.let { put("scope", it) }
+                },
+            )
+        }.getOrElse { error ->
+            if (error.message?.contains(Regex("HTTP (400|401)")) == true) {
+                clearTokens(serverId)
+            }
+            throw error
+        }
+        saveTokens(
+            serverId,
+            refreshed.copy(refreshToken = refreshed.refreshToken ?: refreshToken),
+        )
     }
 
     fun disconnect(serverId: Uuid) {
@@ -213,7 +249,11 @@ class McpOAuthManager(
         }
         val resourceMetadata = discoverProtectedResource(serverUrl)
         val serverMetadata = discoverAuthorizationServer(resourceMetadata.authorizationServer)
-        val redirectUri = "http://127.0.0.1:${ensureCallbackServer()}/mcp/oauth/${config.id}"
+        val redirectUri = if (isNotionMcpResource(serverUrl)) {
+            NOTION_OAUTH_REDIRECT_URI
+        } else {
+            "http://127.0.0.1:${ensureCallbackServer()}/mcp/oauth/${config.id}"
+        }
         val registrationEndpoint = serverMetadata.registrationEndpoint
             ?: error("The authorization server does not support automatic client registration")
         val scopes = resourceMetadata.scopes.ifEmpty { serverMetadata.scopes }
@@ -311,6 +351,7 @@ class McpOAuthManager(
                 }
             )
         }
+        _credentialChanges.tryEmit(serverId)
         setStatus(serverId, McpOAuthStatus.Connected)
     }
 
@@ -440,7 +481,6 @@ class McpOAuthManager(
     ): OAuthClientRegistration {
         val body = buildJsonObject {
             put("client_name", "LastChat")
-            put("application_type", "native")
             put("token_endpoint_auth_method", "none")
             put("redirect_uris", JsonArray(listOf(JsonPrimitive(redirectUri))))
             put("grant_types", JsonArray(listOf(JsonPrimitive("authorization_code"), JsonPrimitive("refresh_token"))))
@@ -571,6 +611,9 @@ class McpOAuthManager(
         refreshLocks.getOrPut(serverId) { Mutex() }
     }
 }
+
+internal fun isNotionMcpResource(resource: String): Boolean =
+    resource.urlHostOrNull().equals("mcp.notion.com", ignoreCase = true)
 
 internal fun parseMcpResourceMetadataHeader(headers: Map<String, List<String>>): String? {
     val challenge = headers.entries

@@ -12,6 +12,15 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import io.ktor.http.HttpHeaders
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.sse.SSE
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.StringValues
+import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.pebbletemplates.pebble.PebbleEngine
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.platform.PlatformFileStore
@@ -44,8 +53,6 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpOAuthManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpTransportFactory
-import me.rerere.rikkahub.data.ai.mcp.transport.SseClientTransport
-import me.rerere.rikkahub.data.ai.mcp.transport.StreamableHttpClientTransport
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.sync.WebDavClientFactory
 import me.rerere.rikkahub.data.sync.WebdavSync
@@ -200,26 +207,20 @@ val dataSourceModule = module {
     }
 
     single<McpTransportFactory> {
-        val platformHttpClient = get<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT))
+        val httpClient = get<HttpClient>(named(MCP_OKHTTP_CLIENT))
         val oauthManager = get<McpOAuthManager>()
         McpTransportFactory { config ->
             when (config) {
                 is McpServerConfig.SseTransportServer -> SseClientTransport(
                     urlString = config.url,
-                    client = platformHttpClient,
-                    headersProvider = {
-                        config.commonOptions.headers.toMap() +
-                            oauthManager.authorizationHeaders(config.id)
-                    },
+                    client = httpClient,
+                    requestBuilder = { appendMcpHeaders(config, oauthManager) },
                 )
 
                 is McpServerConfig.StreamableHTTPServer -> StreamableHttpClientTransport(
                     url = config.url,
-                    client = platformHttpClient,
-                    headersProvider = {
-                        config.commonOptions.headers.toMap() +
-                            oauthManager.authorizationHeaders(config.id)
-                    },
+                    client = httpClient,
+                    requestBuilder = { appendMcpHeaders(config, oauthManager) },
                 )
             }
         }
@@ -270,6 +271,20 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .build()
+    }
+
+    single<HttpClient>(named(MCP_OKHTTP_CLIENT)) {
+        val okHttpClient = get<OkHttpClient>(named(MCP_OKHTTP_CLIENT))
+        HttpClient(OkHttp) {
+            engine { preconfigured = okHttpClient }
+            install(ContentNegotiation) {
+                json(kotlinx.serialization.json.Json {
+                    prettyPrint = true
+                    isLenient = true
+                })
+            }
+            install(SSE)
+        }
     }
 
     single<OkHttpClient>(named("codex")) {
@@ -489,4 +504,20 @@ val dataSourceModule = module {
             webDavClientFactory = get(),
         )
     }
+}
+
+private fun HttpRequestBuilder.appendMcpHeaders(
+    config: McpServerConfig,
+    oauthManager: McpOAuthManager,
+) {
+    headers.appendAll(StringValues.build {
+        val base = config.commonOptions.headers.toMap()
+        val hasManualAuthorization = base.keys.any { it.equals("Authorization", ignoreCase = true) }
+        val resolved = if (hasManualAuthorization) {
+            base
+        } else {
+            base + oauthManager.authorizationHeaders(config.id)
+        }
+        resolved.forEach { (name, value) -> append(name, value) }
+    })
 }
