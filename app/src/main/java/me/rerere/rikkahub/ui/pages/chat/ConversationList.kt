@@ -14,6 +14,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -111,20 +111,10 @@ fun ColumnScope.ConversationList(
     onRegenerateTitle: (Conversation) -> Unit = {},
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
     onPin: (Conversation) -> Unit = {},
-    quickActions: (@Composable () -> Unit)? = null
+    quickActions: (@Composable () -> Unit)? = null,
+    bottomContent: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val navController = LocalNavController.current
-    LastChatDrawerSearch(
-        query = searchQuery,
-        onQueryChange = onSearchQueryChange,
-        expanded = isSearchExpanded,
-        onExpandedChange = onSearchExpandedChange,
-        placeholder = stringResource(id = R.string.chat_page_search_placeholder),
-        hint = stringResource(R.string.chat_page_search_hint),
-        modifier = Modifier.zIndex(1f),
-    )
-
-
     Box(modifier = modifier) {
         val listState = rememberLazyListState()
         val canScrollBackward by remember {
@@ -138,7 +128,10 @@ fun ColumnScope.ConversationList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp) // Added padding so it has room
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                top = if (isSearchExpanded || searchQuery.isNotBlank()) 88.dp else 64.dp,
+                bottom = if (bottomContent != null) 58.dp else 8.dp,
+            ),
         ) {
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -244,45 +237,55 @@ fun ColumnScope.ConversationList(
             }
         }
 
-        // Let the scrim begin before the search surface and become fully opaque
-        // around its midpoint, while keeping the floating search above it.
         if (canScrollBackward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(64.dp)
-                    .offset(y = (-36).dp)
+                    .height(112.dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLow,
-                                Color.Transparent
+                            colorStops = arrayOf(
+                                0f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                0.35f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                1f to Color.Transparent,
                             )
                         )
                     )
             )
         }
 
-        // Begin fading before the bottom controls, reaching the solid drawer
-        // background around the assistant/settings surfaces' midpoint.
         if (canScrollForward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(64.dp)
-                    .offset(y = 29.dp)
+                    .height(96.dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.surfaceContainerLow
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                0.78f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                1f to MaterialTheme.colorScheme.surfaceContainerLow,
                             )
                         )
                     )
             )
         }
+
+        LastChatDrawerSearch(
+            query = searchQuery,
+            onQueryChange = onSearchQueryChange,
+            expanded = isSearchExpanded,
+            onExpandedChange = onSearchExpandedChange,
+            placeholder = stringResource(id = R.string.chat_page_search_placeholder),
+            hint = stringResource(R.string.chat_page_search_hint),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(1f),
+        )
+
+        bottomContent?.invoke(this)
     }
 }
 

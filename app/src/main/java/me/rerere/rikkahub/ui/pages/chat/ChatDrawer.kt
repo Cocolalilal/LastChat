@@ -52,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -243,6 +244,31 @@ fun ChatDrawerContent(
                 }
             }
 
+            fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
+                scope.launch {
+                    val draft = inputState.toDraft()
+                    val newConversation = vm.createConversationForAssistant(assistant.id)
+                    ChatSessionDraftStore.moveDraft(
+                        fromConversationId = current.id,
+                        toConversationId = newConversation.id,
+                        draft = draft,
+                    )
+                    val draftNavigation = buildAssistantSwitchNavigation(
+                        persistenceMode = activePersistenceMode,
+                    )
+                    navigateToChatPage(
+                        navController = navController,
+                        chatId = newConversation.id,
+                        initText = draftNavigation.initText,
+                        initFiles = draftNavigation.initFiles.map(String::toUri),
+                        persistenceMode = draftNavigation.persistenceMode,
+                    )
+                    dismissDrawerAfterSelection()
+                }
+            }
+            val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
+            var showCharacterPicker by remember { mutableStateOf(false) }
+
             ConversationList(
                 current = current,
                 conversations = conversations,
@@ -319,117 +345,96 @@ fun ChatDrawerContent(
                             icon = { LastChatBarChartIcon(contentDescription = null) },
                         )
                     }
-                }
-            )
-
-            fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
-                scope.launch {
-                    val draft = inputState.toDraft()
-                    val newConversation = vm.createConversationForAssistant(assistant.id)
-                    ChatSessionDraftStore.moveDraft(
-                        fromConversationId = current.id,
-                        toConversationId = newConversation.id,
-                        draft = draft,
-                    )
-                    val draftNavigation = buildAssistantSwitchNavigation(
-                        persistenceMode = activePersistenceMode,
-                    )
-                    navigateToChatPage(
-                        navController = navController,
-                        chatId = newConversation.id,
-                        initText = draftNavigation.initText,
-                        initFiles = draftNavigation.initFiles.map(String::toUri),
-                        persistenceMode = draftNavigation.persistenceMode,
-                    )
-                    dismissDrawerAfterSelection()
-                }
-            }
-            val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
-            var showCharacterPicker by remember { mutableStateOf(false) }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-            ) {
-                val actionButtonSize = 42.dp
-                val assistantAvatarSize = 30.dp
-                val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                val haptics = rememberPremiumHaptics()
-                val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
-
-                Surface(
-                    color = itemColor,
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(actionButtonSize)
-                ) {
+                },
+                bottomContent = {
                     Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(start = 12.dp, end = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .zIndex(1f),
                     ) {
-                        Box(
+                        val actionButtonSize = 42.dp
+                        val assistantAvatarSize = 30.dp
+                        val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        val haptics = rememberPremiumHaptics()
+                        val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
+
+                        Surface(
+                            color = itemColor,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    haptics.perform(HapticPattern.Pop)
-                                    if (settings.assistants.size > 1) {
-                                        showCharacterPicker = true
-                                    }
-                                },
-                            contentAlignment = Alignment.CenterStart
+                                .height(actionButtonSize),
                         ) {
-                            Text(
-                                text = assistantName,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 12.dp, end = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            haptics.perform(HapticPattern.Pop)
+                                            if (settings.assistants.size > 1) {
+                                                showCharacterPicker = true
+                                            }
+                                        },
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Text(
+                                        text = assistantName,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(assistantAvatarSize)
+                                        .clip(rememberAvatarShape(false))
+                                        .clickable {
+                                            haptics.perform(HapticPattern.Pop)
+                                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                                            dismissDrawerAfterSelection()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    DrawerAvatarVisual(
+                                        name = assistantName,
+                                        avatar = currentAssistant.avatar,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .size(assistantAvatarSize)
-                                .clip(rememberAvatarShape(false))
-                                .clickable {
-                                    haptics.perform(HapticPattern.Pop)
-                                    navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                                    dismissDrawerAfterSelection()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            DrawerAvatarVisual(
-                                name = assistantName,
-                                avatar = currentAssistant.avatar,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                        DrawerAction(
+                            icon = {
+                                LastChatSettingsIcon(contentDescription = null)
+                            },
+                            label = { Text(stringResource(R.string.settings)) },
+                            onClick = {
+                                navController.navigate(Screen.Setting)
+                                dismissDrawerAfterSelection()
+                            },
+                            containerColor = itemColor,
+                            size = actionButtonSize,
+                        )
                     }
-                }
-
-                // Settings icon
-                DrawerAction(
-                    icon = {
-                        LastChatSettingsIcon(contentDescription = null)
-                    },
-                    label = { Text(stringResource(R.string.settings)) },
-                    onClick = {
-                        navController.navigate(Screen.Setting)
-                        dismissDrawerAfterSelection()
-                    },
-                    containerColor = itemColor,
-                    size = actionButtonSize
-                )
-            }
+                },
+            )
 
             // Character picker sheet
             if (showCharacterPicker) {
