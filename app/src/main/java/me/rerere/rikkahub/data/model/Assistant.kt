@@ -66,9 +66,6 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
-    val memoryMode: AssistantMemoryMode? = null, // null preserves pre-v39 boolean combinations
-    val memoryRerankMode: MemoryRerankMode = MemoryRerankMode.AUTOMATIC,
-    val memoryRerankModelId: Uuid? = null,
     val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
     val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
     val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages
@@ -116,60 +113,6 @@ data class Assistant(
     // Per-assistant UI customization (null = use global setting)
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
-
-@Serializable
-enum class AssistantMemoryMode {
-    OFF,
-    BASIC,
-    SEARCHABLE,
-    ADAPTIVE,
-}
-
-@Serializable
-enum class MemoryRerankMode {
-    AUTOMATIC,
-    OFF,
-    LOCAL,
-    SELECTED_MODEL,
-}
-
-fun Assistant.resolvedMemoryMode(): AssistantMemoryMode = memoryMode ?: when {
-    !enableMemory -> AssistantMemoryMode.OFF
-    enableMemoryConsolidation -> AssistantMemoryMode.ADAPTIVE
-    useRagMemoryRetrieval || enableRecentChatsReference -> AssistantMemoryMode.SEARCHABLE
-    else -> AssistantMemoryMode.BASIC
-}
-
-fun Assistant.withMemoryMode(mode: AssistantMemoryMode): Assistant = when (mode) {
-    AssistantMemoryMode.OFF -> copy(
-        memoryMode = mode,
-        enableMemory = false,
-        enableMemoryConsolidation = false,
-    )
-    AssistantMemoryMode.BASIC -> copy(
-        memoryMode = mode,
-        enableMemory = true,
-        useRagMemoryRetrieval = false,
-        enableRecentChatsReference = false,
-        enableMemoryConsolidation = false,
-    )
-    AssistantMemoryMode.SEARCHABLE -> copy(
-        memoryMode = mode,
-        enableMemory = true,
-        useRagMemoryRetrieval = true,
-        enableRecentChatsReference = true,
-        enableMemoryConsolidation = false,
-        enableTimeAwareness = true,
-    )
-    AssistantMemoryMode.ADAPTIVE -> copy(
-        memoryMode = mode,
-        enableMemory = true,
-        useRagMemoryRetrieval = true,
-        enableRecentChatsReference = true,
-        enableMemoryConsolidation = true,
-        enableTimeAwareness = true,
-    )
-}
 
 internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
 

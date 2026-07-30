@@ -119,7 +119,6 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
-private const val ADAPTIVE_MEMORY_MESSAGE_THRESHOLD = 8
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
 
@@ -615,7 +614,6 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
-    private val temporalMemoryRepository: me.rerere.rikkahub.data.memory.TemporalMemoryRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -713,6 +711,9 @@ class ChatService(
             TAG,
             "Added reference for $conversationId (current references: $referenceCount)"
         )
+        // Opening or starting another chat is a cheap opportunity to catch up eligible prior
+        // conversations. WorkManager keeps this non-blocking and deduplicates concurrent scans.
+        MemoryConsolidationWorker.enqueueCatchUp(context)
     }
 
     // 移除引用
@@ -736,7 +737,7 @@ class ChatService(
         appScope.launch {
             delay(500)
             if (referenceCount == 0) {
-                enqueuePendingAdaptiveMemory(conversationId, forceNow = true)
+                enqueueAutomaticMemoryConsolidation(conversationId)
             }
             checkAllConversationsReferences()
         }
@@ -1493,41 +1494,20 @@ class ChatService(
                             .lastOrNull { it.role == MessageRole.USER }
                             ?.toText()
                             .orEmpty()
-                        val packet = temporalMemoryRepository.recall(
-                            assistantId = conversation.assistantId.toString(),
-                            query = lastUserMessage.ifBlank { conversation.title },
-                            limit = assistant.ragLimit.coerceIn(1, 20),
-                            rerankMode = assistant.memoryRerankMode,
-                            rerankModelId = assistant.memoryRerankModelId,
-                            minimumRelevance = assistant.ragSimilarityThreshold,
-                            includeCore = assistant.ragIncludeCore,
-                            includeEpisodes = assistant.ragIncludeEpisodes,
-                            includePastChats = assistant.enableRecentChatsReference,
-                        )
-                        buildList {
-                            packet.projection?.takeIf { it.isNotBlank() }?.let { projection ->
-                                add(
-                                    me.rerere.rikkahub.data.model.AssistantMemory(
-                                        id = -2,
-                                        content = projection,
-                                        stableId = "projection",
-                                    )
-                                )
-                            }
-                            packet.items.forEachIndexed { index, item ->
-                                add(
-                                    me.rerere.rikkahub.data.model.AssistantMemory(
-                                        id = item.legacyMemoryId ?: -(index + 10),
-                                        content = item.text,
-                                        type = if (item.kind == me.rerere.rikkahub.data.memory.RecallKind.EPISODE) 1 else 0,
-                                        timestamp = item.timestamp,
-                                        stableId = item.stableId.takeUnless { item.legacyMemoryId != null },
-                                        sourceConversationId = item.sourceConversationId,
-                                        sourceMessageId = item.sourceMessageId,
-                                    )
-                                )
-                            }
-                        }.take(assistant.ragLimit.coerceIn(1, 20))
+                        if (lastUserMessage.isNotBlank()) {
+                            memoryRepository.retrieveRelevantMemories(
+                                assistantId = conversation.assistantId.toString(),
+                                query = lastUserMessage,
+                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes,
+                            )
+                        } else {
+                            memoryRepository.getMemoriesOfAssistant(
+                                conversation.assistantId.toString(),
+                            ).take(50)
+                        }
                     } else {
                         // Simple mode: inject recent memories
                         memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
@@ -2423,26 +2403,11 @@ class ChatService(
     }
 
     private suspend fun emitGenerationDone(conversationId: Uuid) {
-        val conversation = getConversationState(conversationId)?.value
-            ?: conversationRepo.getConversationById(conversationId)
-        if (
-            conversation != null &&
-            getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
-        ) {
-            val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
-            TemporalMemoryIngestWorker.enqueueEvidence(
-                context = context,
-                assistantId = conversation.assistantId.toString(),
-                conversationId = conversation.id.toString(),
-            )
-            if (assistant?.enableMemoryConsolidation == true) {
-                enqueuePendingAdaptiveMemory(conversationId, forceNow = false)
-            }
-        }
+        enqueueAutomaticMemoryConsolidation(conversationId)
         _generationDoneFlow.emit(conversationId)
     }
 
-    private suspend fun enqueuePendingAdaptiveMemory(conversationId: Uuid, forceNow: Boolean) {
+    private suspend fun enqueueAutomaticMemoryConsolidation(conversationId: Uuid) {
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) return
         val conversation = getConversationState(conversationId)?.value
             ?: conversationRepo.getConversationById(conversationId)
@@ -2450,35 +2415,11 @@ class ChatService(
         val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
             ?: return
         if (!assistant.enableMemory || !assistant.enableMemoryConsolidation) return
-
-        val memoryMessages = conversation.currentMessages.filter { message ->
-            (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
-                message.toText().isNotBlank()
-        }
-        val state = temporalMemoryRepository.getIngestState(conversation.id.toString())
-        val lastProcessedIndex = state?.lastMessageId?.let { id ->
-            memoryMessages.indexOfLast { it.id.toString() == id }
-        } ?: -1
-        val pendingCount = if (lastProcessedIndex >= 0) {
-            memoryMessages.size - lastProcessedIndex - 1
-        } else {
-            memoryMessages.size.coerceAtMost(20)
-        }
-        if (pendingCount <= 0) return
-
-        if (forceNow || pendingCount >= ADAPTIVE_MEMORY_MESSAGE_THRESHOLD) {
-            TemporalMemoryIngestWorker.enqueueAdaptiveNow(
-                context,
-                conversation.assistantId.toString(),
-                conversation.id.toString(),
-            )
-        } else {
-            TemporalMemoryIngestWorker.enqueueAdaptiveAfterInactivity(
-                context,
-                conversation.assistantId.toString(),
-                conversation.id.toString(),
-            )
-        }
+        MemoryConsolidationWorker.enqueueForConversation(
+            context = context,
+            conversation = conversation,
+            consolidationDelayMinutes = assistant.consolidationDelayMinutes,
+        )
     }
 
     // 检查文件删除

@@ -124,7 +124,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                     DefaultTitleModelSetting(settings = settings, vm = vm)
                     DefaultSummarizerModelSetting(settings = settings, vm = vm)
                     DefaultSubagentModelSetting(settings = settings, vm = vm)
-                    DefaultMemoryRerankModelSetting(settings = settings, vm = vm)
                     DefaultSuggestionModelSetting(settings = settings, vm = vm)
                 }
             }
@@ -788,40 +787,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         }
     }
-}
-
-@Composable
-private fun DefaultMemoryRerankModelSetting(
-    settings: Settings,
-    vm: SettingVM,
-) {
-    ModelFeatureCard(
-        title = { Text("Memory reranker", maxLines = 1) },
-        description = { Text("Optional model used when an assistant's recall reranking is set to Default reranker model") },
-        icon = { Icon(Icons.Rounded.Psychology, null) },
-        actions = {
-            Box(modifier = Modifier.weight(1f)) {
-                ModelSelector(
-                    modelId = settings.memoryRerankModelId,
-                    type = ModelType.CHAT,
-                    allowBackendModels = true,
-                    onSelect = { selectedModel ->
-                        vm.updateSettings(
-                            settings.copy(
-                                memoryRerankModelId = settings.findModelById(selectedModel.id)?.id
-                            )
-                        )
-                    },
-                    providers = settings.providers,
-                    allowClear = true,
-                    onClear = {
-                        vm.updateSettings(settings.copy(memoryRerankModelId = null))
-                    },
-                    modifier = Modifier.wrapContentWidth(),
-                )
-            }
-        },
-    )
 }
 
 @Composable

@@ -23,8 +23,6 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.memory.TemporalMemoryRepository
-import me.rerere.rikkahub.data.memory.RecallKind
 import kotlinx.datetime.toInstant
 import kotlin.math.min
 import kotlin.uuid.Uuid
@@ -417,7 +415,6 @@ class MemorySearchService(
     private val providerManager: ProviderManager,
     private val memoryRepository: MemoryRepository,
     private val conversationRepository: ConversationRepository,
-    private val temporalMemoryRepository: TemporalMemoryRepository,
 ) {
     suspend fun searchMemory(
         assistant: Assistant,
@@ -457,7 +454,7 @@ class MemorySearchService(
             .take(MEMORY_SEARCH_MAX_QUERIES)
 
         val memoryResults = runCatching {
-            searchTemporalMemories(assistant, recallQueries, boundedLimit, parsedTimeRange)
+            searchStoredMemories(assistant, recallQueries, boundedLimit, parsedTimeRange)
         }.getOrElse { throwable ->
             if (throwable is CancellationException) throw throwable
             warnings += "Stored memory search fell back with no results."
@@ -544,48 +541,6 @@ class MemorySearchService(
             if (warnings.isNotEmpty()) {
                 put("warnings", JsonArray(warnings.map(::JsonPrimitive)))
             }
-        }
-    }
-
-    private suspend fun searchTemporalMemories(
-        assistant: Assistant,
-        queries: List<MemoryRecallSearchQuery>,
-        limit: Int,
-        timeRange: MemorySearchTimeRange?,
-    ): List<RecallResult> {
-        val query = queries.joinToString(" ") { it.text }.take(1_500)
-        val packet = temporalMemoryRepository.recall(
-            assistantId = assistant.id.toString(),
-            query = query,
-            limit = limit,
-            timeStart = timeRange?.startMillis,
-            timeEnd = timeRange?.endMillis,
-            rerankMode = assistant.memoryRerankMode,
-            rerankModelId = assistant.memoryRerankModelId,
-            minimumRelevance = 0.2f,
-            includeCore = true,
-            includeEpisodes = true,
-            includePastChats = true,
-        )
-        return packet.items.map { item ->
-            RecallResult(
-                source = when (item.kind) {
-                    RecallKind.EPISODE -> "episode"
-                    RecallKind.PAST_CHAT -> "past_chat"
-                    RecallKind.HISTORICAL_FACT -> "historical_memory"
-                    RecallKind.CURRENT_STATE -> "current_memory"
-                    RecallKind.LEGACY -> "core_memory"
-                },
-                id = item.stableId,
-                summary = item.text,
-                content = item.text,
-                timestampMillis = item.timestamp,
-                confidence = when (item.kind) {
-                    RecallKind.PAST_CHAT -> item.score.coerceIn(0f, 0.95f)
-                    else -> minOf(item.confidence, (0.25f + item.score * 0.7f).coerceIn(0f, 0.95f))
-                },
-                score = (item.score * 100).toInt(),
-            )
         }
     }
 

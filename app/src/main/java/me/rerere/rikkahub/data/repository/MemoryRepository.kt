@@ -50,7 +50,17 @@ class MemoryRepository(
                 AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt)
             }
             val episodicMemories = episodes.map { 
-                AssistantMemory(-it.id, it.content, MemoryType.EPISODIC, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.startTime, it.significance)
+                AssistantMemory(
+                    id = -it.id,
+                    content = it.content,
+                    type = MemoryType.EPISODIC,
+                    hasEmbedding = it.embedding != null || it.embeddingBlob != null,
+                    embeddingModelId = it.embeddingModelId,
+                    timestamp = it.startTime,
+                    significance = it.significance,
+                    stableId = "episode:${it.id}",
+                    sourceConversationId = it.conversationId,
+                )
             }
             coreMemories + episodicMemories
         }
@@ -413,7 +423,20 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
             } else {
                 val episode = item as ChatEpisodeEntity
                 // Convert episode to AssistantMemory with a negative ID to distinguish
-                Pair<AssistantMemory, Float>(AssistantMemory(-episode.id, episode.content, MemoryType.EPISODIC, true, episode.embeddingModelId, episode.startTime, episode.significance), score)
+                Pair<AssistantMemory, Float>(
+                    AssistantMemory(
+                        id = -episode.id,
+                        content = episode.content,
+                        type = MemoryType.EPISODIC,
+                        hasEmbedding = true,
+                        embeddingModelId = episode.embeddingModelId,
+                        timestamp = episode.startTime,
+                        significance = episode.significance,
+                        stableId = "episode:${episode.id}",
+                        sourceConversationId = episode.conversationId,
+                    ),
+                    score,
+                )
             }
         }
     }

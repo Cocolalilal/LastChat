@@ -371,13 +371,6 @@ class ConversationRepository(
         )
     }
 
-    suspend fun markAsNotConsolidated(conversationId: Uuid) {
-        conversationDAO.updateConsolidatedStatus(
-            id = conversationId.toString(),
-            isConsolidated = false
-        )
-    }
-
     suspend fun updateTitle(conversationId: Uuid, title: String, updateAt: Instant) {
         conversationDAO.updateTitle(
             id = conversationId.toString(),

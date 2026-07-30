@@ -299,14 +299,12 @@ private fun MemoryItem(
     val isPastChat = memory.stableId?.startsWith("source:") == true
     val isRecentChat = memory.stableId?.startsWith("conversation:") == true
     val isChatReference = isPastChat || isRecentChat
-    val isProjection = memory.stableId == "projection"
-    val isTemporalEpisode = memory.stableId?.startsWith("episode:") == true
+    val isEpisode = memory.stableId?.startsWith("episode:") == true
     val isCore = memory.memoryType == 0 && !isChatReference
     val memoryTypeLabel = when {
         isPastChat -> "Past chat"
         isRecentChat -> stringResource(R.string.context_sources_recent_chat)
-        isProjection -> "Current understanding"
-        isTemporalEpisode -> stringResource(R.string.activity_timeline_memory_episodic)
+        isEpisode -> stringResource(R.string.activity_timeline_memory_episodic)
         isCore -> stringResource(R.string.activity_timeline_memory_core)
         memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
         else -> stringResource(R.string.activity_timeline_memory_episodic)

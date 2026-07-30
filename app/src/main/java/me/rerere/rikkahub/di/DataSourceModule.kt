@@ -160,10 +160,6 @@ val dataSourceModule = module {
     }
 
     single {
-        get<AppDatabase>().temporalMemoryDao()
-    }
-
-    single {
         get<AppDatabase>().genMediaDao()
     }
 

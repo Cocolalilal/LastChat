@@ -1,9 +1,6 @@
 package me.rerere.rikkahub.web
 
 import android.content.Context
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import androidx.core.net.toUri
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
@@ -70,7 +67,6 @@ import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.utils.JsonInstant
 
 private const val MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024
@@ -435,26 +431,6 @@ private fun Route.webRoutes(
             } ?: throw NotFoundException("Conversation not found")
 
             chatService.generateTitle(conversationId, conversation, force = true)
-            call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
-        }
-
-        post("/{id}/consolidate") {
-            val conversationId = call.parameters["id"].toUuid("conversation id")
-            withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
-
-            withContext(Dispatchers.IO) {
-                conversationRepo.markAsNotConsolidated(conversationId)
-            }
-            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
-                .setInputData(
-                    workDataOf(
-                        "FORCE_CONVERSATION_ID" to conversationId.toString()
-                    )
-                )
-                .build()
-            WorkManager.getInstance(context).enqueue(request)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 

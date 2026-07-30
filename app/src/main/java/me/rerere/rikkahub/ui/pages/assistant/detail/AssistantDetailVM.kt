@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import android.app.Application
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
@@ -17,9 +16,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.data.db.dao.TemporalMemoryDao
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.data.db.entity.MemoryClaimStatus
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
@@ -30,30 +27,12 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
 
-data class TemporalMemoryBrowserItem(
-    val stableId: String,
-    val content: String,
-    val kind: TemporalMemoryBrowserKind,
-    val timestamp: Long,
-    val sourceConversationId: String? = null,
-    val sourceMessageId: String? = null,
-)
-
-enum class TemporalMemoryBrowserKind {
-    PROJECTION,
-    CURRENT_FACT,
-    HISTORICAL_FACT,
-    EPISODE,
-}
-
 class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
-    private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
-    private val temporalMemoryDao: TemporalMemoryDao,
     private val providerManager: me.rerere.ai.provider.ProviderManager,
     private val appStorageRepository: AppStorageRepository,
 ) : ViewModel() {
@@ -100,7 +79,9 @@ class AssistantDetailVM(
                 hasEmbedding = it.embedding != null,
                 embeddingModelId = it.embeddingModelId,
                 timestamp = it.startTime,
-                significance = it.significance
+                significance = it.significance,
+                stableId = "episode:${it.id}",
+                sourceConversationId = it.conversationId,
             ) 
         }
         val allMemories = core + episodic
@@ -111,59 +92,6 @@ class AssistantDetailVM(
         }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
-    )
-
-    val temporalMemories = combine(
-        temporalMemoryDao.observeBrowsableClaims(assistantId.toString()),
-        temporalMemoryDao.observeBrowsableEpisodes(assistantId.toString()),
-        temporalMemoryDao.observeProjection(assistantId.toString()),
-        _memorySearchQuery,
-    ) { claims, episodes, projection, query ->
-        buildList {
-            projection?.content?.takeIf { it.isNotBlank() }?.let { content ->
-                add(
-                    TemporalMemoryBrowserItem(
-                        stableId = "projection",
-                        content = content,
-                        kind = TemporalMemoryBrowserKind.PROJECTION,
-                        timestamp = projection.updatedAt,
-                    )
-                )
-            }
-            claims.forEach { claim ->
-                add(
-                    TemporalMemoryBrowserItem(
-                        stableId = "claim:${claim.id}",
-                        content = claim.statement,
-                        kind = if (claim.status == MemoryClaimStatus.CLOSED) {
-                            TemporalMemoryBrowserKind.HISTORICAL_FACT
-                        } else {
-                            TemporalMemoryBrowserKind.CURRENT_FACT
-                        },
-                        timestamp = claim.validFrom ?: claim.observedAt,
-                        sourceConversationId = claim.sourceConversationId,
-                        sourceMessageId = claim.sourceMessageId,
-                    )
-                )
-            }
-            episodes.forEach { episode ->
-                add(
-                    TemporalMemoryBrowserItem(
-                        stableId = "episode:${episode.id}",
-                        content = "${episode.title}: ${episode.summary}",
-                        kind = TemporalMemoryBrowserKind.EPISODE,
-                        timestamp = episode.eventStart,
-                        sourceConversationId = episode.conversationId,
-                    )
-                )
-            }
-        }.filter { item ->
-            query.isBlank() || item.content.contains(query, ignoreCase = true)
-        }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Lazily,
-        initialValue = emptyList(),
     )
 
     // Current embedding model ID for this assistant (for detecting model mismatch)
@@ -424,16 +352,6 @@ class AssistantDetailVM(
                 Log.e(TAG, "Failed to regenerate embeddings", e)
             }
         }
-    }
-
-    fun consolidateMemories(isFullScan: Boolean) {
-        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-            .setInputData(
-                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(context).enqueue(request)
-        _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
     }
 
     suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {
