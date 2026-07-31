@@ -100,8 +100,7 @@ fun AssistantDetailPage(
     id: String,
     startRoute: String? = null,
     initialMemoryTab: Int? = null,
-    scrollToMemoryId: Int? = null,
-    scrollToMemoryStableId: String? = null,
+    scrollToMemoryId: Int? = null
 ) {
     val vm: AssistantDetailVM = koinViewModel(
         parameters = {
@@ -455,6 +454,7 @@ fun AssistantDetailPage(
                 val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
+                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
                     memories = memories,
                     onUpdateAssistant = { onUpdate(it) },
                     onDeleteMemory = { vm.deleteMemory(it) },
@@ -469,7 +469,7 @@ fun AssistantDetailPage(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
-                    scrollToMemoryStableId = scrollToMemoryStableId,
+                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
                 )
             }
 

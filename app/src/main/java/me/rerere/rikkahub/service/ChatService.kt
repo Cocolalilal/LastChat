@@ -1490,23 +1490,31 @@ class ChatService(
                     getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
                 ) {
                     if (assistant.useRagMemoryRetrieval) {
-                        val lastUserMessage = conversation.currentMessages
-                            .lastOrNull { it.role == MessageRole.USER }
-                            ?.toText()
-                            .orEmpty()
+                        // RAG mode: retrieve relevant memories based on context
+                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+
+                        if (settings.enableRagLogging) {
+                            Log.d("RAG", "Query: $lastUserMessage")
+                        }
+
                         if (lastUserMessage.isNotBlank()) {
-                            memoryRepository.retrieveRelevantMemories(
+                            val results = memoryRepository.retrieveRelevantMemories(
                                 assistantId = conversation.assistantId.toString(),
                                 query = lastUserMessage,
                                 limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
                                 similarityThreshold = assistant.ragSimilarityThreshold,
                                 includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes,
+                                includeEpisodes = assistant.ragIncludeEpisodes
                             )
+                            if (settings.enableRagLogging) {
+                                Log.d("RAG", "Retrieved ${results.size} memories")
+                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
+                            }
+                            results
                         } else {
-                            memoryRepository.getMemoriesOfAssistant(
-                                conversation.assistantId.toString(),
-                            ).take(50)
+                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
+                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
+                                .take(50)
                         }
                     } else {
                         // Simple mode: inject recent memories

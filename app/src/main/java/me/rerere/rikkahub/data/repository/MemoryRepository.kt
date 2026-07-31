@@ -58,8 +58,6 @@ class MemoryRepository(
                     embeddingModelId = it.embeddingModelId,
                     timestamp = it.startTime,
                     significance = it.significance,
-                    stableId = "episode:${it.id}",
-                    sourceConversationId = it.conversationId,
                 )
             }
             coreMemories + episodicMemories
@@ -432,8 +430,6 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                         embeddingModelId = episode.embeddingModelId,
                         timestamp = episode.startTime,
                         significance = episode.significance,
-                        stableId = "episode:${episode.id}",
-                        sourceConversationId = episode.conversationId,
                     ),
                     score,
                 )

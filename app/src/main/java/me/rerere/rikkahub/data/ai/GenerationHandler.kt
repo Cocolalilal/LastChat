@@ -1019,9 +1019,7 @@ class GenerationHandler(
                         id = -1,
                         content = "Participated in conversation: ${conversation.title}",
                         type = 1,
-                        timestamp = conversation.updateAt.toEpochMilli(),
-                        stableId = "conversation:${conversation.id}",
-                        sourceConversationId = conversation.id.toString(),
+                        timestamp = conversation.updateAt.toEpochMilli()
                     )
                 }
             } else {
@@ -1257,10 +1255,7 @@ class GenerationHandler(
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason,
-                stableId = memory.stableId,
-                sourceConversationId = memory.sourceConversationId,
-                sourceMessageId = memory.sourceMessageId,
+                activationReason = reason
             )
         }
         
@@ -1355,20 +1350,7 @@ class GenerationHandler(
             activeConversationId = activeConversationId,
             contextSummary = contextSummary,
         )
-        val usedLorebookEntries = buildResult.activatedLorebookEntries
-        val usedModes = buildResult.usedModes
-        val usedMemories = buildResult.usedMemories
-        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
-        var uiMessages = if (hasContextSources) {
-            messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
-        } else {
-            messages
-        }
-        if (uiMessages != messages) {
-            // Publish the context stack as soon as prompt assembly finishes instead of waiting
-            // for the provider stream to complete.
-            onUpdateMessages(uiMessages)
-        }
+        var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
             transformers = transformers,
             context = context,
@@ -1383,6 +1365,10 @@ class GenerationHandler(
             },
         )
         val internalMessages = transformedInput.messages
+        val usedLorebookEntries = buildResult.activatedLorebookEntries
+        val usedModes = buildResult.usedModes
+        val usedMemories = buildResult.usedMemories
+        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
 
         var messages: List<UIMessage> = uiMessages
         if (transformedInput.annotations.isNotEmpty()) {
@@ -1443,7 +1429,17 @@ class GenerationHandler(
             }
             // Attach all context sources to the last assistant message after streaming completes
             if (hasContextSources) {
-                messages = messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
+                messages = messages.mapIndexed { index, message ->
+                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
+                        message.copy(
+                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                            usedModes = usedModes.ifEmpty { null },
+                            usedMemories = usedMemories.ifEmpty { null }
+                        )
+                    } else {
+                        message
+                    }
+                }
                 onUpdateMessages(messages)
             }
         } else {
@@ -1472,7 +1468,17 @@ class GenerationHandler(
             }
             // Attach all context sources to the last assistant message
             if (hasContextSources) {
-                messages = messages.attachUsedContext(usedLorebookEntries, usedModes, usedMemories)
+                messages = messages.mapIndexed { index, message ->
+                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
+                        message.copy(
+                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                            usedModes = usedModes.ifEmpty { null },
+                            usedMemories = usedMemories.ifEmpty { null }
+                        )
+                    } else {
+                        message
+                    }
+                }
             }
             onUpdateMessages(messages)
         }
@@ -1489,26 +1495,6 @@ class GenerationHandler(
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to persist token usage", e)
                 }
-            }
-        }
-    }
-
-    private fun List<UIMessage>.attachUsedContext(
-        usedLorebookEntries: List<me.rerere.ai.ui.UsedLorebookEntry>,
-        usedModes: List<me.rerere.ai.ui.UsedMode>,
-        usedMemories: List<me.rerere.ai.ui.UsedMemory>,
-    ): List<UIMessage> {
-        val assistantIndex = indexOfLast { it.role == MessageRole.ASSISTANT }
-        if (assistantIndex < 0) return this
-        return mapIndexed { index, message ->
-            if (index == assistantIndex) {
-                message.copy(
-                    usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                    usedModes = usedModes.ifEmpty { null },
-                    usedMemories = usedMemories.ifEmpty { null },
-                )
-            } else {
-                message
             }
         }
     }

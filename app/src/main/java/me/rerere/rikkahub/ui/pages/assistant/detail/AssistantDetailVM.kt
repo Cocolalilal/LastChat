@@ -79,9 +79,7 @@ class AssistantDetailVM(
                 hasEmbedding = it.embedding != null,
                 embeddingModelId = it.embeddingModelId,
                 timestamp = it.startTime,
-                significance = it.significance,
-                stableId = "episode:${it.id}",
-                sourceConversationId = it.conversationId,
+                significance = it.significance
             ) 
         }
         val allMemories = core + episodic

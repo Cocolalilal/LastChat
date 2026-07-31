@@ -13,7 +13,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import kotlinx.datetime.LocalDateTime
 import kotlin.uuid.Uuid
 
 class MemorySearchServiceTest {
@@ -51,39 +50,6 @@ class MemorySearchServiceTest {
         assertEquals(2, spans.single().messageIndex)
         assertTrue(buildFallbackRecallSummary(spans.single()).contains("Lisbon"))
         assertFalse(buildFallbackRecallSummary(spans.single()).contains("hello"))
-    }
-
-    @Test
-    fun timeBasedRecallUsesTheIntervalWithoutRequiringQueryWords() {
-        val zone = ZoneId.systemDefault()
-        val now = LocalDate.of(2026, 5, 26).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
-        val yesterday = requireNotNull(parseMemorySearchTimeRange("what did we discuss yesterday", now))
-        val conversation = Conversation(
-            id = Uuid.parse("00000000-0000-0000-0000-000000000311"),
-            assistantId = Uuid.parse("00000000-0000-0000-0000-000000000312"),
-            title = "Night greeting",
-            createAt = Instant.parse("2026-05-24T08:00:00Z"),
-            updateAt = Instant.parse("2026-05-26T08:00:00Z"),
-            messageNodes = listOf(
-                UIMessage.user("Unrelated older message")
-                    .copy(createdAt = LocalDateTime.parse("2026-05-24T12:00:00"))
-                    .toMessageNode(),
-                UIMessage.user("I checked in because I could not sleep")
-                    .copy(createdAt = LocalDateTime.parse("2026-05-25T23:30:00"))
-                    .toMessageNode(),
-                UIMessage.assistant("We talked quietly about how the evening had gone")
-                    .copy(createdAt = LocalDateTime.parse("2026-05-26T01:30:00"))
-                    .toMessageNode(),
-            ),
-        )
-
-        val spans = findConversationTimeSpans(conversation, yesterday)
-        val transcript = spans.joinToString(" ") { buildFallbackRecallSummary(it) }
-
-        assertEquals(1, spans.size)
-        assertTrue(transcript.contains("could not sleep"))
-        assertTrue(transcript.contains("evening had gone"))
-        assertFalse(transcript.contains("Unrelated older message"))
     }
 
     @Test

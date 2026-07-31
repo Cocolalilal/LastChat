@@ -149,10 +149,7 @@ data class AssistantMemory(
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null, // UUID of the embedding model used (for model mismatch detection)
     val timestamp: Long = 0L, // Timestamp of the memory (e.g. creation time or episode start time)
-    val significance: Int? = null, // Significance score (1-10) for episodic memories, null for core memories
-    val stableId: String? = null,
-    val sourceConversationId: String? = null,
-    val sourceMessageId: String? = null,
+    val significance: Int? = null // Significance score (1-10) for episodic memories, null for core memories
 )
 
 @Serializable
