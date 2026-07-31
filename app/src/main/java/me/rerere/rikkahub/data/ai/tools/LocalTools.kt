@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
+import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
 import kotlinx.serialization.KSerializer
@@ -230,16 +231,16 @@ class LocalTools(
                 )
             },
             execute = {
-                val context = QuickJSContext.create()
                 val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull
-                val result = context.evaluate(code)
+                QuickJSLoader.init()
+                val resultText = QuickJSContext.create().use { context ->
+                    when (val result = context.evaluate(code)) {
+                        is QuickJSObject -> result.stringify()
+                        else -> result.toString()
+                    }
+                }
                 buildJsonObject {
-                    put(
-                        "result", when (result) {
-                            is QuickJSObject -> JsonPrimitive(result.stringify())
-                            else -> JsonPrimitive(result.toString())
-                        }
-                    )
+                    put("result", resultText)
                 }
             }
         )

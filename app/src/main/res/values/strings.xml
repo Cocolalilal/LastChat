@@ -32,10 +32,12 @@
     <string name="assistant_page_chaotic">Chaotic (Dangerous)</string>
     <string name="assistant_page_chat_background">Chat Background</string>
     <string name="assistant_page_chat_background_desc">Set background image for character chat page</string>
-    <string name="assistant_page_material_you_from_character">Use Character Colors</string>
-    <string name="assistant_page_material_you_from_character_desc">Extract Material You colors from background or avatar</string>
+    <string name="assistant_page_material_you_from_character">Custom colors</string>
+    <string name="assistant_page_material_you_from_character_desc">Choose a color from the background, avatar, or a custom color</string>
+    <string name="assistant_page_edit_custom_color">Edit custom color</string>
+    <string name="assistant_page_custom_color">Custom color</string>
     <string name="assistant_page_theme_color">Theme Color</string>
-    <string name="assistant_page_theme_color_desc">Choose a color palette extracted from your images</string>
+    <string name="assistant_page_theme_color_desc">Choose an extracted color or edit your own</string>
     <string name="assistant_page_background_intensity">Background Intensity</string>
     <string name="assistant_page_background_intensity_desc">Darken in dark mode, lighten in light mode</string>
     <string name="assistant_page_chat_model">Chat Model</string>

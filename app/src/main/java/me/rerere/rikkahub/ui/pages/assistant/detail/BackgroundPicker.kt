@@ -40,9 +40,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.OwnedFileDirectory
 import me.rerere.rikkahub.utils.importOwnedFile
+import java.io.File
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -59,6 +61,7 @@ fun BackgroundPicker(
     var showPickOption by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
+    var imageToCrop by remember { mutableStateOf<Uri?>(null) }
     
     // Local state for smooth slider movement
     var localDim by remember { mutableFloatStateOf(backgroundDim.coerceIn(0f, 0.85f)) }
@@ -74,16 +77,30 @@ fun BackgroundPicker(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            scope.launch {
-                context.importOwnedFile(
-                    sourceUri = it,
-                    directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
-                )?.let { localUri ->
-                    onUpdate(localUri.toString())
+        imageToCrop = uri
+    }
+
+    imageToCrop?.let { sourceUri ->
+        CropImageScreen(
+            sourceUri = sourceUri,
+            onCropComplete = { croppedUri ->
+                imageToCrop = null
+                scope.launch {
+                    context.importOwnedFile(
+                        sourceUri = croppedUri,
+                        directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
+                    )?.let { localUri ->
+                        onUpdate(localUri.toString())
+                    }
+                    if (croppedUri.scheme == "file") {
+                        runCatching { File(croppedUri.path.orEmpty()).delete() }
+                    }
                 }
+            },
+            onCancel = {
+                imageToCrop = null
             }
-        }
+        )
     }
 
     // Use Surface with 10dp corners to match SettingsGroup pattern

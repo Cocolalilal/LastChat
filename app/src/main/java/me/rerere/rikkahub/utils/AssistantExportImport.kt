@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -42,6 +43,8 @@ data class AssistantExportV1(
     // Bundled assets
     val avatarContent: String? = null, // Base64 encoded avatar image
     val avatarMimeType: String? = null,
+    val backgroundContent: String? = null, // Base64 encoded chat background image
+    val backgroundMimeType: String? = null,
     // Bundled Lorebooks
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
@@ -86,7 +89,23 @@ object AssistantExportImport : KoinComponent {
             }
         }
 
-        // 2. Process Lorebooks
+        // 2. Process chat background. The Assistant field itself only contains a
+        // local URI, so bundle the bytes as well to keep the background portable.
+        var backgroundContent: String? = null
+        var backgroundMime: String? = null
+        assistant.background?.let { url ->
+            try {
+                val bytes = readUriBytes(context, url)
+                if (bytes != null) {
+                    backgroundContent = base64Encode(bytes)
+                    backgroundMime = context.getFileMimeType(Uri.parse(url)) ?: "image/*"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 3. Process Lorebooks
         val bundledLorebooks = if (includeLorebooks) {
             val allLorebooks = settingsStore.settingsFlow.value.lorebooks
             assistant.enabledLorebookIds.mapNotNull { id ->
@@ -109,7 +128,7 @@ object AssistantExportImport : KoinComponent {
             emptyList()
         }
 
-        // 3. Process Memories
+        // 4. Process Memories
         val bundledMemories: List<AssistantMemory> = if (includeMemories) {
             // Fetch Core Memories (already returns AssistantMemory list)
             val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
@@ -137,6 +156,8 @@ object AssistantExportImport : KoinComponent {
             assistant = assistant,
             avatarContent = avatarContent,
             avatarMimeType = avatarMime,
+            backgroundContent = backgroundContent,
+            backgroundMimeType = backgroundMime,
             lorebooks = bundledLorebooks,
             memories = bundledMemories,
         )
@@ -178,7 +199,28 @@ object AssistantExportImport : KoinComponent {
             }
         }
 
-        // 2. Restore Lorebooks
+
+        // 2. Restore chat background to an app-owned file. Older bundles do not
+        // contain backgroundContent and continue to import without modification.
+        if (export.backgroundContent != null) {
+            val extension = export.backgroundMimeType
+                ?.substringBefore(';')
+                ?.trim()
+                ?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+                ?.takeIf { it.isNotBlank() }
+                ?: "img"
+            val fileName = "background_${assistant.id}_${System.currentTimeMillis()}.$extension"
+            val file = context.getOwnedDirectory(OwnedFileDirectory.ASSISTANT_BACKGROUND)
+                .resolve(fileName)
+            try {
+                file.writeBytes(base64Decode(export.backgroundContent))
+                assistant = assistant.copy(background = Uri.fromFile(file).toString())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 3. Restore Lorebooks
         val newLorebookIds = mutableSetOf<Uuid>()
         val importedLorebooks = mutableListOf<Lorebook>()
         
@@ -228,7 +270,7 @@ object AssistantExportImport : KoinComponent {
              assistant = assistant.copy(enabledLorebookIds = emptySet())
         }
 
-        // 3. Restore Memories
+        // 4. Restore Memories
         if (importMemories) {
             export.memories.forEach { memory ->
                 if (memory.type == 0) { // Core

@@ -5,6 +5,7 @@ import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.uuid.Uuid
@@ -136,6 +137,39 @@ class AssistantSerializationTest {
 
         assertTrue(encoded.contains("\"character_questions\""))
         assertTrue(decoded.localTools.contains(LocalToolOption.AskUser))
+    }
+
+    @Test
+    fun olderAssistantJsonDefaultsCustomMaterialYouColorToNull() {
+        val assistant = Json.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000015",
+              "name": "Legacy Color Assistant",
+              "useAssistantMaterialYouColors": true,
+              "materialYouColorIndex": 2
+            }
+            """.trimIndent()
+        )
+
+        assertNull(assistant.customMaterialYouColor)
+    }
+
+    @Test
+    fun customMaterialYouColorRoundTripsThroughSerialization() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000016"),
+            name = "Custom Color Assistant",
+            useAssistantMaterialYouColors = true,
+            materialYouColorIndex = -1,
+            customMaterialYouColor = "#12ABEF",
+        )
+
+        val encoded = JsonInstant.encodeToString(Assistant.serializer(), assistant)
+        val decoded = JsonInstant.decodeFromString(Assistant.serializer(), encoded)
+
+        assertEquals(-1, decoded.materialYouColorIndex)
+        assertEquals("#12ABEF", decoded.customMaterialYouColor)
     }
 
 }
