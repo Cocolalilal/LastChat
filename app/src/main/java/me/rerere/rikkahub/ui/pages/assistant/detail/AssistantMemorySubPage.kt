@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
@@ -765,9 +766,15 @@ private fun ConsolidationSettingsCard(
         if (assistant.lastConsolidationTime > 0) {
             Surface(
                 color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = RoundedCornerShape(10.dp)
+                shape = AppShapes.ListItemLast,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
                         .atZone(java.time.ZoneId.systemDefault())
                         .toLocalDateTime()
@@ -775,7 +782,9 @@ private fun ConsolidationSettingsCard(
                     Text(
                         text = stringResource(R.string.assistant_memory_last_run, time),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
