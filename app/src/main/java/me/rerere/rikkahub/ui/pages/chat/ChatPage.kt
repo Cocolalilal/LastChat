@@ -433,7 +433,7 @@ internal fun chatToolbarPopupBottomPadding(placement: ChatToolbarPlacement): and
     return if (placement == ChatToolbarPlacement.Bottom) 72.dp else 0.dp
 }
 
-private fun chatToolbarOverflowMenuTransformOrigin(placement: ChatToolbarPlacement): TransformOrigin {
+private fun chatToolbarPopupTransformOrigin(placement: ChatToolbarPlacement): TransformOrigin {
     return if (placement == ChatToolbarPlacement.Bottom) {
         TransformOrigin(0.5f, 1f)
     } else {
@@ -1934,17 +1934,6 @@ private fun ChatPageContent(
                         dampingRatio = 0.75f,
                         stiffness = 360f,
                     )
-                ) + scaleIn(
-                    initialScale = 0.96f,
-                    transformOrigin = if (toolbarPlacement == ChatToolbarPlacement.Top) {
-                        TransformOrigin(0f, 0f)
-                    } else {
-                        TransformOrigin(0f, 1f)
-                    },
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.75f,
-                        stiffness = 360f,
-                    )
                 ),
                 exit = if (reduceMotion) {
                     fadeOut(tween(80))
@@ -1953,24 +1942,32 @@ private fun ChatPageContent(
                         dampingRatio = 0.85f,
                         stiffness = 420f,
                     )
-                ) + scaleOut(
-                    targetScale = 0.96f,
-                    transformOrigin = if (toolbarPlacement == ChatToolbarPlacement.Top) {
-                        TransformOrigin(0f, 0f)
-                    } else {
-                        TransformOrigin(0f, 1f)
-                    },
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 420f,
-                    )
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                val popupScale by transition.animateFloat(
+                    transitionSpec = {
+                        if (targetState == EnterExitState.Visible) {
+                            androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f,
+                            )
+                        } else {
+                            androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f,
+                            )
+                        }
+                    },
+                    label = "chat_context_usage_popup_scale",
+                ) { state ->
+                    if (reduceMotion || state == EnterExitState.Visible) 1f else 0.96f
+                }
                 contextMeterUsage?.let { usage ->
                     ContextUsageOverlay(
                         usage = usage,
                         placement = toolbarPlacement,
+                        popupScale = popupScale,
                         onDismissRequest = { showContextUsagePopup = false },
                     )
                 }
@@ -2372,7 +2369,7 @@ private fun ChatToolbarOverflowMenu(
                     .graphicsLayer {
                         scaleX = 1f
                         scaleY = menuScale
-                        transformOrigin = chatToolbarOverflowMenuTransformOrigin(placement)
+                        transformOrigin = chatToolbarPopupTransformOrigin(placement)
                     }
                     .lastChatBlurEffect(containerColor, menuShape)
                     .clickable(
@@ -3230,6 +3227,7 @@ private fun rememberContextMeterUsage(
 private fun ContextUsageOverlay(
     usage: ContextUsageBreakdown,
     placement: ChatToolbarPlacement,
+    popupScale: Float,
     onDismissRequest: () -> Unit,
 ) {
     BackHandler(onBack = onDismissRequest)
@@ -3267,6 +3265,11 @@ private fun ContextUsageOverlay(
                     end = 16.dp,
                 )
                 .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = 1f
+                    scaleY = popupScale
+                    transformOrigin = chatToolbarPopupTransformOrigin(placement)
+                }
                 .lastChatBlurEffect(containerColor, shape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
