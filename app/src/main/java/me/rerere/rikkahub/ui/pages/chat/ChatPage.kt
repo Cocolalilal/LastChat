@@ -85,7 +85,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -186,7 +185,6 @@ import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
     return conversation.messageNodes.isNotEmpty()
@@ -3102,7 +3100,6 @@ private fun rememberContextMeterUsage(
         addonText = addonText,
         toolDefinitionText = toolDefinitionText,
         pendingParts = if (smartActive) emptyList() else pendingParts,
-        probableTemporaryTokens = probableTemporaryTokens,
         sourceKey = sourceKey,
     )
 }
@@ -3213,15 +3210,9 @@ private fun ContextMeterButton(
         animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
         label = "context_meter_progress",
     )
-    val animatedProbableProgress by animateFloatAsState(
-        targetValue = usage.probableFraction,
-        animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
-        label = "context_meter_probable_progress",
-    )
-    val projectedProgress = (animatedProgress + animatedProbableProgress).coerceIn(0f, 1f)
     val targetProgressColor = when {
-        projectedProgress >= 0.95f -> MaterialTheme.colorScheme.error
-        projectedProgress >= 0.82f -> MaterialTheme.colorScheme.tertiary
+        animatedProgress >= 0.95f -> MaterialTheme.colorScheme.error
+        animatedProgress >= 0.82f -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.primary
     }
     val progressColor by animateColorAsState(
@@ -3261,21 +3252,6 @@ private fun ContextMeterButton(
                         style = stroke,
                     )
                 }
-                if (animatedProbableProgress > 0f) {
-                    drawArc(
-                        color = progressColor.copy(alpha = 0.72f),
-                        startAngle = -90f + animatedProgress * 360f,
-                        sweepAngle = animatedProbableProgress * 360f,
-                        useCenter = false,
-                        style = Stroke(
-                            width = strokeWidth,
-                            cap = StrokeCap.Round,
-                            pathEffect = PathEffect.dashPathEffect(
-                                intervals = floatArrayOf(0.1f, strokeWidth * 1.8f),
-                            ),
-                        ),
-                    )
-                }
             }
         }
     }
@@ -3294,13 +3270,7 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
     val animatedToolDefinitions by animateIntAsState(usage.toolDefinitionTokens, tokenAnimation, label = "context_tool_definitions")
     val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
     val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
-    val animatedProbable by animateIntAsState(
-        usage.probableTemporaryTokens,
-        tokenAnimation,
-        label = "context_probable_temporary",
-    )
     val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
-    val progressBarProbableColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
     val segments = listOf(
         Triple(stringResource(R.string.context_meter_conversation), animatedConversation, MaterialTheme.colorScheme.primary),
         Triple(stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt, MaterialTheme.colorScheme.secondary),
@@ -3311,8 +3281,7 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
         Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, MaterialTheme.colorScheme.error),
         Triple(stringResource(R.string.context_meter_media), animatedMedia, MaterialTheme.colorScheme.tertiaryContainer),
     ).filter { it.second > 0 }
-    val boundedProbable = animatedProbable.coerceIn(0, (animatedTotal - animatedUsed).coerceAtLeast(0))
-    val animatedRemaining = (animatedTotal - animatedUsed - boundedProbable).coerceAtLeast(0)
+    val animatedRemaining = (animatedTotal - animatedUsed).coerceAtLeast(0)
     val remainingPercent = if (animatedTotal <= 0) 100 else
         ((animatedRemaining.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
     Column(
@@ -3350,23 +3319,6 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
                         .background(color),
                 )
             }
-            if (boundedProbable > 0) {
-                Spacer(
-                    Modifier
-                        .weight(boundedProbable.toFloat())
-                        .fillMaxHeight()
-                        .drawBehind {
-                            val dotColor = progressBarProbableColor
-                            val radius = 1.15.dp.toPx()
-                            val step = 4.5.dp.toPx()
-                            var x = radius
-                            while (x < size.width) {
-                                drawCircle(dotColor, radius, center = androidx.compose.ui.geometry.Offset(x, size.height / 2f))
-                                x += step
-                            }
-                        },
-                )
-            }
             if (animatedRemaining > 0) {
                 Spacer(Modifier.weight(animatedRemaining.toFloat()).fillMaxHeight())
             }
@@ -3380,35 +3332,6 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
                     Box(Modifier.size(8.dp).background(color, RoundedCornerShape(999.dp)))
                     Spacer(Modifier.width(5.dp))
                     Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            if (boundedProbable > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(width = 12.dp, height = 8.dp)
-                            .drawBehind {
-                                val radius = 1.15.dp.toPx()
-                                val step = 4.dp.toPx()
-                                var x = radius
-                                while (x < size.width) {
-                                    drawCircle(
-                                        progressBarProbableColor,
-                                        radius,
-                                        center = androidx.compose.ui.geometry.Offset(x, size.height / 2f),
-                                    )
-                                    x += step
-                                }
-                            }
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        stringResource(
-                            R.string.context_meter_probable_temporary,
-                            compactTokenCount(boundedProbable),
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
                 }
             }
         }

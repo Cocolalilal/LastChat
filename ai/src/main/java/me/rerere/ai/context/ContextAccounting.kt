@@ -24,8 +24,6 @@ data class ContextUsageBreakdown(
     val toolDefinitionTokens: Int = 0,
     val toolCallTokens: Int = 0,
     val mediaTokens: Int = 0,
-    /** Likely request-only context that is selected just before generation, such as RAG memory. */
-    val probableTemporaryTokens: Int = 0,
     val usedTokens: Int = conversationTokens + systemPromptTokens + summaryTokens + memoryTokens +
         addonTokens + toolDefinitionTokens + toolCallTokens + mediaTokens,
     val totalTokens: Int,
@@ -36,9 +34,6 @@ data class ContextUsageBreakdown(
 ) {
     val remainingTokens: Int get() = (totalTokens - usedTokens).coerceAtLeast(0)
     val fractionUsed: Float get() = if (totalTokens <= 0) 0f else (usedTokens.toFloat() / totalTokens).coerceIn(0f, 1f)
-    val projectedUsedTokens: Int get() = (usedTokens + probableTemporaryTokens).coerceAtMost(totalTokens)
-    val probableFraction: Float get() = if (totalTokens <= 0) 0f else
-        (probableTemporaryTokens.toFloat() / totalTokens).coerceIn(0f, 1f - fractionUsed)
 }
 
 /**
@@ -172,7 +167,6 @@ object ContextTokenEstimator {
         memoryTokensOverride: Int? = null,
         toolDefinitionTokensOverride: Int? = null,
         providerPromptTokens: Int? = null,
-        probableTemporaryTokens: Int = 0,
         sourceKey: Int? = null,
     ): ContextUsageBreakdown {
         var messageText = 0
@@ -218,9 +212,6 @@ object ContextTokenEstimator {
             toolDefinitionTokens = scaled(toolDefinitions),
             toolCallTokens = scaled(toolCalls),
             mediaTokens = scaled(media),
-            probableTemporaryTokens = probableTemporaryTokens
-                .coerceAtLeast(0)
-                .coerceAtMost(((model.contextWindowTokens ?: 0) - (confirmedTotal ?: estimatedTotal)).coerceAtLeast(0)),
             usedTokens = confirmedTotal ?: estimatedTotal,
             totalTokens = model.contextWindowTokens?.takeIf { it > 0 } ?: 0,
             imageCount = images,

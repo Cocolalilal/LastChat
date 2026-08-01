@@ -1530,7 +1530,6 @@
   <string name="context_meter_tool_definitions">Tools</string>
   <string name="context_meter_tool_calls">Tool calls</string>
   <string name="context_meter_media">Media</string>
-  <string name="context_meter_probable_temporary">Likely during reply ~%1$s</string>
   <string name="context_meter_images">Images: %1$d / %2$d</string>
   <string name="context_meter_estimated">Estimated</string>
   <string name="context_meter_provider_counted">Provider counted</string>

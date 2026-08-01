@@ -270,17 +270,4 @@ class ContextAccountingTest {
         assertEquals(800, reserve)
     }
 
-    @Test
-    fun probableTemporaryTokens_areProjectedWithoutInflatingCurrentUsage() {
-        val model = Model(modelId = "private-model", contextWindowTokens = 16_384)
-        val usage = ContextTokenEstimator.breakdown(
-            messages = listOf(UIMessage.user("hello")),
-            model = model,
-            probableTemporaryTokens = 900,
-        )
-
-        assertEquals(900, usage.probableTemporaryTokens)
-        assertEquals(usage.usedTokens + 900, usage.projectedUsedTokens)
-        assertTrue(usage.probableFraction > 0f)
-    }
 }
