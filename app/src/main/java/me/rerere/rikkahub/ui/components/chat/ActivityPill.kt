@@ -320,7 +320,8 @@ private sealed interface SinglePillContentState {
         val entries: List<TimelineEntry>,
         val initialRequest: TimelineOpenRequest?,
         val assistantId: String?,
-        val scrollHandoffMode: TimelineScrollHandoffMode
+        val scrollHandoffMode: TimelineScrollHandoffMode,
+        val isLive: Boolean,
     ) : SinglePillContentState
 }
 
@@ -343,6 +344,7 @@ internal fun ActivityPillRow(
     initialTimelineOpenRequest: TimelineOpenRequest? = null,
     assistantId: String? = null,
     timelineScrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+    timelineLive: Boolean = false,
     onTimelineDismiss: () -> Unit = { onClick(null) },
     key: Any? = null,
 ) {
@@ -385,6 +387,7 @@ internal fun ActivityPillRow(
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistantId,
                     timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    timelineLive = timelineLive,
                     onTimelineDismiss = onTimelineDismiss,
                     wasCompletedInitially = wasCompletedInitially,
                     key = key
@@ -417,6 +420,7 @@ internal fun ActivityPillRow(
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistantId,
                     timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    timelineLive = timelineLive,
                     onTimelineDismiss = onTimelineDismiss,
                     wasCompletedInitially = wasCompletedInitially,
                     key = key
@@ -442,6 +446,7 @@ private fun AnimatedSinglePill(
     initialTimelineOpenRequest: TimelineOpenRequest?,
     assistantId: String?,
     timelineScrollHandoffMode: TimelineScrollHandoffMode,
+    timelineLive: Boolean,
     onTimelineDismiss: () -> Unit,
     wasCompletedInitially: Boolean,
     key: Any? = null
@@ -452,7 +457,8 @@ private fun AnimatedSinglePill(
             entries = timelineEntries,
             initialRequest = initialTimelineOpenRequest,
             assistantId = assistantId,
-            scrollHandoffMode = timelineScrollHandoffMode
+            scrollHandoffMode = timelineScrollHandoffMode,
+            isLive = timelineLive,
         )
     } else if (isExpandedReasoning) {
         SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
@@ -574,6 +580,7 @@ private fun AnimatedSinglePill(
                         initialOpenRequest = targetContentState.initialRequest,
                         assistantId = targetContentState.assistantId,
                         scrollHandoffMode = targetContentState.scrollHandoffMode,
+                        isLive = targetContentState.isLive,
                         onTimelineClick = onTimelineDismiss,
                         modifier = Modifier.fillMaxWidth()
                     )

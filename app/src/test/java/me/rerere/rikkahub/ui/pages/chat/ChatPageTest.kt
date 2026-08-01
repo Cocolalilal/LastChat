@@ -157,13 +157,14 @@ class ChatPageTest {
 
     @Test
     fun chatListPaddingSwitchesWithToolbarPlacement() {
-        assertEquals(88.dp, chatListTopPadding(chatTopBarPlacement(Settings())))
+        val statusBarPadding = 24.dp
+        assertEquals(120.dp, chatListTopPadding(chatTopBarPlacement(Settings()), statusBarPadding))
         assertEquals(140.dp, chatListBottomPadding(chatTopBarPlacement(Settings())))
 
         val bottomPlacement = chatTopBarPlacement(
             Settings(displaySetting = DisplaySetting(chatToolbarAtBottom = true))
         )
-        assertEquals(16.dp, chatListTopPadding(bottomPlacement))
+        assertEquals(60.dp, chatListTopPadding(bottomPlacement, statusBarPadding))
         assertEquals(204.dp, chatListBottomPadding(bottomPlacement))
     }
 

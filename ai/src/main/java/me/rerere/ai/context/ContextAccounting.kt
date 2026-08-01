@@ -59,9 +59,16 @@ data class ContextUsageBreakdown(
     val confidence: ContextCountConfidence = ContextCountConfidence.ESTIMATED,
     val sourceKey: Int? = null,
 ) {
-    val remainingTokens: Int get() = (usableInputTokens - usedTokens).coerceAtLeast(0)
+    /** Capacity intentionally unavailable to prompt content (response reserve, safety, input cap). */
+    val reservedTokens: Int get() = (totalTokens - usableInputTokens).coerceAtLeast(0)
+    val availableTokens: Int get() = (usableInputTokens - usedTokens).coerceAtLeast(0)
+    val remainingTokens: Int get() = availableTokens
     val fractionUsed: Float get() = if (usableInputTokens <= 0) 0f else
         (usedTokens.toFloat() / usableInputTokens).coerceIn(0f, 1f)
+    val fractionOfWindowUsed: Float get() = if (totalTokens <= 0) 0f else
+        (usedTokens.toFloat() / totalTokens).coerceIn(0f, 1f)
+    val fractionOfWindowReserved: Float get() = if (totalTokens <= 0) 0f else
+        (reservedTokens.toFloat() / totalTokens).coerceIn(0f, 1f)
 }
 
 /**

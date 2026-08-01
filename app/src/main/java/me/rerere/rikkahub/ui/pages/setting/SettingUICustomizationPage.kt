@@ -369,6 +369,27 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
+
+            item {
+                SettingsGroup(
+                    title = stringResource(R.string.setting_display_advanced)
+                ) {
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_ui_context_token_summary_title),
+                        subtitle = stringResource(R.string.setting_ui_context_token_summary_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.showContextTokenSummary,
+                                onCheckedChange = {
+                                    updateDisplaySetting(
+                                        displaySetting.copy(showContextTokenSummary = it)
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
+            }
         }
     }
 }

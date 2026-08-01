@@ -205,6 +205,17 @@ internal fun resolveProviderModel(
     )
 }
 
+internal fun resolveProviderModels(
+    resolver: ModelMetadataResolver,
+    provider: ProviderSetting,
+    models: List<Model>,
+): List<Model> {
+    return resolver.applyToModels(
+        models = models,
+        providerHint = provider,
+    )
+}
+
 internal fun modelsReferToSameApiModel(savedModel: Model, apiModel: Model): Boolean {
     val savedKeys = savedModel.matchKeys()
     val apiKeys = apiModel.matchKeys()
@@ -223,6 +234,7 @@ internal fun modelsReferToSameApiModel(savedModel: Model, apiModel: Model): Bool
 
 private fun Model.qualifiers(): Set<String> {
     return buildSet {
+        addAll(ModelIdNormalizer.extractModelTagTokens(modelId))
         modelId.lowercase().split(Regex("[\\-_:\\/\\s()]+")).forEach { token ->
             if (token in ModelIdNormalizer.removableSuffixes) {
                 add(token)
@@ -895,8 +907,8 @@ private fun ModelList(
                         .listModels(providerSetting)
                         .sortedBy { it.modelId }
                         .toList()
-                }.map { model ->
-                    resolveProviderModel(modelMetadataResolver, providerSetting, model)
+                }.let { models ->
+                    resolveProviderModels(modelMetadataResolver, providerSetting, models)
                 }
             }.onSuccess { freshModels ->
                 ApiModelListCache.put(apiModelCacheKey, freshModels)
@@ -1565,9 +1577,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             var filterText by remember { mutableStateOf("") }
             val filterKeywords = filterText.split(" ").filter { it.isNotBlank() }
             val resolvedModels = remember(models, parentProvider) {
-                models.map { model ->
-                    resolveProviderModel(modelMetadataResolver, parentProvider, model)
-                }
+                resolveProviderModels(modelMetadataResolver, parentProvider, models)
             }
             val filteredModels = resolvedModels.fastFilter {
                 if (filterKeywords.isEmpty()) {

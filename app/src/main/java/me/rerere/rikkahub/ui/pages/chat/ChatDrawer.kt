@@ -123,7 +123,7 @@ fun ChatDrawerContent(
     val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
 
     // Search expansion state - hoisted here so drawer width can animate
-    var isSearchExpanded by remember { mutableStateOf(false) }
+    var isSearchExpanded by remember(vm) { mutableStateOf(false) }
     val drawerWidth by animateDpAsState(
         targetValue = if (isSearchExpanded) expandedWidth else collapsedWidth,
         animationSpec = if (isSearchExpanded) {
@@ -286,8 +286,16 @@ fun ChatDrawerContent(
                     completedGenerationIds = completedGenerationIds - it.id
                     // Only pass search query if the match was from message content (not title)
                     // This scrolls to the matching message; for title matches, just open normally
-                    val titleMatches = searchQuery.isNotBlank() && it.title.contains(searchQuery, ignoreCase = true)
-                    navigateToChatPage(navController, it.id, searchQuery = if (titleMatches) null else searchQuery.ifBlank { null })
+                    val selectedSearchQuery = searchQuery.ifBlank { null }
+                    val titleMatches = selectedSearchQuery != null &&
+                        it.title.contains(selectedSearchQuery, ignoreCase = true)
+                    vm.updateSearchQuery("")
+                    isSearchExpanded = false
+                    navigateToChatPage(
+                        navController,
+                        it.id,
+                        searchQuery = if (titleMatches) null else selectedSearchQuery,
+                    )
                     dismissDrawerAfterSelection()
                 },
                 onRegenerateTitle = {

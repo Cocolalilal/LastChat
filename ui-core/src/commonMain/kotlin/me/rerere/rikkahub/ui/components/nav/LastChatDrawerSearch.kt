@@ -75,8 +75,8 @@ fun LastChatDrawerSearch(
                         onClick = {
                             keyboardController?.hide()
                             focusManager.clearFocus()
-                            onExpandedChange(false)
                             onQueryChange("")
+                            onExpandedChange(false)
                         },
                         modifier = Modifier.size(36.dp),
                     ) {

@@ -111,7 +111,22 @@ object ModelIdNormalizer {
                 stripped += token
             }
         }
-        return stripped
+        return (stripped + extractModelTagTokens(modelId)).distinct()
+    }
+
+    fun extractModelTagTokens(modelId: String): List<String> {
+        val withoutQuery = modelId.trim()
+            .substringBefore('?')
+            .substringBefore('#')
+        val finalPathSegment = withoutQuery.substringAfterLast('/')
+        val tag = finalPathSegment.substringAfterLast(':', missingDelimiterValue = "")
+            .trim()
+            .trim('(', ')')
+        if (tag.isBlank()) return emptyList()
+
+        return tag.lowercase()
+            .split(Regex("[^a-z0-9.]+"))
+            .filter { it.isNotBlank() }
     }
 
     private fun stripProviderNamespace(value: String): String {

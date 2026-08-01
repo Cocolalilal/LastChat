@@ -1456,6 +1456,7 @@ private fun AssistantMessageTurn(
                         timelineEntries = timelineEntries,
                         initialTimelineOpenRequest = initialTimelineOpenRequest,
                         assistantId = assistant?.id?.toString(),
+                        timelineLive = loading,
                         onTimelineDismiss = {
                             haptics.perform(HapticPattern.Pop)
                             onTimelineDismiss()
@@ -1577,6 +1578,7 @@ private fun AssistantMessageTurn(
                     timelineEntries = timelineEntries,
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistant?.id?.toString(),
+                    timelineLive = loading,
                     onTimelineDismiss = {
                         haptics.perform(HapticPattern.Pop)
                         onTimelineDismiss()

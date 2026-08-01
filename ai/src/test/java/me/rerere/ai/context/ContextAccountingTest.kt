@@ -23,6 +23,20 @@ class ContextAccountingTest {
     }
 
     @Test
+    fun breakdown_exposesFullWindowReservedAndActuallyAvailableCapacity() {
+        val usage = ContextUsageBreakdown(
+            conversationTokens = 8_000,
+            totalTokens = 32_000,
+            usableInputTokens = 26_000,
+        )
+
+        assertEquals(6_000, usage.reservedTokens)
+        assertEquals(18_000, usage.availableTokens)
+        assertEquals(0.25f, usage.fractionOfWindowUsed)
+        assertEquals(0.1875f, usage.fractionOfWindowReserved)
+    }
+
+    @Test
     fun smartBudgetHonorsIndependentProviderInputAndOutputLimits() {
         val model = Model(
             modelId = "provider-model",

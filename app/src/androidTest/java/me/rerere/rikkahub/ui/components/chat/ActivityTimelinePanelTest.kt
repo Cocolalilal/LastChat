@@ -158,6 +158,9 @@ class ActivityTimelinePanelTest {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
+        composeRule.onNodeWithText("inline timeline").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("timeline_entry_tool_search-call").performClick()
         composeRule.onNodeWithText("inline timeline").assertExists()
         composeRule.onNodeWithText("example.com").assertExists()
 
@@ -166,7 +169,10 @@ class ActivityTimelinePanelTest {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("activity_timeline_panel").assertExists()
+        composeRule.onNodeWithText(reasoningMarker, substring = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline_entry_reasoning_0").performClick()
         composeRule.onNodeWithText(reasoningMarker, substring = true).assertExists()
+        composeRule.onNodeWithText("example.com").assertDoesNotExist()
 
         composeRule.onNodeWithTag("activity_timeline_panel").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -336,6 +342,8 @@ class ActivityTimelinePanelTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithText("scan.pdf").assertDoesNotExist()
+        composeRule.onNodeWithTag("timeline_entry_ocr_0").performClick()
         composeRule.onNodeWithText("scan.pdf").assertExists()
         composeRule.onNodeWithText("1, 3", substring = true).assertExists()
     }
@@ -399,7 +407,8 @@ class ActivityTimelinePanelTest {
                             deleteMemory = { },
                             restoreMemory = { },
                             revertMemory = { _, _ -> }
-                        )
+                        ),
+                        isLive = true,
                     )
                 }
             }
@@ -446,7 +455,8 @@ class ActivityTimelinePanelTest {
                         initialOpenRequest = TimelineOpenRequest(
                             focusType = ActivityType.MEMORY_RECALL,
                             openMode = TimelineOpenMode.Collapsed
-                        )
+                        ),
+                        isLive = true,
                     )
                 }
             }

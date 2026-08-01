@@ -673,6 +673,11 @@ class ChatService(
     private val _contextUsage = MutableStateFlow<Map<Uuid, ContextUsageBreakdown>>(emptyMap())
     val contextUsage: StateFlow<Map<Uuid, ContextUsageBreakdown>> = _contextUsage.asStateFlow()
 
+    private val _contextManagementActivity =
+        MutableStateFlow<Map<Uuid, ContextManagementActivity>>(emptyMap())
+    val contextManagementActivity: StateFlow<Map<Uuid, ContextManagementActivity>> =
+        _contextManagementActivity.asStateFlow()
+
     // 错误流
     private val _errorFlow = MutableSharedFlow<Throwable>()
     val errorFlow: SharedFlow<Throwable> = _errorFlow.asSharedFlow()
@@ -2691,14 +2696,19 @@ class ChatService(
 
             // Call the model
             val providerHandler = providerManager.getProviderByType(provider)
-            val response = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
-                params = settings.buildSummarizerGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
+            val response = try {
+                setContextManagementActivity(conversationId, ContextManagementActivity.SUMMARIZING)
+                providerHandler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = settings.buildSummarizerGenerationParams(
+                        model = model,
+                        temperature = 0.3f,
+                    )
                 )
-            )
+            } finally {
+                setContextManagementActivity(conversationId, null)
+            }
 
             val summary = response.choices.firstOrNull()?.message?.toContentText()
                 ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
@@ -2862,10 +2872,23 @@ class ChatService(
     }
 
     // 清理对话相关资源
+    private fun setContextManagementActivity(
+        conversationId: Uuid,
+        activity: ContextManagementActivity?,
+    ) {
+        val current = _contextManagementActivity.value
+        _contextManagementActivity.value = if (activity == null) {
+            current - conversationId
+        } else {
+            current + (conversationId to activity)
+        }
+    }
+
     fun cleanupConversation(conversationId: Uuid) {
         getGenerationJob(conversationId)?.cancel()
         removeGenerationJob(conversationId)
         removeConversationState(conversationId)
+        setContextManagementActivity(conversationId, null)
         setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 
         Log.i(
@@ -2887,6 +2910,7 @@ internal fun List<Tool>.withUniqueToolNames(): List<Tool> {
             tool.copy(name = tool.name.take((64 - suffix.length).coerceAtLeast(1)) + suffix)
         }
     }
+
 }
 
 private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(

@@ -81,37 +81,27 @@ class ModelMetadataResolver(
             preserveExistingConfiguration = true,
         ),
     ): ProviderSetting {
-        // Step 1: Resolve all models individually for capabilities, type, icon, etc.
-        val resolvedModels = provider.models.map { applyToModel(it, providerHint = provider, options = options) }
+        return provider.copyProvider(
+            models = applyToModels(provider.models, providerHint = provider, options = options),
+        )
+    }
 
-        // Step 2: Compute batch-aware display names for context-aware disambiguation
-        // Collect which models need name generation (skip preserved names)
-        val needsNameGen = resolvedModels.mapIndexed { index, model ->
-            val original = provider.models[index]
-            val isPreserved = options.preserveDisplayName
-            !isPreserved
+    fun applyToModels(
+        models: List<Model>,
+        providerHint: ProviderSetting? = null,
+        options: ModelResolutionOptions = ModelResolutionOptions(),
+    ): List<Model> {
+        val resolvedModels = models.map { model ->
+            applyToModel(model, providerHint = providerHint, options = options)
         }
+        if (options.preserveDisplayName) return resolvedModels
 
-        val batchEntries = resolvedModels.mapIndexedNotNull { index, model ->
-            if (needsNameGen[index]) {
-                index to (model.modelId to model.canonicalModelId)
-            } else null
+        val displayNames = ModelDisplayNameGenerator.generateBatch(
+            resolvedModels.map { model -> model.modelId to model.canonicalModelId },
+        )
+        return resolvedModels.mapIndexed { index, model ->
+            model.copy(displayName = displayNames[index])
         }
-
-        if (batchEntries.isNotEmpty()) {
-            val batchInput = batchEntries.map { it.second }
-            val batchNames = ModelDisplayNameGenerator.generateBatch(batchInput)
-
-            val finalModels = resolvedModels.toMutableList()
-            batchEntries.forEachIndexed { batchIdx, (originalIdx, _) ->
-                finalModels[originalIdx] = finalModels[originalIdx].copy(
-                    displayName = batchNames[batchIdx]
-                )
-            }
-            return provider.copyProvider(models = finalModels)
-        }
-
-        return provider.copyProvider(models = resolvedModels)
     }
 
     fun estimateCostUsd(

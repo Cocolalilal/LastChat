@@ -55,6 +55,7 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.ContextManagementActivity
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -87,6 +88,10 @@ class ChatVM(
     val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
         .map { usageByConversation -> usageByConversation[_conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val contextManagementActivity: StateFlow<ContextManagementActivity?> =
+        chatService.contextManagementActivity
+            .map { activityByConversation -> activityByConversation[_conversationId] }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
     internal var chatListScrollPosition: ChatListScrollPosition? = null

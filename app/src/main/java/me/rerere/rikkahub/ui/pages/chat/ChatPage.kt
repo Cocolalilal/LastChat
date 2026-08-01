@@ -172,6 +172,7 @@ import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
+import me.rerere.rikkahub.service.ContextManagementActivity
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.getFileNameFromUri
@@ -245,7 +246,11 @@ private fun ChatWidePanelEdgeFadeOverlay(
 ) {
     val backgroundColor = MaterialTheme.colorScheme.background
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topFadeHeight = if (placement == ChatToolbarPlacement.Top) 96.dp else 36.dp
+    val topFadeHeight = if (placement == ChatToolbarPlacement.Top) {
+        chatTopToolbarFadeHeight
+    } else {
+        chatBottomToolbarTopFadeHeight
+    }
     Box(
         modifier = modifier
             .width(width)
@@ -418,8 +423,16 @@ internal fun chatTopBarPlacement(settings: Settings): ChatToolbarPlacement {
     }
 }
 
-internal fun chatListTopPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
-    return if (placement == ChatToolbarPlacement.Top) 88.dp else 16.dp
+internal fun chatListTopPadding(
+    placement: ChatToolbarPlacement,
+    statusBarPadding: Dp = 0.dp,
+): Dp {
+    val fadeHeight = if (placement == ChatToolbarPlacement.Top) {
+        chatTopToolbarFadeHeight
+    } else {
+        chatBottomToolbarTopFadeHeight
+    }
+    return statusBarPadding + fadeHeight
 }
 
 internal fun chatListBottomPadding(placement: ChatToolbarPlacement): androidx.compose.ui.unit.Dp {
@@ -441,6 +454,9 @@ private fun chatToolbarPopupTransformOrigin(placement: ChatToolbarPlacement): Tr
         TransformOrigin(0.5f, 0f)
     }
 }
+
+private val chatTopToolbarFadeHeight = 96.dp
+private val chatBottomToolbarTopFadeHeight = 36.dp
 
 private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
     return conversation.currentMessages.lastOrNull { message ->
@@ -1131,6 +1147,7 @@ private fun ChatPageContent(
     val reduceMotion = LocalMotionPolicy.current.reduceMotion
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
+    val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val hazeState = rememberHazeState()
     val localBlur = remember(setting.displaySetting.enableBlurEffect, hazeState) {
         LastChatBlur(
@@ -1140,7 +1157,9 @@ private fun ChatPageContent(
     }
     val blur = inheritedBlur ?: localBlur
     val requestContextUsage by vm.contextUsage.collectAsStateWithLifecycle()
+    val contextManagementActivity by vm.contextManagementActivity.collectAsStateWithLifecycle()
     val contextMeterUsage = rememberContextMeterUsage(
+        enabled = setting.displaySetting.showContextTokenSummary,
         model = currentChatModel,
         conversation = conversation,
         assistant = currentAssistant,
@@ -1317,7 +1336,7 @@ private fun ChatPageContent(
                 } else {
                     {
                         ChatTopFadeOverlay(
-                            fadeHeight = 36.dp,
+                            fadeHeight = chatBottomToolbarTopFadeHeight,
                         )
                     }
                 },
@@ -1377,7 +1396,7 @@ private fun ChatPageContent(
                             ) {
                                 ChatList(
                                     innerPadding = PaddingValues(
-                                        top = chatListTopPadding(toolbarPlacement),
+                                        top = chatListTopPadding(toolbarPlacement, statusBarTopPadding),
                                         bottom = chatListBottomPadding(toolbarPlacement)
                                     ),
                                     conversation = frameConversation,
@@ -1967,6 +1986,7 @@ private fun ChatPageContent(
                 contextMeterUsage?.let { usage ->
                     ContextUsageOverlay(
                         usage = usage,
+                        activity = contextManagementActivity,
                         placement = toolbarPlacement,
                         popupScale = popupScale,
                         onDismissRequest = { showContextUsagePopup = false },
@@ -2845,7 +2865,7 @@ private fun ChatToolbar(
     ) {
         if (placement == ChatToolbarPlacement.Top && showTopFade) {
             ChatTopFadeOverlay(
-                fadeHeight = 96.dp,
+                fadeHeight = chatTopToolbarFadeHeight,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
@@ -2989,6 +3009,7 @@ private fun ChatToolbar(
 
 @Composable
 private fun rememberContextMeterUsage(
+    enabled: Boolean,
     model: Model?,
     conversation: Conversation,
     assistant: Assistant,
@@ -2996,6 +3017,7 @@ private fun rememberContextMeterUsage(
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
 ): ContextUsageBreakdown? {
+    if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
     val smartActive = assistant.smartContextManagement && (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
@@ -3227,6 +3249,7 @@ private fun rememberContextMeterUsage(
 @Composable
 private fun ContextUsageOverlay(
     usage: ContextUsageBreakdown,
+    activity: ContextManagementActivity?,
     placement: ChatToolbarPlacement,
     popupScale: Float,
     onDismissRequest: () -> Unit,
@@ -3278,7 +3301,7 @@ private fun ContextUsageOverlay(
                     onClick = {},
                 )
         ) {
-            ContextUsagePopupContent(usage)
+            ContextUsagePopupContent(usage, activity)
         }
     }
 }
@@ -3331,14 +3354,24 @@ private fun ContextMeterButton(
     usage: ContextUsageBreakdown,
     onClick: () -> Unit,
 ) {
-    val animatedProgress by animateFloatAsState(
+    val animatedPressure by animateFloatAsState(
         targetValue = usage.fractionUsed,
         animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
-        label = "context_meter_progress",
+        label = "context_meter_pressure",
+    )
+    val animatedWindowProgress by animateFloatAsState(
+        targetValue = usage.fractionOfWindowUsed,
+        animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
+        label = "context_meter_window_progress",
+    )
+    val animatedReservedProgress by animateFloatAsState(
+        targetValue = usage.fractionOfWindowReserved,
+        animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
+        label = "context_meter_reserved_progress",
     )
     val targetProgressColor = when {
-        animatedProgress >= 0.95f -> MaterialTheme.colorScheme.error
-        animatedProgress >= 0.82f -> if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        animatedPressure >= 0.95f -> MaterialTheme.colorScheme.error
+        animatedPressure >= 0.82f -> if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
             Color(0xFFFFC857)
         } else {
             Color(0xFFB46900)
@@ -3363,6 +3396,7 @@ private fun ContextMeterButton(
     ) {
         Box(contentAlignment = Alignment.Center) {
             val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
             Canvas(modifier = Modifier.size(27.dp)) {
                 val strokeWidth = 3.5.dp.toPx()
                 val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
@@ -3373,11 +3407,20 @@ private fun ContextMeterButton(
                     useCenter = false,
                     style = stroke,
                 )
-                if (animatedProgress > 0f) {
+                if (animatedReservedProgress > 0f) {
+                    drawArc(
+                        color = reserveColor,
+                        startAngle = -90f + (1f - animatedReservedProgress) * 360f,
+                        sweepAngle = animatedReservedProgress * 360f,
+                        useCenter = false,
+                        style = stroke,
+                    )
+                }
+                if (animatedWindowProgress > 0f) {
                     drawArc(
                         color = progressColor,
                         startAngle = -90f,
-                        sweepAngle = animatedProgress * 360f,
+                        sweepAngle = animatedWindowProgress * 360f,
                         useCenter = false,
                         style = stroke,
                     )
@@ -3388,10 +3431,14 @@ private fun ContextMeterButton(
 }
 
 @Composable
-private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
+private fun ContextUsagePopupContent(
+    usage: ContextUsageBreakdown,
+    activity: ContextManagementActivity?,
+) {
     val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
     val animatedUsed by animateIntAsState(usage.usedTokens, tokenAnimation, label = "context_used_tokens")
-    val animatedTotal by animateIntAsState(usage.usableInputTokens, tokenAnimation, label = "context_total_tokens")
+    val animatedTotal by animateIntAsState(usage.totalTokens, tokenAnimation, label = "context_total_tokens")
+    val animatedReserved by animateIntAsState(usage.reservedTokens, tokenAnimation, label = "context_reserved")
     val animatedConversation by animateIntAsState(usage.conversationTokens, tokenAnimation, label = "context_conversation")
     val animatedSystemPrompt by animateIntAsState(usage.systemPromptTokens, tokenAnimation, label = "context_system_prompt")
     val animatedSummary by animateIntAsState(usage.summaryTokens, tokenAnimation, label = "context_summary")
@@ -3407,13 +3454,13 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
         listOf(
             Color(0xFF8AB4F8), Color(0xFFFF8A80), Color(0xFFFFD166),
             Color(0xFF7ED99B), Color(0xFFC69AF7), Color(0xFF4DD0E1),
-            Color(0xFFFFA45B), Color(0xFFF48FB1), Color(0xFFB0BEC5),
+            Color(0xFFFFA45B), Color(0xFFF48FB1), Color(0xFFB6D957),
         )
     } else {
         listOf(
             Color(0xFF2457C5), Color(0xFFC43D3D), Color(0xFF9A6500),
             Color(0xFF187A3B), Color(0xFF7139B6), Color(0xFF087F8C),
-            Color(0xFFB84A00), Color(0xFFA92868), Color(0xFF52606D),
+            Color(0xFFB84A00), Color(0xFFA92868), Color(0xFF5F7300),
         )
     }
     val segments = listOf(
@@ -3427,9 +3474,10 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
         Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, categoryColors[7]),
         Triple(stringResource(R.string.context_meter_media), animatedMedia, categoryColors[8]),
     ).filter { it.second > 0 }
-    val animatedRemaining = (animatedTotal - animatedUsed).coerceAtLeast(0)
+    val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    val animatedAvailable = (animatedTotal - animatedUsed - animatedReserved).coerceAtLeast(0)
     val remainingPercent = if (animatedTotal <= 0) 100 else
-        ((animatedRemaining.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
+        ((animatedAvailable.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
     Column(
         modifier = Modifier.padding(20.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
@@ -3465,8 +3513,16 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
                         .background(color),
                 )
             }
-            if (animatedRemaining > 0) {
-                Spacer(Modifier.weight(animatedRemaining.toFloat()).fillMaxHeight())
+            if (animatedAvailable > 0) {
+                Spacer(Modifier.weight(animatedAvailable.toFloat()).fillMaxHeight())
+            }
+            if (animatedReserved > 0) {
+                Spacer(
+                    Modifier
+                        .weight(animatedReserved.toFloat())
+                        .fillMaxHeight()
+                        .background(reserveColor)
+                )
             }
         }
         FlowRow(
@@ -3480,8 +3536,34 @@ private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
                     Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
                 }
             }
+            if (animatedReserved > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).background(reserveColor, RoundedCornerShape(999.dp)))
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "${stringResource(R.string.context_meter_reserved)} ${compactTokenCount(animatedReserved)}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(
+                targetState = activity,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                label = "context_management_activity",
+            ) { currentActivity ->
+                if (currentActivity == ContextManagementActivity.SUMMARIZING) {
+                    Text(
+                        stringResource(R.string.context_meter_summarizing),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Spacer(Modifier.width(0.dp))
+                }
+            }
+            if (activity != null && usage.maxImages != null) Spacer(Modifier.width(12.dp))
             usage.maxImages?.let { maxImages ->
                 Text(
                     stringResource(R.string.context_meter_images, animatedImages, maxImages),

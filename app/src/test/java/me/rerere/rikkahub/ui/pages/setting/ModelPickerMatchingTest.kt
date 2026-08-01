@@ -136,6 +136,38 @@ class ModelPickerMatchingTest {
     }
 
     @Test
+    fun rejectsDifferentOllamaModelTags() {
+        assertFalse(
+            modelsReferToSameApiModel(
+                Model(modelId = "gpt-oss:120b"),
+                Model(modelId = "gpt-oss:20b"),
+            )
+        )
+        assertTrue(
+            modelsReferToSameApiModel(
+                Model(modelId = "gpt-oss:120b"),
+                Model(modelId = "gpt-oss:120b"),
+            )
+        )
+    }
+
+    @Test
+    fun endpointModelListDisambiguatesOllamaTags() {
+        val snapshot = ModelCatalogParser.parse("""{ "schema_version": 1 }""")
+
+        val resolved = resolveProviderModels(
+            resolver = ModelMetadataResolver { snapshot },
+            provider = ProviderSetting.OpenAI(baseUrl = "http://localhost:11434/v1"),
+            models = listOf(
+                Model(modelId = "gpt-oss:120b"),
+                Model(modelId = "gpt-oss:20b"),
+            ),
+        )
+
+        assertEquals(listOf("GPT-Oss 120B", "GPT-Oss 20B"), resolved.map { it.displayName })
+    }
+
+    @Test
     fun matchesSameBaseModelWithDateSuffix() {
         // Date suffixes (no qualifiers) should match general models if needed
         assertTrue(

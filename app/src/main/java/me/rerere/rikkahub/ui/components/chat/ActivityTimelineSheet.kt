@@ -248,6 +248,7 @@ internal fun ActivityTimelineSheet(
     modifier: Modifier = Modifier,
     initialOpenRequest: TimelineOpenRequest? = null,
     assistantId: String? = null,
+    isLive: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
@@ -264,6 +265,7 @@ internal fun ActivityTimelineSheet(
                 .padding(bottom = 32.dp),
             initialOpenRequest = initialOpenRequest,
             assistantId = assistantId,
+            isLive = isLive,
             scrollHandoffMode = TimelineScrollHandoffMode.LockedToPanel,
         )
     }
@@ -277,6 +279,7 @@ internal fun ActivityTimelinePanel(
     assistantId: String? = null,
     memoryActions: TimelineMemoryActions? = null,
     scrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.LockedToPanel,
+    isLive: Boolean = false,
     listState: LazyListState = rememberLazyListState(),
     onTimelineClick: () -> Unit = {},
 ) {
@@ -428,6 +431,13 @@ internal fun ActivityTimelinePanel(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val entryIds = remember(entries) { entries.map { it.id } }
+    var expandedEntryId by remember(entryIds, initialOpenRequest) {
+        mutableStateOf(
+            buildInitialTimelineFocus(entries, initialOpenRequest)
+                .expandedEntryIds
+                .firstOrNull()
+        )
+    }
     val currentEntryIndex = remember(entries) {
         findCurrentEntryIndex(entries)
     }
@@ -452,6 +462,7 @@ internal fun ActivityTimelinePanel(
     LaunchedEffect(initialOpenRequest) {
         val initialFocus = buildInitialTimelineFocus(entries, initialOpenRequest)
         autoFollowCurrentEntry = initialOpenRequest?.openMode == TimelineOpenMode.FocusCurrent
+        expandedEntryId = initialFocus.expandedEntryIds.firstOrNull()
 
         val scrollIndex = initialFocus.scrollIndex
         if (scrollIndex != null) {
@@ -538,6 +549,8 @@ internal fun ActivityTimelinePanel(
                         TimelineEntryItem(
                             entry = entry,
                             showDivider = index > 0,
+                            useAccordionLayout = !isLive,
+                            expanded = expandedEntryId == entry.id,
                             isLocallyDeleted = entry is TimelineEntry.MemoryAction &&
                                 entry.memoryId != null &&
                                 deletedMemoryIds.contains(entry.memoryId),
@@ -566,6 +579,10 @@ internal fun ActivityTimelinePanel(
                                 currentEntryId != null &&
                                 currentEntryId == entry.id,
                             onClickEntry = onTimelineClick,
+                            onToggleExpanded = {
+                                haptics.perform(HapticPattern.Pop)
+                                expandedEntryId = if (expandedEntryId == entry.id) null else entry.id
+                            },
                             onCopyEntry = {
                                 val text = buildTimelineCopyText(entry)
                                 if (text.isBlank()) {
@@ -689,6 +706,8 @@ internal fun ActivityTimelinePanel(
 private fun TimelineEntryItem(
     entry: TimelineEntry,
     showDivider: Boolean,
+    useAccordionLayout: Boolean,
+    expanded: Boolean,
     isLocallyDeleted: Boolean,
     onEditMemory: (Int, String) -> Unit,
     onDeleteMemory: (Int, String?) -> Unit,
@@ -697,6 +716,7 @@ private fun TimelineEntryItem(
     canRestore: Boolean,
     followLiveContent: Boolean,
     onClickEntry: () -> Unit,
+    onToggleExpanded: () -> Unit,
     onCopyEntry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -721,6 +741,25 @@ private fun TimelineEntryItem(
     val viewRequester = remember { BringIntoViewRequester() }
     val followSignature = remember(entry) { buildEntryFollowSignature(entry) }
     val isSingleEntry = !showDivider
+
+    if (useAccordionLayout) {
+        TimelineAccordionEntry(
+            entry = entry,
+            expanded = expanded,
+            hasContent = hasContent,
+            accentColor = accentColor,
+            isMemoryDeleted = isMemoryDeleted,
+            onEditMemory = onEditMemory,
+            onDeleteMemory = onDeleteMemory,
+            onRestoreMemory = onRestoreMemory,
+            onRevertMemory = onRevertMemory,
+            canRestore = canRestore,
+            onToggleExpanded = onToggleExpanded,
+            onCopyEntry = onCopyEntry,
+            modifier = modifier.testTag("timeline_entry_${entry.id}"),
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -779,6 +818,120 @@ private fun TimelineEntryItem(
                 viewRequester.bringIntoView()
             } catch (_: IllegalStateException) {
                 // The row may be leaving composition while live content is still updating.
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TimelineAccordionEntry(
+    entry: TimelineEntry,
+    expanded: Boolean,
+    hasContent: Boolean,
+    accentColor: Color,
+    isMemoryDeleted: Boolean,
+    onEditMemory: (Int, String) -> Unit,
+    onDeleteMemory: (Int, String?) -> Unit,
+    onRestoreMemory: (String) -> Unit,
+    onRevertMemory: (Int, String) -> Unit,
+    canRestore: Boolean,
+    onToggleExpanded: () -> Unit,
+    onCopyEntry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val durationLabel = if (entry is TimelineEntry.Reasoning) {
+        formatTimelineDuration(entry.durationMs)?.let { " · $it" }.orEmpty()
+    } else {
+        ""
+    }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "timeline_section_chevron",
+    )
+
+    Surface(
+        shape = AppShapes.ListItem,
+        color = if (expanded) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = TIMELINE_PANEL_ANIMATION_MS,
+                    easing = LinearOutSlowInEasing,
+                )
+            )
+            .combinedClickable(
+                onClick = onToggleExpanded,
+                onLongClick = onCopyEntry,
+            ),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = getTimelineIcon(entry),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = accentColor,
+                    )
+                }
+                Text(
+                    text = getTimelineLabel(entry) + durationLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                if (hasContent) {
+                    Icon(
+                        imageVector = Icons.Rounded.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) R.string.activity_timeline_collapse
+                            else R.string.activity_timeline_expand
+                        ),
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { rotationZ = chevronRotation },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (expanded && hasContent) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TimelineExpandedContent(
+                        entry = entry,
+                        isDeleted = isMemoryDeleted,
+                        onEditMemory = onEditMemory,
+                        onDeleteMemory = onDeleteMemory,
+                        onRestoreMemory = onRestoreMemory,
+                        onRevertMemory = onRevertMemory,
+                        canRestore = canRestore,
+                        followLiveContent = false,
+                    )
+                }
             }
         }
     }

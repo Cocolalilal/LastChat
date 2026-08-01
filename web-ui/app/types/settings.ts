@@ -11,6 +11,7 @@ export interface DisplaySetting {
   showModelName: boolean;
   showAssistantBubbles?: boolean;
   showTokenUsage: boolean;
+  showContextTokenSummary?: boolean;
   showThinkingContent: boolean;
   autoCloseThinking: boolean;
   codeBlockAutoWrap: boolean;
