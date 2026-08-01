@@ -10,11 +10,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -22,12 +20,13 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.ImageGenerationParams
-import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.parseCodexModelCatalog
+import me.rerere.ai.provider.sanitizeCodexResponseRequest
 import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.MessageChunk
@@ -92,40 +91,7 @@ class CodexProvider(
                 if (response.code == 401) repository.markInvalid(account.id)
                 error("Failed to get Codex models: ${response.code} ${response.body.string()}")
             }
-            val models = json.parseToJsonElement(response.body.string())
-                .jsonObject["models"]?.jsonArray
-                ?: return@withContext emptyList()
-            models.mapNotNull { element ->
-                val item = element.jsonObject
-                if (item["visibility"]?.jsonPrimitive?.contentOrNull != "list") {
-                    return@mapNotNull null
-                }
-                val slug = item["slug"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val modalities = item["input_modalities"]?.jsonArray
-                    ?.mapNotNull { modality ->
-                        when (modality.jsonPrimitive.contentOrNull) {
-                            "text" -> Modality.TEXT
-                            "image" -> Modality.IMAGE
-                            else -> null
-                        }
-                    }
-                    ?.ifEmpty { listOf(Modality.TEXT) }
-                    ?: listOf(Modality.TEXT, Modality.IMAGE)
-                Model(
-                    modelId = slug,
-                    displayName = item["display_name"]?.jsonPrimitive?.contentOrNull ?: slug,
-                    inputModalities = modalities,
-                    abilities = buildList {
-                        add(ModelAbility.TOOL)
-                        if (
-                            item["supported_reasoning_levels"]?.jsonArray?.isNotEmpty() == true ||
-                            item["supports_reasoning_summaries"]?.jsonPrimitive?.booleanOrNull == true
-                        ) {
-                            add(ModelAbility.REASONING)
-                        }
-                    },
-                )
-            }
+            parseCodexModelCatalog(json.parseToJsonElement(response.body.string()).jsonObject)
         }
 
     override suspend fun generateText(
@@ -174,11 +140,17 @@ class CodexProvider(
         val baseRequestBody = responseApi.buildRequestBody(
             providerSetting = syntheticSetting,
             messages = messages,
-            params = params,
+            // These values still drive LastChat's context/output budgeting, but the ChatGPT
+            // Codex transport does not accept the corresponding Responses API wire fields.
+            params = params.copy(
+                maxTokens = null,
+                temperature = null,
+                topP = null,
+            ),
             stream = true,
         )
         val requestBody = buildJsonObject {
-            for ((key, value) in baseRequestBody) {
+            for ((key, value) in sanitizeCodexResponseRequest(baseRequestBody)) {
                 put(key, value)
             }
             // ChatGPT's Codex backend rejects persisted Responses API requests.
@@ -334,7 +306,9 @@ class CodexProvider(
 
     private companion object {
         const val CODEX_API_BASE = "${CodexAccountRepository.CODEX_BASE_URL}/codex"
-        const val CLIENT_VERSION = "0.139.0"
+        // The backend filters models by their minimum compatible Codex version. Keep this aligned
+        // with the current stable wire contract so newly available picker models are returned.
+        const val CLIENT_VERSION = "0.145.0"
         const val DEFAULT_INSTRUCTIONS = "You are a helpful assistant."
         val FINAL_RESPONSE_EVENTS = setOf(
             "response.completed",

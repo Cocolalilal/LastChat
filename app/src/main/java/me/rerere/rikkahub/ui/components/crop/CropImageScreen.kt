@@ -78,12 +78,14 @@ import kotlin.math.roundToInt
  * A full-screen dialog for cropping an image.
  * 
  * @param sourceUri The URI of the image to crop
+ * @param lockedAspectRatio Optional width/height ratio that the crop area must preserve
  * @param onCropComplete Called with the URI of the cropped image when complete
  * @param onCancel Called when the user cancels the crop operation
  */
 @Composable
 fun CropImageScreen(
     sourceUri: Uri,
+    lockedAspectRatio: Float? = null,
     onCropComplete: (Uri) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -215,6 +217,7 @@ fun CropImageScreen(
                                     containerWidth = containerWidth,
                                     containerHeight = containerHeight,
                                     mediaAspectRatio = aspectRatio,
+                                    lockedAspectRatio = lockedAspectRatio,
                                     enabled = true,
                                     onAreaChanged = { area, original ->
                                         cropArea = area

@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -56,7 +57,11 @@ fun BackgroundPicker(
     onDimChange: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val isDarkMode = LocalDarkMode.current
+    val wallpaperAspectRatio = remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+        configuration.screenWidthDp.toFloat() / configuration.screenHeightDp.coerceAtLeast(1)
+    }
     val scope = rememberCoroutineScope()
     var showPickOption by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
@@ -83,6 +88,7 @@ fun BackgroundPicker(
     imageToCrop?.let { sourceUri ->
         CropImageScreen(
             sourceUri = sourceUri,
+            lockedAspectRatio = wallpaperAspectRatio,
             onCropComplete = { croppedUri ->
                 imageToCrop = null
                 scope.launch {
@@ -174,7 +180,7 @@ fun BackgroundPicker(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(9f / 16f)
+                        .aspectRatio(wallpaperAspectRatio)
                         .clip(RoundedCornerShape(10.dp))
                 ) {
                     AsyncImage(
