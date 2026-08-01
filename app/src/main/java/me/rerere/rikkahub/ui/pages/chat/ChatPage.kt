@@ -89,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
@@ -151,6 +152,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
+import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -3011,7 +3013,9 @@ private fun rememberContextMeterUsage(
     val hasPendingInput = pendingParts.any { part ->
         part !is UIMessagePart.Text || part.text.isNotBlank()
     }
-    val sourceKey = contextUsageSourceKey(conversation, assistant, activeModel, settings)
+    val sourceKey = remember(conversation, assistant, activeModel, settings) {
+        contextUsageSourceKey(conversation, assistant, activeModel, settings)
+    }
     if (!hasPendingInput && requestUsage?.sourceKey == sourceKey) return requestUsage
 
     val observedMemoryTokenTotals = rawMessages.asReversed().mapNotNull { message ->
@@ -3022,13 +3026,30 @@ private fun rememberContextMeterUsage(
             }
             .takeIf { it > 0 }
     }.take(6)
-    val activeSkillIds = assistant.enabledSkillIds + conversation.enabledModeIds + settings.skills
-        .filter { skill -> skill.alwaysEnabled && skill.isAvailableForAssistant(assistant.id) }
+    val availableSkills = settings.skills.filter { skill ->
+        skill.enabled && skill.instructions.isNotBlank()
+    }
+    val allSkillIds = availableSkills.map { skill -> skill.id }.toSet()
+    val assistantAvailableSkillIds = availableSkills
+        .filter { skill -> skill.isAvailableForAssistant(assistant.id) }
         .map { skill -> skill.id }
+        .toSet()
+    val activeSkillIds = resolveActiveSkillIds(
+        assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds),
+        conversationSkillIds = conversation.enabledModeIds,
+        turnScopedSkillIds = emptySet(),
+        allSkillIds = allSkillIds,
+        alwaysEnabledSkillIds = availableSkills
+            .filter { skill -> skill.alwaysEnabled && skill.id in assistantAvailableSkillIds }
+            .map { skill -> skill.id }
+            .toSet(),
+    )
     val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
-    val activeLoreEntries = settings.lorebooks
-        .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
-        .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
+    val activeLoreEntries = remember(settings.lorebooks, activeLorebookIds) {
+        settings.lorebooks
+            .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
+            .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
+    }
     fun loreEntryTokenCost(entry: me.rerere.rikkahub.data.model.LorebookEntry): Int =
         ContextTokenEstimator.textTokens(entry.prompt, activeModel) +
             entry.attachments.sumOf { attachment ->
@@ -3039,8 +3060,10 @@ private fun rememberContextMeterUsage(
                     ModeAttachmentType.DOCUMENT -> 512
                 }
             }
-    val loreEntryTokensById = activeLoreEntries.associate { entry ->
-        entry.id.toString() to loreEntryTokenCost(entry)
+    val loreEntryTokensById = remember(activeLoreEntries, activeModel) {
+        activeLoreEntries.associate { entry ->
+            entry.id.toString() to loreEntryTokenCost(entry)
+        }
     }
     val observedConditionalTokenTotals = rawMessages.asReversed().mapNotNull { message ->
         message.usedLorebookEntries.orEmpty()
@@ -3050,9 +3073,11 @@ private fun rememberContextMeterUsage(
             }
             .takeIf { it > 0 }
     }.take(6)
-    val conditionalContextCandidateTokens = activeLoreEntries
-        .filter { it.activationType != LorebookActivationType.ALWAYS }
-        .sumOf(::loreEntryTokenCost)
+    val conditionalContextCandidateTokens = remember(activeLoreEntries, loreEntryTokensById) {
+        activeLoreEntries
+            .filter { it.activationType != LorebookActivationType.ALWAYS }
+            .sumOf { entry -> loreEntryTokensById[entry.id.toString()] ?: 0 }
+    }
     val probableTemporaryTokens = probableTemporaryTokenReserve(
         model = activeModel,
         requestedOutputTokens = assistant.maxTokens,
@@ -3062,16 +3087,26 @@ private fun rememberContextMeterUsage(
         conditionalContextCandidateTokens = conditionalContextCandidateTokens,
         observedConditionalTokenTotals = observedConditionalTokenTotals,
     )
-    val addonText = buildString {
-        settings.skills
-            .filter { skill -> skill.alwaysEnabled || skill.id in activeSkillIds }
-            .forEach { skill ->
-                appendLine(skill.name)
-                appendLine(skill.instructions)
-            }
+    val skillText = remember(availableSkills, activeSkillIds) {
+        buildString {
+            availableSkills
+                .filter { skill -> skill.id in activeSkillIds }
+                .forEach { skill ->
+                    appendLine(skill.name)
+                    appendLine(skill.instructions)
+                }
+        }
+    }
+    val lorebookText = remember(activeLoreEntries) {
         activeLoreEntries
             .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
-            .forEach { entry -> appendLine(entry.prompt) }
+            .joinToString("\n") { entry -> entry.prompt }
+    }
+    val skillTokens = remember(skillText, activeModel) {
+        ContextTokenEstimator.textTokens(skillText, activeModel)
+    }
+    val lorebookTokens = remember(lorebookText, activeModel) {
+        ContextTokenEstimator.textTokens(lorebookText, activeModel)
     }
     fun me.rerere.rikkahub.data.model.ModeAttachment.toContextPart(): UIMessagePart = when (type) {
         ModeAttachmentType.IMAGE -> UIMessagePart.Image(url)
@@ -3079,55 +3114,65 @@ private fun rememberContextMeterUsage(
         ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url)
         ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(url, fileName, mime)
     }
-    val knownContextAttachments = buildList {
-        settings.skills
-            .filter { skill -> skill.id in activeSkillIds }
-            .flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
-        activeLoreEntries
-            .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
-            .flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
+    val knownContextAttachments = remember(availableSkills, activeSkillIds, activeLoreEntries) {
+        buildList {
+            availableSkills
+                .filter { skill -> skill.id in activeSkillIds }
+                .flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
+            activeLoreEntries
+                .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
+                .flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
+        }
     }
-    val knownContextMediaTokens = knownContextAttachments.sumOf { part ->
-        ContextTokenEstimator.partTokens(part, activeModel)
+    val knownContextMediaTokens = remember(knownContextAttachments, activeModel) {
+        knownContextAttachments.sumOf { part ->
+            ContextTokenEstimator.partTokens(part, activeModel)
+        }
     }
-    val activeMcpTools = if (ModelAbility.TOOL in activeModel.abilities) {
-        settings.mcpServers
+    val toolAccounting = remember(
+        activeModel,
+        assistant.localTools,
+        assistant.mcpServers,
+        settings.mcpServers,
+    ) {
+        if (ModelAbility.TOOL !in activeModel.abilities) return@remember "" to 0
+        val activeMcpTools = settings.mcpServers
             .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
             .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable } }
-    } else {
-        emptyList()
-    }
-    val toolDefinitionText = if (ModelAbility.TOOL in activeModel.abilities) buildString {
-        assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
-        activeMcpTools.forEach { tool ->
-            appendLine(
-                ContextTokenEstimator.toolDefinitionText(
-                    name = tool.name,
-                    description = tool.description.orEmpty(),
-                    schema = tool.inputSchema,
+        val definitionText = buildString {
+            assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
+            activeMcpTools.forEach { tool ->
+                appendLine(
+                    ContextTokenEstimator.toolDefinitionText(
+                        name = tool.name,
+                        description = tool.description.orEmpty(),
+                        schema = tool.inputSchema,
+                    )
                 )
-            )
+            }
         }
-    } else ""
-    val localToolDefinitionTokens = assistant.localTools.sumOf { tool ->
-        ContextTokenEstimator.toolDefinitionTokens(
-            name = tool.toString(),
-            description = "",
-            schema = null,
-            model = activeModel,
-        ).toLong()
+        val localTokens = assistant.localTools.sumOf { tool ->
+            ContextTokenEstimator.toolDefinitionTokens(
+                name = tool.toString(),
+                description = "",
+                schema = null,
+                model = activeModel,
+            ).toLong()
+        }
+        val mcpTokens = activeMcpTools.sumOf { tool ->
+            ContextTokenEstimator.toolDefinitionTokens(
+                name = tool.name,
+                description = tool.description.orEmpty(),
+                schema = tool.inputSchema,
+                model = activeModel,
+            ).toLong()
+        }
+        definitionText to (localTokens + mcpTokens)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
     }
-    val mcpToolDefinitionTokens = activeMcpTools.sumOf { tool ->
-        ContextTokenEstimator.toolDefinitionTokens(
-            name = tool.name,
-            description = tool.description.orEmpty(),
-            schema = tool.inputSchema,
-            model = activeModel,
-        ).toLong()
-    }
-    val toolDefinitionTokens = (localToolDefinitionTokens + mcpToolDefinitionTokens)
-        .coerceAtMost(Int.MAX_VALUE.toLong())
-        .toInt()
+    val toolDefinitionText = toolAccounting.first
+    val toolDefinitionTokens = toolAccounting.second
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
         if (assistant.learningMode) {
@@ -3149,7 +3194,7 @@ private fun rememberContextMeterUsage(
     val messagesToCount = if (smartActive) {
         val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
             ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-            ContextTokenEstimator.textTokens(addonText, activeModel) +
+            skillTokens + lorebookTokens +
             toolDefinitionTokens +
             knownContextMediaTokens +
             probableTemporaryTokens
@@ -3169,10 +3214,14 @@ private fun rememberContextMeterUsage(
         systemPromptText = systemPromptText,
         summaryText = conversation.contextSummary.orEmpty(),
         memoryTokensOverride = 0,
-        addonText = addonText,
+        skillText = skillText,
+        lorebookText = lorebookText,
+        skillTokensOverride = skillTokens,
+        lorebookTokensOverride = lorebookTokens,
         toolDefinitionText = toolDefinitionText,
         toolDefinitionTokensOverride = toolDefinitionTokens,
         pendingParts = knownContextAttachments + if (smartActive) emptyList() else pendingParts,
+        usableInputTokens = if (smartActive) smartInputBudget(activeModel, assistant.maxTokens) else null,
         sourceKey = sourceKey,
     )
 }
@@ -3285,7 +3334,11 @@ private fun ContextMeterButton(
     )
     val targetProgressColor = when {
         animatedProgress >= 0.95f -> MaterialTheme.colorScheme.error
-        animatedProgress >= 0.82f -> MaterialTheme.colorScheme.tertiary
+        animatedProgress >= 0.82f -> if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+            Color(0xFFFFC857)
+        } else {
+            Color(0xFFB46900)
+        }
         else -> MaterialTheme.colorScheme.primary
     }
     val progressColor by animateColorAsState(
@@ -3307,7 +3360,7 @@ private fun ContextMeterButton(
         Box(contentAlignment = Alignment.Center) {
             val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
             Canvas(modifier = Modifier.size(27.dp)) {
-                val strokeWidth = 3.dp.toPx()
+                val strokeWidth = 3.5.dp.toPx()
                 val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 drawArc(
                     color = trackColor,
@@ -3334,25 +3387,41 @@ private fun ContextMeterButton(
 private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
     val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
     val animatedUsed by animateIntAsState(usage.usedTokens, tokenAnimation, label = "context_used_tokens")
-    val animatedTotal by animateIntAsState(usage.totalTokens, tokenAnimation, label = "context_total_tokens")
+    val animatedTotal by animateIntAsState(usage.usableInputTokens, tokenAnimation, label = "context_total_tokens")
     val animatedConversation by animateIntAsState(usage.conversationTokens, tokenAnimation, label = "context_conversation")
     val animatedSystemPrompt by animateIntAsState(usage.systemPromptTokens, tokenAnimation, label = "context_system_prompt")
     val animatedSummary by animateIntAsState(usage.summaryTokens, tokenAnimation, label = "context_summary")
     val animatedMemory by animateIntAsState(usage.memoryTokens, tokenAnimation, label = "context_memory")
-    val animatedAddons by animateIntAsState(usage.addonTokens, tokenAnimation, label = "context_addons")
+    val animatedSkills by animateIntAsState(usage.skillTokens, tokenAnimation, label = "context_skills")
+    val animatedLorebook by animateIntAsState(usage.lorebookTokens, tokenAnimation, label = "context_lorebook")
     val animatedToolDefinitions by animateIntAsState(usage.toolDefinitionTokens, tokenAnimation, label = "context_tool_definitions")
     val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
     val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
     val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val categoryColors = if (isDark) {
+        listOf(
+            Color(0xFF8AB4F8), Color(0xFFFF8A80), Color(0xFFFFD166),
+            Color(0xFF7ED99B), Color(0xFFC69AF7), Color(0xFF4DD0E1),
+            Color(0xFFFFA45B), Color(0xFFF48FB1), Color(0xFFB0BEC5),
+        )
+    } else {
+        listOf(
+            Color(0xFF2457C5), Color(0xFFC43D3D), Color(0xFF9A6500),
+            Color(0xFF187A3B), Color(0xFF7139B6), Color(0xFF087F8C),
+            Color(0xFFB84A00), Color(0xFFA92868), Color(0xFF52606D),
+        )
+    }
     val segments = listOf(
-        Triple(stringResource(R.string.context_meter_conversation), animatedConversation, MaterialTheme.colorScheme.primary),
-        Triple(stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt, MaterialTheme.colorScheme.secondary),
-        Triple(stringResource(R.string.context_meter_summary), animatedSummary, MaterialTheme.colorScheme.tertiary),
-        Triple(stringResource(R.string.context_meter_memory), animatedMemory, MaterialTheme.colorScheme.primaryContainer),
-        Triple(stringResource(R.string.context_meter_addons), animatedAddons, MaterialTheme.colorScheme.secondaryContainer),
-        Triple(stringResource(R.string.context_meter_tool_definitions), animatedToolDefinitions, MaterialTheme.colorScheme.errorContainer),
-        Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, MaterialTheme.colorScheme.error),
-        Triple(stringResource(R.string.context_meter_media), animatedMedia, MaterialTheme.colorScheme.tertiaryContainer),
+        Triple(stringResource(R.string.context_meter_conversation), animatedConversation, categoryColors[0]),
+        Triple(stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt, categoryColors[1]),
+        Triple(stringResource(R.string.context_meter_summary), animatedSummary, categoryColors[2]),
+        Triple(stringResource(R.string.context_meter_memory), animatedMemory, categoryColors[3]),
+        Triple(stringResource(R.string.context_meter_skills_modes), animatedSkills, categoryColors[4]),
+        Triple(stringResource(R.string.context_meter_lorebook), animatedLorebook, categoryColors[5]),
+        Triple(stringResource(R.string.context_meter_tool_definitions), animatedToolDefinitions, categoryColors[6]),
+        Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, categoryColors[7]),
+        Triple(stringResource(R.string.context_meter_media), animatedMedia, categoryColors[8]),
     ).filter { it.second > 0 }
     val animatedRemaining = (animatedTotal - animatedUsed).coerceAtLeast(0)
     val remainingPercent = if (animatedTotal <= 0) 100 else

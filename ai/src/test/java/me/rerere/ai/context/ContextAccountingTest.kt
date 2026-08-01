@@ -91,6 +91,48 @@ class ContextAccountingTest {
     }
 
     @Test
+    fun usableInputBudget_drivesMeterPressureAndSurvivesProviderReconciliation() {
+        val model = Model(modelId = "gpt-test", contextWindowTokens = 32_000)
+        val estimated = ContextTokenEstimator.breakdown(
+            messages = listOf(UIMessage.user("hello world")),
+            model = model,
+            usableInputTokens = 26_000,
+        )
+
+        val counted = ContextTokenEstimator.reconcileProviderCount(
+            breakdown = estimated,
+            promptTokens = 13_000,
+            model = model,
+        )
+
+        assertEquals(32_000, counted.totalTokens)
+        assertEquals(26_000, counted.usableInputTokens)
+        assertEquals(13_000, counted.remainingTokens)
+        assertEquals(0.5f, counted.fractionUsed, 0.0001f)
+    }
+
+    @Test
+    fun breakdown_separatesSkillsAndLorebook() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 8_192)
+
+        val usage = ContextTokenEstimator.breakdown(
+            messages = listOf(UIMessage.user("hello")),
+            model = model,
+            skillText = "A long-running character skill",
+            lorebookText = "The kingdom was founded beside a silver river",
+        )
+
+        assertTrue(usage.skillTokens > 0)
+        assertTrue(usage.lorebookTokens > 0)
+        assertEquals(
+            usage.usedTokens,
+            usage.conversationTokens + usage.systemPromptTokens + usage.summaryTokens +
+                usage.memoryTokens + usage.skillTokens + usage.lorebookTokens +
+                usage.toolDefinitionTokens + usage.toolCallTokens + usage.mediaTokens,
+        )
+    }
+
+    @Test
     fun hardCompaction_preservesToolPairAndFitsBudget() {
         val model = Model(modelId = "private-model", contextWindowTokens = 2_048)
         val messages = listOf(

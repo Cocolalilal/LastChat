@@ -169,6 +169,8 @@ data class BuildMessagesResult(
     val contextUsage: ContextUsageBreakdown? = null,
     val effectiveTools: List<Tool> = emptyList(),
     val messageBudgetTokens: Int? = null,
+    /** Inclusive prompt budget before tool definitions are allocated out of message history. */
+    val effectiveInputBudgetTokens: Int? = null,
 )
 
 internal data class SkillToolState(
@@ -917,11 +919,11 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.instructions.isNotBlank()
+            skill.enabled && skill.instructions.isNotBlank()
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
         val assistantAvailableSkillIds = settings.skills
-            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
             .map { it.id }
             .toSet()
         val alwaysEnabledSkillIds = availableSkills
@@ -929,7 +931,7 @@ class GenerationHandler(
             .map { it.id }
             .toSet()
         val assistantDefaultSkillIds = settings.skills
-            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
+            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
             .map { it.id }
             .toSet()
             .let { assistant.enabledSkillIds.intersect(it) }
@@ -1017,6 +1019,9 @@ class GenerationHandler(
         val depthSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val topOfChatEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
+        val beforeLatestEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
+        val depthEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
 
         // 1. Base System Prompt (BEFORE_SYSTEM skills/entries + System + Learning + AFTER_SYSTEM skills/entries + Tools)
         val baseSystemPromptBuilder = StringBuilder()
@@ -1366,11 +1371,15 @@ class GenerationHandler(
             fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
                 "<system>\n[Skill: ${skill.name}]\n${skill.instructions}\nSkill directory: ${skill.workspaceDirectory()}\n</system>"
             )
+            fun lorebookMessage(entry: LorebookEntry): UIMessage = UIMessage.user(
+                "<system>\n${entry.prompt}\n</system>"
+            )
 
             // These positions intentionally become in-context messages rather than
             // system-prompt text. That makes TOP_OF_CHAT, BEFORE_LATEST and AT_DEPTH
             // materially distinct and preserves their documented ordering.
             topOfChatSkills.forEach { add(skillMessage(it)) }
+            topOfChatEntries.forEach { add(lorebookMessage(it)) }
             
             val dynamicContext = buildList {
                 if (!contextSummary.isNullOrBlank()) {
@@ -1391,12 +1400,17 @@ class GenerationHandler(
                 val depthByInsertionIndex = depthSkills.groupBy { skill ->
                     (history.size - skill.depth.coerceAtLeast(0)).coerceIn(0, history.size)
                 }
+                val lorebookDepthByInsertionIndex = depthEntries.groupBy { entry ->
+                    (history.size - entry.depth.coerceAtLeast(0)).coerceIn(0, history.size)
+                }
                 for (index in 0..history.size) {
                     depthByInsertionIndex[index].orEmpty().forEach { add(skillMessage(it)) }
+                    lorebookDepthByInsertionIndex[index].orEmpty().forEach { add(lorebookMessage(it)) }
                     if (index < history.size) add(history[index])
                 }
 
                 beforeLatestSkills.forEach { add(skillMessage(it)) }
+                beforeLatestEntries.forEach { add(lorebookMessage(it)) }
                 
                 var finalParts = lastMessage.parts
                 
@@ -1411,7 +1425,9 @@ class GenerationHandler(
                 add(lastMessage.copy(parts = finalParts))
             } else {
                 depthSkills.forEach { add(skillMessage(it)) }
+                depthEntries.forEach { add(lorebookMessage(it)) }
                 beforeLatestSkills.forEach { add(skillMessage(it)) }
+                beforeLatestEntries.forEach { add(lorebookMessage(it)) }
                 if (dynamicContext.isNotBlank()) {
                     add(UIMessage.system(dynamicContext))
                 }
@@ -1462,14 +1478,15 @@ class GenerationHandler(
             usedMemories = usedMemories,
             effectiveTools = effectiveTools,
             messageBudgetTokens = smartMessageBudget,
+            effectiveInputBudgetTokens = maxTokens.takeIf { smartEnabled },
             contextUsage = model.contextWindowTokens?.let {
-                val addonText = buildString {
+                val skillText = buildString {
                     enabledSkills.forEach { skill ->
                         appendLine(skill.name)
                         appendLine(skill.instructions)
                     }
-                    activatedEntries.forEach { entry -> appendLine(entry.prompt) }
                 }
+                val lorebookText = activatedEntries.joinToString("\n") { entry -> entry.prompt }
                 val systemPromptText = buildString {
                     append(assistant.systemPrompt)
                     if (assistant.learningMode) {
@@ -1483,11 +1500,13 @@ class GenerationHandler(
                     systemPromptText = systemPromptText,
                     summaryText = contextSummary.orEmpty(),
                     memoryText = selectedMemories.joinToString("\n") { memory -> memory.content },
-                    addonText = addonText,
+                    skillText = skillText,
+                    lorebookText = lorebookText,
                     toolDefinitionText = toolDefinitionText,
                     toolDefinitionTokensOverride = toolDefinitionTokens,
                     embeddedToolText = toolSystemPromptText,
                     namedContextEmbeddedInMessages = true,
+                    usableInputTokens = if (smartEnabled) maxTokens else null,
                     sourceKey = contextUsageSourceKey,
                 )
             },
@@ -1696,9 +1715,7 @@ class GenerationHandler(
             },
         )
         if ((model.contextWindowTokens ?: 0) > 0) {
-            val inputBudget = buildResult.messageBudgetTokens?.let {
-                smartInputBudget(model, params.maxTokens)
-            }
+            val inputBudget = buildResult.effectiveInputBudgetTokens
             if (inputBudget != null || buildResult.messageBudgetTokens == null) {
                 var lastCountedTokens: Int? = null
                 for (attempt in 0 until 8) {
@@ -1764,6 +1781,15 @@ class GenerationHandler(
                         throw IllegalStateException(
                             "Smart context management could not create a request within the model's context window"
                         )
+                    }
+                    transformedUsage?.let { estimate ->
+                        val counted = ContextTokenEstimator.reconcileProviderCount(
+                            breakdown = estimate,
+                            promptTokens = finalCount,
+                            model = model,
+                        )
+                        transformedUsage = counted
+                        onContextUsage(counted)
                     }
                 }
             }

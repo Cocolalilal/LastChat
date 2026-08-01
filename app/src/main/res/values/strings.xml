@@ -1526,7 +1526,8 @@
   <string name="context_meter_system_prompt">System prompt</string>
   <string name="context_meter_summary">Summary</string>
   <string name="context_meter_memory">Memory</string>
-  <string name="context_meter_addons">Add-ons</string>
+  <string name="context_meter_skills_modes">Skills / modes</string>
+  <string name="context_meter_lorebook">Lorebook</string>
   <string name="context_meter_tool_definitions">Tools</string>
   <string name="context_meter_tool_calls">Tool calls</string>
   <string name="context_meter_media">Media</string>

@@ -34,7 +34,8 @@ data class ContextUsageBreakdown(
     val systemPromptTokens: Int = 0,
     val summaryTokens: Int = 0,
     val memoryTokens: Int = 0,
-    val addonTokens: Int = 0,
+    val skillTokens: Int = 0,
+    val lorebookTokens: Int = 0,
     val toolDefinitionTokens: Int = 0,
     val toolCallTokens: Int = 0,
     val mediaTokens: Int = 0,
@@ -43,19 +44,23 @@ data class ContextUsageBreakdown(
         systemPromptTokens,
         summaryTokens,
         memoryTokens,
-        addonTokens,
+        skillTokens,
+        lorebookTokens,
         toolDefinitionTokens,
         toolCallTokens,
         mediaTokens,
     ),
     val totalTokens: Int,
+    /** Input capacity after smart response reserve and safety margin. */
+    val usableInputTokens: Int = totalTokens,
     val imageCount: Int = 0,
     val maxImages: Int? = null,
     val confidence: ContextCountConfidence = ContextCountConfidence.ESTIMATED,
     val sourceKey: Int? = null,
 ) {
-    val remainingTokens: Int get() = (totalTokens - usedTokens).coerceAtLeast(0)
-    val fractionUsed: Float get() = if (totalTokens <= 0) 0f else (usedTokens.toFloat() / totalTokens).coerceIn(0f, 1f)
+    val remainingTokens: Int get() = (usableInputTokens - usedTokens).coerceAtLeast(0)
+    val fractionUsed: Float get() = if (usableInputTokens <= 0) 0f else
+        (usedTokens.toFloat() / usableInputTokens).coerceIn(0f, 1f)
 }
 
 /**
@@ -86,7 +91,8 @@ object ContextTokenEstimator {
         val system = scaled(breakdown.systemPromptTokens)
         val summary = scaled(breakdown.summaryTokens)
         val memory = scaled(breakdown.memoryTokens)
-        val addons = scaled(breakdown.addonTokens)
+        val skills = scaled(breakdown.skillTokens)
+        val lorebook = scaled(breakdown.lorebookTokens)
         val toolDefinitions = scaled(breakdown.toolDefinitionTokens)
         val toolCalls = scaled(breakdown.toolCallTokens)
         val media = scaled(breakdown.mediaTokens)
@@ -95,7 +101,8 @@ object ContextTokenEstimator {
             system,
             summary,
             memory,
-            addons,
+            skills,
+            lorebook,
             toolDefinitions,
             toolCalls,
             media,
@@ -105,7 +112,8 @@ object ContextTokenEstimator {
             systemPromptTokens = system,
             summaryTokens = summary,
             memoryTokens = memory,
-            addonTokens = addons,
+            skillTokens = skills,
+            lorebookTokens = lorebook,
             toolDefinitionTokens = toolDefinitions,
             toolCallTokens = toolCalls,
             mediaTokens = media,
@@ -234,14 +242,18 @@ object ContextTokenEstimator {
         systemPromptText: String = "",
         summaryText: String = "",
         memoryText: String = "",
-        addonText: String = "",
+        skillText: String = "",
+        lorebookText: String = "",
         toolDefinitionText: String = "",
         embeddedToolText: String = "",
         namedContextEmbeddedInMessages: Boolean = false,
         pendingParts: List<UIMessagePart> = emptyList(),
         memoryTokensOverride: Int? = null,
+        skillTokensOverride: Int? = null,
+        lorebookTokensOverride: Int? = null,
         toolDefinitionTokensOverride: Int? = null,
         providerPromptTokens: Int? = null,
+        usableInputTokens: Int? = null,
         sourceKey: Int? = null,
     ): ContextUsageBreakdown {
         var messageText = 0
@@ -270,14 +282,15 @@ object ContextTokenEstimator {
         val systemPrompt = textTokens(systemPromptText, model)
         val summary = textTokens(summaryText, model)
         val memories = memoryTokensOverride?.coerceAtLeast(0) ?: textTokens(memoryText, model)
-        val addons = textTokens(addonText, model)
+        val skills = skillTokensOverride?.coerceAtLeast(0) ?: textTokens(skillText, model)
+        val lorebook = lorebookTokensOverride?.coerceAtLeast(0) ?: textTokens(lorebookText, model)
         val embeddedTools = textTokens(embeddedToolText, model)
         val toolDefinitions = toolDefinitionTokensOverride?.coerceAtLeast(0)
             ?: (textTokens(toolDefinitionText, model) + embeddedTools)
         // Request accounting names text already embedded in built messages; live UI accounting
         // supplies raw conversation messages, so its named context must be added independently.
         val embeddedNamedTokens = if (namedContextEmbeddedInMessages) {
-            systemPrompt + summary + memories + addons + embeddedTools
+            systemPrompt + summary + memories + skills + lorebook + embeddedTools
         } else {
             0
         }
@@ -287,7 +300,8 @@ object ContextTokenEstimator {
             systemPrompt,
             summary,
             memories,
-            addons,
+            skills,
+            lorebook,
             toolDefinitions,
             toolCalls,
             media,
@@ -300,12 +314,17 @@ object ContextTokenEstimator {
             systemPromptTokens = scaled(systemPrompt),
             summaryTokens = scaled(summary),
             memoryTokens = scaled(memories),
-            addonTokens = scaled(addons),
+            skillTokens = scaled(skills),
+            lorebookTokens = scaled(lorebook),
             toolDefinitionTokens = scaled(toolDefinitions),
             toolCallTokens = scaled(toolCalls),
             mediaTokens = scaled(media),
             usedTokens = confirmedTotal ?: estimatedTotal,
             totalTokens = model.contextWindowTokens?.takeIf { it > 0 } ?: 0,
+            usableInputTokens = usableInputTokens
+                ?.takeIf { it > 0 }
+                ?.coerceAtMost(model.contextWindowTokens?.takeIf { it > 0 } ?: Int.MAX_VALUE)
+                ?: (model.contextWindowTokens?.takeIf { it > 0 } ?: 0),
             imageCount = images,
             maxImages = model.maxImagesInContext?.takeIf { it > 0 },
             confidence = if (confirmedTotal != null) ContextCountConfidence.PROVIDER_COUNTED else ContextCountConfidence.ESTIMATED,
