@@ -143,10 +143,6 @@ class SettingsStore(
         val WEB_SERVER_ACCESS_PASSWORD = stringPreferencesKey("web_server_access_password")
         val WEB_SERVER_BACKGROUND_SETUP_SHOWN = booleanPreferencesKey("web_server_background_setup_shown")
 
-        // Background Worker
-        val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
-        val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
-
         // Prompt Injections
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
@@ -261,8 +257,6 @@ class SettingsStore(
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
                     webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
                     webServerBackgroundSetupShown = preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] == true,
-                    consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
-                    consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                     modes = preferences[MODES]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: emptyList(),
@@ -583,9 +577,6 @@ class SettingsStore(
             preferences[WEB_SERVER_JWT_ENABLED] = normalizedSettings.webServerJwtEnabled
             preferences[WEB_SERVER_ACCESS_PASSWORD] = normalizedSettings.webServerAccessPassword
             preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] = normalizedSettings.webServerBackgroundSetupShown
-
-            preferences[CONSOLIDATION_WORKER_INTERVAL] = normalizedSettings.consolidationWorkerIntervalMinutes
-            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = normalizedSettings.consolidationRequiresDeviceIdle
 
             preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)

@@ -309,7 +309,7 @@ class MemoryConsolidationWorker(
                 now - episode.startTime > retentionMillis &&
                 now - episode.lastAccessedAt > recentAccessBufferMillis
             ) {
-                chatEpisodeDAO.deleteEpisode(episode.id)
+                memoryRepository.deleteEpisode(episode.id)
             }
         }
     }

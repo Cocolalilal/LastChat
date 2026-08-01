@@ -65,6 +65,8 @@ class ModelMetadataResolver(
                 catalogEntry?.reasoningBehavior ?: model.reasoningBehavior
             },
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
+            contextWindowTokens = model.contextWindowTokens ?: catalogEntry?.contextWindowTokens,
+            maxImagesInContext = model.maxImagesInContext ?: catalogEntry?.maxImagesInContext,
         )
     }
 

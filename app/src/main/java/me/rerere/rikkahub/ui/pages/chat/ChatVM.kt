@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.Model
+import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 
@@ -83,6 +84,9 @@ class ChatVM(
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
+    val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
+        .map { usageByConversation -> usageByConversation[_conversationId] }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
     internal var chatListScrollPosition: ChatListScrollPosition? = null

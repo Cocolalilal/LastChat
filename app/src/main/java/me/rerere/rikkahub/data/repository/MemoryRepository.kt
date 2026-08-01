@@ -21,13 +21,16 @@ import me.rerere.rikkahub.data.ai.rag.toListOfFloatArrays
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import androidx.room.withTransaction
 import me.rerere.ai.memory.MemoryVectorMath
+import me.rerere.rikkahub.data.db.AppDatabase
 
 class MemoryRepository(
     private val memoryDAO: MemoryDAO,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val embeddingService: EmbeddingService,
-    private val embeddingCacheDAO: EmbeddingCacheDAO
+    private val embeddingCacheDAO: EmbeddingCacheDAO,
+    private val database: AppDatabase,
 ) {
     private val embeddingCache = java.util.concurrent.ConcurrentHashMap<String, List<FloatArray>>()
 
@@ -103,6 +106,10 @@ class MemoryRepository(
     suspend fun getEpisodeEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<ChatEpisodeEntity> {
         return chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, limit)
     }
+
+    suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
+
+    fun getEpisodeCountFlow(): Flow<Int> = chatEpisodeDAO.getCountFlow()
 
     /**
      * Get or create an embedding for a memory/episode content.
@@ -197,8 +204,74 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
     }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
-        memoryDAO.deleteMemoriesOfAssistant(assistantId)
-        chatEpisodeDAO.deleteEpisodesOfAssistant(assistantId)
+        val (memoryIds, episodeIds) = database.withTransaction {
+            val memoryIds = memoryDAO.getMemoriesOfAssistant(assistantId).map { it.id }
+            val episodeIds = chatEpisodeDAO.getEpisodesOfAssistant(assistantId).map { it.id }
+            memoryDAO.deleteMemoriesOfAssistant(assistantId)
+            chatEpisodeDAO.deleteEpisodesOfAssistant(assistantId)
+            memoryIds.forEach { id ->
+                embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
+            }
+            episodeIds.forEach { id ->
+                embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
+            }
+            memoryIds to episodeIds
+        }
+        removeCachedEmbeddings(memoryIds, MemoryType.CORE)
+        removeCachedEmbeddings(episodeIds, MemoryType.EPISODIC)
+    }
+
+    suspend fun deleteEpisode(id: Int) {
+        database.withTransaction {
+            chatEpisodeDAO.deleteEpisode(id)
+            embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
+        }
+        removeCachedEmbeddings(listOf(id), MemoryType.EPISODIC)
+    }
+
+    suspend fun deleteEpisodesByConversationId(conversationId: String): Int {
+        val episodeIds = database.withTransaction {
+            val ids = chatEpisodeDAO.getEpisodeIdsByConversationId(conversationId)
+            if (ids.isNotEmpty()) {
+                chatEpisodeDAO.deleteEpisodeByConversationId(conversationId)
+                ids.forEach { id ->
+                    embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
+                }
+            }
+            ids
+        }
+        removeCachedEmbeddings(episodeIds, MemoryType.EPISODIC)
+        return episodeIds.size
+    }
+
+    suspend fun deleteLegacyEpisodesForConversation(
+        assistantId: String,
+        conversationStartTime: Long,
+    ): Int {
+        val episodeIds = database.withTransaction {
+            val ids = chatEpisodeDAO.getLegacyEpisodeIdsForConversation(
+                assistantId = assistantId,
+                conversationStartTime = conversationStartTime,
+            )
+            ids.forEach { id ->
+                chatEpisodeDAO.deleteEpisode(id)
+                embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
+            }
+            ids
+        }
+        removeCachedEmbeddings(episodeIds, MemoryType.EPISODIC)
+        return episodeIds.size
+    }
+
+    private fun removeCachedEmbeddings(ids: Collection<Int>, memoryType: Int) {
+        if (ids.isEmpty()) return
+        val idSet = ids.toHashSet()
+        embeddingCache.keys.removeAll { key ->
+            val parts = key.split(':', limit = 3)
+            parts.size == 3 &&
+                parts[0].toIntOrNull() == memoryType &&
+                parts[1].toIntOrNull() in idSet
+        }
     }
 
     suspend fun updateContent(id: Int, content: String): AssistantMemory {

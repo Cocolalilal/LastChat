@@ -24,6 +24,11 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
+import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.compactToTokenBudget
+import me.rerere.ai.context.limitImagesForModel
+import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -125,7 +130,8 @@ data class BuildMessagesResult(
     val messages: List<UIMessage>,
     val activatedLorebookEntries: List<me.rerere.ai.ui.UsedLorebookEntry>,
     val usedModes: List<me.rerere.ai.ui.UsedMode> = emptyList(),
-    val usedMemories: List<me.rerere.ai.ui.UsedMemory> = emptyList()
+    val usedMemories: List<me.rerere.ai.ui.UsedMemory> = emptyList(),
+    val contextUsage: ContextUsageBreakdown? = null,
 )
 
 internal data class SkillToolState(
@@ -470,6 +476,8 @@ class GenerationHandler(
         enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
+        contextUsageSourceKey: Int? = null,
     ): Flow<GenerationChunk> = channelFlow {
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
@@ -579,6 +587,8 @@ class GenerationHandler(
                 conversationEnabledLorebookIds = enabledLorebookIds,
                 activeConversationId = activeConversationId,
                 contextSummary = contextSummary,
+                onContextUsage = onContextUsage,
+                contextUsageSourceKey = contextUsageSourceKey,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -707,12 +717,16 @@ class GenerationHandler(
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        contextUsageSourceKey: Int? = null,
     ): BuildMessagesResult {
-        // Token estimator (rough estimate: 4 chars per token)
-        fun estimateTokens(text: String) = text.length / 4
-        fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
+        fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
+        fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
-        val maxTokens = assistant.maxTokenUsage
+        val maxTokens = if (assistant.smartContextManagement) {
+            smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
+        } else {
+            assistant.maxTokenUsage
+        }
         var currentTokens = 0
 
         // Cosine similarity for RAG matching
@@ -949,13 +963,24 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(entry.prompt)
         }
         
-        // Tool prompts
-        tools.forEach { tool ->
+        val toolSystemPromptText = tools.joinToString("\n") { tool -> tool.systemPrompt(model, messages) }
+        if (toolSystemPromptText.isNotBlank()) {
             baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(tool.systemPrompt(model, messages))
+            baseSystemPromptBuilder.append(toolSystemPromptText)
+        }
+        val toolDefinitionText = tools.joinToString("\n") { tool ->
+            buildString {
+                append(tool.name)
+                append('\n')
+                append(tool.description)
+                tool.parameters()?.let { schema ->
+                    append('\n')
+                    append(schema)
+                }
+            }
         }
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
-        currentTokens += estimateTokens(baseSystemPrompt)
+        currentTokens += estimateTokens(baseSystemPrompt) + estimateTokens(toolDefinitionText)
 
         // 2. Prepare Candidates
         // Apply message history limit if configured
@@ -996,7 +1021,7 @@ class GenerationHandler(
         val imageArchivedMessages = archiveOldImageMessages(
             messages = searchPrunedMessages,
             assistant = assistant,
-        )
+        ).limitImagesForModel(model)
         
         // Chat History (reverse order to prioritize recent)
         val chatHistoryCandidates = imageArchivedMessages.truncate(truncateIndex).reversed()
@@ -1177,7 +1202,7 @@ class GenerationHandler(
             fullMessages = messages,
             retainedMessages = orderedSelectedMessages
         )
-        val builtMessages = buildList {
+        val rawBuiltMessages = buildList {
             if (baseSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(baseSystemPrompt))
             }
@@ -1242,6 +1267,22 @@ class GenerationHandler(
                     ))
                 }
             }
+        }.limitImagesForModel(model)
+        val builtMessages = if (assistant.smartContextManagement && model.contextWindowTokens != null) {
+            val systemMessages = rawBuiltMessages.filter { it.role == MessageRole.SYSTEM }
+            val conversationalMessages = rawBuiltMessages.filterNot { it.role == MessageRole.SYSTEM }
+            if (ContextTokenEstimator.messagesTokens(rawBuiltMessages, model) <= maxTokens) {
+                rawBuiltMessages
+            } else {
+                (conversationalMessages.size downTo 1)
+                    .asSequence()
+                    .map { size -> systemMessages + conversationalMessages.limitContext(size) }
+                    .firstOrNull { candidate -> ContextTokenEstimator.messagesTokens(candidate, model) <= maxTokens }
+                    ?: (systemMessages + conversationalMessages.limitContext(1))
+                        .compactToTokenBudget(model, maxTokens)
+            }
+        } else {
+            rawBuiltMessages
         }
         // Build UsedMemory list for UI display
         val usedMemories = selectedMemories.mapIndexed { index, memory ->
@@ -1263,7 +1304,35 @@ class GenerationHandler(
             messages = builtMessages,
             activatedLorebookEntries = usedLorebookEntries,
             usedModes = usedModes,
-            usedMemories = usedMemories
+            usedMemories = usedMemories,
+            contextUsage = model.contextWindowTokens?.let {
+                val addonText = buildString {
+                    enabledSkills.forEach { skill ->
+                        appendLine(skill.name)
+                        appendLine(skill.instructions)
+                    }
+                    activatedEntries.forEach { entry -> appendLine(entry.prompt) }
+                }
+                val systemPromptText = buildString {
+                    append(assistant.systemPrompt)
+                    if (assistant.learningMode) {
+                        appendLine()
+                        append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+                    }
+                }
+                ContextTokenEstimator.breakdown(
+                    messages = builtMessages,
+                    model = model,
+                    systemPromptText = systemPromptText,
+                    summaryText = contextSummary.orEmpty(),
+                    memoryText = selectedMemories.joinToString("\n") { memory -> memory.content },
+                    addonText = addonText,
+                    toolDefinitionText = toolDefinitionText,
+                    embeddedToolText = toolSystemPromptText,
+                    namedContextEmbeddedInMessages = true,
+                    sourceKey = contextUsageSourceKey,
+                )
+            },
         )
     }
 
@@ -1335,6 +1404,8 @@ class GenerationHandler(
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
+        contextUsageSourceKey: Int? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1349,6 +1420,7 @@ class GenerationHandler(
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
             activeConversationId = activeConversationId,
             contextSummary = contextSummary,
+            contextUsageSourceKey = contextUsageSourceKey,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
@@ -1364,6 +1436,7 @@ class GenerationHandler(
                 }
             },
         )
+        buildResult.contextUsage?.let { onContextUsage(it) }
         val internalMessages = transformedInput.messages
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
@@ -1417,6 +1490,9 @@ class GenerationHandler(
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
+                    buildResult.contextUsage?.let { estimate ->
+                        onContextUsage(ContextTokenEstimator.reconcileProviderCount(estimate, usage.promptTokens, model))
+                    }
                     messages = messages.mapIndexed { index, message ->
                         if (index == messages.lastIndex) {
                             message.copy(usage = message.usage.merge(usage))
@@ -1456,6 +1532,9 @@ class GenerationHandler(
             )
             messages = messages.handleMessageChunk(chunk = chunk, model = model)
             chunk.usage?.let { usage ->
+                buildResult.contextUsage?.let { estimate ->
+                    onContextUsage(ContextTokenEstimator.reconcileProviderCount(estimate, usage.promptTokens, model))
+                }
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex) {
                         message.copy(

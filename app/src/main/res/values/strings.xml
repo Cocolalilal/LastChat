@@ -1512,4 +1512,23 @@
   <string name="codex_percent_remaining">%1$d%% remaining</string>
   <string name="codex_resets_at">Resets: %1$s</string>
   <string name="codex_response_failed">Codex generation failed</string>
+  <string name="setting_provider_page_context_window">Context size limit (tokens)</string>
+  <string name="setting_provider_page_max_context_images">Maximum images in context</string>
+  <string name="setting_provider_page_optional_number">Optional</string>
+  <string name="assistant_context_smart_management">Smart context management</string>
+  <string name="assistant_context_smart_management_desc">Automatically fit conversation history, memories, tools, and media to models with a known context size.</string>
+  <string name="context_meter_used">%1$s of %2$s tokens</string>
+  <string name="context_meter_remaining">%1$d%% available</string>
+  <string name="context_meter_conversation">Conversation</string>
+  <string name="context_meter_system_prompt">System prompt</string>
+  <string name="context_meter_summary">Summary</string>
+  <string name="context_meter_memory">Memory</string>
+  <string name="context_meter_addons">Add-ons</string>
+  <string name="context_meter_tool_definitions">Tools</string>
+  <string name="context_meter_tool_calls">Tool calls</string>
+  <string name="context_meter_media">Media</string>
+  <string name="context_meter_images">Images: %1$d / %2$d</string>
+  <string name="context_meter_estimated">Estimated</string>
+  <string name="context_meter_provider_counted">Provider counted</string>
+  <string name="context_meter_exact">Exact</string>
 </resources>

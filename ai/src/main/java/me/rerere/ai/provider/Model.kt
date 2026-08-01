@@ -23,6 +23,10 @@ data class Model(
     val imageGenerationMethod: ImageGenerationMethod? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
     val sttOptions: SttOptions? = null,
+    /** Total input + output context supported by this API model. Null means unknown. */
+    val contextWindowTokens: Int? = null,
+    /** Maximum images accepted in one request. Null means unknown/unlimited. */
+    val maxImagesInContext: Int? = null,
     // For CHAT models, when true this model is hidden from user-facing pickers (chat interface,
     // assistant model, etc.) and shown only in backend/background-task pickers (title, summarizer,
     // subagent, suggestions, translate, OCR). Non-chat models are always selected from their

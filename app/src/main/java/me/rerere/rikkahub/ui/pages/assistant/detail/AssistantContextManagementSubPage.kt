@@ -96,6 +96,24 @@ fun AssistantContextManagementSubPage(
         // MESSAGE HISTORY
         // ═══════════════════════════════════════════════════════════════════
         
+        SettingsGroup(title = stringResource(R.string.assistant_context_smart_management)) {
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_context_smart_management),
+                subtitle = stringResource(R.string.assistant_context_smart_management_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.smartContextManagement,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(smartContextManagement = enabled))
+                        },
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(smartContextManagement = !assistant.smartContextManagement))
+                },
+            )
+        }
+
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             val needsSummarizerTip = !hasSummarizerModelConfigured
             AnimatedVisibility(

@@ -93,8 +93,6 @@ data class Settings(
     val webServerJwtEnabled: Boolean = false,
     val webServerAccessPassword: String = "",
     val webServerBackgroundSetupShown: Boolean = false,
-    val consolidationWorkerIntervalMinutes: Int = 15,
-    val consolidationRequiresDeviceIdle: Boolean = false,
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
     val skills: List<Skill> = emptyList(),

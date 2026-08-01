@@ -97,6 +97,7 @@ data class Assistant(
     val enableAutomaticSkillInvocation: Boolean = true, // Let the model discover and activate otherwise unselected skills
 
     // Context Management Settings
+    val smartContextManagement: Boolean = true,
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results

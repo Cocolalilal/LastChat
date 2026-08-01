@@ -5,6 +5,14 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
@@ -25,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -42,6 +51,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilledIconButton
@@ -78,6 +88,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -115,6 +126,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.context.ContextCountConfidence
+import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -126,6 +140,7 @@ import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
+import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.navigation.ChatRouteTarget
@@ -159,6 +174,7 @@ import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import androidx.compose.ui.draw.clip
 
 internal fun hasConversationMessages(conversation: Conversation): Boolean {
@@ -1081,12 +1097,14 @@ private fun ChatPageContent(
     var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
+    var showContextUsagePopup by remember { mutableStateOf(false) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
     var selectedChatShareItems by remember(conversation.id) { mutableStateOf<Set<Uuid>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var chatSearchQuery by rememberSaveable(conversation.id) { mutableStateOf(initialSearchQuery.orEmpty()) }
     var consumedInitialSearchQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
     val toolbarPlacement = chatTopBarPlacement(setting)
+    val reduceMotion = LocalMotionPolicy.current.reduceMotion
     val isGenerating = loadingJob != null
     val density = LocalDensity.current
     val hazeState = rememberHazeState()
@@ -1097,6 +1115,19 @@ private fun ChatPageContent(
         )
     }
     val blur = inheritedBlur ?: localBlur
+    val requestContextUsage by vm.contextUsage.collectAsStateWithLifecycle()
+    val contextMeterUsage = rememberContextMeterUsage(
+        model = currentChatModel,
+        conversation = conversation,
+        assistant = currentAssistant,
+        settings = setting,
+        pendingParts = inputState.getContents(),
+        requestUsage = requestContextUsage,
+    )
+
+    LaunchedEffect(contextMeterUsage) {
+        if (contextMeterUsage == null) showContextUsagePopup = false
+    }
 
     LaunchedEffect(conversation.id) {
         previewMode = false
@@ -1227,10 +1258,16 @@ private fun ChatPageContent(
                             showCloseAction = previewMode || isChatShareSelecting,
                             showTopFade = true,
                             vm = vm,
+                            contextUsage = contextMeterUsage,
+                            onContextMeterClick = {
+                                showToolbarOverflowMenu = false
+                                showContextUsagePopup = !showContextUsagePopup
+                            },
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
                             onOpenOverflowMenu = {
+                                showContextUsagePopup = false
                                 showToolbarOverflowMenu = !showToolbarOverflowMenu
                             },
                             onCloseAction = {
@@ -1677,10 +1714,16 @@ private fun ChatPageContent(
                             isGenerating = isGenerating,
                             showCloseAction = previewMode || isChatShareSelecting,
                             vm = vm,
+                            contextUsage = contextMeterUsage,
+                            onContextMeterClick = {
+                                showToolbarOverflowMenu = false
+                                showContextUsagePopup = !showContextUsagePopup
+                            },
                             onNewChat = {
                                 navigateToChatPage(navController)
                             },
                             onOpenOverflowMenu = {
+                                showContextUsagePopup = false
                                 showToolbarOverflowMenu = !showToolbarOverflowMenu
                             },
                             onCloseAction = {
@@ -1854,6 +1897,57 @@ private fun ChatPageContent(
                     bottomPadding = if (toolbarPlacement == ChatToolbarPlacement.Bottom) 12.dp else 24.dp,
                 )
                 }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showContextUsagePopup && contextMeterUsage != null,
+                        enter = if (reduceMotion) {
+                            fadeIn(tween(90))
+                        } else fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f,
+                            )
+                        ) + scaleIn(
+                            initialScale = 0.96f,
+                            transformOrigin = if (toolbarPlacement == ChatToolbarPlacement.Top) {
+                                TransformOrigin(0f, 0f)
+                            } else {
+                                TransformOrigin(0f, 1f)
+                            },
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f,
+                            )
+                        ),
+                        exit = if (reduceMotion) {
+                            fadeOut(tween(80))
+                        } else fadeOut(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f,
+                            )
+                        ) + scaleOut(
+                            targetScale = 0.96f,
+                            transformOrigin = if (toolbarPlacement == ChatToolbarPlacement.Top) {
+                                TransformOrigin(0f, 0f)
+                            } else {
+                                TransformOrigin(0f, 1f)
+                            },
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f,
+                            )
+                        ),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        contextMeterUsage?.let { usage ->
+                            ContextUsageOverlay(
+                                usage = usage,
+                                placement = toolbarPlacement,
+                                onDismissRequest = { showContextUsagePopup = false },
+                            )
+                        }
+                    }
 
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showToolbarOverflowMenu,
@@ -2663,6 +2757,8 @@ private fun ChatToolbar(
     showCloseAction: Boolean,
     showTopFade: Boolean = true,
     vm: ChatVM,
+    contextUsage: ContextUsageBreakdown?,
+    onContextMeterClick: () -> Unit,
     onNewChat: () -> Unit,
     onOpenOverflowMenu: () -> Unit,
     onCloseAction: () -> Unit,
@@ -2749,10 +2845,17 @@ private fun ChatToolbar(
                     border = topContainerBorder,
                     modifier = Modifier
                         .size(topPillSize)
+                        .zIndex(2f)
                         .lastChatBlurEffect(topContainerColor, buttonShape),
                     size = topPillSize,
                 )
             }
+
+            ContextMeterAnchor(
+                usage = contextUsage,
+                onClick = onContextMeterClick,
+                modifier = Modifier.padding(start = if (bigScreen) 0.dp else 8.dp),
+            )
 
             Spacer(Modifier.weight(1f))
             
@@ -2850,4 +2953,307 @@ private fun ChatToolbar(
             onDismiss = { showAssistantPicker = false }
         )
     }
+}
+
+@Composable
+private fun rememberContextMeterUsage(
+    model: Model?,
+    conversation: Conversation,
+    assistant: Assistant,
+    settings: Settings,
+    pendingParts: List<UIMessagePart>,
+    requestUsage: ContextUsageBreakdown?,
+): ContextUsageBreakdown? {
+    val activeModel = model?.takeIf { (it.contextWindowTokens ?: 0) > 0 } ?: return null
+    val messages = conversation.currentMessages
+    val hasPendingInput = pendingParts.any { part ->
+        part !is UIMessagePart.Text || part.text.isNotBlank()
+    }
+    val sourceKey = contextUsageSourceKey(conversation, assistant, activeModel, settings)
+    if (!hasPendingInput && requestUsage?.sourceKey == sourceKey) return requestUsage
+
+    val memoryText = messages.flatMap { it.usedMemories.orEmpty() }
+        .distinctBy { it.memoryId }
+        .joinToString("\n") { it.memoryContent }
+    val activeSkillIds = assistant.enabledSkillIds + conversation.enabledModeIds
+    val addonText = buildString {
+        settings.skills
+            .filter { skill -> skill.alwaysEnabled || skill.id in activeSkillIds }
+            .forEach { skill ->
+                appendLine(skill.name)
+                appendLine(skill.instructions)
+            }
+        val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
+        settings.lorebooks
+            .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
+            .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
+            .forEach { entry -> appendLine(entry.prompt) }
+    }
+    val toolDefinitionText = buildString {
+        assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
+        assistant.mcpServers.forEach { serverId -> appendLine("MCP server $serverId") }
+    }
+    return ContextTokenEstimator.breakdown(
+        messages = messages,
+        model = activeModel,
+        systemPromptText = assistant.systemPrompt,
+        summaryText = conversation.contextSummary.orEmpty(),
+        memoryText = memoryText,
+        addonText = addonText,
+        toolDefinitionText = toolDefinitionText,
+        pendingParts = pendingParts,
+        sourceKey = sourceKey,
+    )
+}
+
+@Composable
+private fun ContextUsageOverlay(
+    usage: ContextUsageBreakdown,
+    placement: ChatToolbarPlacement,
+    onDismissRequest: () -> Unit,
+) {
+    BackHandler(onBack = onDismissRequest)
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(24.dp)
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.16f))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onDismissRequest,
+            )
+    ) {
+        Surface(
+            shape = shape,
+            color = blurredContainerColor(containerColor),
+            border = border,
+            modifier = Modifier
+                .align(
+                    if (placement == ChatToolbarPlacement.Top) Alignment.TopCenter
+                    else Alignment.BottomCenter
+                )
+                .then(
+                    if (placement == ChatToolbarPlacement.Top) Modifier.statusBarsPadding()
+                    else Modifier.navigationBarsPadding()
+                )
+                .padding(
+                    top = if (placement == ChatToolbarPlacement.Top) 52.dp else 0.dp,
+                    bottom = if (placement == ChatToolbarPlacement.Bottom) 64.dp else 0.dp,
+                    start = 16.dp,
+                    end = 16.dp,
+                )
+                .fillMaxWidth()
+                .lastChatBlurEffect(containerColor, shape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+        ) {
+            ContextUsagePopupContent(usage)
+        }
+    }
+}
+
+@Composable
+private fun ContextMeterAnchor(
+    usage: ContextUsageBreakdown?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motionPolicy = LocalMotionPolicy.current
+    var displayedUsage by remember { mutableStateOf<ContextUsageBreakdown?>(usage) }
+    LaunchedEffect(usage) {
+        if (usage != null) displayedUsage = usage
+    }
+    val haptics = rememberPremiumHaptics()
+    val enter = if (motionPolicy.reduceMotion) {
+        fadeIn(tween(90))
+    } else {
+        fadeIn(tween(180)) + expandHorizontally(expandFrom = Alignment.Start) +
+            slideInHorizontally(animationSpec = spring(dampingRatio = 0.72f, stiffness = 420f)) { -it / 2 }
+    }
+    val exit = if (motionPolicy.reduceMotion) {
+        fadeOut(tween(80))
+    } else {
+        fadeOut(tween(140)) + shrinkHorizontally(shrinkTowards = Alignment.Start) +
+            slideOutHorizontally(animationSpec = spring(dampingRatio = 0.82f, stiffness = 500f)) { -it / 2 }
+    }
+
+    androidx.compose.animation.AnimatedVisibility(
+        visible = usage != null,
+        enter = enter,
+        exit = exit,
+        modifier = modifier.clipToBounds(),
+    ) {
+        displayedUsage?.let { animatedUsage ->
+            ContextMeterButton(
+                usage = animatedUsage,
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContextMeterButton(
+    usage: ContextUsageBreakdown,
+    onClick: () -> Unit,
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = usage.fractionUsed,
+        animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
+        label = "context_meter_progress",
+    )
+    val targetProgressColor = when {
+        animatedProgress >= 0.95f -> MaterialTheme.colorScheme.error
+        animatedProgress >= 0.82f -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val progressColor by animateColorAsState(
+        targetValue = targetProgressColor,
+        animationSpec = tween(220),
+        label = "context_meter_color",
+    )
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    val shape = RoundedCornerShape(999.dp)
+    Surface(
+        modifier = Modifier
+            .size(48.dp)
+            .lastChatBlurEffect(containerColor, shape)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = blurredContainerColor(containerColor),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier.size(27.dp),
+                color = progressColor,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                strokeWidth = 3.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContextUsagePopupContent(usage: ContextUsageBreakdown) {
+    val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
+    val animatedUsed by animateIntAsState(usage.usedTokens, tokenAnimation, label = "context_used_tokens")
+    val animatedTotal by animateIntAsState(usage.totalTokens, tokenAnimation, label = "context_total_tokens")
+    val animatedConversation by animateIntAsState(usage.conversationTokens, tokenAnimation, label = "context_conversation")
+    val animatedSystemPrompt by animateIntAsState(usage.systemPromptTokens, tokenAnimation, label = "context_system_prompt")
+    val animatedSummary by animateIntAsState(usage.summaryTokens, tokenAnimation, label = "context_summary")
+    val animatedMemory by animateIntAsState(usage.memoryTokens, tokenAnimation, label = "context_memory")
+    val animatedAddons by animateIntAsState(usage.addonTokens, tokenAnimation, label = "context_addons")
+    val animatedToolDefinitions by animateIntAsState(usage.toolDefinitionTokens, tokenAnimation, label = "context_tool_definitions")
+    val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
+    val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
+    val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
+    val segments = listOf(
+        Triple(stringResource(R.string.context_meter_conversation), animatedConversation, MaterialTheme.colorScheme.primary),
+        Triple(stringResource(R.string.context_meter_system_prompt), animatedSystemPrompt, MaterialTheme.colorScheme.secondary),
+        Triple(stringResource(R.string.context_meter_summary), animatedSummary, MaterialTheme.colorScheme.tertiary),
+        Triple(stringResource(R.string.context_meter_memory), animatedMemory, MaterialTheme.colorScheme.primaryContainer),
+        Triple(stringResource(R.string.context_meter_addons), animatedAddons, MaterialTheme.colorScheme.secondaryContainer),
+        Triple(stringResource(R.string.context_meter_tool_definitions), animatedToolDefinitions, MaterialTheme.colorScheme.errorContainer),
+        Triple(stringResource(R.string.context_meter_tool_calls), animatedToolCalls, MaterialTheme.colorScheme.error),
+        Triple(stringResource(R.string.context_meter_media), animatedMedia, MaterialTheme.colorScheme.tertiaryContainer),
+    ).filter { it.second > 0 }
+    val animatedRemaining = (animatedTotal - animatedUsed).coerceAtLeast(0)
+    val remainingPercent = if (animatedTotal <= 0) 100 else
+        ((animatedRemaining.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
+    Column(
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(
+                    R.string.context_meter_used,
+                    compactTokenCount(animatedUsed),
+                    compactTokenCount(animatedTotal),
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(R.string.context_meter_remaining, remainingPercent),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ) {
+            segments.forEach { (_, value, color) ->
+                Spacer(
+                    Modifier
+                        .weight(value.toFloat().coerceAtLeast(1f))
+                        .fillMaxHeight()
+                        .background(color),
+                )
+            }
+            if (animatedRemaining > 0) {
+                Spacer(Modifier.weight(animatedRemaining.toFloat()).fillMaxHeight())
+            }
+        }
+        FlowRow(
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+        ) {
+            segments.forEach { (label, value, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).background(color, RoundedCornerShape(999.dp)))
+                    Spacer(Modifier.width(5.dp))
+                    Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            usage.maxImages?.let { maxImages ->
+                Text(
+                    stringResource(R.string.context_meter_images, animatedImages, maxImages),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            AnimatedContent(
+                targetState = usage.confidence,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                label = "context_confidence",
+            ) { confidence ->
+                Text(
+                    text = stringResource(
+                        when (confidence) {
+                            ContextCountConfidence.EXACT -> R.string.context_meter_exact
+                            ContextCountConfidence.PROVIDER_COUNTED -> R.string.context_meter_provider_counted
+                            ContextCountConfidence.ESTIMATED -> R.string.context_meter_estimated
+                        }
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private fun compactTokenCount(tokens: Int): String = when {
+    tokens >= 1_000_000 -> "%.1fM".format(tokens / 1_000_000f)
+    tokens >= 1_000 -> "%.1fK".format(tokens / 1_000f)
+    else -> tokens.toString()
 }

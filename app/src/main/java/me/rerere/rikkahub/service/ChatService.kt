@@ -24,6 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -638,6 +640,9 @@ class ChatService(
     private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs
         .asStateFlow()
+
+    private val _contextUsage = MutableStateFlow<Map<Uuid, ContextUsageBreakdown>>(emptyMap())
+    val contextUsage: StateFlow<Map<Uuid, ContextUsageBreakdown>> = _contextUsage.asStateFlow()
 
     // 错误流
     private val _errorFlow = MutableSharedFlow<Throwable>()
@@ -1541,6 +1546,15 @@ class ChatService(
                 enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
                 contextSummary = conversation.contextSummary,
+                contextUsageSourceKey = if (assistantRegeneration == null && messageRange == null) {
+                    contextUsageSourceKey(conversation, assistant, model, settings)
+                } else {
+                    null
+                },
+                onContextUsage = { usage ->
+                    val current = _contextUsage.value
+                    _contextUsage.value = current + (conversationId to usage)
+                },
             ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }

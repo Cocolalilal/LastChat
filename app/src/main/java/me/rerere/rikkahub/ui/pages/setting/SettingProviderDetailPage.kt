@@ -70,6 +70,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1433,6 +1434,10 @@ private fun ModelSettingsForm(
                         }
 
                         if (model.type == ModelType.CHAT) {
+                            ModelContextLimits(
+                                model = model,
+                                onModelChange = onModelChange,
+                            )
                             BackendModelToggle(
                                 backend = model.backend,
                                 onBackendChange = {
@@ -2447,6 +2452,48 @@ private fun ModelCapabilityProbeButton(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ModelContextLimits(
+    model: Model,
+    onModelChange: (Model) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        DebouncedTextField(
+            value = model.contextWindowTokens?.toString().orEmpty(),
+            onValueChange = { value ->
+                onModelChange(model.copy(contextWindowTokens = value.toIntOrNull()?.takeIf { it > 0 }))
+            },
+            stateKey = "context_window_${model.id}",
+            label = stringResource(R.string.setting_provider_page_context_window),
+            placeholder = stringResource(R.string.setting_provider_page_optional_number),
+            singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (Modality.IMAGE in model.inputModalities) {
+            DebouncedTextField(
+                value = model.maxImagesInContext?.toString().orEmpty(),
+                onValueChange = { value ->
+                    onModelChange(model.copy(maxImagesInContext = value.toIntOrNull()?.takeIf { it > 0 }))
+                },
+                stateKey = "max_context_images_${model.id}",
+                label = stringResource(R.string.setting_provider_page_max_context_images),
+                placeholder = stringResource(R.string.setting_provider_page_optional_number),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

@@ -453,6 +453,8 @@ data class WebProviderModelDto(
     val iconUrl: String? = null,
     val customIconUri: String? = null,
     val providerSlug: String? = null,
+    val contextWindowTokens: Int? = null,
+    val maxImagesInContext: Int? = null,
 )
 
 @Serializable
@@ -1001,6 +1003,8 @@ private fun Model.toWebProviderModelDto(
         iconUrl = iconUrl,
         customIconUri = customIconUri,
         providerSlug = providerSlug,
+        contextWindowTokens = contextWindowTokens,
+        maxImagesInContext = maxImagesInContext,
     )
 }
 

@@ -42,7 +42,7 @@ import kotlin.uuid.Uuid
 class ConversationRepository(
     private val context: Context,
     private val conversationDAO: ConversationDAO,
-    private val chatEpisodeDAO: me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO,
+    private val memoryRepository: MemoryRepository,
     private val dailyActivityDAO: DailyActivityDAO,
     private val usageStatsDAO: UsageStatsDAO,
     private val chatAttachmentRepository: ChatAttachmentRepository,
@@ -235,13 +235,12 @@ class ConversationRepository(
 
             // Delete the old episode based on conversation ID if possible.
             // If deletion by ID returns 0 (e.g. legacy episode without conversationId),
-            // fallback to best-effort deletion based on time range.
-            val deletedCount = chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
+            // only delete a legacy episode with the conversation's exact start time.
+            val deletedCount = memoryRepository.deleteEpisodesByConversationId(conversation.id.toString())
             if (deletedCount == 0) {
-                chatEpisodeDAO.deleteEpisodeByTimeRange(
+                memoryRepository.deleteLegacyEpisodesForConversation(
                     assistantId = syncedConversation.assistantId.toString(),
-                    startTime = syncedConversation.createAt.toEpochMilli(),
-                    endTime = Long.MAX_VALUE
+                    conversationStartTime = syncedConversation.createAt.toEpochMilli(),
                 )
             }
         } else {
@@ -255,7 +254,7 @@ class ConversationRepository(
         conversationDAO.delete(
             conversationToConversationEntity(conversation)
         )
-        chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
+        memoryRepository.deleteEpisodesByConversationId(conversation.id.toString())
         chatAttachmentRepository.removeConversationReferences(conversation.id)
     }
 
@@ -380,11 +379,11 @@ class ConversationRepository(
     }
 
     suspend fun getEpisodeCount(): Int {
-        return chatEpisodeDAO.getCount()
+        return memoryRepository.getEpisodeCount()
     }
 
     fun getEpisodeCountFlow(): Flow<Int> {
-        return chatEpisodeDAO.getCountFlow()
+        return memoryRepository.getEpisodeCountFlow()
     }
 
     fun getAllConversations(): Flow<List<Conversation>> {

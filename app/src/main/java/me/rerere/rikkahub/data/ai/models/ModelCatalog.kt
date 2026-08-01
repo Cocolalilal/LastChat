@@ -207,6 +207,8 @@ data class CatalogModel(
     val abilities: List<ModelAbility> = emptyList(),
     @SerialName("context_window")
     val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("input_cost_per_token")
     val inputCostPerToken: Double? = null,
     @SerialName("output_cost_per_token")
@@ -239,6 +241,10 @@ data class CatalogModelFamily(
     @SerialName("output_modalities")
     val outputModalities: List<Modality> = listOf(Modality.TEXT),
     val abilities: List<ModelAbility> = emptyList(),
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("reasoning_behavior")
@@ -261,6 +267,10 @@ data class CatalogModelVersion(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("canonical_model_id")
@@ -284,6 +294,10 @@ data class CatalogModelRule(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("canonical_model_id")
@@ -317,6 +331,10 @@ data class CatalogModelOverride(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("input_cost_per_token")
@@ -371,6 +389,8 @@ data class ModelCatalogEntry(
     val iconUrl: String? = null,
     val providerSlug: String? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
+    val contextWindowTokens: Int? = null,
+    val maxImagesInContext: Int? = null,
 )
 
 data class ModelCatalogSnapshot(
@@ -449,6 +469,8 @@ object ModelCatalogParser {
                 iconUrl = family?.icon?.toCatalogIconUrl(),
                 providerSlug = model.providerSlug,
                 reasoningBehavior = model.reasoningBehavior?.toReasoningRequestBehavior(),
+                contextWindowTokens = model.contextWindow?.takeIf { it > 0 },
+                maxImagesInContext = model.maxImagesInContext?.takeIf { it > 0 },
             )
 
             buildList {
@@ -515,6 +537,8 @@ private fun CatalogModel.toModelOverride(): CatalogModelOverride {
         inputCostPerToken = inputCostPerToken,
         outputCostPerToken = outputCostPerToken,
         reasoningBehavior = reasoningBehavior,
+        contextWindow = contextWindow,
+        maxImagesInContext = maxImagesInContext,
     )
 }
 
@@ -550,6 +574,8 @@ private fun CatalogModelOverride.toCatalogEntry(modelFamilies: List<CatalogModel
         iconUrl = family?.icon?.toCatalogIconUrl(),
         providerSlug = providerSlug,
         reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
+        contextWindowTokens = contextWindow?.takeIf { it > 0 },
+        maxImagesInContext = maxImagesInContext?.takeIf { it > 0 },
     )
 }
 
@@ -682,6 +708,8 @@ private class ModelCatalogEntryBuilder(
     var iconUrl: String? = null
     var providerSlug: String? = null
     var reasoningBehavior: CatalogRequestBehavior? = null
+    var contextWindow: Int? = null
+    var maxImagesInContext: Int? = null
     var apiAliases: List<String> = emptyList()
     var providerIds: List<String> = emptyList()
     var hasMatchedRule: Boolean = false
@@ -695,6 +723,8 @@ private class ModelCatalogEntryBuilder(
         abilities = family.abilities
         providerSlug = family.providerSlug
         reasoningBehavior = family.reasoningBehavior
+        contextWindow = family.contextWindow?.takeIf { it > 0 }
+        maxImagesInContext = family.maxImagesInContext?.takeIf { it > 0 }
     }
 
     fun applyRule(rule: CatalogModelRule, fingerprint: ModelCatalogFingerprint) {
@@ -708,6 +738,8 @@ private class ModelCatalogEntryBuilder(
             providerSlug = rule.providerSlug,
             canonicalModelId = rule.canonicalModelId,
             reasoningBehavior = rule.reasoningBehavior,
+            contextWindow = rule.contextWindow,
+            maxImagesInContext = rule.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -723,6 +755,8 @@ private class ModelCatalogEntryBuilder(
             providerSlug = version.providerSlug,
             canonicalModelId = version.canonicalModelId,
             reasoningBehavior = version.reasoningBehavior,
+            contextWindow = version.contextWindow,
+            maxImagesInContext = version.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -742,6 +776,8 @@ private class ModelCatalogEntryBuilder(
             providerSlug = override.providerSlug,
             canonicalModelId = override.canonicalModelId,
             reasoningBehavior = override.reasoningBehavior,
+            contextWindow = override.contextWindow,
+            maxImagesInContext = override.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -755,6 +791,8 @@ private class ModelCatalogEntryBuilder(
         providerSlug: String?,
         canonicalModelId: String?,
         reasoningBehavior: CatalogRequestBehavior?,
+        contextWindow: Int?,
+        maxImagesInContext: Int?,
         fingerprint: ModelCatalogFingerprint,
     ) {
         type?.let { nextType ->
@@ -770,6 +808,8 @@ private class ModelCatalogEntryBuilder(
         abilities?.let { this.abilities = it }
         providerSlug?.let { this.providerSlug = it }
         reasoningBehavior?.let { this.reasoningBehavior = it }
+        contextWindow?.takeIf { it > 0 }?.let { this.contextWindow = it }
+        maxImagesInContext?.takeIf { it > 0 }?.let { this.maxImagesInContext = it }
         canonicalModelId
             ?.takeIf { it.isNotBlank() }
             ?.let { this.canonicalModelId = ModelIdNormalizer.canonicalize(fingerprint.modelId, it) }
@@ -797,6 +837,8 @@ private class ModelCatalogEntryBuilder(
             iconUrl = iconUrl,
             providerSlug = providerSlug,
             reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
+            contextWindowTokens = contextWindow,
+            maxImagesInContext = maxImagesInContext,
         )
     }
 }
