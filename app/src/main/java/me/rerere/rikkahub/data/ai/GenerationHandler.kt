@@ -1069,8 +1069,10 @@ class GenerationHandler(
         // turns it covers, and manual history/search/media limits no longer constrain allocation.
         val historyLimitedMessages = effectiveHistoryForContext(
             messages = messages,
-            smartManagement = smartEnabled && !contextSummary.isNullOrBlank(),
-            summaryUpToIndex = contextSummaryUpToIndex,
+            smartManagement = smartEnabled,
+            summaryUpToIndex = contextSummaryUpToIndex.takeIf {
+                !contextSummary.isNullOrBlank()
+            } ?: -1,
             truncateIndex = truncateIndex,
             manualHistoryLimit = assistant.maxHistoryMessages,
         )

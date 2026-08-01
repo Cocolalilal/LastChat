@@ -117,7 +117,7 @@
     <string name="assistant_page_system_prompt">System Prompt</string>
     <string name="assistant_page_tab_basic">Basic</string>
     <string name="assistant_page_tab_local_tools">Local Tools</string>
-    <string name="assistant_page_tab_mcp">MCP</string>
+    <string name="assistant_page_tab_mcp">Plugins</string>
     <string name="assistant_page_tab_memory">Memory</string>
     <string name="assistant_page_tab_prompt">Prompt</string>
     <string name="assistant_page_tab_request">Request</string>
@@ -439,8 +439,8 @@
     <string name="language_simplified_chinese">🇨🇳 简体中文</string>
     <string name="language_spanish">🇪🇸 Español</string>
     <string name="language_traditional_chinese">🇨🇳 繁體中文</string>
-    <string name="mcp_picker_syncing">Syncing MCP servers...</string>
-    <string name="mcp_picker_title">MCP Servers</string>
+    <string name="mcp_picker_syncing">Syncing plugins...</string>
+    <string name="mcp_picker_title">Plugins</string>
     <string name="menu">Menu</string>
     <string name="menu_page_afternoon_greeting">Good Afternoon!</string>
     <string name="menu_page_evening_greeting">Good Evening!</string>
@@ -575,7 +575,7 @@
     <string name="setting_mcp_page_sse_url_placeholder">https://example.com/sse</string>
     <string name="setting_mcp_page_streamable_http_url_desc">Streamable HTTP URL</string>
     <string name="setting_mcp_page_streamable_http_url_placeholder">https://example.com/mcp</string>
-    <string name="setting_mcp_page_title">MCP</string>
+    <string name="setting_mcp_page_title">Plugins</string>
     <string name="setting_mcp_page_tools">Tools</string>
     <string name="setting_mcp_page_tools_unavailable_message">Tools list unavailable during creation. Please view after adding.</string>
     <string name="setting_mcp_page_transport_type">Transport Type</string>
@@ -643,8 +643,8 @@
     <string name="setting_page_dynamic_color">Dynamic Color</string>
     <string name="setting_page_dynamic_color_desc">Use Material You dynamic colors</string>
     <string name="setting_page_general_settings">General Settings</string>
-    <string name="setting_page_mcp">MCP</string>
-    <string name="setting_page_mcp_desc">Configure MCP servers</string>
+    <string name="setting_page_mcp">Plugins</string>
+    <string name="setting_page_mcp_desc">Connect tools and services</string>
     <string name="setting_page_model_and_services">Models &amp; Services</string>
     <string name="setting_page_no_share_app">No share app found</string>
     <string name="setting_page_providers">Providers</string>
@@ -920,7 +920,7 @@
     <string name="theme_name_ocean">Ocean Blue</string>
     <string name="theme_name_sakura">Sakura Pink</string>
     <string name="theme_name_spring">Meadow Green</string>
-    <string name="tools_warning">Tools are disabled for current model. Please enable tools in settings to use Search/MCP.</string>
+    <string name="tools_warning">Tools are disabled for current model. Please enable tools in settings to use Search/Plugins.</string>
     <string name="translate">Translate</string>
     <string name="translating">Translating...</string>
     <string name="translation_clear">Clear Translation</string>
@@ -1272,6 +1272,9 @@
     <string name="minimal_input_skills_desc">Apply skills to this chat</string>
     <string name="minimal_input_lorebooks">Lorebooks</string>
     <string name="minimal_input_lorebooks_desc">Add context from your lorebooks</string>
+    <string name="minimal_input_plugins">Plugins</string>
+    <string name="minimal_input_plugins_desc">Choose tools for this assistant</string>
+    <string name="plugins_picker_active_count">%1$d active</string>
     <string name="minimal_input_summarize">Summarize</string>
     <string name="minimal_input_summarize_desc">Summarize the conversation</string>
     <string name="backup_restore_permissions_required">Permissions Required</string>

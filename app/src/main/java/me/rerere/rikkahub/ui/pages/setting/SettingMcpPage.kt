@@ -279,19 +279,6 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)
                 ) {
-                    item {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text("Your connections", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                "Connect assistants to the services you use. Tools remain selectable per assistant.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                     itemsIndexed(mcpConfigs, key = { _, it -> it.id }) { index, mcpConfig ->
                         val position = when {
                             mcpConfigs.size == 1 -> ItemPosition.ONLY
@@ -613,8 +600,10 @@ private fun McpConnectionsSheet(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Tag(type = if (preset.authMode == McpAuthMode.OAUTH) TagType.SUCCESS else TagType.DEFAULT) {
-                                        Text(preset.badge)
+                                    if (preset.authMode != McpAuthMode.NONE) {
+                                        Tag(type = if (preset.authMode == McpAuthMode.OAUTH) TagType.SUCCESS else TagType.DEFAULT) {
+                                            Text(preset.badge)
+                                        }
                                     }
                                     if (installed) Tag(type = TagType.INFO) { Text("Added") }
                                 }

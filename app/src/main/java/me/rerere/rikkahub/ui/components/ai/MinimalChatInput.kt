@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Fullscreen
@@ -1766,6 +1767,7 @@ private fun MinimalPickerContent(
     var showReasoningPicker by remember { mutableStateOf(false) }
     var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
+    var showPluginsPicker by remember { mutableStateOf(false) }
     var showContextRefreshDialog by remember { mutableStateOf(false) }
     var showContextSummaryEditDialog by remember { mutableStateOf(false) }
     var editableContextSummary by remember(conversation.contextSummary) {
@@ -2115,6 +2117,32 @@ private fun MinimalPickerContent(
                 }
             )
         }
+
+        if (settings.mcpServers.isNotEmpty()) {
+            val availablePluginIds = settings.mcpServers
+                .filter { it.commonOptions.enable }
+                .map { it.id }
+                .toSet()
+            val activePluginsCount = assistant.mcpServers.intersect(availablePluginIds).size
+            val pluginsActive = activePluginsCount > 0
+            MinimalPickerItem(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Extension,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = if (pluginsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                title = stringResource(R.string.minimal_input_plugins),
+                subtitle = if (pluginsActive) {
+                    stringResource(R.string.plugins_picker_active_count, activePluginsCount)
+                } else {
+                    stringResource(R.string.minimal_input_plugins_desc)
+                },
+                onClick = { showPluginsPicker = true },
+            )
+        }
         
         // Summarize button - show whenever there is enough history to summarize
         if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
@@ -2224,6 +2252,15 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onNavigateToLorebook(lorebookId)
             },
             onDismiss = { showLorebooksPicker = false }
+        )
+    }
+
+    if (showPluginsPicker) {
+        PluginsPickerSheet(
+            settings = settings,
+            assistant = assistant,
+            onUpdateAssistant = onUpdateAssistant,
+            onDismiss = { showPluginsPicker = false },
         )
     }
     

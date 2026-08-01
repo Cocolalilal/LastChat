@@ -2988,8 +2988,10 @@ private fun rememberContextMeterUsage(
     val rawMessages = conversation.currentMessages
     val messages = effectiveHistoryForContext(
         messages = rawMessages,
-        smartManagement = smartActive && !conversation.contextSummary.isNullOrBlank(),
-        summaryUpToIndex = conversation.contextSummaryUpToIndex,
+        smartManagement = smartActive,
+        summaryUpToIndex = conversation.contextSummaryUpToIndex.takeIf {
+            !conversation.contextSummary.isNullOrBlank()
+        } ?: -1,
         truncateIndex = conversation.truncateIndex,
         manualHistoryLimit = assistant.maxHistoryMessages,
     )

@@ -60,7 +60,7 @@
     <string name="assistant_detail_models_desc">Chat model, background model, generation settings</string>
     <string name="assistant_detail_memory_desc">Memory settings, recent chats, RAG</string>
     <string name="assistant_detail_tools_search">Tools &amp; Search</string>
-    <string name="assistant_detail_tools_search_desc">Search providers, local tools, MCP</string>
+    <string name="assistant_detail_tools_search_desc">Search providers, local tools, plugins</string>
     <string name="assistant_detail_ui_customization">UI Customization</string>
     <string name="assistant_detail_ui_customization_desc">Per-character display settings</string>
     <string name="assistant_detail_advanced">Advanced</string>
@@ -221,7 +221,7 @@
     <string name="assistant_tools_prefer_builtin">Prefer Built-in Search</string>
     <string name="assistant_tools_prefer_builtin_desc">Use model\'s native search when available</string>
     <string name="assistant_tools_mcp_enabled_count">%1$d enabled of %2$d</string>
-    <string name="assistant_tools_mcp_select">Select external tool servers</string>
+    <string name="assistant_tools_mcp_select">Choose plugins for this assistant</string>
     <string name="assistant_tools_provider_fallback">Provider %1$d</string>
 
     <!-- UI customization -->

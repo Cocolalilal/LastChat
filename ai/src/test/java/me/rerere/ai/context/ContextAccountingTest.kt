@@ -214,6 +214,22 @@ class ContextAccountingTest {
     }
 
     @Test
+    fun smartHistory_withoutSummaryDoesNotFallBackToManualMessageLimit() {
+        val messages = (0 until 150).map { index -> UIMessage.user("message $index") }
+
+        val retained = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = true,
+            summaryUpToIndex = -1,
+            truncateIndex = -1,
+            manualHistoryLimit = 10,
+        )
+
+        assertEquals(150, retained.size)
+        assertEquals(messages, retained)
+    }
+
+    @Test
     fun summaryReplacement_materiallyLowersNextRequestUsage() {
         val model = Model(modelId = "private-model", contextWindowTokens = 32_000)
         val messages = (0 until 100).map { index ->
