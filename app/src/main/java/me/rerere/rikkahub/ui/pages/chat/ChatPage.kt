@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,6 +10,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.animateColorAsState
@@ -431,9 +433,9 @@ internal fun chatToolbarPopupBottomPadding(placement: ChatToolbarPlacement): and
 
 private fun chatToolbarOverflowMenuTransformOrigin(placement: ChatToolbarPlacement): TransformOrigin {
     return if (placement == ChatToolbarPlacement.Bottom) {
-        TransformOrigin(1f, 1f)
+        TransformOrigin(0.5f, 1f)
     } else {
-        TransformOrigin(1f, 0f)
+        TransformOrigin(0.5f, 0f)
     }
 }
 
@@ -1979,22 +1981,8 @@ private fun ChatPageContent(
                         dampingRatio = 0.75f,
                         stiffness = 360f,
                     )
-                ) + scaleIn(
-                    initialScale = 0.96f,
-                    transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.75f,
-                        stiffness = 360f,
-                    )
                 ),
                 exit = fadeOut(
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 420f,
-                    )
-                ) + scaleOut(
-                    targetScale = 0.96f,
-                    transformOrigin = chatToolbarOverflowMenuTransformOrigin(toolbarPlacement),
                     animationSpec = androidx.compose.animation.core.spring(
                         dampingRatio = 0.85f,
                         stiffness = 420f,
@@ -2002,8 +1990,27 @@ private fun ChatPageContent(
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                val menuScale by transition.animateFloat(
+                    transitionSpec = {
+                        if (targetState == EnterExitState.Visible) {
+                            androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 360f,
+                            )
+                        } else {
+                            androidx.compose.animation.core.spring(
+                                dampingRatio = 0.85f,
+                                stiffness = 420f,
+                            )
+                        }
+                    },
+                    label = "chat_toolbar_overflow_menu_scale",
+                ) { state ->
+                    if (state == EnterExitState.Visible) 1f else 0.96f
+                }
                 ChatToolbarOverflowMenu(
                     placement = toolbarPlacement,
+                    menuScale = menuScale,
                     previewMode = previewMode,
                     hasConversationContent = conversation.messageNodes.isNotEmpty(),
                     chatListState = chatListState,
@@ -2283,6 +2290,7 @@ private fun ChatShareSelectionModeBar(
 @Composable
 private fun ChatToolbarOverflowMenu(
     placement: ChatToolbarPlacement,
+    menuScale: Float,
     previewMode: Boolean,
     hasConversationContent: Boolean,
     chatListState: LazyListState,
@@ -2359,6 +2367,11 @@ private fun ChatToolbarOverflowMenu(
                     )
                     .padding(top = menuTopPadding, bottom = menuBottomPadding, end = 16.dp)
                     .widthIn(min = 196.dp, max = 260.dp)
+                    .graphicsLayer {
+                        scaleX = 1f
+                        scaleY = menuScale
+                        transformOrigin = chatToolbarOverflowMenuTransformOrigin(placement)
+                    }
                     .lastChatBlurEffect(containerColor, menuShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
