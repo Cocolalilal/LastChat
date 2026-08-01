@@ -31,6 +31,7 @@ import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.context.smartOutputTokenBudget
 import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartPrepareHistory
+import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -973,7 +974,8 @@ class GenerationHandler(
                 entryName = activated.entry.name,
                 entryIndex = activated.entryIndex,
                 priority = activatedEntriesWithLorebook.size - priority, // Higher priority for first entries
-                activationReason = activated.reason
+                activationReason = activated.reason,
+                contextTokenCount = estimateTokens(activated.entry.prompt),
             )
         }
 
@@ -1065,22 +1067,13 @@ class GenerationHandler(
 
         // 2. Prepare Candidates. Smart mode is authoritative: an existing summary replaces the
         // turns it covers, and manual history/search/media limits no longer constrain allocation.
-        val summaryTrimmedMessages = if (
-            smartEnabled &&
-            !contextSummary.isNullOrBlank() &&
-            contextSummaryUpToIndex in messages.indices
-        ) {
-            messages.drop(contextSummaryUpToIndex + 1)
-        } else {
-            messages
-        }
-        val historyLimitedMessages = if (smartEnabled) {
-            summaryTrimmedMessages
-        } else {
-            assistant.maxHistoryMessages?.let { limit ->
-                if (limit > 0) messages.limitContext(limit) else messages
-            } ?: messages
-        }
+        val historyLimitedMessages = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = smartEnabled && !contextSummary.isNullOrBlank(),
+            summaryUpToIndex = contextSummaryUpToIndex,
+            truncateIndex = truncateIndex,
+            manualHistoryLimit = assistant.maxHistoryMessages,
+        )
         
         // Prune search results if configured
         val searchPrunedMessages = if (smartEnabled) {
@@ -1128,7 +1121,7 @@ class GenerationHandler(
         }
         
         // Chat History (reverse order to prioritize recent)
-        val chatHistoryCandidates = imageArchivedMessages.truncate(truncateIndex).reversed()
+        val chatHistoryCandidates = imageArchivedMessages.reversed()
         
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
@@ -1413,7 +1406,8 @@ class GenerationHandler(
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason
+                activationReason = reason,
+                contextTokenCount = estimateTokens(memory.content),
             )
         }
         
@@ -1559,14 +1553,14 @@ class GenerationHandler(
                 }
             },
         )
-        val internalMessages = buildResult.messageBudgetTokens?.let { budget ->
+        var internalMessages = buildResult.messageBudgetTokens?.let { budget ->
             smartFitContext(
                 messages = transformedInput.messages,
                 model = model,
                 messageBudgetTokens = budget,
             )
         } ?: transformedInput.messages
-        val transformedUsage = buildResult.contextUsage?.let { usage ->
+        var transformedUsage = buildResult.contextUsage?.let { usage ->
             val before = ContextTokenEstimator.messagesTokens(buildResult.messages, model)
             val after = ContextTokenEstimator.messagesTokens(internalMessages, model)
             val delta = after - before
@@ -1621,6 +1615,46 @@ class GenerationHandler(
                 addAll(model.customBodies)
             }
         )
+        if ((model.contextWindowTokens ?: 0) > 0) {
+            val inputBudget = buildResult.messageBudgetTokens?.let {
+                smartInputBudget(model, params.maxTokens)
+            }
+            if (inputBudget != null || buildResult.messageBudgetTokens == null) {
+                for (attempt in 0 until 4) {
+                    val countedTokens = runCatching {
+                        providerImpl.countInputTokens(provider, internalMessages, params)
+                    }.getOrNull()?.takeIf { it > 0 } ?: break
+                    transformedUsage?.let { estimate ->
+                        val counted = ContextTokenEstimator.reconcileProviderCount(
+                            breakdown = estimate,
+                            promptTokens = countedTokens,
+                            model = model,
+                        )
+                        transformedUsage = counted
+                        onContextUsage(counted)
+                    }
+                    if (inputBudget == null || countedTokens <= inputBudget || attempt == 3) break
+
+                    val oldMessageTokens = ContextTokenEstimator.messagesTokens(internalMessages, model)
+                    val reduction = (inputBudget.toDouble() / countedTokens * 0.94).coerceIn(0.1, 0.94)
+                    val reducedBudget = (oldMessageTokens * reduction).toInt().coerceAtLeast(32)
+                    internalMessages = smartFitContext(
+                        messages = internalMessages,
+                        model = model,
+                        messageBudgetTokens = reducedBudget,
+                    )
+                    val newMessageTokens = ContextTokenEstimator.messagesTokens(internalMessages, model)
+                    transformedUsage = transformedUsage?.let { usage ->
+                        val delta = newMessageTokens - oldMessageTokens
+                        usage.copy(
+                            conversationTokens = (usage.conversationTokens + delta).coerceAtLeast(0),
+                            usedTokens = (usage.usedTokens + delta).coerceAtLeast(0),
+                            confidence = me.rerere.ai.context.ContextCountConfidence.ESTIMATED,
+                        )
+                    }
+                }
+            }
+        }
         if (stream) {
             aiLoggingManager.addLog(AILogging.Generation(
                 params = params,
@@ -1636,7 +1670,18 @@ class GenerationHandler(
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
                     transformedUsage?.let { estimate ->
-                        onContextUsage(ContextTokenEstimator.reconcileProviderCount(estimate, usage.promptTokens, model))
+                        onContextUsage(
+                            ContextTokenEstimator.reconcileProviderCount(
+                                breakdown = estimate,
+                                promptTokens = usage.promptTokens,
+                                model = model,
+                                confidence = if (provider is ProviderSetting.LiteRtLocal) {
+                                    me.rerere.ai.context.ContextCountConfidence.EXACT
+                                } else {
+                                    me.rerere.ai.context.ContextCountConfidence.PROVIDER_COUNTED
+                                },
+                            )
+                        )
                     }
                     messages = messages.mapIndexed { index, message ->
                         if (index == messages.lastIndex) {
@@ -1677,8 +1722,19 @@ class GenerationHandler(
             )
             messages = messages.handleMessageChunk(chunk = chunk, model = model)
             chunk.usage?.let { usage ->
-                buildResult.contextUsage?.let { estimate ->
-                    onContextUsage(ContextTokenEstimator.reconcileProviderCount(estimate, usage.promptTokens, model))
+                transformedUsage?.let { estimate ->
+                    onContextUsage(
+                        ContextTokenEstimator.reconcileProviderCount(
+                            breakdown = estimate,
+                            promptTokens = usage.promptTokens,
+                            model = model,
+                            confidence = if (provider is ProviderSetting.LiteRtLocal) {
+                                me.rerere.ai.context.ContextCountConfidence.EXACT
+                            } else {
+                                me.rerere.ai.context.ContextCountConfidence.PROVIDER_COUNTED
+                            },
+                        )
+                    )
                 }
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex) {

@@ -155,6 +155,36 @@ class ClaudeProvider(
         )
     }
 
+    override suspend fun countInputTokens(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Int? = withContext(me.rerere.ai.util.providerIoDispatcher) {
+        val generationBody = buildMessageRequest(messages, params)
+        val requestBody = buildJsonObject {
+            generationBody.forEach { (key, value) ->
+                if (key !in setOf("stream", "max_tokens", "temperature", "top_p")) put(key, value)
+            }
+        }
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "${providerSetting.baseUrl}/messages/count_tokens",
+                headers = params.customHeaders.toHeaderMap()
+                    .withReferHeaders(providerSetting.baseUrl)
+                    .withClaudeHeaders(providerSetting.apiKey),
+                body = json.encodeToString(requestBody).encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy(),
+            )
+        )
+        if (response.statusCode !in 200..299) return@withContext null
+        json.parseToJsonElement(response.body.decodeToString()).jsonObject["input_tokens"]
+            ?.jsonPrimitive
+            ?.intOrNull
+            ?.takeIf { it > 0 }
+    }
+
     override suspend fun streamText(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,

@@ -3,6 +3,7 @@ package me.rerere.ai.context
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.limitContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -23,6 +24,8 @@ data class ContextUsageBreakdown(
     val toolDefinitionTokens: Int = 0,
     val toolCallTokens: Int = 0,
     val mediaTokens: Int = 0,
+    /** Likely request-only context that is selected just before generation, such as RAG memory. */
+    val probableTemporaryTokens: Int = 0,
     val usedTokens: Int = conversationTokens + systemPromptTokens + summaryTokens + memoryTokens +
         addonTokens + toolDefinitionTokens + toolCallTokens + mediaTokens,
     val totalTokens: Int,
@@ -33,6 +36,9 @@ data class ContextUsageBreakdown(
 ) {
     val remainingTokens: Int get() = (totalTokens - usedTokens).coerceAtLeast(0)
     val fractionUsed: Float get() = if (totalTokens <= 0) 0f else (usedTokens.toFloat() / totalTokens).coerceIn(0f, 1f)
+    val projectedUsedTokens: Int get() = (usedTokens + probableTemporaryTokens).coerceAtMost(totalTokens)
+    val probableFraction: Float get() = if (totalTokens <= 0) 0f else
+        (probableTemporaryTokens.toFloat() / totalTokens).coerceIn(0f, 1f - fractionUsed)
 }
 
 /**
@@ -47,22 +53,39 @@ object ContextTokenEstimator {
         breakdown: ContextUsageBreakdown,
         promptTokens: Int,
         model: Model? = null,
+        confidence: ContextCountConfidence = ContextCountConfidence.PROVIDER_COUNTED,
     ): ContextUsageBreakdown {
         if (promptTokens <= 0 || breakdown.usedTokens <= 0) return breakdown
         val scale = promptTokens.toDouble() / breakdown.usedTokens
-        model?.let { calibrate(it, scale) }
+        if (
+            breakdown.mediaTokens == 0 &&
+            breakdown.toolDefinitionTokens == 0 &&
+            breakdown.toolCallTokens == 0
+        ) {
+            model?.let { calibrate(it, scale) }
+        }
         fun scaled(value: Int) = (value * scale).toInt().coerceAtLeast(0)
+        val conversation = scaled(breakdown.conversationTokens)
+        val system = scaled(breakdown.systemPromptTokens)
+        val summary = scaled(breakdown.summaryTokens)
+        val memory = scaled(breakdown.memoryTokens)
+        val addons = scaled(breakdown.addonTokens)
+        val toolDefinitions = scaled(breakdown.toolDefinitionTokens)
+        val toolCalls = scaled(breakdown.toolCallTokens)
+        val media = scaled(breakdown.mediaTokens)
+        val roundingResidual = (promptTokens - (conversation + system + summary + memory + addons +
+            toolDefinitions + toolCalls + media)).coerceAtLeast(0)
         return breakdown.copy(
-            conversationTokens = scaled(breakdown.conversationTokens),
-            systemPromptTokens = scaled(breakdown.systemPromptTokens),
-            summaryTokens = scaled(breakdown.summaryTokens),
-            memoryTokens = scaled(breakdown.memoryTokens),
-            addonTokens = scaled(breakdown.addonTokens),
-            toolDefinitionTokens = scaled(breakdown.toolDefinitionTokens),
-            toolCallTokens = scaled(breakdown.toolCallTokens),
-            mediaTokens = scaled(breakdown.mediaTokens),
+            conversationTokens = conversation + roundingResidual,
+            systemPromptTokens = system,
+            summaryTokens = summary,
+            memoryTokens = memory,
+            addonTokens = addons,
+            toolDefinitionTokens = toolDefinitions,
+            toolCallTokens = toolCalls,
+            mediaTokens = media,
             usedTokens = promptTokens,
-            confidence = ContextCountConfidence.PROVIDER_COUNTED,
+            confidence = confidence,
         )
     }
 
@@ -75,11 +98,40 @@ object ContextTokenEstimator {
             id.contains("gemini", true) -> 3.8
             else -> 3.2 // Conservative for unknown and multilingual tokenizers.
         }
-        val asciiCharacters = text.count { it.code in 0..127 }
-        val nonAsciiCharacters = text.length - asciiCharacters
-        val lexicalEstimate = ceil(asciiCharacters / charsPerToken) +
-            ceil(nonAsciiCharacters * 0.9) +
-            text.count { it == '\n' } / 2.0
+        var asciiWordCharacters = 0
+        var asciiPunctuation = 0
+        var whitespace = 0
+        var cjkCharacters = 0
+        var emojiCharacters = 0
+        var otherCharacters = 0
+        var index = 0
+        while (index < text.length) {
+            val first = text[index]
+            val codePoint = if (first.isHighSurrogate() && index + 1 < text.length && text[index + 1].isLowSurrogate()) {
+                val high = first.code - 0xD800
+                val low = text[index + 1].code - 0xDC00
+                index++
+                0x10000 + (high shl 10) + low
+            } else {
+                first.code
+            }
+            when {
+                codePoint <= 0x7F && codePoint.toChar().isLetterOrDigit() -> asciiWordCharacters++
+                codePoint <= 0x7F && codePoint.toChar().isWhitespace() -> whitespace++
+                codePoint <= 0x7F -> asciiPunctuation++
+                codePoint in 0x3400..0x9FFF || codePoint in 0xF900..0xFAFF ||
+                    codePoint in 0x3040..0x30FF || codePoint in 0xAC00..0xD7AF -> cjkCharacters++
+                codePoint in 0x1F000..0x1FAFF || codePoint in 0x2600..0x27BF -> emojiCharacters++
+                else -> otherCharacters++
+            }
+            index++
+        }
+        val lexicalEstimate = ceil(asciiWordCharacters / charsPerToken) +
+            ceil(asciiPunctuation * 0.55) +
+            ceil(whitespace * 0.18) +
+            cjkCharacters +
+            emojiCharacters * 2.0 +
+            ceil(otherCharacters * 0.8)
         val calibration = modelCalibration.load()[modelKey(model)] ?: 1.0
         return (lexicalEstimate * calibration)
             .toInt()
@@ -117,7 +169,10 @@ object ContextTokenEstimator {
         embeddedToolText: String = "",
         namedContextEmbeddedInMessages: Boolean = false,
         pendingParts: List<UIMessagePart> = emptyList(),
+        memoryTokensOverride: Int? = null,
+        toolDefinitionTokensOverride: Int? = null,
         providerPromptTokens: Int? = null,
+        probableTemporaryTokens: Int = 0,
         sourceKey: Int? = null,
     ): ContextUsageBreakdown {
         var messageText = 0
@@ -136,10 +191,11 @@ object ContextTokenEstimator {
             if (messages.isEmpty() && pendingParts.isEmpty()) 0 else 3
         val systemPrompt = textTokens(systemPromptText, model)
         val summary = textTokens(summaryText, model)
-        val memories = textTokens(memoryText, model)
+        val memories = memoryTokensOverride?.coerceAtLeast(0) ?: textTokens(memoryText, model)
         val addons = textTokens(addonText, model)
         val embeddedTools = textTokens(embeddedToolText, model)
-        val toolDefinitions = textTokens(toolDefinitionText, model) + embeddedTools
+        val toolDefinitions = toolDefinitionTokensOverride?.coerceAtLeast(0)
+            ?: (textTokens(toolDefinitionText, model) + embeddedTools)
         // Request accounting names text already embedded in built messages; live UI accounting
         // supplies raw conversation messages, so its named context must be added independently.
         val embeddedNamedTokens = if (namedContextEmbeddedInMessages) {
@@ -162,6 +218,9 @@ object ContextTokenEstimator {
             toolDefinitionTokens = scaled(toolDefinitions),
             toolCallTokens = scaled(toolCalls),
             mediaTokens = scaled(media),
+            probableTemporaryTokens = probableTemporaryTokens
+                .coerceAtLeast(0)
+                .coerceAtMost(((model.contextWindowTokens ?: 0) - (confirmedTotal ?: estimatedTotal)).coerceAtLeast(0)),
             usedTokens = confirmedTotal ?: estimatedTotal,
             totalTokens = model.contextWindowTokens?.takeIf { it > 0 } ?: 0,
             imageCount = images,
@@ -184,7 +243,85 @@ object ContextTokenEstimator {
     }
 
     private fun modelKey(model: Model?): String =
-        (model?.canonicalModelId ?: model?.modelId).orEmpty().trim().lowercase()
+        listOfNotNull(model?.providerSlug, model?.canonicalModelId ?: model?.modelId)
+            .joinToString("|")
+            .trim()
+            .lowercase()
+}
+
+/**
+ * Predicts request-only context that cannot be known until generation starts. Recent observed
+ * injections take precedence; cold-start estimates are deliberately bounded by the same share of
+ * the input window that smart context management can practically give dynamic context.
+ */
+fun probableTemporaryTokenReserve(
+    model: Model,
+    requestedOutputTokens: Int?,
+    memoryEnabled: Boolean,
+    memoryCandidateLimit: Int,
+    observedMemoryTokenTotals: List<Int>,
+    conditionalContextCandidateTokens: Int,
+    observedConditionalTokenTotals: List<Int>,
+): Int {
+    val inputBudget = smartInputBudget(model, requestedOutputTokens) ?: return 0
+    fun probableObserved(values: List<Int>): Int? {
+        val sorted = values.filter { it > 0 }.sorted()
+        if (sorted.isEmpty()) return null
+        // A small upper-quartile sample is steadier than the last request but still preserves peaks.
+        return sorted[((sorted.lastIndex * 3) / 4).coerceIn(0, sorted.lastIndex)]
+    }
+
+    val memoryCap = (inputBudget * 0.22f).toInt()
+    val memoryReserve = if (memoryEnabled) {
+        probableObserved(observedMemoryTokenTotals)
+            ?: (memoryCandidateLimit.coerceIn(0, 12) * 96)
+    } else {
+        0
+    }.coerceAtMost(memoryCap)
+
+    val conditionalCap = (inputBudget * 0.10f).toInt()
+    val conditionalReserve = (
+        probableObserved(observedConditionalTokenTotals)
+            ?: (conditionalContextCandidateTokens * 0.35f).toInt()
+        ).coerceIn(0, minOf(conditionalContextCandidateTokens, conditionalCap))
+
+    return (memoryReserve + conditionalReserve)
+        .coerceAtMost((inputBudget * 0.28f).toInt())
+        .coerceAtLeast(0)
+}
+
+/**
+ * Projects the raw chat history to the portion that can actually be sent before dynamic context is
+ * added. This is shared by request assembly and the live meter so summaries and truncation cannot
+ * disagree between them.
+ */
+fun effectiveHistoryForContext(
+    messages: List<UIMessage>,
+    smartManagement: Boolean,
+    summaryUpToIndex: Int,
+    truncateIndex: Int,
+    manualHistoryLimit: Int? = null,
+): List<UIMessage> {
+    if (messages.isEmpty()) return messages
+    val summaryStart = if (smartManagement && summaryUpToIndex in messages.indices) {
+        summaryUpToIndex + 1
+    } else {
+        0
+    }
+    val explicitStart = truncateIndex.takeIf { it in messages.indices } ?: 0
+    val start = maxOf(summaryStart, explicitStart)
+    val retained = if (start <= 0) {
+        messages
+    } else {
+        // limitContext moves the boundary backwards when necessary to avoid separating a tool
+        // result from the call it depends on.
+        messages.limitContext(messages.size - start)
+    }
+    return if (!smartManagement && (manualHistoryLimit ?: 0) > 0) {
+        retained.limitContext(manualHistoryLimit ?: retained.size)
+    } else {
+        retained
+    }
 }
 
 fun List<UIMessage>.limitImagesForModel(model: Model): List<UIMessage> {

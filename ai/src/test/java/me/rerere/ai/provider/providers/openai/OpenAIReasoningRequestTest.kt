@@ -562,10 +562,10 @@ class OpenAIReasoningRequestTest {
             }
         ) ?: error("usage is missing")
 
-        assertEquals(1700, usage.promptTokens)
+        assertEquals(1000, usage.promptTokens)
         assertEquals(50, usage.completionTokens)
         assertEquals(400, usage.cachedTokens)
-        assertEquals(1750, usage.totalTokens)
+        assertEquals(1050, usage.totalTokens)
     }
 
     @Test

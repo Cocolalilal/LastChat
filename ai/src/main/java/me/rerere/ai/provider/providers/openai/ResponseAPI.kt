@@ -616,7 +616,8 @@ class ResponseAPI(
             ?: jsonObject.firstPositiveIntOrNull("prompt_cache_miss_tokens")
             ?: 0
         val effectivePromptTokens = if (promptTokens > 0) {
-            promptTokens + cacheReadTokens + cacheCreationTokens
+            // OpenAI reports cache reads/writes as subsets of input_tokens, not additional input.
+            promptTokens
         } else {
             cacheReadTokens + cacheMissTokens + cacheCreationTokens
         }

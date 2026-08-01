@@ -265,6 +265,44 @@ class GoogleProvider(
         messageChunk
     }
 
+    override suspend fun countInputTokens(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Int? = withContext(me.rerere.ai.util.providerIoDispatcher) {
+        val generationBody = buildCompletionRequestBody(messages, params)
+        val requestBody = buildJsonObject {
+            put("generateContentRequest", generationBody)
+        }
+        val url = buildUrl(
+            providerSetting = providerSetting,
+            path = if (providerSetting.vertexAI) {
+                "publishers/google/models/${params.model.modelId}:countTokens"
+            } else {
+                "models/${params.model.modelId}:countTokens"
+            }
+        )
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = url,
+                headers = buildHeaders(
+                    providerSetting = providerSetting,
+                    customHeaders = params.customHeaders,
+                    includeJsonContentType = true,
+                ),
+                body = json.encodeToString(requestBody).encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy(),
+            )
+        )
+        if (response.statusCode !in 200..299) return@withContext null
+        json.parseToJsonElement(response.body.decodeToString()).jsonObject["totalTokens"]
+            ?.jsonPrimitiveOrNull
+            ?.intOrNull
+            ?.takeIf { it > 0 }
+    }
+
     override suspend fun streamText(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,

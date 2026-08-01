@@ -168,6 +168,19 @@ class ChatPageTest {
     }
 
     @Test
+    fun contextPopupUsesTheSameToolbarClearanceAsTheChatDropdown() {
+        val topPlacement = chatTopBarPlacement(Settings())
+        assertEquals(64.dp, chatToolbarPopupTopPadding(topPlacement))
+        assertEquals(0.dp, chatToolbarPopupBottomPadding(topPlacement))
+
+        val bottomPlacement = chatTopBarPlacement(
+            Settings(displaySetting = DisplaySetting(chatToolbarAtBottom = true))
+        )
+        assertEquals(0.dp, chatToolbarPopupTopPadding(bottomPlacement))
+        assertEquals(72.dp, chatToolbarPopupBottomPadding(bottomPlacement))
+    }
+
+    @Test
     fun wideChatLayoutRequiresTabletHeight() {
         assertFalse(shouldUseWideChatLayout(windowWidth = 920.dp, windowHeight = 430.dp))
         assertTrue(shouldUseWideChatLayout(windowWidth = 900.dp, windowHeight = 600.dp))

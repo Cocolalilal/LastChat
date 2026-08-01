@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolCall
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
@@ -34,6 +36,7 @@ import me.rerere.locallm.LocalModelKind
 import me.rerere.locallm.LocalModelStore
 import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalApi::class)
 class LiteRtProvider(
     private val context: Context,
     private val runtime: LiteRtRuntime,
@@ -65,6 +68,7 @@ class LiteRtProvider(
                 val sendable = preparedMessages.sendable
                 val reply = conversation.sendMessage(toSendableMessage(effective, sendable), emptyMap())
                 val (reasoning, text) = splitThink(reply.textString())
+                val benchmark = conversation.getBenchmarkInfo()
                 val parts = buildList {
                     if (reasoning.isNotBlank()) add(UIMessagePart.Reasoning(reasoning = reasoning))
                     if (text.isNotBlank()) add(UIMessagePart.Text(text))
@@ -80,6 +84,12 @@ class LiteRtProvider(
                             message = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
                             finishReason = if (reply.toolCalls.isNotEmpty()) "tool_calls" else "stop",
                         )
+                    ),
+                    usage = TokenUsage(
+                        promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
+                        completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
+                        totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
+                            .coerceAtLeast(0),
                     ),
                 )
             } finally {
@@ -158,6 +168,7 @@ class LiteRtProvider(
                             }
 
                         val toolParts = lastToolCalls.toUiToolCalls(gson)
+                        val benchmark = conversation.getBenchmarkInfo()
                         trySend(
                             MessageChunk(
                                 id = modelId,
@@ -173,6 +184,12 @@ class LiteRtProvider(
                                         message = null,
                                         finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
                                     )
+                                ),
+                                usage = TokenUsage(
+                                    promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
+                                    completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
+                                    totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
+                                        .coerceAtLeast(0),
                                 ),
                             )
                         )

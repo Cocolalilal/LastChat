@@ -184,4 +184,87 @@ class ContextAccountingTest {
         assertTrue(withSummary.summaryTokens > 0)
         assertTrue(withSummary.usedTokens > withoutSummary.usedTokens)
     }
+
+    @Test
+    fun effectiveHistory_replacesSummarizedMessagesAndHonorsTruncation() {
+        val messages = (0 until 100).map { index -> UIMessage.user("message $index") }
+
+        val retained = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = true,
+            summaryUpToIndex = 89,
+            truncateIndex = 94,
+        )
+
+        assertEquals(messages.drop(94), retained)
+    }
+
+    @Test
+    fun effectiveHistory_keepsFullHistoryWhenSummaryIndexIsInvalid() {
+        val messages = (0 until 5).map { index -> UIMessage.user("message $index") }
+
+        val retained = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = true,
+            summaryUpToIndex = 99,
+            truncateIndex = -1,
+        )
+
+        assertEquals(messages, retained)
+    }
+
+    @Test
+    fun summaryReplacement_materiallyLowersNextRequestUsage() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 32_000)
+        val messages = (0 until 100).map { index ->
+            UIMessage.user("message $index " + "substantial conversation detail ".repeat(20))
+        }
+        val before = ContextTokenEstimator.breakdown(messages = messages, model = model)
+        val retained = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = true,
+            summaryUpToIndex = 89,
+            truncateIndex = -1,
+        )
+        val after = ContextTokenEstimator.breakdown(
+            messages = retained,
+            model = model,
+            summaryText = "A concise summary of the earlier conversation.",
+        )
+
+        assertEquals(10, retained.size)
+        assertTrue(after.usedTokens < before.usedTokens / 3)
+        assertTrue(after.summaryTokens > 0)
+    }
+
+    @Test
+    fun probableTemporaryReserve_usesRecentObservedInjectionCosts() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 100_000)
+
+        val reserve = probableTemporaryTokenReserve(
+            model = model,
+            requestedOutputTokens = 4_000,
+            memoryEnabled = true,
+            memoryCandidateLimit = 10,
+            observedMemoryTokenTotals = listOf(100, 200, 500, 1_000),
+            conditionalContextCandidateTokens = 2_000,
+            observedConditionalTokenTotals = listOf(300),
+        )
+
+        assertEquals(800, reserve)
+    }
+
+    @Test
+    fun probableTemporaryTokens_areProjectedWithoutInflatingCurrentUsage() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 16_384)
+        val usage = ContextTokenEstimator.breakdown(
+            messages = listOf(UIMessage.user("hello")),
+            model = model,
+            probableTemporaryTokens = 900,
+        )
+
+        assertEquals(900, usage.probableTemporaryTokens)
+        assertEquals(usage.usedTokens + 900, usage.projectedUsedTokens)
+        assertTrue(usage.probableFraction > 0f)
+    }
 }

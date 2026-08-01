@@ -263,7 +263,9 @@ data class UsedLorebookEntry(
     val entryName: String,
     val entryIndex: Int,  // Position in the lorebook's entry list
     val priority: Int = 0,  // Higher = more priority (for sorting display)
-    val activationReason: String? = null // e.g. "Always Active", "Keywords: foo, bar", "RAG (0.85)"
+    val activationReason: String? = null, // e.g. "Always Active", "Keywords: foo, bar", "RAG (0.85)"
+    /** Full injected prompt cost, retained because [entryName] alone cannot reconstruct it. */
+    val contextTokenCount: Int? = null,
 )
 
 /**
@@ -287,7 +289,9 @@ data class UsedMemory(
     val memoryContent: String,  // First line/truncated content for display
     val memoryType: Int,  // 0 = CORE, 1 = EPISODIC
     val priority: Int = 0,
-    val activationReason: String? = null  // "Contextually relevant", "Always included", "Recent episode boost"
+    val activationReason: String? = null,  // "Contextually relevant", "Always included", "Recent episode boost"
+    /** Full injected size retained for accurate future context previews without storing raw memory. */
+    val contextTokenCount: Int? = null,
 )
 
 
