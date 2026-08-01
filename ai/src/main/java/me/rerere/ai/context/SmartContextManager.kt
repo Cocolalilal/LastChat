@@ -17,7 +17,7 @@ fun smartFitContext(
     model: Model,
     messageBudgetTokens: Int,
 ): List<UIMessage> {
-    val budget = messageBudgetTokens.coerceAtLeast(32)
+    val budget = messageBudgetTokens.coerceAtLeast(1)
     val imageLimit = adaptiveImageLimit(model, budget)
 
     var candidate = limitImages(messages, imageLimit)
@@ -41,9 +41,13 @@ fun smartFitContext(
     val compacted = minimum.compactToTokenBudget(model, budget)
     if (ContextTokenEstimator.messagesTokens(compacted, model) <= budget) return compacted
 
-    // Pathological prompts can make preservation mathematically impossible. Prefer a tiny valid
-    // request over ever sending an over-limit request to a provider.
-    return listOf(UIMessage.user("Continue from the most recent conversation context."))
+    // Preserve the actual latest user request if optional context cannot fit. If even a compacted
+    // latest request is mathematically impossible, return no messages and let the provider gate
+    // refuse or normalize the request rather than fabricating user intent.
+    val lastResort = listOfNotNull(messages.lastOrNull { it.role == MessageRole.USER })
+        .compactToTokenBudget(model, budget)
+    return lastResort.takeIf { ContextTokenEstimator.messagesTokens(it, model) <= budget }
+        ?: emptyList()
 }
 
 /** Automatically compacts low-value old payloads before history selection starts dropping turns. */
@@ -53,7 +57,7 @@ fun smartPrepareHistory(
     availableBudgetTokens: Int,
 ): List<UIMessage> {
     if (messages.isEmpty()) return messages
-    val budget = availableBudgetTokens.coerceAtLeast(32)
+    val budget = availableBudgetTokens.coerceAtLeast(1)
     val limitedImages = limitImages(messages, adaptiveImageLimit(model, budget))
     val pressure = ContextTokenEstimator.messagesTokens(limitedImages, model).toDouble() / budget
     return when {

@@ -31,6 +31,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.Assistant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
@@ -88,8 +89,11 @@ class McpManager(
     fun getClient(config: McpServerConfig): Client? = sessions[config.id]?.client
 
     fun getAllAvailableTools(): List<Pair<Uuid, McpTool>> {
+        return getAvailableTools(settingsStore.settingsFlow.value.getCurrentAssistant())
+    }
+
+    fun getAvailableTools(assistant: Assistant): List<Pair<Uuid, McpTool>> {
         val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
         return settings.mcpServers
             .filter { it.commonOptions.enable && it.id in assistant.mcpServers }
             .flatMap { server ->

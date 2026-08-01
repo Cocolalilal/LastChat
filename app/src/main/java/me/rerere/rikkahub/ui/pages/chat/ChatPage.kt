@@ -136,6 +136,7 @@ import me.rerere.ai.context.probableTemporaryTokenReserve
 import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.BuildConfig
@@ -152,6 +153,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.LorebookActivationType
+import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
@@ -3007,14 +3009,23 @@ private fun rememberContextMeterUsage(
             }
             .takeIf { it > 0 }
     }.take(6)
-    val activeSkillIds = assistant.enabledSkillIds + conversation.enabledModeIds
+    val activeSkillIds = assistant.enabledSkillIds + conversation.enabledModeIds + settings.skills
+        .filter { skill -> skill.alwaysEnabled && skill.isAvailableForAssistant(assistant.id) }
+        .map { skill -> skill.id }
     val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
     val activeLoreEntries = settings.lorebooks
         .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
         .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
     fun loreEntryTokenCost(entry: me.rerere.rikkahub.data.model.LorebookEntry): Int =
         ContextTokenEstimator.textTokens(entry.prompt, activeModel) +
-            (entry.attachments.size + if (entry.imageContent.isNullOrBlank()) 0 else 1) * 1_024
+            entry.attachments.sumOf { attachment ->
+                when (attachment.type) {
+                    ModeAttachmentType.IMAGE -> 1_024
+                    ModeAttachmentType.VIDEO -> 4_096
+                    ModeAttachmentType.AUDIO -> 2_000
+                    ModeAttachmentType.DOCUMENT -> 512
+                }
+            }
     val loreEntryTokensById = activeLoreEntries.associate { entry ->
         entry.id.toString() to loreEntryTokenCost(entry)
     }
@@ -3028,11 +3039,7 @@ private fun rememberContextMeterUsage(
     }.take(6)
     val conditionalContextCandidateTokens = activeLoreEntries
         .filter { it.activationType != LorebookActivationType.ALWAYS }
-        .sumOf(::loreEntryTokenCost) + activeLoreEntries
-        .filter { it.activationType == LorebookActivationType.ALWAYS }
-        .sumOf { entry ->
-            (entry.attachments.size + if (entry.imageContent.isNullOrBlank()) 0 else 1) * 1_024
-        }
+        .sumOf(::loreEntryTokenCost)
     val probableTemporaryTokens = probableTemporaryTokenReserve(
         model = activeModel,
         requestedOutputTokens = assistant.maxTokens,
@@ -3053,10 +3060,61 @@ private fun rememberContextMeterUsage(
             .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
             .forEach { entry -> appendLine(entry.prompt) }
     }
-    val toolDefinitionText = buildString {
-        assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
-        assistant.mcpServers.forEach { serverId -> appendLine("MCP server $serverId") }
+    fun me.rerere.rikkahub.data.model.ModeAttachment.toContextPart(): UIMessagePart = when (type) {
+        ModeAttachmentType.IMAGE -> UIMessagePart.Image(url)
+        ModeAttachmentType.VIDEO -> UIMessagePart.Video(url)
+        ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url)
+        ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(url, fileName, mime)
     }
+    val knownContextAttachments = buildList {
+        settings.skills
+            .filter { skill -> skill.id in activeSkillIds }
+            .flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
+        activeLoreEntries
+            .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
+            .flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
+    }
+    val knownContextMediaTokens = knownContextAttachments.sumOf { part ->
+        ContextTokenEstimator.partTokens(part, activeModel)
+    }
+    val activeMcpTools = if (ModelAbility.TOOL in activeModel.abilities) {
+        settings.mcpServers
+            .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
+            .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable } }
+    } else {
+        emptyList()
+    }
+    val toolDefinitionText = if (ModelAbility.TOOL in activeModel.abilities) buildString {
+        assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
+        activeMcpTools.forEach { tool ->
+            appendLine(
+                ContextTokenEstimator.toolDefinitionText(
+                    name = tool.name,
+                    description = tool.description.orEmpty(),
+                    schema = tool.inputSchema,
+                )
+            )
+        }
+    } else ""
+    val localToolDefinitionTokens = assistant.localTools.sumOf { tool ->
+        ContextTokenEstimator.toolDefinitionTokens(
+            name = tool.toString(),
+            description = "",
+            schema = null,
+            model = activeModel,
+        ).toLong()
+    }
+    val mcpToolDefinitionTokens = activeMcpTools.sumOf { tool ->
+        ContextTokenEstimator.toolDefinitionTokens(
+            name = tool.name,
+            description = tool.description.orEmpty(),
+            schema = tool.inputSchema,
+            model = activeModel,
+        ).toLong()
+    }
+    val toolDefinitionTokens = (localToolDefinitionTokens + mcpToolDefinitionTokens)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
         if (assistant.learningMode) {
@@ -3079,10 +3137,11 @@ private fun rememberContextMeterUsage(
         val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
             ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
             ContextTokenEstimator.textTokens(addonText, activeModel) +
-            ContextTokenEstimator.textTokens(toolDefinitionText, activeModel) +
+            toolDefinitionTokens +
+            knownContextMediaTokens +
             probableTemporaryTokens
         val messageBudget = ((smartInputBudget(activeModel, assistant.maxTokens) ?: Int.MAX_VALUE) - namedTokens)
-            .coerceAtLeast(32)
+            .coerceAtLeast(1)
         smartFitContext(
             messages = messages + listOfNotNull(pendingMessage),
             model = activeModel,
@@ -3099,7 +3158,8 @@ private fun rememberContextMeterUsage(
         memoryTokensOverride = 0,
         addonText = addonText,
         toolDefinitionText = toolDefinitionText,
-        pendingParts = if (smartActive) emptyList() else pendingParts,
+        toolDefinitionTokensOverride = toolDefinitionTokens,
+        pendingParts = knownContextAttachments + if (smartActive) emptyList() else pendingParts,
         sourceKey = sourceKey,
     )
 }

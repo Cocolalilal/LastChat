@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -17,6 +18,17 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 class ChatServiceTest {
+    @Test
+    fun withUniqueToolNamesKeepsStableRoutingNamesForCollisions() {
+        val first = Tool(name = "search", description = "one", execute = { JsonPrimitive("one") })
+        val second = Tool(name = "search", description = "two", execute = { JsonPrimitive("two") })
+        val third = Tool(name = "search", description = "three", execute = { JsonPrimitive("three") })
+
+        val unique = listOf(first, second, third).withUniqueToolNames()
+
+        assertEquals(listOf("search", "search__2", "search__3"), unique.map { it.name })
+    }
+
     @Test
     fun dropDanglingAutoToolCallNodes_removesOnlyAutoToolCallsWithoutResults() {
         val autoNode = MessageNode.of(

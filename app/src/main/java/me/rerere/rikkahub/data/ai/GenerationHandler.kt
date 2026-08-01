@@ -26,6 +26,8 @@ import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.adaptiveImageLimit
+import me.rerere.ai.context.compactToTokenBudget
 import me.rerere.ai.context.limitImagesForModel
 import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.context.smartOutputTokenBudget
@@ -81,6 +83,36 @@ import kotlin.uuid.Uuid
 private const val TAG = "GenerationHandler"
 private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
+
+private val SMART_CONTEXT_PROTECTED_BODY_KEYS = setOf(
+    "messages",
+    "input",
+    "contents",
+    "system",
+    "system_instruction",
+    "systemInstruction",
+    "tools",
+    "max_tokens",
+    "max_completion_tokens",
+    "max_output_tokens",
+)
+
+/** Prevent advanced body overrides from silently bypassing the smart manager's hard contract. */
+internal fun smartContextSafeCustomBodies(bodies: List<CustomBody>): List<CustomBody> =
+    bodies.mapNotNull { body ->
+        if (body.key in SMART_CONTEXT_PROTECTED_BODY_KEYS) return@mapNotNull null
+        if (body.key == "generationConfig" || body.key == "generation_config") {
+            val value = body.value as? JsonObject ?: return@mapNotNull body
+            val safeValue = JsonObject(
+                value.filterKeys { key ->
+                    key !in setOf("maxOutputTokens", "max_output_tokens", "maxTokens", "max_tokens")
+                }
+            )
+            if (safeValue.isEmpty()) null else body.copy(value = safeValue)
+        } else {
+            body
+        }
+    }
 
 /**
  * Reserved key a tool may put in its (JSON object) result to hand the model one or more
@@ -166,15 +198,11 @@ private fun selectSmartTools(
         .toSet()
     data class RankedTool(val index: Int, val tool: Tool, val tokens: Int, val score: Int)
     val ranked = tools.mapIndexed { index, tool ->
-        val schemaText = buildString {
-            appendLine(tool.name)
-            appendLine(tool.description)
-            tool.parameters()?.let { append(it) }
-            runCatching { tool.systemPrompt(model, messages) }
-                .getOrNull()
-                ?.takeIf { it.isNotBlank() }
-                ?.let { appendLine(it) }
-        }
+        val systemPromptTokens = runCatching { tool.systemPrompt(model, messages) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ContextTokenEstimator.textTokens(it, model) }
+            ?: 0
         val searchable = "${tool.name} ${tool.description}".lowercase()
         val semanticHits = queryTerms.count { term -> searchable.contains(term) }
         val score = when {
@@ -185,7 +213,9 @@ private fun selectSmartTools(
         RankedTool(
             index = index,
             tool = tool,
-            tokens = ContextTokenEstimator.textTokens(schemaText, model) + 16,
+            tokens = (ContextTokenEstimator.toolDefinitionTokens(tool, model).toLong() + systemPromptTokens)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt(),
             score = score,
         )
     }
@@ -801,13 +831,13 @@ class GenerationHandler(
             assistant.maxTokenUsage
         }.let { budget ->
             if (smartEnabled) {
-                (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(128)
+                (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(1)
             } else budget
         }
-        val effectiveTools = if (smartEnabled) {
-            selectSmartTools(tools, messages, model, maxTokens)
-        } else {
-            tools
+        val effectiveTools = when {
+            ModelAbility.TOOL !in model.abilities -> emptyList()
+            smartEnabled -> selectSmartTools(tools, messages, model, maxTokens)
+            else -> tools
         }
         var currentTokens = 0
 
@@ -1052,18 +1082,16 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
         val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
-            buildString {
-                append(tool.name)
-                append('\n')
-                append(tool.description)
-                tool.parameters()?.let { schema ->
-                    append('\n')
-                    append(schema)
-                }
-            }
+            ContextTokenEstimator.toolDefinitionText(tool)
         }
+        val toolDefinitionTokens = effectiveTools
+            .sumOf { tool -> ContextTokenEstimator.toolDefinitionTokens(tool, model).toLong() }
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
-        currentTokens += estimateTokens(baseSystemPrompt) + estimateTokens(toolDefinitionText)
+        currentTokens = (currentTokens.toLong() + estimateTokens(baseSystemPrompt) + toolDefinitionTokens)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
 
         // 2. Prepare Candidates. Smart mode is authoritative: an existing summary replaces the
         // turns it covers, and manual history/search/media limits no longer constrain allocation.
@@ -1077,12 +1105,22 @@ class GenerationHandler(
             manualHistoryLimit = assistant.maxHistoryMessages,
         )
         
+        val historyWithPreservedOcr = if (smartEnabled) {
+            preserveOcrForImagesBeyondSmartLimit(
+                messages = historyLimitedMessages,
+                model = model,
+                inputBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
+            )
+        } else {
+            historyLimitedMessages
+        }
+
         // Prune search results if configured
         val searchPrunedMessages = if (smartEnabled) {
             smartPrepareHistory(
-                messages = historyLimitedMessages,
+                messages = historyWithPreservedOcr,
                 model = model,
-                availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(128),
+                availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
             )
         } else assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
@@ -1168,7 +1206,12 @@ class GenerationHandler(
             // Start with all summarized/recent history; the final manager compacts low-value
             // payloads and removes complete old turn groups only when the real budget requires it.
             selectedMessages.addAll(chatHistoryCandidates)
-            var memoryBudget = (remainingTokens.coerceAtLeast(0) * 0.22).toInt()
+            val memoryShare = when (assistant.contextPriority) {
+                me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> 0.12
+                me.rerere.rikkahub.data.model.ContextPriority.BALANCED -> 0.22
+                me.rerere.rikkahub.data.model.ContextPriority.MEMORIES -> 0.38
+            }
+            var memoryBudget = (remainingTokens.coerceAtLeast(0) * memoryShare).toInt()
             for (memory in effectiveMemoriesCandidates) {
                 val cost = estimateTokens(memory.content)
                 if (cost <= memoryBudget) {
@@ -1382,8 +1425,7 @@ class GenerationHandler(
             }
         }.limitImagesForModel(model)
         val smartMessageBudget = if (smartEnabled) {
-            val externalToolTokens = estimateTokens(toolDefinitionText) + effectiveTools.size * 16
-            (maxTokens - externalToolTokens).coerceAtLeast(128)
+            (maxTokens - toolDefinitionTokens).coerceAtLeast(1)
         } else {
             null
         }
@@ -1443,6 +1485,7 @@ class GenerationHandler(
                     memoryText = selectedMemories.joinToString("\n") { memory -> memory.content },
                     addonText = addonText,
                     toolDefinitionText = toolDefinitionText,
+                    toolDefinitionTokensOverride = toolDefinitionTokens,
                     embeddedToolText = toolSystemPromptText,
                     namedContextEmbeddedInMessages = true,
                     sourceKey = contextUsageSourceKey,
@@ -1501,6 +1544,34 @@ class GenerationHandler(
         }
     }
 
+    private suspend fun preserveOcrForImagesBeyondSmartLimit(
+        messages: List<UIMessage>,
+        model: Model,
+        inputBudgetTokens: Int,
+    ): List<UIMessage> {
+        val imageLimit = adaptiveImageLimit(model, inputBudgetTokens)
+        var retainedImages = 0
+        return messages.asReversed().map { message ->
+            val reversedParts = message.parts.asReversed().map { part ->
+                if (part !is UIMessagePart.Image) return@map part
+                if (retainedImages < imageLimit) {
+                    retainedImages++
+                    return@map part
+                }
+                val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
+                    part = part,
+                    ensureAvailable = true,
+                )
+                if (ocrText.isNullOrBlank()) {
+                    part
+                } else {
+                    UIMessagePart.Text("[Earlier image OCR]\n$ocrText")
+                }
+            }.asReversed()
+            message.copy(parts = reversedParts)
+        }.asReversed()
+    }
+
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -1555,13 +1626,14 @@ class GenerationHandler(
                 }
             },
         )
+        val transformedMessages = transformedInput.messages.limitImagesForModel(model)
         var internalMessages = buildResult.messageBudgetTokens?.let { budget ->
             smartFitContext(
-                messages = transformedInput.messages,
+                messages = transformedMessages,
                 model = model,
                 messageBudgetTokens = budget,
             )
-        } ?: transformedInput.messages
+        } ?: transformedMessages
         var transformedUsage = buildResult.contextUsage?.let { usage ->
             val before = ContextTokenEstimator.messagesTokens(buildResult.messages, model)
             val after = ContextTokenEstimator.messagesTokens(internalMessages, model)
@@ -1594,7 +1666,7 @@ class GenerationHandler(
                 onUpdateMessages(messages)
             }
         }
-        val params = TextGenerationParams(
+        var params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
             topP = assistant.topP,
@@ -1615,17 +1687,25 @@ class GenerationHandler(
             customBody = buildList {
                 addAll(assistant.customBodies)
                 addAll(model.customBodies)
-            }
+            }.let { bodies ->
+                if (buildResult.messageBudgetTokens != null) {
+                    smartContextSafeCustomBodies(bodies)
+                } else {
+                    bodies
+                }
+            },
         )
         if ((model.contextWindowTokens ?: 0) > 0) {
             val inputBudget = buildResult.messageBudgetTokens?.let {
                 smartInputBudget(model, params.maxTokens)
             }
             if (inputBudget != null || buildResult.messageBudgetTokens == null) {
-                for (attempt in 0 until 4) {
+                var lastCountedTokens: Int? = null
+                for (attempt in 0 until 8) {
                     val countedTokens = runCatching {
                         providerImpl.countInputTokens(provider, internalMessages, params)
                     }.getOrNull()?.takeIf { it > 0 } ?: break
+                    lastCountedTokens = countedTokens
                     transformedUsage?.let { estimate ->
                         val counted = ContextTokenEstimator.reconcileProviderCount(
                             breakdown = estimate,
@@ -1635,23 +1715,54 @@ class GenerationHandler(
                         transformedUsage = counted
                         onContextUsage(counted)
                     }
-                    if (inputBudget == null || countedTokens <= inputBudget || attempt == 3) break
+                    if (inputBudget == null || countedTokens <= inputBudget) break
 
                     val oldMessageTokens = ContextTokenEstimator.messagesTokens(internalMessages, model)
                     val reduction = (inputBudget.toDouble() / countedTokens * 0.94).coerceIn(0.1, 0.94)
-                    val reducedBudget = (oldMessageTokens * reduction).toInt().coerceAtLeast(32)
-                    internalMessages = smartFitContext(
+                    val reducedBudget = (oldMessageTokens * reduction).toInt().coerceAtLeast(1)
+                    val reducedMessages = smartFitContext(
                         messages = internalMessages,
                         model = model,
                         messageBudgetTokens = reducedBudget,
                     )
-                    val newMessageTokens = ContextTokenEstimator.messagesTokens(internalMessages, model)
+                    val newMessageTokens = ContextTokenEstimator.messagesTokens(reducedMessages, model)
+                    if (newMessageTokens < oldMessageTokens) {
+                        internalMessages = reducedMessages
+                    } else if (params.tools.isNotEmpty()) {
+                        val reducedTools = selectSmartTools(
+                            tools = params.tools,
+                            messages = internalMessages,
+                            model = model,
+                            inputBudgetTokens = (inputBudget * 0.55).toInt().coerceAtLeast(1),
+                        ).let { selected ->
+                            if (selected.size < params.tools.size) selected else params.tools.dropLast(1)
+                        }
+                        params = params.copy(tools = reducedTools)
+                    } else if (params.builtInTools.isNotEmpty()) {
+                        params = params.copy(builtInTools = emptySet())
+                    } else {
+                        internalMessages = listOfNotNull(
+                            listOfNotNull(internalMessages.lastOrNull { it.role == MessageRole.USER })
+                                .compactToTokenBudget(model, inputBudget)
+                                .firstOrNull()
+                        )
+                    }
                     transformedUsage = transformedUsage?.let { usage ->
                         val delta = newMessageTokens - oldMessageTokens
                         usage.copy(
                             conversationTokens = (usage.conversationTokens + delta).coerceAtLeast(0),
                             usedTokens = (usage.usedTokens + delta).coerceAtLeast(0),
                             confidence = me.rerere.ai.context.ContextCountConfidence.ESTIMATED,
+                        )
+                    }
+                }
+                if (inputBudget != null && lastCountedTokens != null && lastCountedTokens > inputBudget) {
+                    val finalCount = runCatching {
+                        providerImpl.countInputTokens(provider, internalMessages, params)
+                    }.getOrNull()?.takeIf { it > 0 }
+                    if (finalCount == null || finalCount > inputBudget) {
+                        throw IllegalStateException(
+                            "Smart context management could not create a request within the model's context window"
                         )
                     }
                 }

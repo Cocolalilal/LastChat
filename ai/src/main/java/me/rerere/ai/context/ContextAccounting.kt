@@ -1,9 +1,13 @@
 package me.rerere.ai.context
 
-import me.rerere.ai.provider.Model
+import kotlinx.serialization.encodeToString
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.core.InputSchema
+import me.rerere.ai.core.Tool
+import me.rerere.ai.provider.Model
+import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -15,6 +19,16 @@ enum class ContextCountConfidence {
     ESTIMATED,
 }
 
+private fun saturatedTokenSum(vararg values: Int): Int = values
+    .fold(0L) { total, value -> total + value.coerceAtLeast(0).toLong() }
+    .coerceAtMost(Int.MAX_VALUE.toLong())
+    .toInt()
+
+private fun saturatedTokenSum(values: Iterable<Int>): Int = values
+    .fold(0L) { total, value -> total + value.coerceAtLeast(0).toLong() }
+    .coerceAtMost(Int.MAX_VALUE.toLong())
+    .toInt()
+
 data class ContextUsageBreakdown(
     val conversationTokens: Int = 0,
     val systemPromptTokens: Int = 0,
@@ -24,8 +38,16 @@ data class ContextUsageBreakdown(
     val toolDefinitionTokens: Int = 0,
     val toolCallTokens: Int = 0,
     val mediaTokens: Int = 0,
-    val usedTokens: Int = conversationTokens + systemPromptTokens + summaryTokens + memoryTokens +
-        addonTokens + toolDefinitionTokens + toolCallTokens + mediaTokens,
+    val usedTokens: Int = saturatedTokenSum(
+        conversationTokens,
+        systemPromptTokens,
+        summaryTokens,
+        memoryTokens,
+        addonTokens,
+        toolDefinitionTokens,
+        toolCallTokens,
+        mediaTokens,
+    ),
     val totalTokens: Int,
     val imageCount: Int = 0,
     val maxImages: Int? = null,
@@ -68,8 +90,16 @@ object ContextTokenEstimator {
         val toolDefinitions = scaled(breakdown.toolDefinitionTokens)
         val toolCalls = scaled(breakdown.toolCallTokens)
         val media = scaled(breakdown.mediaTokens)
-        val roundingResidual = (promptTokens - (conversation + system + summary + memory + addons +
-            toolDefinitions + toolCalls + media)).coerceAtLeast(0)
+        val roundingResidual = (promptTokens - saturatedTokenSum(
+            conversation,
+            system,
+            summary,
+            memory,
+            addons,
+            toolDefinitions,
+            toolCalls,
+            media,
+        )).coerceAtLeast(0)
         return breakdown.copy(
             conversationTokens = conversation + roundingResidual,
             systemPromptTokens = system,
@@ -137,9 +167,16 @@ object ContextTokenEstimator {
         is UIMessagePart.Text -> textTokens(part.text, model)
         is UIMessagePart.Thinking -> textTokens(part.thinking, model)
         is UIMessagePart.Reasoning -> textTokens(part.reasoning, model)
-        is UIMessagePart.ToolCall -> textTokens(part.toolName, model) + textTokens(part.arguments, model) + 12
-        is UIMessagePart.ToolResult -> textTokens(part.toolName, model) + textTokens(part.content.toString(), model) +
-            textTokens(part.arguments.toString(), model) + 12
+        is UIMessagePart.ToolCall -> saturatedTokenSum(
+            textTokens(part.toolName, model),
+            textTokens(part.arguments, model),
+            12,
+        )
+        is UIMessagePart.ToolResult -> saturatedTokenSum(
+            textTokens(part.toolName, model),
+            textTokens(part.content.toString(), model),
+            12,
+        )
         is UIMessagePart.Image -> 1_024
         is UIMessagePart.Video -> 4_096
         is UIMessagePart.Audio -> 2_000
@@ -147,11 +184,49 @@ object ContextTokenEstimator {
         UIMessagePart.Search -> 8
     }
 
-    fun messageTokens(message: UIMessage, model: Model? = null): Int =
-        4 + message.parts.sumOf { partTokens(it, model) }
+    fun messageTokens(message: UIMessage, model: Model? = null): Int = saturatedTokenSum(
+        listOf(4) + message.parts.map { partTokens(it, model) }
+    )
 
-    fun messagesTokens(messages: List<UIMessage>, model: Model? = null): Int =
-        messages.sumOf { messageTokens(it, model) } + if (messages.isEmpty()) 0 else 3
+    fun messagesTokens(messages: List<UIMessage>, model: Model? = null): Int = saturatedTokenSum(
+        messages.map { messageTokens(it, model) } + if (messages.isEmpty()) emptyList() else listOf(3)
+    )
+
+    fun toolDefinitionText(
+        name: String,
+        description: String,
+        schema: InputSchema?,
+    ): String = buildString {
+        appendLine(name)
+        append(description)
+        schema?.let {
+            append('\n')
+            append(json.encodeToString(InputSchema.serializer(), it))
+        }
+    }
+
+    fun toolDefinitionText(tool: Tool): String = toolDefinitionText(
+        name = tool.name,
+        description = tool.description,
+        schema = tool.parameters(),
+    )
+
+    fun toolDefinitionTokens(
+        name: String,
+        description: String,
+        schema: InputSchema?,
+        model: Model,
+    ): Int = saturatedTokenSum(
+        ceil(textTokens(toolDefinitionText(name, description, schema), model) * 1.2).toInt(),
+        16,
+    )
+
+    fun toolDefinitionTokens(tool: Tool, model: Model): Int = toolDefinitionTokens(
+        name = tool.name,
+        description = tool.description,
+        schema = tool.parameters(),
+        model = model,
+    )
 
     fun breakdown(
         messages: List<UIMessage>,
@@ -175,14 +250,23 @@ object ContextTokenEstimator {
         var images = 0
         (messages.flatMap { it.parts } + pendingParts).forEach { part ->
             when (part) {
-                is UIMessagePart.Image -> { media += partTokens(part, model); images++ }
-                is UIMessagePart.Video, is UIMessagePart.Audio, is UIMessagePart.Document -> media += partTokens(part, model)
-                is UIMessagePart.ToolCall, is UIMessagePart.ToolResult -> toolCalls += partTokens(part, model)
-                else -> messageText += partTokens(part, model)
+                is UIMessagePart.Image -> {
+                    media = saturatedTokenSum(media, partTokens(part, model))
+                    images = (images.toLong() + 1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                }
+                is UIMessagePart.Video, is UIMessagePart.Audio, is UIMessagePart.Document ->
+                    media = saturatedTokenSum(media, partTokens(part, model))
+                is UIMessagePart.ToolCall, is UIMessagePart.ToolResult ->
+                    toolCalls = saturatedTokenSum(toolCalls, partTokens(part, model))
+                else -> messageText = saturatedTokenSum(messageText, partTokens(part, model))
             }
         }
-        messageText += (messages.size + if (pendingParts.isEmpty()) 0 else 1) * 4 +
-            if (messages.isEmpty() && pendingParts.isEmpty()) 0 else 3
+        val framedMessageCount = messages.size.toLong() + if (pendingParts.isEmpty()) 0L else 1L
+        val framingTokens = (framedMessageCount * 4L +
+            if (messages.isEmpty() && pendingParts.isEmpty()) 0L else 3L)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        messageText = saturatedTokenSum(messageText, framingTokens)
         val systemPrompt = textTokens(systemPromptText, model)
         val summary = textTokens(summaryText, model)
         val memories = memoryTokensOverride?.coerceAtLeast(0) ?: textTokens(memoryText, model)
@@ -198,8 +282,16 @@ object ContextTokenEstimator {
             0
         }
         val conversation = (messageText - embeddedNamedTokens).coerceAtLeast(0)
-        val estimatedTotal = conversation + systemPrompt + summary + memories + addons +
-            toolDefinitions + toolCalls + media
+        val estimatedTotal = saturatedTokenSum(
+            conversation,
+            systemPrompt,
+            summary,
+            memories,
+            addons,
+            toolDefinitions,
+            toolCalls,
+            media,
+        )
         val confirmedTotal = providerPromptTokens?.takeIf { it > 0 }
         val scale = if (confirmedTotal != null && estimatedTotal > 0) confirmedTotal.toDouble() / estimatedTotal else 1.0
         fun scaled(value: Int) = (value * scale).toInt().coerceAtLeast(0)
@@ -301,7 +393,9 @@ fun effectiveHistoryForContext(
     }
     val explicitStart = truncateIndex.takeIf { it in messages.indices } ?: 0
     val start = maxOf(summaryStart, explicitStart)
-    val retained = if (start <= 0) {
+    val retained = if (start >= messages.size) {
+        emptyList()
+    } else if (start <= 0) {
         messages
     } else {
         // limitContext moves the boundary backwards when necessary to avoid separating a tool
@@ -410,8 +504,12 @@ fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
     val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
     // Covers provider-specific message framing, tokenizer mismatch, and small transformations that
     // occur after context assembly. A visible unused sliver is preferable to a context overflow.
-    val safetyMargin = (window / 16).coerceAtLeast(512).coerceAtMost((window / 4).coerceAtLeast(1))
-    return (window - outputReserve - safetyMargin).coerceAtLeast(128)
+    val availableAfterOutput = (window - outputReserve).coerceAtLeast(0)
+    val safetyMargin = (window / 16)
+        .coerceAtLeast(512)
+        .coerceAtMost((window / 4).coerceAtLeast(1))
+        .coerceAtMost((availableAfterOutput - 1).coerceAtLeast(0))
+    return (availableAfterOutput - safetyMargin).coerceAtLeast(0)
 }
 
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */

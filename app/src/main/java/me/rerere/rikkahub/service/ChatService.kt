@@ -140,6 +140,15 @@ private fun Throwable.isContextWindowOverflow(): Boolean = generateSequence(this
             "prompt is too long",
             "input is too long",
             "input too long",
+            "context_length_exceeded",
+            "request too large",
+            "prompt too large",
+            "exceeds the model's context",
+            "exceeds model context",
+            "reduce the length",
+            "reduce your prompt",
+            "input tokens exceed",
+            "tokens exceed",
         ).any(message::contains)
     }
 
@@ -1798,6 +1807,7 @@ class ChatService(
         conversation: Conversation,
         model: Model,
     ): List<Tool> {
+        if (!model.abilities.contains(ModelAbility.TOOL)) return emptyList()
         return buildList {
             val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
 
@@ -1835,14 +1845,18 @@ class ChatService(
                 )
             }
 
-            mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
+            mcpManager.getAvailableTools(assistant).forEach { (serverId, tool) ->
                 add(
                     Tool(
                         name = tool.name,
                         description = tool.description ?: "",
                         parameters = { tool.inputSchema },
                         execute = {
-                            mcpManager.callTool(serverId, tool.name, it.jsonObject).truncateLargeJsonText()
+                            val contextAwareCharacterLimit = (
+                                (model.contextWindowTokens?.toLong() ?: 16_000L) * 2L
+                                ).coerceIn(2_000L, 32_000L).toInt()
+                            mcpManager.callTool(serverId, tool.name, it.jsonObject)
+                                .truncateLargeJsonText(contextAwareCharacterLimit)
                         },
                     )
                 )
@@ -1856,7 +1870,7 @@ class ChatService(
             if (settings.assistantOverlayConfig.attachScreenshot && AssistScreenHolder.hasFreshScreenshot()) {
                 add(createLookAtScreenTool(model))
             }
-        }
+        }.withUniqueToolNames()
     }
 
     private fun createLookAtScreenTool(model: Model): Tool = Tool(
@@ -2860,22 +2874,89 @@ class ChatService(
     }
 }
 
-private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
-    return when (this) {
+internal fun List<Tool>.withUniqueToolNames(): List<Tool> {
+    val occurrences = mutableMapOf<String, Int>()
+    return map { tool ->
+        val occurrence = (occurrences[tool.name] ?: 0) + 1
+        occurrences[tool.name] = occurrence
+        if (occurrence == 1) {
+            tool
+        } else {
+            val suffix = "__${occurrence}"
+            tool.copy(name = tool.name.take((64 - suffix.length).coerceAtLeast(1)) + suffix)
+        }
+    }
+}
+
+private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(
+    maxLength: Int = 32_000,
+): kotlinx.serialization.json.JsonElement {
+    var remaining = maxLength.coerceAtLeast(256)
+    var omittedCharacters = 0
+    fun recordOmitted(amount: Long) {
+        omittedCharacters = (omittedCharacters.toLong() + amount.coerceAtLeast(0L))
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
+    fun compact(element: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement = when (element) {
         is kotlinx.serialization.json.JsonPrimitive -> {
-            if (this.isString) {
-                val content = this.content
-                if (content.length > maxLength) {
-                    kotlinx.serialization.json.JsonPrimitive(content.take(maxLength) + "... (truncated ${content.length - maxLength} chars)")
-                } else {
-                    this
-                }
+            val content = element.content
+            if (remaining <= 0) {
+                recordOmitted(content.length.toLong())
+                kotlinx.serialization.json.JsonPrimitive("[Additional MCP result content omitted]")
+            } else if (!element.isString || content.length <= remaining) {
+                remaining = (remaining - content.length).coerceAtLeast(0)
+                element
             } else {
-                this
+                val kept = remaining
+                remaining = 0
+                recordOmitted((content.length - kept).toLong())
+                kotlinx.serialization.json.JsonPrimitive(
+                    content.take(kept) + "... [MCP result compacted]"
+                )
             }
         }
-        is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
-        is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
+        is kotlinx.serialization.json.JsonObject -> {
+            val values = linkedMapOf<String, kotlinx.serialization.json.JsonElement>()
+            for ((key, value) in element) {
+                if (remaining <= 0) {
+                    recordOmitted(value.toString().length.toLong())
+                    values["__lastchat_context_note"] = kotlinx.serialization.json.JsonPrimitive(
+                        "Additional MCP result fields omitted"
+                    )
+                    break
+                }
+                remaining = (remaining - key.length).coerceAtLeast(0)
+                values[key] = compact(value)
+            }
+            kotlinx.serialization.json.JsonObject(values)
+        }
+        is kotlinx.serialization.json.JsonArray -> {
+            val values = mutableListOf<kotlinx.serialization.json.JsonElement>()
+            for ((index, value) in element.withIndex()) {
+                if (remaining <= 0) {
+                    recordOmitted(element.drop(index).sumOf { it.toString().length.toLong() })
+                    values += kotlinx.serialization.json.JsonPrimitive(
+                        "[${element.size - index} additional MCP result items omitted]"
+                    )
+                    break
+                }
+                values += compact(value)
+            }
+            kotlinx.serialization.json.JsonArray(values)
+        }
+    }
+
+    val compacted = compact(this)
+    return if (omittedCharacters > 0 && compacted is kotlinx.serialization.json.JsonObject) {
+        kotlinx.serialization.json.JsonObject(
+            compacted + ("__lastchat_context_note" to kotlinx.serialization.json.JsonPrimitive(
+                "$omittedCharacters characters omitted from this MCP result to protect context"
+            ))
+        )
+    } else {
+        compacted
     }
 }
 

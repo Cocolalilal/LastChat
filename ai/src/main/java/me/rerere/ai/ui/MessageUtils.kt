@@ -360,7 +360,8 @@ fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
 }
 
 fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
-    if (size <= 0 || this.size <= size) return this
+    if (size <= 0) return emptyList()
+    if (this.size <= size) return this
 
     val startIndex = this.size - size
     var adjustedStartIndex = startIndex
@@ -380,12 +381,21 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
 
         // 如果当前消息包含tool result，往前查找对应的tool call
         if (currentMessage.getToolResults().isNotEmpty()) {
-            for (i in adjustedStartIndex - 1 downTo 0) {
-                if (this[i].getToolCalls().isNotEmpty()) {
-                    adjustedStartIndex = i
-                    needsAdjustment = true
-                    break
+            val requiredResults = currentMessage.getToolResults()
+            val dependencyStart = requiredResults.mapNotNull { result ->
+                (adjustedStartIndex - 1 downTo 0).firstOrNull { index ->
+                    this[index].getToolCalls().any { call ->
+                        if (result.toolCallId.isNotBlank() && call.toolCallId.isNotBlank()) {
+                            result.toolCallId == call.toolCallId
+                        } else {
+                            result.toolName.isNotBlank() && result.toolName == call.toolName
+                        }
+                    }
                 }
+            }.minOrNull()
+            if (dependencyStart != null) {
+                adjustedStartIndex = dependencyStart
+                needsAdjustment = true
             }
         }
 

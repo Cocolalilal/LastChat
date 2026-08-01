@@ -5,6 +5,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.limitContext
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,6 +45,17 @@ class ContextAccountingTest {
         val model = Model(modelId = "small", contextWindowTokens = 4_096)
 
         assertEquals(2_048, smartOutputTokenBudget(model, requestedOutputTokens = 8_192))
+    }
+
+    @Test
+    fun smartBudgetsNeverClaimMoreThanTinyConfiguredWindow() {
+        listOf(1, 64, 128, 256, 511, 512).forEach { window ->
+            val model = Model(modelId = "tiny", contextWindowTokens = window)
+            val output = smartOutputTokenBudget(model, requestedOutputTokens = window) ?: 0
+            val input = smartInputBudget(model, requestedOutputTokens = window) ?: 0
+
+            assertTrue("window=$window input=$input output=$output", input + output <= window)
+        }
     }
 
     @Test
@@ -105,6 +117,40 @@ class ContextAccountingTest {
         assertTrue(ContextTokenEstimator.messagesTokens(compacted, model) <= 500)
         assertEquals(1, compacted.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolCall>().size)
         assertEquals(1, compacted.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolResult>().size)
+    }
+
+    @Test
+    fun limitContextMatchesToolDependenciesByCallId() {
+        val messages = listOf(
+            UIMessage.user("first request"),
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.ToolCall("call-a", "lookup", "{}")),
+            ),
+            UIMessage.user("second request"),
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.ToolCall("call-b", "lookup", "{}")),
+            ),
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        "call-a",
+                        "lookup",
+                        JsonPrimitive("result"),
+                        JsonPrimitive("{}"),
+                    )
+                ),
+            ),
+        )
+
+        val retained = messages.limitContext(1)
+
+        assertTrue(
+            retained.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolCall>()
+                .any { it.toolCallId == "call-a" }
+        )
     }
 
     @Test
@@ -268,6 +314,20 @@ class ContextAccountingTest {
         )
 
         assertEquals(800, reserve)
+    }
+
+    @Test
+    fun effectiveHistory_summaryCoveringLatestMessageRetainsNoSummarizedHistory() {
+        val messages = List(6) { index -> UIMessage.user("message $index") }
+
+        val retained = effectiveHistoryForContext(
+            messages = messages,
+            smartManagement = true,
+            summaryUpToIndex = messages.lastIndex,
+            truncateIndex = -1,
+        )
+
+        assertTrue(retained.isEmpty())
     }
 
 }
