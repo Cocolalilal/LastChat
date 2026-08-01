@@ -31,10 +31,12 @@ import me.rerere.locallm.LocalModelStore
 import me.rerere.locallm.LocalRuntimeState
 import me.rerere.locallm.MemoryGuard
 import me.rerere.locallm.ModelInstall
+import me.rerere.locallm.effectiveRuntimeContextLength
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
 import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
 
 data class LocalLlmUiState(
     val installed: List<InstalledLocalModel> = emptyList(),
@@ -207,17 +209,12 @@ class SettingLocalLlmViewModel(
     }
 
     private suspend fun syncModelsToSettings(installed: List<InstalledLocalModel>) {
-        val settings = settingsStore.settingsFlow.value
-        val catalogSnapshot = modelCatalogService.snapshotFlow.value
-        val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
-        val existingByModelId = local.models.associateBy { it.modelId }
-        val newModels = local.models.filter { it.type == ModelType.STT } +
-            installed.map { it.toAiModel(existingByModelId[it.id], catalogSnapshot) }
-        if (newModels == local.models) return
-        val updatedProviders = settings.providers.map {
-            if (it is ProviderSetting.LiteRtLocal) it.copy(models = newModels) else it
-        }
-        settingsStore.update(settings.copy(providers = updatedProviders))
+        syncInstalledLocalModelsToSettings(
+            installed = installed,
+            totalRamGb = deviceRamGb,
+            settingsStore = settingsStore,
+            catalogSnapshot = modelCatalogService.snapshotFlow.value,
+        )
     }
 
     private fun InstalledLocalModel.toAiModel(existing: Model?, catalogSnapshot: ModelCatalogSnapshot?): Model {
@@ -251,6 +248,7 @@ class SettingLocalLlmViewModel(
             inputModalities = input,
             outputModalities = listOf(Modality.TEXT),
             abilities = abilities,
+            contextWindowTokens = effectiveRuntimeContextLength(deviceRamGb),
             iconUrl = iconUrl,
             customIconUri = customIconUri,
         )

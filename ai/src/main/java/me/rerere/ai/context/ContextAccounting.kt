@@ -75,8 +75,13 @@ object ContextTokenEstimator {
             id.contains("gemini", true) -> 3.8
             else -> 3.2 // Conservative for unknown and multilingual tokenizers.
         }
+        val asciiCharacters = text.count { it.code in 0..127 }
+        val nonAsciiCharacters = text.length - asciiCharacters
+        val lexicalEstimate = ceil(asciiCharacters / charsPerToken) +
+            ceil(nonAsciiCharacters * 0.9) +
+            text.count { it == '\n' } / 2.0
         val calibration = modelCalibration.load()[modelKey(model)] ?: 1.0
-        return ((ceil(text.length / charsPerToken).toInt() + text.count { it == '\n' } / 2) * calibration)
+        return (lexicalEstimate * calibration)
             .toInt()
             .coerceAtLeast(1)
     }
@@ -274,8 +279,19 @@ private fun compactText(value: String, maxCharacters: Int): String {
 
 fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
     val window = model.contextWindowTokens?.takeIf { it > 0 } ?: return null
-    val adaptiveReserve = (window / 10).coerceIn(1_024, 8_192)
-    val outputReserve = requestedOutputTokens?.takeIf { it > 0 }?.coerceAtMost(window / 2) ?: adaptiveReserve
-    val safetyMargin = (window / 50).coerceAtLeast(128)
-    return (window - outputReserve - safetyMargin).coerceAtLeast(256)
+    val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
+    // Covers provider-specific message framing, tokenizer mismatch, and small transformations that
+    // occur after context assembly. A visible unused sliver is preferable to a context overflow.
+    val safetyMargin = (window / 16).coerceAtLeast(512).coerceAtMost((window / 4).coerceAtLeast(1))
+    return (window - outputReserve - safetyMargin).coerceAtLeast(128)
+}
+
+/** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */
+fun smartOutputTokenBudget(model: Model, requestedOutputTokens: Int?): Int? {
+    val window = model.contextWindowTokens?.takeIf { it > 0 } ?: return null
+    val adaptiveReserve = (window / 10).coerceIn(1_024, 8_192).coerceAtMost(window / 2)
+    return requestedOutputTokens
+        ?.takeIf { it > 0 }
+        ?.coerceAtMost(window / 2)
+        ?: adaptiveReserve
 }

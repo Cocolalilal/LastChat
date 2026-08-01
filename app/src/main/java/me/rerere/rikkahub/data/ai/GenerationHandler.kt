@@ -26,9 +26,11 @@ import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
-import me.rerere.ai.context.compactToTokenBudget
 import me.rerere.ai.context.limitImagesForModel
 import me.rerere.ai.context.smartInputBudget
+import me.rerere.ai.context.smartOutputTokenBudget
+import me.rerere.ai.context.smartFitContext
+import me.rerere.ai.context.smartPrepareHistory
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -132,6 +134,8 @@ data class BuildMessagesResult(
     val usedModes: List<me.rerere.ai.ui.UsedMode> = emptyList(),
     val usedMemories: List<me.rerere.ai.ui.UsedMemory> = emptyList(),
     val contextUsage: ContextUsageBreakdown? = null,
+    val effectiveTools: List<Tool> = emptyList(),
+    val messageBudgetTokens: Int? = null,
 )
 
 internal data class SkillToolState(
@@ -140,6 +144,66 @@ internal data class SkillToolState(
     val blockedSkills: List<me.rerere.rikkahub.data.model.Skill>,
     val activeSkillIds: Set<Uuid>,
 )
+
+private fun selectSmartTools(
+    tools: List<Tool>,
+    messages: List<UIMessage>,
+    model: Model,
+    inputBudgetTokens: Int,
+): List<Tool> {
+    if (tools.isEmpty()) return tools
+    val recentMessages = messages.takeLast(12)
+    val recentlyUsedNames = recentMessages.flatMap { message ->
+        message.getToolCalls().map { it.toolName }
+    }.toSet()
+    val queryTerms = recentMessages.lastOrNull { it.role == MessageRole.USER }
+        ?.toText()
+        .orEmpty()
+        .lowercase()
+        .split(Regex("[^a-z0-9_]+"))
+        .filter { it.length >= 3 }
+        .toSet()
+    data class RankedTool(val index: Int, val tool: Tool, val tokens: Int, val score: Int)
+    val ranked = tools.mapIndexed { index, tool ->
+        val schemaText = buildString {
+            appendLine(tool.name)
+            appendLine(tool.description)
+            tool.parameters()?.let { append(it) }
+            runCatching { tool.systemPrompt(model, messages) }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { appendLine(it) }
+        }
+        val searchable = "${tool.name} ${tool.description}".lowercase()
+        val semanticHits = queryTerms.count { term -> searchable.contains(term) }
+        val score = when {
+            tool.name in recentlyUsedNames -> 10_000
+            tool.name == SKILL_MANAGEMENT_TOOL_NAME || tool.name == "ask_user" -> 2_000
+            else -> semanticHits * 100 - index
+        }
+        RankedTool(
+            index = index,
+            tool = tool,
+            tokens = ContextTokenEstimator.textTokens(schemaText, model) + 16,
+            score = score,
+        )
+    }
+    val total = ranked.sumOf { it.tokens }
+    val allocation = (inputBudgetTokens * 0.22).toInt()
+        .coerceAtLeast(128)
+        .coerceAtMost((inputBudgetTokens - 128).coerceAtLeast(0))
+    if (total <= allocation) return tools
+
+    var remaining = allocation
+    val selected = mutableSetOf<Int>()
+    ranked.sortedByDescending { it.score }.forEach { candidate ->
+        if (candidate.tokens <= remaining) {
+            selected += candidate.index
+            remaining = (remaining - candidate.tokens).coerceAtLeast(0)
+        }
+    }
+    return ranked.filter { it.index in selected }.map { it.tool }
+}
 
 internal data class SkillActivationOutcome(
     val activatedSkills: List<me.rerere.rikkahub.data.model.Skill>,
@@ -476,8 +540,10 @@ class GenerationHandler(
         enabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        contextSummaryUpToIndex: Int = -1,
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
+        contextBudgetScale: Double = 1.0,
     ): Flow<GenerationChunk> = channelFlow {
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
@@ -587,8 +653,10 @@ class GenerationHandler(
                 conversationEnabledLorebookIds = enabledLorebookIds,
                 activeConversationId = activeConversationId,
                 contextSummary = contextSummary,
+                contextSummaryUpToIndex = contextSummaryUpToIndex,
                 onContextUsage = onContextUsage,
                 contextUsageSourceKey = contextUsageSourceKey,
+                contextBudgetScale = contextBudgetScale,
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -717,15 +785,28 @@ class GenerationHandler(
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        contextSummaryUpToIndex: Int = -1,
         contextUsageSourceKey: Int? = null,
+        contextBudgetScale: Double = 1.0,
     ): BuildMessagesResult {
         fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
-        val maxTokens = if (assistant.smartContextManagement) {
+        val smartEnabled = assistant.smartContextManagement &&
+            model.contextWindowTokens?.let { it > 0 } == true
+        val maxTokens = if (smartEnabled) {
             smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
         } else {
             assistant.maxTokenUsage
+        }.let { budget ->
+            if (smartEnabled) {
+                (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(128)
+            } else budget
+        }
+        val effectiveTools = if (smartEnabled) {
+            selectSmartTools(tools, messages, model, maxTokens)
+        } else {
+            tools
         }
         var currentTokens = 0
 
@@ -963,12 +1044,12 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(entry.prompt)
         }
         
-        val toolSystemPromptText = tools.joinToString("\n") { tool -> tool.systemPrompt(model, messages) }
+        val toolSystemPromptText = effectiveTools.joinToString("\n") { tool -> tool.systemPrompt(model, messages) }
         if (toolSystemPromptText.isNotBlank()) {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
-        val toolDefinitionText = tools.joinToString("\n") { tool ->
+        val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
             buildString {
                 append(tool.name)
                 append('\n')
@@ -982,14 +1063,33 @@ class GenerationHandler(
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
         currentTokens += estimateTokens(baseSystemPrompt) + estimateTokens(toolDefinitionText)
 
-        // 2. Prepare Candidates
-        // Apply message history limit if configured
-        val historyLimitedMessages = assistant.maxHistoryMessages?.let { limit ->
-            if (limit > 0) messages.limitContext(limit) else messages
-        } ?: messages
+        // 2. Prepare Candidates. Smart mode is authoritative: an existing summary replaces the
+        // turns it covers, and manual history/search/media limits no longer constrain allocation.
+        val summaryTrimmedMessages = if (
+            smartEnabled &&
+            !contextSummary.isNullOrBlank() &&
+            contextSummaryUpToIndex in messages.indices
+        ) {
+            messages.drop(contextSummaryUpToIndex + 1)
+        } else {
+            messages
+        }
+        val historyLimitedMessages = if (smartEnabled) {
+            summaryTrimmedMessages
+        } else {
+            assistant.maxHistoryMessages?.let { limit ->
+                if (limit > 0) messages.limitContext(limit) else messages
+            } ?: messages
+        }
         
         // Prune search results if configured
-        val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
+        val searchPrunedMessages = if (smartEnabled) {
+            smartPrepareHistory(
+                messages = historyLimitedMessages,
+                model = model,
+                availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(128),
+            )
+        } else assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
                 // Find all messages that contain search tool results
                 val searchResultIndices = historyLimitedMessages.mapIndexedNotNull { index, msg ->
@@ -1018,10 +1118,14 @@ class GenerationHandler(
                 } else historyLimitedMessages
             } else historyLimitedMessages
         } ?: historyLimitedMessages
-        val imageArchivedMessages = archiveOldImageMessages(
-            messages = searchPrunedMessages,
-            assistant = assistant,
-        ).limitImagesForModel(model)
+        val imageArchivedMessages = if (smartEnabled) {
+            searchPrunedMessages
+        } else {
+            archiveOldImageMessages(
+                messages = searchPrunedMessages,
+                assistant = assistant,
+            ).limitImagesForModel(model)
+        }
         
         // Chat History (reverse order to prioritize recent)
         val chatHistoryCandidates = imageArchivedMessages.truncate(truncateIndex).reversed()
@@ -1065,6 +1169,19 @@ class GenerationHandler(
             Log.w(TAG, "buildMessages: System prompt exceeds max tokens!")
         }
 
+        if (smartEnabled) {
+            // Start with all summarized/recent history; the final manager compacts low-value
+            // payloads and removes complete old turn groups only when the real budget requires it.
+            selectedMessages.addAll(chatHistoryCandidates)
+            var memoryBudget = (remainingTokens.coerceAtLeast(0) * 0.22).toInt()
+            for (memory in effectiveMemoriesCandidates) {
+                val cost = estimateTokens(memory.content)
+                if (cost <= memoryBudget) {
+                    selectedMemories.add(memory)
+                    memoryBudget -= cost
+                }
+            }
+        } else {
         // Minimums
         val minChatHistory = 2.coerceAtMost(chatHistoryCandidates.size)
         val minMemories = if (assistant.enableMemory) 2.coerceAtMost(effectiveMemoriesCandidates.size) else 0
@@ -1158,6 +1275,7 @@ class GenerationHandler(
                     }
                 }
             }
+        }
         }
 
         // 4. Construct Final List
@@ -1268,19 +1386,18 @@ class GenerationHandler(
                 }
             }
         }.limitImagesForModel(model)
-        val builtMessages = if (assistant.smartContextManagement && model.contextWindowTokens != null) {
-            val systemMessages = rawBuiltMessages.filter { it.role == MessageRole.SYSTEM }
-            val conversationalMessages = rawBuiltMessages.filterNot { it.role == MessageRole.SYSTEM }
-            if (ContextTokenEstimator.messagesTokens(rawBuiltMessages, model) <= maxTokens) {
-                rawBuiltMessages
-            } else {
-                (conversationalMessages.size downTo 1)
-                    .asSequence()
-                    .map { size -> systemMessages + conversationalMessages.limitContext(size) }
-                    .firstOrNull { candidate -> ContextTokenEstimator.messagesTokens(candidate, model) <= maxTokens }
-                    ?: (systemMessages + conversationalMessages.limitContext(1))
-                        .compactToTokenBudget(model, maxTokens)
-            }
+        val smartMessageBudget = if (smartEnabled) {
+            val externalToolTokens = estimateTokens(toolDefinitionText) + effectiveTools.size * 16
+            (maxTokens - externalToolTokens).coerceAtLeast(128)
+        } else {
+            null
+        }
+        val builtMessages = if (smartMessageBudget != null) {
+            smartFitContext(
+                messages = rawBuiltMessages,
+                model = model,
+                messageBudgetTokens = smartMessageBudget,
+            )
         } else {
             rawBuiltMessages
         }
@@ -1305,6 +1422,8 @@ class GenerationHandler(
             activatedLorebookEntries = usedLorebookEntries,
             usedModes = usedModes,
             usedMemories = usedMemories,
+            effectiveTools = effectiveTools,
+            messageBudgetTokens = smartMessageBudget,
             contextUsage = model.contextWindowTokens?.let {
                 val addonText = buildString {
                     enabledSkills.forEach { skill ->
@@ -1404,8 +1523,10 @@ class GenerationHandler(
         conversationEnabledLorebookIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
+        contextSummaryUpToIndex: Int = -1,
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
+        contextBudgetScale: Double = 1.0,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1420,7 +1541,9 @@ class GenerationHandler(
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
             activeConversationId = activeConversationId,
             contextSummary = contextSummary,
+            contextSummaryUpToIndex = contextSummaryUpToIndex,
             contextUsageSourceKey = contextUsageSourceKey,
+            contextBudgetScale = contextBudgetScale,
         )
         var uiMessages = messages
         val transformedInput = buildResult.messages.transformInput(
@@ -1436,8 +1559,26 @@ class GenerationHandler(
                 }
             },
         )
-        buildResult.contextUsage?.let { onContextUsage(it) }
-        val internalMessages = transformedInput.messages
+        val internalMessages = buildResult.messageBudgetTokens?.let { budget ->
+            smartFitContext(
+                messages = transformedInput.messages,
+                model = model,
+                messageBudgetTokens = budget,
+            )
+        } ?: transformedInput.messages
+        val transformedUsage = buildResult.contextUsage?.let { usage ->
+            val before = ContextTokenEstimator.messagesTokens(buildResult.messages, model)
+            val after = ContextTokenEstimator.messagesTokens(internalMessages, model)
+            val delta = after - before
+            usage.copy(
+                conversationTokens = (usage.conversationTokens + delta).coerceAtLeast(0),
+                usedTokens = (usage.usedTokens + delta).coerceAtLeast(0),
+                imageCount = internalMessages.sumOf { message ->
+                    message.parts.count { it is UIMessagePart.Image }
+                },
+            )
+        }
+        transformedUsage?.let { onContextUsage(it) }
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
         val usedMemories = buildResult.usedMemories
@@ -1462,8 +1603,12 @@ class GenerationHandler(
             temperature = assistant.temperature,
             topP = assistant.topP,
             topK = null,
-            maxTokens = assistant.maxTokens,
-            tools = tools,
+            maxTokens = if (buildResult.messageBudgetTokens != null) {
+                smartOutputTokenBudget(model, assistant.maxTokens) ?: assistant.maxTokens
+            } else {
+                assistant.maxTokens
+            },
+            tools = buildResult.effectiveTools,
             builtInTools = resolveActiveBuiltInTools(model, assistant),
             thinkingBudget = assistant.thinkingBudget,
             sessionId = activeConversationId?.toString(),
@@ -1490,7 +1635,7 @@ class GenerationHandler(
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
-                    buildResult.contextUsage?.let { estimate ->
+                    transformedUsage?.let { estimate ->
                         onContextUsage(ContextTokenEstimator.reconcileProviderCount(estimate, usage.promptTokens, model))
                     }
                     messages = messages.mapIndexed { index, message ->

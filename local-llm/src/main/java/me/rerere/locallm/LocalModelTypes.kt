@@ -180,6 +180,15 @@ data class InstalledLocalModel(
     val isEmbedding: Boolean get() = kind == LocalModelKind.EMBEDDING
 }
 
+/** The exact KV-cache/context size LiteRT will load for this model on this device class. */
+fun InstalledLocalModel.effectiveRuntimeContextLength(totalRamGb: Int): Int {
+    val outputTokens = config.maxTokens ?: defaultConfig.maxTokens
+    val modelCeiling = defaultConfig.maxContextLength ?: defaultConfig.effectiveContextLength
+    val requestedContext = config.contextLength ?: defaultConfig.effectiveContextLength
+    val withinModel = maxOf(requestedContext, outputTokens).coerceAtMost(modelCeiling)
+    return minOf(withinModel, MemoryGuard.safeContextTokenCap(totalRamGb)).coerceAtLeast(512)
+}
+
 internal fun InstalledLocalModel.withCatalogMetadata(
     meta: LocalModelMetadata,
     tokenizerPath: String? = this.tokenizerPath,

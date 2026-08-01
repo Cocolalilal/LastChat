@@ -2,6 +2,7 @@ package me.rerere.ai.context
 
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,7 +17,8 @@ class ContextAccountingTest {
 
         val budget = smartInputBudget(model, requestedOutputTokens = 4_000)
 
-        assertEquals(27_360, budget)
+        assertEquals(26_000, budget)
+        assertEquals(4_000, smartOutputTokenBudget(model, requestedOutputTokens = 4_000))
     }
 
     @Test
@@ -26,6 +28,22 @@ class ContextAccountingTest {
         val tokens = ContextTokenEstimator.textTokens(text, Model(modelId = "private-model"))
 
         assertTrue(tokens >= 100)
+    }
+
+    @Test
+    fun unknownTokenizer_isConservativeForNonAsciiText() {
+        val text = "ä½ å¥½ä¸–ç•Œ".repeat(100)
+
+        val tokens = ContextTokenEstimator.textTokens(text, Model(modelId = "private-model"))
+
+        assertTrue(tokens >= 350)
+    }
+
+    @Test
+    fun smartOutputBudget_neverClaimsMoreThanHalfTheWindow() {
+        val model = Model(modelId = "small", contextWindowTokens = 4_096)
+
+        assertEquals(2_048, smartOutputTokenBudget(model, requestedOutputTokens = 8_192))
     }
 
     @Test
@@ -87,6 +105,65 @@ class ContextAccountingTest {
         assertTrue(ContextTokenEstimator.messagesTokens(compacted, model) <= 500)
         assertEquals(1, compacted.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolCall>().size)
         assertEquals(1, compacted.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolResult>().size)
+    }
+
+    @Test
+    fun smartFit_preservesLatestToolDependencyAndNeverExceedsBudget() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 2_048)
+        val messages = buildList {
+            repeat(20) { index ->
+                add(UIMessage.user("old question $index " + "detail ".repeat(80)))
+                add(UIMessage.assistant("old answer $index " + "answer ".repeat(80)))
+            }
+            add(UIMessage.user("latest question"))
+            add(
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(UIMessagePart.ToolCall("latest-call", "search", "{\"q\":\"latest\"}")),
+                )
+            )
+            add(
+                UIMessage(
+                    role = MessageRole.TOOL,
+                    parts = listOf(
+                        UIMessagePart.ToolResult(
+                            "latest-call",
+                            "search",
+                            JsonPrimitive("result ".repeat(1_000)),
+                            JsonPrimitive("{}"),
+                        )
+                    ),
+                )
+            )
+        }
+
+        val fitted = smartFitContext(messages, model, messageBudgetTokens = 700)
+        val parts = fitted.flatMap { it.parts }
+
+        assertTrue(ContextTokenEstimator.messagesTokens(fitted, model) <= 700)
+        assertEquals(1, parts.filterIsInstance<UIMessagePart.ToolCall>().count { it.toolCallId == "latest-call" })
+        assertEquals(1, parts.filterIsInstance<UIMessagePart.ToolResult>().count { it.toolCallId == "latest-call" })
+    }
+
+    @Test
+    fun smartFit_usesAdaptiveHardImageLimit() {
+        val model = Model(
+            modelId = "vision",
+            contextWindowTokens = 16_384,
+            maxImagesInContext = 8,
+            inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+        )
+        val messages = (1..6).map { index ->
+            UIMessage(
+                role = MessageRole.USER,
+                parts = listOf(UIMessagePart.Text("image $index"), UIMessagePart.Image("image-$index")),
+            )
+        }
+
+        val fitted = smartFitContext(messages, model, messageBudgetTokens = 8_000)
+
+        assertEquals(1, fitted.flatMap { it.parts }.filterIsInstance<UIMessagePart.Image>().size)
+        assertTrue(fitted.flatMap { it.parts }.filterIsInstance<UIMessagePart.Text>().any { it.text.contains("omitted") })
     }
 
     @Test

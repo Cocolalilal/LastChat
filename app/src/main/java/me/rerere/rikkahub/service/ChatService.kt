@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.context.smartInputBudget
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -123,6 +125,23 @@ private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
+private const val SMART_CONTEXT_OVERFLOW_RETRIES = 6
+
+private fun Throwable.isContextWindowOverflow(): Boolean = generateSequence(this) { it.cause }
+    .mapNotNull { it.message?.lowercase(Locale.ROOT) }
+    .any { message ->
+        listOf(
+            "context length",
+            "context window",
+            "maximum context",
+            "max context",
+            "too many tokens",
+            "token limit",
+            "prompt is too long",
+            "input is too long",
+            "input too long",
+        ).any(message::contains)
+    }
 
 private data class AssistantRegenerationContext(
     val inputMessages: List<UIMessage>,
@@ -1446,6 +1465,8 @@ class ChatService(
         var firstTokenTime: Long? = null
         var lastStreamingPersistMs = 0L
         var autoResumeAttempts = 0
+        var contextOverflowAttempts = 0
+        var contextBudgetScale = 1.0
 
         runCatching {
             var conversation = normalizeConversation(getConversationFlow(conversationId).value)
@@ -1546,6 +1567,8 @@ class ChatService(
                 enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
                 contextSummary = conversation.contextSummary,
+                contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
+                contextBudgetScale = contextBudgetScale,
                 contextUsageSourceKey = if (assistantRegeneration == null && messageRange == null) {
                     contextUsageSourceKey(conversation, assistant, model, settings)
                 } else {
@@ -1666,6 +1689,22 @@ class ChatService(
             }
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
+                    if (
+                        assistant.smartContextManagement &&
+                        model.contextWindowTokens != null &&
+                        contextOverflowAttempts < SMART_CONTEXT_OVERFLOW_RETRIES &&
+                        error.isContextWindowOverflow()
+                    ) {
+                        contextOverflowAttempts++
+                        contextBudgetScale = (contextBudgetScale * 0.65).coerceAtLeast(0.08)
+                        Log.w(
+                            TAG,
+                            "Provider rejected context; silently retrying with budget scale " +
+                                "$contextBudgetScale ($contextOverflowAttempts/$SMART_CONTEXT_OVERFLOW_RETRIES)",
+                        )
+                        firstTokenTime = null
+                        continue
+                    }
                     val latestConversation = getConversationFlow(conversationId).value
                     if (
                         autoResumeAttempts < AUTO_RESUME_MAX_RETRIES &&
@@ -2476,16 +2515,6 @@ class ChatService(
     ) {
         try {
             val assistant = settings.resolveConversationContext(conversation).assistant
-            
-            // Check if auto-summarization is enabled and configured with a limit
-            if (!assistant.shouldAutoSummarizeMessages()) {
-                return
-            }
-            
-            // Get max history messages setting (null = unlimited, don't auto-summarize)
-            val maxMessages = assistant.maxHistoryMessages ?: return
-            
-            // Calculate new messages since last summary
             val messages = conversation.currentMessages
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
@@ -2499,9 +2528,38 @@ class ChatService(
                 (messages.size - messagesToKeep).coerceAtLeast(0)
             }
             
-            // Check if we've reached the max history messages limit
-            if (messagesToSummarizeCount >= maxMessages) {
-                Log.i(TAG, "Auto-summarization triggered: $messagesToSummarizeCount messages >= max $maxMessages")
+            val conversationContext = settings.resolveConversationContext(conversation)
+            val model = conversationContext.chatModel
+            val smartThresholdReached = if (
+                assistant.smartContextManagement &&
+                model?.contextWindowTokens != null &&
+                messagesToSummarizeCount >= 6
+            ) {
+                val unsummarized = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
+                    messages.drop(lastSummaryIndex + 1)
+                } else {
+                    messages
+                }
+                val estimated = ContextTokenEstimator.messagesTokens(unsummarized, model) +
+                    ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
+                    ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
+                val usable = smartInputBudget(model, assistant.maxTokens)
+                    ?: model.contextWindowTokens
+                    ?: Int.MAX_VALUE
+                estimated >= (usable * 0.68).toInt()
+            } else {
+                false
+            }
+            val manualThresholdReached = !assistant.smartContextManagement &&
+                assistant.shouldAutoSummarizeMessages() &&
+                assistant.maxHistoryMessages?.let { messagesToSummarizeCount >= it } == true
+
+            if (smartThresholdReached || manualThresholdReached) {
+                Log.i(
+                    TAG,
+                    "Auto-summarization triggered by " +
+                        if (smartThresholdReached) "smart context pressure" else "manual history limit",
+                )
                 val result = summarizeAndRefresh(conversationId)
                 if (result.success) {
                     Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")

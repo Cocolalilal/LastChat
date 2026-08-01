@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
@@ -174,6 +175,16 @@ class LastChatApp : Application() {
                 )
             }.onFailure {
                 Log.w(TAG, "Model catalog warm-up failed", it)
+            }
+            runCatching {
+                syncInstalledLocalModelsToSettings(
+                    installed = get<me.rerere.locallm.LocalModelStore>().current(),
+                    totalRamGb = me.rerere.locallm.MemoryGuard.deviceTotalRamGb(this@LastChatApp),
+                    settingsStore = get<SettingsStore>(),
+                    catalogSnapshot = get<ModelCatalogService>().snapshotFlow.value,
+                )
+            }.onFailure {
+                Log.w(TAG, "Local model metadata sync failed", it)
             }
         }
     }

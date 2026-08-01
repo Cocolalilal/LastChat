@@ -1516,7 +1516,7 @@
   <string name="setting_provider_page_max_context_images">Maximum images in context</string>
   <string name="setting_provider_page_optional_number">Optional</string>
   <string name="assistant_context_smart_management">Smart context management</string>
-  <string name="assistant_context_smart_management_desc">Automatically fit conversation history, memories, tools, and media to models with a known context size.</string>
+  <string name="assistant_context_smart_management_desc">Automatically manages, compacts, and balances all context to prevent model limit overflows. While enabled, this overrides the manual history, summary, search, image, and context-priority settings below.</string>
   <string name="context_meter_used">%1$s of %2$s tokens</string>
   <string name="context_meter_remaining">%1$d%% available</string>
   <string name="context_meter_conversation">Conversation</string>
