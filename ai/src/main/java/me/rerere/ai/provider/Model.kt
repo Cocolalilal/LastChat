@@ -4,6 +4,13 @@ import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 
 @Serializable
+enum class ContextLimitSource {
+    PROVIDER,
+    RUNTIME,
+    MANUAL,
+}
+
+@Serializable
 data class Model(
     val modelId: String = "",
     val displayName: String = "",
@@ -25,6 +32,12 @@ data class Model(
     val sttOptions: SttOptions? = null,
     /** Total input + output context supported by this API model. Null means unknown. */
     val contextWindowTokens: Int? = null,
+    /** Provider-reported input ceiling when input and output limits are independent. */
+    val maxInputTokens: Int? = null,
+    /** Provider-reported maximum response size. */
+    val maxOutputTokens: Int? = null,
+    /** Where the active token limits came from. Null means legacy/unknown provenance. */
+    val contextLimitSource: ContextLimitSource? = null,
     /** Maximum images accepted in one request. Null means unknown/unlimited. */
     val maxImagesInContext: Int? = null,
     // For CHAT models, when true this model is hidden from user-facing pickers (chat interface,
@@ -33,4 +46,9 @@ data class Model(
     // feature-specific settings, so this flag is intentionally ignored for them.
     val backend: Boolean = false,
 )
+
+/** Best provider/runtime-backed capacity available for context management and display. */
+val Model.contextCapacityTokens: Int?
+    get() = contextWindowTokens?.takeIf { it > 0 }
+        ?: maxInputTokens?.takeIf { it > 0 }
 

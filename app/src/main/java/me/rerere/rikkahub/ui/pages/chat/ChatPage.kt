@@ -140,6 +140,7 @@ import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.BuildConfig
@@ -2995,8 +2996,8 @@ private fun rememberContextMeterUsage(
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
 ): ContextUsageBreakdown? {
-    val activeModel = model?.takeIf { (it.contextWindowTokens ?: 0) > 0 } ?: return null
-    val smartActive = assistant.smartContextManagement && (activeModel.contextWindowTokens ?: 0) > 0
+    val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
+    val smartActive = assistant.smartContextManagement && (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
     val messages = effectiveHistoryForContext(
         messages = rawMessages,

@@ -17,6 +17,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
@@ -454,6 +455,9 @@ data class WebProviderModelDto(
     val customIconUri: String? = null,
     val providerSlug: String? = null,
     val contextWindowTokens: Int? = null,
+    val maxInputTokens: Int? = null,
+    val maxOutputTokens: Int? = null,
+    val contextLimitSource: ContextLimitSource? = null,
     val maxImagesInContext: Int? = null,
 )
 
@@ -1004,6 +1008,9 @@ private fun Model.toWebProviderModelDto(
         customIconUri = customIconUri,
         providerSlug = providerSlug,
         contextWindowTokens = contextWindowTokens,
+        maxInputTokens = maxInputTokens,
+        maxOutputTokens = maxOutputTokens,
+        contextLimitSource = contextLimitSource,
         maxImagesInContext = maxImagesInContext,
     )
 }

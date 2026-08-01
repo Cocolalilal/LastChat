@@ -36,6 +36,7 @@ import me.rerere.ai.context.smartPrepareHistory
 import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
@@ -826,7 +827,7 @@ class GenerationHandler(
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
         val smartEnabled = assistant.smartContextManagement &&
-            model.contextWindowTokens?.let { it > 0 } == true
+            model.contextCapacityTokens?.let { it > 0 } == true
         val maxTokens = if (smartEnabled) {
             smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
         } else {
@@ -1479,7 +1480,7 @@ class GenerationHandler(
             effectiveTools = effectiveTools,
             messageBudgetTokens = smartMessageBudget,
             effectiveInputBudgetTokens = maxTokens.takeIf { smartEnabled },
-            contextUsage = model.contextWindowTokens?.let {
+            contextUsage = model.contextCapacityTokens?.let {
                 val skillText = buildString {
                     enabledSkills.forEach { skill ->
                         appendLine(skill.name)
@@ -1714,7 +1715,7 @@ class GenerationHandler(
                 }
             },
         )
-        if ((model.contextWindowTokens ?: 0) > 0) {
+        if ((model.contextCapacityTokens ?: 0) > 0) {
             val inputBudget = buildResult.effectiveInputBudgetTokens
             if (inputBudget != null || buildResult.messageBudgetTokens == null) {
                 var lastCountedTokens: Int? = null

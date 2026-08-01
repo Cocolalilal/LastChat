@@ -28,6 +28,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.CustomHeader
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
@@ -193,12 +194,17 @@ class GoogleProvider(
                     val displayName = modelObject["displayName"]?.jsonPrimitive?.contentOrNull
                         ?.ifBlank { null }
                         ?: modelId
+                    val contextLimits = parseGoogleProviderContextLimits(modelObject)
 
                     Model(
                         modelId = modelId,
                         displayName = displayName,
                         canonicalModelId = ModelIdNormalizer.canonicalize(modelId),
                         type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
+                        contextWindowTokens = contextLimits.contextWindowTokens,
+                        maxInputTokens = contextLimits.maxInputTokens,
+                        maxOutputTokens = contextLimits.maxOutputTokens,
+                        contextLimitSource = contextLimits.source,
                     )
                 }
             } else {
@@ -932,6 +938,36 @@ class GoogleProvider(
             }
         }
     }
+}
+
+internal data class GoogleProviderContextLimits(
+    val contextWindowTokens: Int? = null,
+    val maxInputTokens: Int? = null,
+    val maxOutputTokens: Int? = null,
+    val source: ContextLimitSource? = null,
+)
+
+internal fun parseGoogleProviderContextLimits(model: JsonObject): GoogleProviderContextLimits {
+    fun positiveInt(vararg keys: String): Int? = keys.firstNotNullOfOrNull { key ->
+        model[key]?.jsonPrimitiveOrNull?.contentOrNull
+            ?.toLongOrNull()
+            ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
+            ?.toInt()
+    }
+
+    val input = positiveInt("inputTokenLimit", "input_token_limit", "maxInputTokens")
+    val output = positiveInt("outputTokenLimit", "output_token_limit", "maxOutputTokens")
+    val combined = if (input != null && output != null) {
+        (input.toLong() + output.toLong()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    } else {
+        null
+    }
+    return GoogleProviderContextLimits(
+        contextWindowTokens = combined,
+        maxInputTokens = input,
+        maxOutputTokens = output,
+        source = ContextLimitSource.PROVIDER.takeIf { input != null || output != null },
+    )
 }
 
 private fun String.appendQueryParameter(name: String, value: String): String {

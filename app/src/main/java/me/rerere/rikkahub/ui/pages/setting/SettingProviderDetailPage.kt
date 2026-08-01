@@ -140,6 +140,8 @@ import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ContextLimitSource
+import me.rerere.ai.provider.providers.isLikelyOllama
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.ui.MessageChunk
@@ -310,7 +312,7 @@ private fun ProviderSetting.apiModelCacheKey(
 private fun ProviderSetting.canFetchApiModels(codexAccountAvailable: Boolean = false): Boolean {
     return when (this) {
         is ProviderSetting.Codex -> codexAccountAvailable
-        is ProviderSetting.OpenAI -> apiKey.isNotBlank()
+        is ProviderSetting.OpenAI -> apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
         } else {
@@ -331,10 +333,32 @@ internal fun syncFreshModelMetadata(
             modelsReferToSameApiModel(savedModel, apiModel)
         }
         if (freshModel != null) {
+            val preserveManualContext = savedModel.contextLimitSource == ContextLimitSource.MANUAL ||
+                (savedModel.contextLimitSource == null && savedModel.contextWindowTokens != null)
             savedModel.copy(
                 canonicalModelId = freshModel.canonicalModelId ?: savedModel.canonicalModelId,
                 iconUrl = freshModel.iconUrl,
                 providerSlug = freshModel.providerSlug,
+                contextWindowTokens = if (preserveManualContext) {
+                    savedModel.contextWindowTokens
+                } else {
+                    freshModel.contextWindowTokens ?: savedModel.contextWindowTokens
+                },
+                maxInputTokens = if (preserveManualContext) {
+                    savedModel.maxInputTokens
+                } else {
+                    freshModel.maxInputTokens ?: savedModel.maxInputTokens
+                },
+                maxOutputTokens = if (preserveManualContext) {
+                    savedModel.maxOutputTokens
+                } else {
+                    freshModel.maxOutputTokens ?: savedModel.maxOutputTokens
+                },
+                contextLimitSource = if (preserveManualContext) {
+                    ContextLimitSource.MANUAL
+                } else {
+                    freshModel.contextLimitSource ?: savedModel.contextLimitSource
+                },
             )
         } else {
             savedModel
@@ -888,6 +912,12 @@ private fun ModelList(
                 reloadModelsError = error.message ?: error::class.simpleName
             }
             isReloadingModels = false
+        }
+    }
+
+    LaunchedEffect(apiModelCacheKey, apiModelSource.canFetchModels) {
+        if (modelList == null && apiModelSource.canFetchModels) {
+            reloadApiModels()
         }
     }
     
@@ -2468,7 +2498,15 @@ private fun ModelContextLimits(
         DebouncedTextField(
             value = model.contextWindowTokens?.toString().orEmpty(),
             onValueChange = { value ->
-                onModelChange(model.copy(contextWindowTokens = value.toIntOrNull()?.takeIf { it > 0 }))
+                val manualLimit = value.toIntOrNull()?.takeIf { it > 0 }
+                onModelChange(
+                    model.copy(
+                        contextWindowTokens = manualLimit,
+                        maxInputTokens = null,
+                        maxOutputTokens = null,
+                        contextLimitSource = ContextLimitSource.MANUAL.takeIf { manualLimit != null },
+                    )
+                )
             },
             stateKey = "context_window_${model.id}",
             label = stringResource(R.string.setting_provider_page_context_window),
@@ -2496,6 +2534,7 @@ private fun ModelContextLimits(
             )
         }
     }
+
 }
 
 @Composable

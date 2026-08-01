@@ -2,11 +2,12 @@ package me.rerere.rikkahub.data.ai.models
 
 import me.rerere.ai.provider.Model
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ModelContextMetadataTest {
     @Test
-    fun catalogContextMetadata_reachesResolvedModel() {
+    fun catalogContextWindow_isNotUsedAsDeploymentLimit() {
         val snapshot = ModelCatalogParser.parse(
             """
             {
@@ -22,7 +23,7 @@ class ModelContextMetadataTest {
         )
         val resolved = ModelMetadataResolver { snapshot }.applyToModel(Model(modelId = "test-model"))
 
-        assertEquals(65_536, resolved.contextWindowTokens)
+        assertNull(resolved.contextWindowTokens)
         assertEquals(6, resolved.maxImagesInContext)
     }
 }

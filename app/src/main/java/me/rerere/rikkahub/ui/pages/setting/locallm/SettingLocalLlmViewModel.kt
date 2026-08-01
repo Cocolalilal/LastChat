@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
@@ -249,6 +250,7 @@ class SettingLocalLlmViewModel(
             outputModalities = listOf(Modality.TEXT),
             abilities = abilities,
             contextWindowTokens = effectiveRuntimeContextLength(deviceRamGb),
+            contextLimitSource = ContextLimitSource.RUNTIME,
             iconUrl = iconUrl,
             customIconUri = customIconUri,
         )

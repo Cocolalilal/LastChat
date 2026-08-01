@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.datastore
 
 import kotlinx.coroutines.flow.first
 import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
@@ -67,6 +68,7 @@ private fun InstalledLocalModel.toSettingsModel(
             if (supportsThinking) add(ModelAbility.REASONING)
         },
         contextWindowTokens = effectiveRuntimeContextLength(totalRamGb),
+        contextLimitSource = ContextLimitSource.RUNTIME,
         iconUrl = iconUrl,
         customIconUri = customIconUri,
     )

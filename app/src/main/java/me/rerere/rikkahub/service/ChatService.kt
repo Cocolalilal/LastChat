@@ -55,6 +55,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -1700,7 +1701,7 @@ class ChatService(
                     if (error is CancellationException) throw error
                     if (
                         assistant.smartContextManagement &&
-                        model.contextWindowTokens != null &&
+                        model.contextCapacityTokens != null &&
                         contextOverflowAttempts < SMART_CONTEXT_OVERFLOW_RETRIES &&
                         error.isContextWindowOverflow()
                     ) {
@@ -1853,7 +1854,7 @@ class ChatService(
                         parameters = { tool.inputSchema },
                         execute = {
                             val contextAwareCharacterLimit = (
-                                (model.contextWindowTokens?.toLong() ?: 16_000L) * 2L
+                                (model.contextCapacityTokens?.toLong() ?: 16_000L) * 2L
                                 ).coerceIn(2_000L, 32_000L).toInt()
                             mcpManager.callTool(serverId, tool.name, it.jsonObject)
                                 .truncateLargeJsonText(contextAwareCharacterLimit)
@@ -2546,7 +2547,7 @@ class ChatService(
             val model = conversationContext.chatModel
             val smartThresholdReached = if (
                 assistant.smartContextManagement &&
-                model?.contextWindowTokens != null &&
+                model?.contextCapacityTokens != null &&
                 messagesToSummarizeCount >= 6
             ) {
                 val unsummarized = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
@@ -2558,7 +2559,7 @@ class ChatService(
                     ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
                     ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
                 val usable = smartInputBudget(model, assistant.maxTokens)
-                    ?: model.contextWindowTokens
+                    ?: model.contextCapacityTokens
                     ?: Int.MAX_VALUE
                 estimated >= (usable * 0.68).toInt()
             } else {

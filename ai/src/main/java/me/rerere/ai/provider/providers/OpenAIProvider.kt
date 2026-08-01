@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.Provider
@@ -31,6 +33,8 @@ import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.common.http.getByKey
+import me.rerere.common.http.jsonArrayOrNull
+import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.http.urlHostOrNull
 import me.rerere.common.platform.PlatformHttpClient
@@ -60,11 +64,16 @@ class OpenAIProvider(
             val key = keyRoulette.next(providerSetting.apiKey)
             
             // Fetch regular models
-            val regularModels = fetchModelsFromUrl(
+            val fetchedRegularModels = fetchModelsFromUrl(
                 url = "${providerSetting.baseUrl}/models",
                 key = key,
                 providerSetting = providerSetting
             )
+            val regularModels = if (providerSetting.isLikelyOllama()) {
+                enrichWithOllamaRuntimeLimits(fetchedRegularModels, providerSetting)
+            } else {
+                fetchedRegularModels
+            }
             
             // For OpenRouter, also fetch embedding models using output_modalities filter
             // OpenRouter's /models endpoint doesn't return embedding models by default
@@ -86,6 +95,84 @@ class OpenAIProvider(
             
             allModels
         }
+
+    private suspend fun enrichWithOllamaRuntimeLimits(
+        models: List<Model>,
+        providerSetting: ProviderSetting.OpenAI,
+    ): List<Model> {
+        val apiBase = providerSetting.baseUrl
+            .trimEnd('/')
+            .removeSuffix("/v1")
+            .removeSuffix("/api") + "/api"
+        val runningLimits = runCatching {
+            val response = platformHttpClient.execute(
+                PlatformHttpRequest(
+                    method = "GET",
+                    url = "$apiBase/ps",
+                    headers = providerSetting.apiKey.takeIf { it.isNotBlank() }
+                        ?.let { mapOf("Authorization" to "Bearer $it") }
+                        .orEmpty(),
+                    proxy = providerSetting.proxy.toPlatformProxy(),
+                )
+            )
+            if (response.statusCode !in 200..299) return@runCatching emptyMap()
+            val root = json.parseToJsonElement(response.body.decodeToString()).jsonObject
+            root["models"]?.jsonArrayOrNull.orEmpty().mapNotNull { item ->
+                val obj = item.jsonObjectOrNull ?: return@mapNotNull null
+                val id = obj["model"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?: obj["name"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?: return@mapNotNull null
+                val limit = obj["context_length"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?.toIntOrNull()
+                    ?.takeIf { it > 0 }
+                    ?: return@mapNotNull null
+                id.lowercase() to limit
+            }.toMap()
+        }.getOrDefault(emptyMap())
+
+        return models.map { model ->
+            val runtimeLimit = runningLimits[model.modelId.lowercase()]
+                ?: fetchOllamaConfiguredContext(apiBase, model.modelId, providerSetting)
+            if (runtimeLimit != null) {
+                model.copy(
+                    contextWindowTokens = runtimeLimit,
+                    contextLimitSource = ContextLimitSource.RUNTIME,
+                )
+            } else {
+                model
+            }
+        }
+    }
+
+    private suspend fun fetchOllamaConfiguredContext(
+        apiBase: String,
+        modelId: String,
+        providerSetting: ProviderSetting.OpenAI,
+    ): Int? = runCatching {
+        val response = platformHttpClient.execute(
+            PlatformHttpRequest(
+                method = "POST",
+                url = "$apiBase/show",
+                headers = buildMap {
+                    put("Content-Type", "application/json")
+                    providerSetting.apiKey.takeIf { it.isNotBlank() }
+                        ?.let { put("Authorization", "Bearer $it") }
+                },
+                body = buildJsonObject { put("model", modelId) }.toString().encodeToByteArray(),
+                mediaType = "application/json",
+                proxy = providerSetting.proxy.toPlatformProxy(),
+            )
+        )
+        if (response.statusCode !in 200..299) return@runCatching null
+        val root = json.parseToJsonElement(response.body.decodeToString()).jsonObject
+        val parameters = root["parameters"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
+        Regex("(?m)^\\s*num_ctx\\s+(\\d+)\\s*$")
+            .find(parameters)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+    }.getOrNull()
     
     private suspend fun fetchModelsFromUrl(
         url: String,
@@ -148,6 +235,7 @@ class OpenAIProvider(
             
             val canonicalSlug = modelObj["canonical_slug"]?.jsonPrimitive?.contentOrNull
             val displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
+            val contextLimits = parseOpenAIProviderContextLimits(modelObj)
             val abilities = buildList {
                 if (supportedParameters.any { it == "tools" || it == "tool_choice" }) {
                     add(ModelAbility.TOOL)
@@ -169,6 +257,10 @@ class OpenAIProvider(
                 inputModalities = inputModalities,
                 outputModalities = if (isEmbedding) listOf(Modality.TEXT) else outputModalities,
                 abilities = abilities,
+                contextWindowTokens = contextLimits.contextWindowTokens,
+                maxInputTokens = contextLimits.maxInputTokens,
+                maxOutputTokens = contextLimits.maxOutputTokens,
+                contextLimitSource = contextLimits.source,
             )
         }
     }
@@ -347,6 +439,57 @@ class OpenAIProvider(
                 ?: error("No embedding in response")
         }
     }
+}
+
+internal data class OpenAIProviderContextLimits(
+    val contextWindowTokens: Int? = null,
+    val maxInputTokens: Int? = null,
+    val maxOutputTokens: Int? = null,
+    val source: ContextLimitSource? = null,
+)
+
+fun ProviderSetting.OpenAI.isLikelyOllama(): Boolean =
+    name.contains("ollama", ignoreCase = true) ||
+        baseUrl.contains(":11434", ignoreCase = true) ||
+        baseUrl.contains("ollama.com", ignoreCase = true)
+
+internal fun parseOpenAIProviderContextLimits(model: JsonObject): OpenAIProviderContextLimits {
+    fun JsonObject.positiveInt(vararg keys: String): Int? = keys.firstNotNullOfOrNull { key ->
+        get(key)?.jsonPrimitiveOrNull?.contentOrNull
+            ?.toLongOrNull()
+            ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
+            ?.toInt()
+    }
+
+    val topProvider = model["top_provider"] as? JsonObject
+    val combinedCandidates = listOfNotNull(
+        model.positiveInt("context_length", "max_context_length", "max_model_len"),
+        topProvider?.positiveInt("context_length", "max_context_length", "max_model_len"),
+    )
+    // Gateways can expose both a model-family limit and a smaller deployment/routing limit.
+    // The smaller reported value is the only one that can guarantee overflow protection.
+    val combined = combinedCandidates.minOrNull()
+    val maxInput = model.positiveInt("max_input_tokens", "input_token_limit", "inputTokenLimit")
+        ?: topProvider?.positiveInt("max_input_tokens", "input_token_limit", "inputTokenLimit")
+    val maxOutput = model.positiveInt(
+        "max_output_tokens",
+        "output_token_limit",
+        "outputTokenLimit",
+        "max_completion_tokens",
+    ) ?: topProvider?.positiveInt(
+        "max_output_tokens",
+        "output_token_limit",
+        "outputTokenLimit",
+        "max_completion_tokens",
+    )
+    return OpenAIProviderContextLimits(
+        contextWindowTokens = combined,
+        maxInputTokens = maxInput,
+        maxOutputTokens = maxOutput,
+        source = ContextLimitSource.PROVIDER.takeIf {
+            combined != null || maxInput != null || maxOutput != null
+        },
+    )
 }
 
 private fun List<String>.toModalities(): List<Modality> {

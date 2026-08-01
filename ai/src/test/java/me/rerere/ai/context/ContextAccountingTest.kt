@@ -23,6 +23,22 @@ class ContextAccountingTest {
     }
 
     @Test
+    fun smartBudgetHonorsIndependentProviderInputAndOutputLimits() {
+        val model = Model(
+            modelId = "provider-model",
+            contextWindowTokens = 120_000,
+            maxInputTokens = 100_000,
+            maxOutputTokens = 8_000,
+        )
+
+        val output = smartOutputTokenBudget(model, requestedOutputTokens = 20_000)
+        val input = smartInputBudget(model, requestedOutputTokens = 20_000)
+
+        assertEquals(8_000, output)
+        assertEquals(92_500, input)
+    }
+
+    @Test
     fun unknownTokenizer_isConservative() {
         val text = "a".repeat(320)
 

@@ -7,6 +7,7 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.concurrent.atomics.AtomicReference
@@ -320,11 +321,11 @@ object ContextTokenEstimator {
             toolCallTokens = scaled(toolCalls),
             mediaTokens = scaled(media),
             usedTokens = confirmedTotal ?: estimatedTotal,
-            totalTokens = model.contextWindowTokens?.takeIf { it > 0 } ?: 0,
+            totalTokens = model.contextCapacityTokens ?: 0,
             usableInputTokens = usableInputTokens
                 ?.takeIf { it > 0 }
-                ?.coerceAtMost(model.contextWindowTokens?.takeIf { it > 0 } ?: Int.MAX_VALUE)
-                ?: (model.contextWindowTokens?.takeIf { it > 0 } ?: 0),
+                ?.coerceAtMost(model.contextCapacityTokens ?: Int.MAX_VALUE)
+                ?: (model.contextCapacityTokens ?: 0),
             imageCount = images,
             maxImages = model.maxImagesInContext?.takeIf { it > 0 },
             confidence = if (confirmedTotal != null) ContextCountConfidence.PROVIDER_COUNTED else ContextCountConfidence.ESTIMATED,
@@ -519,24 +520,41 @@ private fun compactText(value: String, maxCharacters: Int): String {
 }
 
 fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 } ?: return null
+    val window = model.contextWindowTokens?.takeIf { it > 0 }
+    val independentInputLimit = model.maxInputTokens?.takeIf { it > 0 }
+    if (window == null && independentInputLimit == null) return null
     val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
     // Covers provider-specific message framing, tokenizer mismatch, and small transformations that
     // occur after context assembly. A visible unused sliver is preferable to a context overflow.
-    val availableAfterOutput = (window - outputReserve).coerceAtLeast(0)
-    val safetyMargin = (window / 16)
+    val availableAfterOutput = window
+        ?.let { (it - outputReserve).coerceAtLeast(0) }
+        ?: independentInputLimit.orEmptyTokenLimit()
+    val rawInputCeiling = listOfNotNull(
+        availableAfterOutput,
+        independentInputLimit,
+    ).minOrNull() ?: return null
+    val marginBasis = window ?: independentInputLimit ?: return null
+    val safetyMargin = (marginBasis / 16)
         .coerceAtLeast(512)
-        .coerceAtMost((window / 4).coerceAtLeast(1))
-        .coerceAtMost((availableAfterOutput - 1).coerceAtLeast(0))
-    return (availableAfterOutput - safetyMargin).coerceAtLeast(0)
+        .coerceAtMost((marginBasis / 4).coerceAtLeast(1))
+        .coerceAtMost((rawInputCeiling - 1).coerceAtLeast(0))
+    return (rawInputCeiling - safetyMargin).coerceAtLeast(0)
 }
 
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */
 fun smartOutputTokenBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 } ?: return null
+    val window = model.contextWindowTokens?.takeIf { it > 0 }
+        ?: model.maxInputTokens?.takeIf { it > 0 }
+        ?: return null
     val adaptiveReserve = (window / 10).coerceIn(1_024, 8_192).coerceAtMost(window / 2)
-    return requestedOutputTokens
+    val requested = requestedOutputTokens
         ?.takeIf { it > 0 }
         ?.coerceAtMost(window / 2)
         ?: adaptiveReserve
+    return model.maxOutputTokens
+        ?.takeIf { it > 0 }
+        ?.let { requested.coerceAtMost(it) }
+        ?: requested
 }
+
+private fun Int?.orEmptyTokenLimit(): Int = this?.coerceAtLeast(0) ?: 0

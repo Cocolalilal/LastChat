@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.ContextLimitSource
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -183,5 +184,35 @@ class ModelPickerMatchingTest {
         assertNull(model.imageGenerationMethod)
         assertEquals(fresh.iconUrl, model.iconUrl)
         assertEquals(fresh.providerSlug, model.providerSlug)
+    }
+
+    @Test
+    fun refreshingApiMetadataAppliesProviderLimitsButPreservesManualOverride() {
+        val fresh = Model(
+            modelId = "routed-model",
+            contextWindowTokens = 64_000,
+            maxOutputTokens = 8_000,
+            contextLimitSource = ContextLimitSource.PROVIDER,
+        )
+        val automatic = ProviderSetting.OpenAI(models = listOf(Model(modelId = "routed-model")))
+        val manual = ProviderSetting.OpenAI(
+            models = listOf(
+                Model(
+                    modelId = "routed-model",
+                    contextWindowTokens = 32_000,
+                    contextLimitSource = ContextLimitSource.MANUAL,
+                )
+            )
+        )
+
+        val syncedAutomatic = syncFreshModelMetadata(listOf(fresh), automatic).models.single()
+        val syncedManual = syncFreshModelMetadata(listOf(fresh), manual).models.single()
+
+        assertEquals(64_000, syncedAutomatic.contextWindowTokens)
+        assertEquals(8_000, syncedAutomatic.maxOutputTokens)
+        assertEquals(ContextLimitSource.PROVIDER, syncedAutomatic.contextLimitSource)
+        assertEquals(32_000, syncedManual.contextWindowTokens)
+        assertNull(syncedManual.maxOutputTokens)
+        assertEquals(ContextLimitSource.MANUAL, syncedManual.contextLimitSource)
     }
 }
