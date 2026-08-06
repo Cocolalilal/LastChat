@@ -7,7 +7,6 @@
   <string name="about_page_version">버전</string>
   <string name="about_page_website">웹사이트</string>
   <string name="add">추가</string>
-  <string name="app_name">LastChat</string>
   <string name="assistant_importer_import_failed">가져오기 실패</string>
   <string name="assistant_importer_import_tavern_json">타번 캐릭터 카드 가져오기 (JSON)</string>
   <string name="assistant_importer_import_tavern_png">타번 캐릭터 카드 가져오기 (PNG)</string>
