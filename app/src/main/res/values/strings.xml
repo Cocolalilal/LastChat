@@ -7,7 +7,6 @@
     <string name="about_page_version">Version</string>
     <string name="about_page_website">Website</string>
     <string name="add">Add</string>
-    <string name="app_name">LastChat</string>
     <string name="assistant_importer_import_failed">Import Failed</string>
     <string name="assistant_importer_import_character">Import Character Card</string>
     <string name="assistant_importer_import_tavern_json">Import Tavern Card (JSON)</string>

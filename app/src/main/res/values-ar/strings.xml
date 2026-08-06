@@ -7,7 +7,6 @@
   <string name="about_page_version">إصدار</string>
   <string name="about_page_website">موقع إلكتروني</string>
   <string name="add">يضيف</string>
-  <string name="app_name">LastChat</string>
   <string name="assistant_importer_import_failed">فشل الاستيراد</string>
   <string name="assistant_importer_import_character">استيراد بطاقة الشخصية</string>
   <string name="assistant_importer_import_tavern_json">استيراد بطاقة الحانة (JSON)</string>

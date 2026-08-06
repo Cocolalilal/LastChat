@@ -94,6 +94,18 @@ android {
         }
     }
 
+    flavorDimensions += "version"
+
+    productFlavors {
+        create("stable") {
+            dimension = "version"
+        }
+        create("dev") {
+            dimension = "version"
+            applicationIdSuffix = ".dev"
+        }
+    }
+
     splits {
         abi {
             // AppBundle tasks usually contain "bundle" in their name

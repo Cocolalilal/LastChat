@@ -24,6 +24,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "version"
+
+    productFlavors {
+        create("stable") {
+            dimension = "version"
+        }
+        create("dev") {
+            dimension = "version"
+        }
+    }
+
     targetProjectPath = ":app"
 
 }
