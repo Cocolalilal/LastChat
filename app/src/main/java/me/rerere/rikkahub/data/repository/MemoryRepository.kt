@@ -394,9 +394,30 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true
     ): List<AssistantMemory> {
-        return retrieveRelevantMemoriesWithScores(
-            assistantId, query, limit, similarityThreshold, includeCore, includeEpisodes
-        ).map { it.first }
+        val safeLimit = limit.coerceIn(1, MAX_RETRIEVAL_LIMIT)
+        val outcome = retrieveRelevantMemoriesOutcome(
+            assistantId, query, safeLimit, similarityThreshold, includeCore, includeEpisodes
+        )
+        val matches = outcome.matches.map { it.first }
+        if (matches.isNotEmpty()) return matches
+        if (outcome.vectorPathAvailable) return emptyList()
+
+        // A provider outage, stale/incompatible vectors, or unavailable local runtime must not turn
+        // a healthy durable memory store into an empty context forever. Do not use this fallback
+        // merely because healthy vector search found no relevant match.
+        val fallback = durableRecallFallback(
+            assistantId = assistantId,
+            limit = minOf(safeLimit, DURABLE_FALLBACK_LIMIT),
+            includeCore = includeCore,
+            includeEpisodes = includeEpisodes,
+        )
+        if (fallback.isNotEmpty()) {
+            PlatformLog.w(
+                TAG,
+                "Vector recall unavailable; using ${fallback.size} durable fallback memories",
+            )
+        }
+        return fallback
     }
 
     suspend fun retrieveRelevantMemoriesWithScores(
@@ -406,7 +427,24 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         similarityThreshold: Float = 0.5f,
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true
-    ): List<Pair<AssistantMemory, Float>> = coroutineScope {
+    ): List<Pair<AssistantMemory, Float>> = retrieveRelevantMemoriesOutcome(
+        assistantId = assistantId,
+        query = query,
+        limit = limit,
+        similarityThreshold = similarityThreshold,
+        includeCore = includeCore,
+        includeEpisodes = includeEpisodes,
+    ).matches
+
+    private suspend fun retrieveRelevantMemoriesOutcome(
+        assistantId: String,
+        query: String,
+        limit: Int,
+        similarityThreshold: Float,
+        includeCore: Boolean,
+        includeEpisodes: Boolean,
+    ): RecallOutcome = coroutineScope {
+        val safeLimit = limit.coerceIn(1, MAX_RETRIEVAL_LIMIT)
         val queryEmbedding = try {
             embeddingService.embed(query, assistantId).toFloatArray()
         } catch (e: Exception) {
@@ -416,11 +454,12 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         }
 
         // Fetch a reasonable number of candidates (limit * 20, max 1000) to avoid OOM
-        val fetchLimit = (limit * 20).coerceAtMost(1000)
+        val fetchLimit = (safeLimit * 20).coerceAtMost(1000)
 
         // Get both core memories and episodes with limit
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
         val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
+        var hasCompatibleStoredEmbedding = false
         
         val memoryScores = memories.mapNotNull { memory ->
                 val embeddings = if (queryEmbedding != null) getStoredEmbeddings(
@@ -432,8 +471,14 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                     existingModelId = memory.embeddingModelId
                 ) else null
 
+                val compatibleEmbeddings = if (queryEmbedding != null) {
+                    embeddings.orEmpty().filter { it.isNotEmpty() && it.size == queryEmbedding.size }
+                } else {
+                    emptyList()
+                }
+                if (compatibleEmbeddings.isNotEmpty()) hasCompatibleStoredEmbedding = true
                 val similarity = if (queryEmbedding != null) {
-                    embeddings?.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                    compatibleEmbeddings.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
                 } else null
                 val keywordScore = calculateKeywordScore(query, memory.content)
                 if (similarity == null && keywordScore <= 0f) return@mapNotNull null
@@ -458,8 +503,14 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                     existingModelId = episode.embeddingModelId
                 ) else null
 
+                val compatibleEmbeddings = if (queryEmbedding != null) {
+                    embeddings.orEmpty().filter { it.isNotEmpty() && it.size == queryEmbedding.size }
+                } else {
+                    emptyList()
+                }
+                if (compatibleEmbeddings.isNotEmpty()) hasCompatibleStoredEmbedding = true
                 val similarity = if (queryEmbedding != null) {
-                    embeddings?.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                    compatibleEmbeddings.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
                 } else null
                 val keywordScore = calculateKeywordScore(query, episode.content)
                 if (similarity == null && keywordScore <= 0f) return@mapNotNull null
@@ -484,7 +535,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val allScored = (memoryScores + episodeScores).sortedByDescending { it.second }
         
         // Update lastAccessedAt for retrieved memories
-        allScored.take(limit).forEach { (item, _, isMemory) ->
+        allScored.take(safeLimit).forEach { (item, _, isMemory) ->
             if (isMemory) {
                 val memory = item as MemoryEntity
                 memoryDAO.updateMemory(memory.copy(lastAccessedAt = System.currentTimeMillis()))
@@ -494,7 +545,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
             }
         }
         
-        allScored.take(limit).mapNotNull { triple ->
+        val matches = allScored.take(safeLimit).mapNotNull { triple ->
             val item = triple.first
             val score = triple.second
             val isMemory = triple.third
@@ -519,9 +570,69 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                 )
             }
         }
+        RecallOutcome(
+            matches = matches,
+            vectorPathAvailable = queryEmbedding != null && hasCompatibleStoredEmbedding,
+        )
+    }
+
+    private suspend fun durableRecallFallback(
+        assistantId: String,
+        limit: Int,
+        includeCore: Boolean,
+        includeEpisodes: Boolean,
+    ): List<AssistantMemory> {
+        if (limit <= 0 || (!includeCore && !includeEpisodes)) return emptyList()
+        val core = if (includeCore) {
+            memoryDAO.getMemoriesOfAssistantLimited(assistantId, limit)
+                .map { memory ->
+                    AssistantMemory(
+                        id = memory.id,
+                        content = memory.content,
+                        type = memory.type,
+                        hasEmbedding = !memory.embedding.isNullOrBlank() || memory.embeddingBlob != null,
+                        embeddingModelId = memory.embeddingModelId,
+                        timestamp = memory.createdAt,
+                    )
+                }
+        } else {
+            emptyList()
+        }
+        val episodes = if (includeEpisodes) {
+            chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, limit)
+                .map { episode ->
+                    AssistantMemory(
+                        id = -episode.id,
+                        content = episode.content,
+                        type = MemoryType.EPISODIC,
+                        hasEmbedding = !episode.embedding.isNullOrBlank() || episode.embeddingBlob != null,
+                        embeddingModelId = episode.embeddingModelId,
+                        timestamp = episode.startTime,
+                        significance = episode.significance,
+                    )
+                }
+        } else {
+            emptyList()
+        }
+
+        // Keep both stores represented when possible, then fill the remaining small safety budget
+        // by recency. This is intentionally bounded so fallback cannot swamp normal chat context.
+        val selected = mutableListOf<AssistantMemory>()
+        core.firstOrNull()?.let(selected::add)
+        episodes.firstOrNull()?.let(selected::add)
+        (core.drop(1) + episodes.drop(1))
+            .sortedByDescending { it.timestamp }
+            .forEach { memory ->
+                if (selected.size < limit) selected += memory
+            }
+        return selected.take(limit)
     }
 
     private data class StoredEmbedding(val modelId: String, val vectors: List<FloatArray>)
+    private data class RecallOutcome(
+        val matches: List<Pair<AssistantMemory, Float>>,
+        val vectorPathAvailable: Boolean,
+    )
 
     private suspend fun buildEmbedding(content: String, assistantId: String): StoredEmbedding {
         val result = embeddingService.embedBatch(MemoryChunker.chunkText(content), assistantId)
@@ -735,5 +846,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
     private companion object {
         const val TAG = "MemoryRepository"
+        const val MAX_RETRIEVAL_LIMIT = 1_000
+        const val DURABLE_FALLBACK_LIMIT = 3
     }
 }

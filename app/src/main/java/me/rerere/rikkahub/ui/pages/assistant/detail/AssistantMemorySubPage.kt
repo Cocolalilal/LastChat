@@ -380,8 +380,13 @@ fun AssistantMemorySettings(
                                     ))
                                 } else {
                                     onUpdateAssistant(assistant.copy(
+                                        enableMemory = true,
                                         enableMemoryConsolidation = true,
-                                        enableRecentChatsReference = true
+                                        enableRecentChatsReference = true,
+                                        useRagMemoryRetrieval = true,
+                                        ragIncludeCore = true,
+                                        ragIncludeEpisodes = true,
+                                        ragLimit = assistant.ragLimit.coerceAtLeast(1),
                                     ))
                                 }
                             }

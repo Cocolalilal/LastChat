@@ -288,6 +288,37 @@ internal fun Settings.normalizeFontSettings(): Settings {
     return copy(displaySetting = displaySetting.normalizeFontSettings())
 }
 
+/**
+ * Advanced memory has one supported runtime shape: Core + Episodic retrieval with automatic
+ * consolidation. Older memory UIs could persist hidden combinations that excluded both stores or
+ * requested zero results; after the rollback those values had no visible control but still disabled
+ * every recall entry point.
+ */
+internal fun Settings.normalizeMemorySettings(): Settings = copy(
+    assistants = assistants.map { assistant ->
+        val finiteThreshold = assistant.ragSimilarityThreshold
+            .takeIf(Float::isFinite)
+            ?.coerceIn(0f, 1f)
+            ?: 0.45f
+        if (assistant.enableMemoryConsolidation) {
+            assistant.copy(
+                enableMemory = true,
+                useRagMemoryRetrieval = true,
+                enableRecentChatsReference = true,
+                ragIncludeCore = true,
+                ragIncludeEpisodes = true,
+                ragLimit = assistant.ragLimit.coerceAtLeast(1),
+                ragSimilarityThreshold = finiteThreshold,
+            )
+        } else {
+            assistant.copy(
+                ragLimit = assistant.ragLimit.coerceAtLeast(1),
+                ragSimilarityThreshold = finiteThreshold,
+            )
+        }
+    },
+)
+
 internal fun Settings.normalizeThemeId(): Settings {
     val normalizedThemeId = normalizePresetThemeId(themeId)
     return if (normalizedThemeId == themeId) {

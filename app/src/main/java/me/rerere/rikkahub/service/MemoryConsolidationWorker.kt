@@ -120,8 +120,23 @@ class MemoryConsolidationWorker(
                 if (failedEmbeddings > 0) {
                     PlatformLog.w(TAG, "Background embedding repair left $failedEmbeddings memories pending")
                 }
-                conversationRepository
+                val pending = conversationRepository
                     .getPendingMemoryConversations(assistant.id, RECONCILE_BATCH_SIZE)
+                // The advanced-memory rollback retained old is_consolidated flags while the
+                // corresponding temporal/graph episodes were removed or disconnected. Reconcile
+                // those durable conversations too, but only when they meet the meaningful-message
+                // threshold so intentionally reviewed short chats do not churn every safety scan.
+                val missingEpisodes = database.conversationDao()
+                    .getConsolidatedConversationsMissingEpisode(
+                        assistantId = assistant.id.toString(),
+                        limit = RECONCILE_BATCH_SIZE,
+                    )
+                    .map(conversationRepository::conversationEntityToConversation)
+                    .filter { conversation ->
+                        conversation.meaningfulMemoryMessages().size >= MIN_MEANINGFUL_MESSAGES
+                    }
+                (pending + missingEpisodes)
+                    .distinctBy { conversation -> conversation.id }
                     .forEach { conversation ->
                         enqueueForConversation(
                             context = applicationContext,
@@ -418,6 +433,7 @@ class MemoryConsolidationWorker(
         private const val CONVERSATION_WORK_PREFIX = "memory_consolidation_conversation_"
         private const val CATCH_UP_WORK_NAME = "memory_consolidation_catch_up"
         private const val RECONCILE_BATCH_SIZE = 100
+        private const val MIN_MEANINGFUL_MESSAGES = 4
         private const val MAX_MESSAGES_PER_EPISODE = 30
         private const val EPISODE_RETENTION_DAYS = 30
         private const val DEFAULT_SIGNIFICANCE = 5

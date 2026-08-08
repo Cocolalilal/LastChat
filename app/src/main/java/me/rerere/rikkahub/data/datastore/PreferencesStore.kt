@@ -315,7 +315,8 @@ class SettingsStore(
                 assistants = assistants,
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
-            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings().normalizeLocalProvider()
+            ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
+                .normalizeLocalProvider().normalizeMemorySettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -501,6 +502,7 @@ class SettingsStore(
             .normalizeThemeId()
             .normalizeTtsSettings()
             .normalizeLocalProvider()
+            .normalizeMemorySettings()
             .clearMissingModelReferences()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
