@@ -30,6 +30,19 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
 
+data class MemoryRetrievalDebugState(
+    val query: String = "",
+    val hasRun: Boolean = false,
+    val isRunning: Boolean = false,
+    val results: List<Pair<AssistantMemory, Float>> = emptyList(),
+    val configuredThreshold: Float = 0f,
+    val totalMemories: Int = 0,
+    val currentEmbeddings: Int = 0,
+    val includesCore: Boolean = true,
+    val includesEpisodes: Boolean = true,
+    val error: String? = null,
+)
+
 class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
@@ -294,18 +307,20 @@ class AssistantDetailVM(
         initialValue = false
     )
 
-    private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
-    val retrievalResults = _retrievalResults.asStateFlow()
+    private val _retrievalDebugState = MutableStateFlow(MemoryRetrievalDebugState())
+    val retrievalDebugState = _retrievalDebugState.asStateFlow()
 
     fun testRetrieval(query: String) {
         viewModelScope.launch {
+            val currentAssistant = assistant.value
+            _retrievalDebugState.value = MemoryRetrievalDebugState(
+                query = query,
+                isRunning = true,
+                configuredThreshold = currentAssistant.ragSimilarityThreshold,
+                includesCore = currentAssistant.ragIncludeCore,
+                includesEpisodes = currentAssistant.ragIncludeEpisodes,
+            )
             try {
-                val currentAssistant = assistant.value
-                val threshold = if (currentAssistant.ragSimilarityThreshold > 0f) {
-                    currentAssistant.ragSimilarityThreshold
-                } else {
-                    0.0f // Show all for debugging
-                }
                 val limit = if (currentAssistant.ragLimit > 50) {
                     9999
                 } else if (currentAssistant.ragLimit > 0) {
@@ -314,25 +329,48 @@ class AssistantDetailVM(
                     10 // Default for debugging
                 }.coerceAtMost(200)
                 
+                val memorySnapshot = memoryRepository.getCombinedMemoriesOfAssistant(assistantId.toString())
                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                     assistantId = assistantId.toString(),
                     query = query,
-                    limit = limit,
-                    similarityThreshold = threshold,
+                    limit = limit.coerceAtLeast(50),
+                    // A debugger must expose candidates below the live cutoff. Applying the
+                    // production threshold here made a healthy zero-match result look like a dead button.
+                    similarityThreshold = 0f,
                     includeCore = currentAssistant.ragIncludeCore,
                     includeEpisodes = currentAssistant.ragIncludeEpisodes
                 )
-                _retrievalResults.value = results
+                val currentModelId = runCatching {
+                    embeddingService.getEmbeddingModelId(assistantId.toString())
+                }.getOrNull()
+                _retrievalDebugState.value = MemoryRetrievalDebugState(
+                    query = query,
+                    hasRun = true,
+                    results = results,
+                    configuredThreshold = currentAssistant.ragSimilarityThreshold,
+                    totalMemories = memorySnapshot.size,
+                    currentEmbeddings = memorySnapshot.count { memory ->
+                        currentModelId != null && memory.hasEmbedding &&
+                            memory.embeddingModelId == currentModelId
+                    },
+                    includesCore = currentAssistant.ragIncludeCore,
+                    includesEpisodes = currentAssistant.ragIncludeEpisodes,
+                )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Failed to test retrieval", e)
                 _snackbarMessage.value = "Retrieval failed: ${e.message}"
+                _retrievalDebugState.value = _retrievalDebugState.value.copy(
+                    hasRun = true,
+                    isRunning = false,
+                    error = e.message ?: e::class.simpleName ?: "Unknown retrieval error",
+                )
             }
         }
     }
 
     fun clearRetrievalResults() {
-        _retrievalResults.value = emptyList()
+        _retrievalDebugState.value = MemoryRetrievalDebugState()
     }
 
     fun regenerateEmbeddings() {

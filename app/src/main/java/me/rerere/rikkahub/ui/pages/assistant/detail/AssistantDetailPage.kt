@@ -452,7 +452,7 @@ fun AssistantDetailPage(
                 val estimatedMemoryCapacity by vm.estimatedMemoryCapacity.collectAsStateWithLifecycle()
                 val needsEmbeddingRegeneration by vm.needsEmbeddingRegeneration.collectAsStateWithLifecycle()
                 val embeddingStatus by vm.embeddingStatus.collectAsStateWithLifecycle()
-                val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
+                val retrievalDebugState by vm.retrievalDebugState.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
                     hasSummarizerModelConfigured = settings.summarizerModelId != null,
@@ -464,7 +464,7 @@ fun AssistantDetailPage(
                     onRegenerateEmbeddings = { vm.regenerateEmbeddings() },
                     embeddingProgress = embeddingProgress,
                     onTestRetrieval = { vm.testRetrieval(it) },
-                    retrievalResults = retrievalResults,
+                    retrievalDebugState = retrievalDebugState,
                     assistantDetailVM = vm,
                     estimatedMemoryCapacity = estimatedMemoryCapacity,
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,

@@ -443,10 +443,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                     0.1f + (keywordScore * 0.9f)
                 }
                 
-                val requiredScore = if (similarity == null) {
-                    minOf(similarityThreshold, LEXICAL_FALLBACK_THRESHOLD)
-                } else similarityThreshold
-                if (score >= requiredScore) {
+                if (MemoryVectorMath.passesRecallThreshold(score, keywordScore, similarityThreshold)) {
                     Triple(memory, score, true)
                 } else null
         }
@@ -478,10 +475,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                 
                 val score = (combinedScore * 0.7f) + (recency * 0.3f)
                 
-                val requiredScore = if (similarity == null) {
-                    minOf(similarityThreshold, LEXICAL_FALLBACK_THRESHOLD)
-                } else similarityThreshold
-                if (score >= requiredScore) {
+                if (MemoryVectorMath.passesRecallThreshold(score, keywordScore, similarityThreshold)) {
                     Triple(episode as Any, score, false)
                 } else null
         }
@@ -741,6 +735,5 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
     private companion object {
         const val TAG = "MemoryRepository"
-        const val LEXICAL_FALLBACK_THRESHOLD = 0.2f
     }
 }

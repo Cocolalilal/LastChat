@@ -35,6 +35,18 @@ object MemoryVectorMath {
         val normalizedContent = content.lowercase()
         return terms.count(normalizedContent::contains).toFloat() / terms.size
     }
+
+    /**
+     * Keep an explicit lexical match eligible even when a present-but-poor vector would otherwise
+     * suppress it. The caller still ranks with its normal hybrid score; this is only an admission
+     * fallback for provider/model failures and badly calibrated vector spaces.
+     */
+    fun passesRecallThreshold(score: Float, keywordScore: Float, threshold: Float): Boolean {
+        if (score >= threshold) return true
+        if (keywordScore <= 0f) return false
+        val lexicalScore = 0.1f + (keywordScore.coerceIn(0f, 1f) * 0.9f)
+        return lexicalScore >= minOf(threshold, 0.2f)
+    }
 }
 
 object PortableMemoryChunker {

@@ -20,6 +20,12 @@ class MemoryMathTest {
     }
 
     @Test
+    fun lexicalEvidenceSurvivesAWeakButAvailableVector() {
+        assertTrue(MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 1f, threshold = 0.45f))
+        assertTrue(!MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 0f, threshold = 0.45f))
+    }
+
+    @Test
     fun chunkerKeepsSmallTailAttachedToPreviousChunk() {
         val first = "A".repeat(450) + "."
         val second = "B".repeat(450) + "."
