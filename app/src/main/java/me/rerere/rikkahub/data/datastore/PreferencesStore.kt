@@ -501,6 +501,7 @@ class SettingsStore(
             .normalizeThemeId()
             .normalizeTtsSettings()
             .normalizeLocalProvider()
+            .clearMissingModelReferences()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore

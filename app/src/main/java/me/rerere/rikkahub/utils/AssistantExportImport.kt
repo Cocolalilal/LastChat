@@ -140,7 +140,7 @@ object AssistantExportImport : KoinComponent {
                     id = -it.id, // Negative to distinguish
                     content = it.content,
                     type = 1, // EPISODIC
-                    hasEmbedding = it.embedding != null,
+                    hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
                     embeddingModelId = it.embeddingModelId,
                     timestamp = it.startTime,
                     significance = it.significance

@@ -142,6 +142,7 @@ fun AssistantMemorySettings(
     assistantDetailVM: AssistantDetailVM,
     estimatedMemoryCapacity: Int,
     needsEmbeddingRegeneration: Boolean = false,
+    embeddingStatus: String? = null,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
     onNavigateToSummarizerSettings: () -> Unit = {}
@@ -368,6 +369,21 @@ fun AssistantMemorySettings(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
                 RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
+
+                if (embeddingStatus != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = AppShapes.ListItem,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = embeddingStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
 
                 // Regenerate embeddings button (visible when embeddings are missing or outdated)
                 AnimatedVisibility(
@@ -786,6 +802,15 @@ private fun ConsolidationSettingsCard(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (assistant.lastConsolidationResult.isNotBlank()) {
+                        Text(
+                            text = assistant.lastConsolidationResult,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }

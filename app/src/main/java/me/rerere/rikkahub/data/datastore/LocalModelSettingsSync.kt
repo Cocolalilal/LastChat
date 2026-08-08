@@ -31,7 +31,7 @@ suspend fun syncInstalledLocalModelsToSettings(
             providers = settings.providers.map { provider ->
                 if (provider is ProviderSetting.LiteRtLocal) provider.copy(models = newModels) else provider
             }
-        )
+        ).clearMissingModelReferences()
     )
 }
 

@@ -44,6 +44,7 @@ class LiteRtProvider(
     private val embedder: LiteRtEmbedder,
     private val inferenceManager: LocalInferenceManager,
 ) : Provider<ProviderSetting.LiteRtLocal> {
+    override val supportsEmbeddings: Boolean = true
 
     private val gson = Gson()
 

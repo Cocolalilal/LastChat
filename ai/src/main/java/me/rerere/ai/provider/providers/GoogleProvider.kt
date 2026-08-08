@@ -125,6 +125,7 @@ class GoogleProvider(
     private val mediaEncoder: PlatformMediaEncoder,
     platformJwtSigner: PlatformJwtSigner,
 ) : Provider<ProviderSetting.Google> {
+    override val supportsEmbeddings: Boolean = true
     private val keyRoulette = KeyRoulette.default()
     private val serviceAccountTokenProvider by lazy {
         ServiceAccountTokenProvider(platformHttpClient, platformJwtSigner)

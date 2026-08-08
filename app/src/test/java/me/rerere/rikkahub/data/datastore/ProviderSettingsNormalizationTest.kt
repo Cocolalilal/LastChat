@@ -91,4 +91,19 @@ class ProviderSettingsNormalizationTest {
         assertTrue(normalized.providers.none { it.name == "On-device" })
     }
 
+    @Test
+    fun `missing embedding selection becomes explicitly disabled when no embedding model exists`() {
+        val chatModel = Model(
+            id = Uuid.parse("66666666-6666-6666-6666-666666666666"),
+            modelId = "chat-only",
+            type = ModelType.CHAT,
+        )
+        val normalized = Settings(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(chatModel))),
+            embeddingModelId = Uuid.parse("77777777-7777-7777-7777-777777777777"),
+        ).clearMissingModelReferences()
+
+        assertEquals(DISABLED_MODEL_ID, normalized.embeddingModelId)
+    }
+
 }

@@ -3,6 +3,13 @@ package me.rerere.ai.memory
 import kotlin.math.sqrt
 
 object MemoryVectorMath {
+    private val lexicalStopWords = setOf(
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "had",
+        "has", "have", "he", "her", "his", "i", "in", "is", "it", "me", "my", "of", "on",
+        "or", "our", "she", "that", "the", "their", "them", "they", "this", "to", "was",
+        "we", "were", "what", "when", "where", "who", "with", "you", "your",
+    )
+
     fun cosineSimilarity(first: List<Float>, second: List<Float>): Float {
         if (first.size != second.size || first.isEmpty()) return 0f
         var dot = 0.0
@@ -20,7 +27,10 @@ object MemoryVectorMath {
     }
 
     fun keywordScore(query: String, content: String): Float {
-        val terms = query.lowercase().split(Regex("\\W+")).filter(String::isNotBlank)
+        val terms = query.lowercase()
+            .split(Regex("\\W+"))
+            .filter { it.isNotBlank() && it !in lexicalStopWords }
+            .distinct()
         if (terms.isEmpty()) return 0f
         val normalizedContent = content.lowercase()
         return terms.count(normalizedContent::contains).toFloat() / terms.size

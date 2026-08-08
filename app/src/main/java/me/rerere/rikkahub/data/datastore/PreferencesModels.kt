@@ -566,7 +566,7 @@ internal fun Settings.clearMissingModelReferences(): Settings {
     val allModelIds = allModels.map { it.id }.toSet()
     val chatFallback = allModels.firstOrNull { it.type == ModelType.CHAT }?.id ?: Uuid.random()
     val imageFallback = allModels.firstOrNull { it.type == ModelType.IMAGE }?.id ?: Uuid.random()
-    val embeddingFallback = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id ?: Uuid.random()
+    val embeddingFallback = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id ?: DISABLED_MODEL_ID
     val multimodalFallback = allModels.firstOrNull {
         it.type == ModelType.CHAT && it.inputModalities.contains(me.rerere.ai.provider.Modality.IMAGE)
     }?.id ?: chatFallback

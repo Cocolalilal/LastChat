@@ -481,7 +481,7 @@ class MemorySearchService(
             put("query", trimmedQuery)
             put("source", "memory_search")
             put("queries", JsonArray(recallQueries.map { JsonPrimitive(it.text) }))
-            put("scope", "core_memories_and_current_character_past_chats")
+            put("scope", "core_and_episodic_memories_and_current_character_past_chats")
             parsedTimeRange?.let { put("time_filter", it.label) }
             put("summary", agentSummary ?: buildOverallSummary(results))
             put("confidence", JsonPrimitive(results.maxOfOrNull { it.confidence } ?: 0f))
@@ -502,8 +502,7 @@ class MemorySearchService(
         if (queries.isEmpty()) return emptyList()
         val assistantId = assistant.id.toString()
         val merged = linkedMapOf<Int, ScoredMemoryCandidate>()
-        val core = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-            .filter { memory -> memory.type == MemoryType.CORE }
+        val storedMemories = memoryRepository.getCombinedMemoriesOfAssistant(assistant.id.toString())
             .filter { memory -> timeRange?.contains(memory.timestamp) ?: true }
             .take(500)
 
@@ -516,13 +515,12 @@ class MemorySearchService(
                         limit = (limit * 3).coerceAtLeast(limit),
                         similarityThreshold = 0.12f,
                         includeCore = true,
-                        includeEpisodes = false,
+                        includeEpisodes = true,
                     )
                 }.getOrElse { throwable ->
                     if (throwable is CancellationException) throw throwable
                     emptyList()
                 }.asSequence()
-                    .filter { (memory, _) -> memory.type == MemoryType.CORE }
                     .filter { (memory, _) -> timeRange?.contains(memory.timestamp) ?: true }
                     .forEach { (memory, similarity) ->
                         val score = ((similarity.coerceIn(0f, 1f) * 24f).toInt() + 4 - queryIndex.coerceAtMost(3))
@@ -537,7 +535,7 @@ class MemorySearchService(
             }
 
             val tokens = memorySearchTokens(recallQuery.text)
-            core.forEach { memory ->
+            storedMemories.forEach { memory ->
                 val textScore = scoreMemorySearchText(memory.content, recallQuery.text, tokens)
                 if (textScore > 0) {
                     val score = (textScore + 3 - queryIndex.coerceAtMost(3)).coerceAtLeast(1)

@@ -11,6 +11,10 @@ import me.rerere.ai.ui.UIMessage
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
 interface Provider<T : ProviderSetting> {
+    /** True only when [createEmbedding] is implemented by this provider. */
+    val supportsEmbeddings: Boolean
+        get() = false
+
     suspend fun listModels(providerSetting: T): List<Model>
 
     suspend fun getBalance(providerSetting: T): String {

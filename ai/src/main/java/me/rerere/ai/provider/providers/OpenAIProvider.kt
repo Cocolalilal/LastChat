@@ -46,6 +46,7 @@ class OpenAIProvider(
     private val platformHttpClient: PlatformHttpClient,
     private val platformMediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.OpenAI> {
+    override val supportsEmbeddings: Boolean = true
     private val keyRoulette = KeyRoulette.default()
 
     private val chatCompletionsAPI = ChatCompletionsAPI(

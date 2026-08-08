@@ -2,7 +2,9 @@ package me.rerere.rikkahub.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.ai.rag.EmbeddingUnavailableException
 import me.rerere.rikkahub.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
@@ -17,12 +19,11 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.data.ai.rag.MemoryChunker
 import me.rerere.rikkahub.data.ai.rag.toByteArray
 import me.rerere.rikkahub.data.ai.rag.toFloatArray
-import me.rerere.rikkahub.data.ai.rag.toListOfFloatArrays
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import me.rerere.rikkahub.data.ai.rag.decodeStoredEmbedding
 import kotlinx.coroutines.coroutineScope
 import androidx.room.withTransaction
 import me.rerere.ai.memory.MemoryVectorMath
+import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.db.AppDatabase
 
 class MemoryRepository(
@@ -37,7 +38,7 @@ class MemoryRepository(
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
-                entities.map { AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
+                entities.map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
             }
 
     /**
@@ -50,14 +51,14 @@ class MemoryRepository(
             chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
         ) { memories, episodes ->
             val coreMemories = memories.map { 
-                AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt)
+                AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt)
             }
             val episodicMemories = episodes.map { 
                 AssistantMemory(
                     id = -it.id,
                     content = it.content,
                     type = MemoryType.EPISODIC,
-                    hasEmbedding = it.embedding != null || it.embeddingBlob != null,
+                    hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
                     embeddingModelId = it.embeddingModelId,
                     timestamp = it.startTime,
                     significance = it.significance,
@@ -76,7 +77,7 @@ class MemoryRepository(
 
     suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
         return memoryDAO.getMemoriesOfAssistant(assistantId)
-            .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
+            .map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
     }
 
     suspend fun getMemoryById(id: Int): AssistantMemory? {
@@ -85,7 +86,7 @@ class MemoryRepository(
             id = memory.id,
             content = memory.content,
             type = memory.type,
-            hasEmbedding = memory.embedding != null || memory.embeddingBlob != null,
+            hasEmbedding = !memory.embedding.isNullOrBlank() || memory.embeddingBlob != null,
             embeddingModelId = memory.embeddingModelId,
             timestamp = memory.createdAt
         )
@@ -112,14 +113,40 @@ class MemoryRepository(
     fun getEpisodeCountFlow(): Flow<Int> = chatEpisodeDAO.getCountFlow()
 
     /**
-     * Get or create an embedding for a memory/episode content.
-     * First checks the cache, then generates if not found.
-     * @return The embedding if successful, null otherwise
+     * Read a valid current-model embedding from the entity or persistent cache.
+     * Retrieval never starts background repair work or fans out provider calls.
      */
-    private suspend fun getOrCreateEmbeddings(
+    private fun decodeEmbeddings(embedding: String?, blob: ByteArray?): List<FloatArray>? {
+        return try {
+            decodeStoredEmbedding(embedding, blob) { legacyJson ->
+                JsonInstant.decodeFromString<List<Float>>(legacyJson).toFloatArray()
+            }
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            PlatformLog.w(TAG, "Ignoring malformed stored embedding: ${throwable.message}")
+            null
+        }
+    }
+
+    suspend fun getCombinedMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
+        val core = getMemoriesOfAssistant(assistantId)
+        val episodic = chatEpisodeDAO.getEpisodesOfAssistant(assistantId).map { episode ->
+            AssistantMemory(
+                id = -episode.id,
+                content = episode.content,
+                type = MemoryType.EPISODIC,
+                hasEmbedding = !episode.embedding.isNullOrBlank() || episode.embeddingBlob != null,
+                embeddingModelId = episode.embeddingModelId,
+                timestamp = episode.startTime,
+                significance = episode.significance,
+            )
+        }
+        return core + episodic
+    }
+
+    private suspend fun getStoredEmbeddings(
         memoryId: Int,
         memoryType: Int,
-        content: String,
         assistantId: String,
         existingEmbedding: String? = null,
         existingBlob: ByteArray? = null,
@@ -131,8 +158,7 @@ class MemoryRepository(
         embeddingCache[cacheKey]?.let { return it }
 
         if (existingModelId == modelId) {
-            if (existingBlob != null) {
-                val list = existingBlob.toListOfFloatArrays()
+            decodeEmbeddings(existingEmbedding, existingBlob)?.let { list ->
                 embeddingCache[cacheKey] = list
                 embeddingCacheDAO.insertEmbedding(
                     EmbeddingCacheEntity(
@@ -140,52 +166,30 @@ class MemoryRepository(
                         memoryType = memoryType,
                         modelId = modelId,
                         embedding = "",
-                        embeddingBlob = existingBlob
+                        embeddingBlob = list.toByteArray()
                     )
                 )
                 return list
-            } else if (existingEmbedding != null) {
-                try {
-                    val floats = JsonInstant.decodeFromString<List<Float>>(existingEmbedding).toFloatArray()
-                    val list = listOf(floats)
-                    embeddingCache[cacheKey] = list
-                    embeddingCacheDAO.insertEmbedding(
-                        EmbeddingCacheEntity(
-                            memoryId = memoryId,
-                            memoryType = memoryType,
-                            modelId = modelId,
-                            embedding = "",
-                            embeddingBlob = list.toByteArray()
-                        )
-                    )
-                    return list
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
             }
         }
 
-        return try {
-            val chunks = MemoryChunker.chunkText(content)
-            val result = embeddingService.embedBatch(chunks, assistantId)
-            val listOfFloatArrays = result.embeddings.map { it.toFloatArray() }
-            val blob = listOfFloatArrays.toByteArray()
-
-            embeddingCache[cacheKey] = listOfFloatArrays
+        val cached = embeddingCacheDAO.getEmbedding(memoryId, memoryType, modelId)
+        val cachedVectors = cached?.let { decodeEmbeddings(it.embedding, it.embeddingBlob) }
+        if (cachedVectors != null) {
+            val normalizedBlob = cachedVectors.toByteArray()
+            embeddingCache[cacheKey] = cachedVectors
             embeddingCacheDAO.insertEmbedding(
                 EmbeddingCacheEntity(
                     memoryId = memoryId,
                     memoryType = memoryType,
                     modelId = modelId,
                     embedding = "",
-                    embeddingBlob = blob
+                    embeddingBlob = normalizedBlob,
                 )
             )
-            listOfFloatArrays
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            return cachedVectors
         }
+        return null
     }
 
     /**
@@ -200,7 +204,8 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val modelId = embeddingService.getEmbeddingModelId(assistantId)
         val cacheKey = "$memoryType:$memoryId:$modelId"
         if (embeddingCache.containsKey(cacheKey)) return true
-        return embeddingCacheDAO.hasEmbedding(memoryId, memoryType, modelId)
+        val cached = embeddingCacheDAO.getEmbedding(memoryId, memoryType, modelId) ?: return false
+        return decodeEmbeddings(cached.embedding, cached.embeddingBlob) != null
     }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
@@ -316,7 +321,8 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val embeddingResult = try {
             embeddingService.embedBatch(chunks, assistantId)
         } catch (e: Exception) {
-            e.printStackTrace()
+            if (e is CancellationException) throw e
+            PlatformLog.w(TAG, "Core memory saved without an embedding: ${e.message}")
             null
         }
         val floatArrays = embeddingResult?.embeddings?.map { it.toFloatArray() }
@@ -335,7 +341,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         
         val id = memoryDAO.insertMemory(entity)
         
-        if (embeddingResult != null && blob != null && floatArrays != null) {
+        if (embeddingResult != null) {
              val modelId = embeddingResult.modelId
              embeddingCacheDAO.insertEmbedding(
                 EmbeddingCacheEntity(
@@ -346,7 +352,8 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                     embeddingBlob = blob
                 )
              )
-             embeddingCache["${MemoryType.CORE}:${id.toInt()}:$modelId"] = floatArrays
+             embeddingCache["${MemoryType.CORE}:${id.toInt()}:$modelId"] =
+                 embeddingResult.embeddings.map { it.toFloatArray() }
         }
 
         return AssistantMemory(
@@ -403,8 +410,9 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val queryEmbedding = try {
             embeddingService.embed(query, assistantId).toFloatArray()
         } catch (e: Exception) {
-            e.printStackTrace()
-            return@coroutineScope emptyList()
+            if (e is CancellationException) throw e
+            PlatformLog.w(TAG, "Vector query unavailable; using lexical memory retrieval: ${e.message}")
+            null
         }
 
         // Fetch a reasonable number of candidates (limit * 20, max 1000) to avoid OOM
@@ -414,45 +422,55 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
         val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
         
-        val memoryDeferred = memories.map { memory ->
-            async {
-                val embeddings = getOrCreateEmbeddings(
+        val memoryScores = memories.mapNotNull { memory ->
+                val embeddings = if (queryEmbedding != null) getStoredEmbeddings(
                     memoryId = memory.id,
                     memoryType = MemoryType.CORE,
-                    content = memory.content,
                     assistantId = assistantId,
                     existingEmbedding = memory.embedding,
                     existingBlob = memory.embeddingBlob,
                     existingModelId = memory.embeddingModelId
-                ) ?: return@async null
-                
-                val similarity = embeddings.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+                ) else null
+
+                val similarity = if (queryEmbedding != null) {
+                    embeddings?.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                } else null
                 val keywordScore = calculateKeywordScore(query, memory.content)
-                val combinedScore = (similarity * 0.8f) + (keywordScore * 0.2f)
+                if (similarity == null && keywordScore <= 0f) return@mapNotNull null
+                val score = if (similarity != null) {
+                    (((similarity * 0.8f) + (keywordScore * 0.2f)) * 1.05f) + 0.05f
+                } else {
+                    0.1f + (keywordScore * 0.9f)
+                }
                 
-                val score = (combinedScore * 1.05f) + 0.05f
-                
-                if (score >= similarityThreshold) {
+                val requiredScore = if (similarity == null) {
+                    minOf(similarityThreshold, LEXICAL_FALLBACK_THRESHOLD)
+                } else similarityThreshold
+                if (score >= requiredScore) {
                     Triple(memory, score, true)
                 } else null
-            }
         }
         
-        val episodeDeferred = episodes.map { episode ->
-            async {
-                val embeddings = getOrCreateEmbeddings(
+        val episodeScores = episodes.mapNotNull { episode ->
+                val embeddings = if (queryEmbedding != null) getStoredEmbeddings(
                     memoryId = episode.id,
                     memoryType = MemoryType.EPISODIC,
-                    content = episode.content,
                     assistantId = assistantId,
                     existingEmbedding = episode.embedding,
                     existingBlob = episode.embeddingBlob,
                     existingModelId = episode.embeddingModelId
-                ) ?: return@async null
-                
-                val similarity = embeddings.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+                ) else null
+
+                val similarity = if (queryEmbedding != null) {
+                    embeddings?.maxOfOrNull { VectorEngine.cosineSimilarity(queryEmbedding, it) }
+                } else null
                 val keywordScore = calculateKeywordScore(query, episode.content)
-                val combinedScore = (similarity * 0.8f) + (keywordScore * 0.2f)
+                if (similarity == null && keywordScore <= 0f) return@mapNotNull null
+                val combinedScore = if (similarity != null) {
+                    (similarity * 0.8f) + (keywordScore * 0.2f)
+                } else {
+                    keywordScore
+                }
                 
                 val ageInMillis = System.currentTimeMillis() - episode.startTime
                 val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
@@ -460,14 +478,13 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                 
                 val score = (combinedScore * 0.7f) + (recency * 0.3f)
                 
-                if (score >= similarityThreshold) {
+                val requiredScore = if (similarity == null) {
+                    minOf(similarityThreshold, LEXICAL_FALLBACK_THRESHOLD)
+                } else similarityThreshold
+                if (score >= requiredScore) {
                     Triple(episode as Any, score, false)
                 } else null
-            }
         }
-        
-        val memoryScores = memoryDeferred.awaitAll().filterNotNull()
-        val episodeScores = episodeDeferred.awaitAll().filterNotNull()
         
         // Combine and sort by score
         val allScored = (memoryScores + episodeScores).sortedByDescending { it.second }
@@ -490,7 +507,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
 
             if (isMemory) {
                 val memory = item as MemoryEntity
-                Pair<AssistantMemory, Float>(AssistantMemory(memory.id, memory.content, memory.type, true, memory.embeddingModelId, memory.createdAt), score)
+                Pair<AssistantMemory, Float>(AssistantMemory(memory.id, memory.content, memory.type, !memory.embedding.isNullOrBlank() || memory.embeddingBlob != null, memory.embeddingModelId, memory.createdAt), score)
             } else {
                 val episode = item as ChatEpisodeEntity
                 // Convert episode to AssistantMemory with a negative ID to distinguish
@@ -499,7 +516,7 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
                         id = -episode.id,
                         content = episode.content,
                         type = MemoryType.EPISODIC,
-                        hasEmbedding = true,
+                        hasEmbedding = !episode.embedding.isNullOrBlank() || episode.embeddingBlob != null,
                         embeddingModelId = episode.embeddingModelId,
                         timestamp = episode.startTime,
                         significance = episode.significance,
@@ -510,86 +527,122 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         }
     }
 
-    /**
-     * Regenerate embeddings for memories and episodes that need it.
-     * Only processes memories that:
-     * - Have no embedding
-     * - Have an embedding from a different model
-     * 
-     * @param assistantId The assistant ID to regenerate embeddings for
-     * @return Pair of (successCount, failureCount)
-     */
+    private data class StoredEmbedding(val modelId: String, val vectors: List<FloatArray>)
+
+    private suspend fun buildEmbedding(content: String, assistantId: String): StoredEmbedding {
+        val result = embeddingService.embedBatch(MemoryChunker.chunkText(content), assistantId)
+        return StoredEmbedding(result.modelId, result.embeddings.map { it.toFloatArray() })
+    }
+
+    private suspend fun persistCoreEmbedding(memory: MemoryEntity, stored: StoredEmbedding) {
+        val blob = stored.vectors.toByteArray()
+        database.withTransaction {
+            val latest = memoryDAO.getMemoryById(memory.id)
+                ?: throw IllegalStateException("Core memory ${memory.id} was deleted during embedding")
+            if (latest.content != memory.content) {
+                throw IllegalStateException("Core memory ${memory.id} changed during embedding")
+            }
+            memoryDAO.updateMemory(
+                latest.copy(embedding = null, embeddingBlob = blob, embeddingModelId = stored.modelId)
+            )
+            embeddingCacheDAO.insertEmbedding(
+                EmbeddingCacheEntity(
+                    memoryId = memory.id,
+                    memoryType = MemoryType.CORE,
+                    modelId = stored.modelId,
+                    embedding = "",
+                    embeddingBlob = blob,
+                )
+            )
+        }
+        embeddingCache["${MemoryType.CORE}:${memory.id}:${stored.modelId}"] = stored.vectors
+    }
+
+    private suspend fun persistEpisodeEmbedding(episode: ChatEpisodeEntity, stored: StoredEmbedding) {
+        val blob = stored.vectors.toByteArray()
+        database.withTransaction {
+            val latest = chatEpisodeDAO.getEpisodeById(episode.id)
+                ?: throw IllegalStateException("Episodic memory ${episode.id} was deleted during embedding")
+            if (latest.content != episode.content) {
+                throw IllegalStateException("Episodic memory ${episode.id} changed during embedding")
+            }
+            chatEpisodeDAO.insertEpisode(
+                latest.copy(embedding = null, embeddingBlob = blob, embeddingModelId = stored.modelId)
+            )
+            embeddingCacheDAO.insertEmbedding(
+                EmbeddingCacheEntity(
+                    memoryId = episode.id,
+                    memoryType = MemoryType.EPISODIC,
+                    modelId = stored.modelId,
+                    embedding = "",
+                    embeddingBlob = blob,
+                )
+            )
+        }
+        embeddingCache["${MemoryType.EPISODIC}:${episode.id}:${stored.modelId}"] = stored.vectors
+    }
+
+    private suspend fun cachedEmbedding(
+        id: Int,
+        type: Int,
+        contentEmbedding: String?,
+        contentBlob: ByteArray?,
+        contentModelId: String?,
+        assistantId: String,
+    ): StoredEmbedding? {
+        val modelId = embeddingService.getEmbeddingModelId(assistantId)
+        val vectors = getStoredEmbeddings(
+            memoryId = id,
+            memoryType = type,
+            assistantId = assistantId,
+            existingEmbedding = contentEmbedding,
+            existingBlob = contentBlob,
+            existingModelId = contentModelId,
+        ) ?: return null
+        return StoredEmbedding(modelId, vectors)
+    }
+
+    /** Force-rebuilds every Core and Episodic embedding with the currently selected model. */
     suspend fun regenerateEmbeddings(
         assistantId: String,
         onProgress: (Int, Int) -> Unit
     ): Pair<Int, Int> {
         val allMemories = memoryDAO.getMemoriesOfAssistant(assistantId)
         val allEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
-        
-        // Get current embedding model ID
-        val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
-        
-        // Filter to only memories that need embedding
-        val memoriesNeedingEmbedding = allMemories.filter { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
-        }
-        val episodesNeedingEmbedding = allEpisodes.filter { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
-        }
-        
-        val total = memoriesNeedingEmbedding.size + episodesNeedingEmbedding.size
+        val total = allMemories.size + allEpisodes.size
         var current = 0
         var successCount = 0
         var failureCount = 0
+        var providerFailure: Exception? = null
 
         onProgress(0, total)
         if (total == 0) return 0 to 0
 
-        // Process Core Memories that need embedding
-        memoriesNeedingEmbedding.forEach { memory ->
+        allMemories.forEach { memory ->
             current++
             try {
-                val embeddingJson = embeddingCacheDAO.getEmbedding(memory.id, MemoryType.CORE, currentModelId)?.embedding
-                    ?: JsonInstant.encodeToString(embeddingService.embed(memory.content, assistantId))
-                // Store in entity for backward compatibility
-                memoryDAO.updateMemory(memory.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                // Store in cache for model-based persistence
-                embeddingCacheDAO.insertEmbedding(
-                    EmbeddingCacheEntity(
-                        memoryId = memory.id,
-                        memoryType = MemoryType.CORE,
-                        modelId = currentModelId,
-                        embedding = embeddingJson
-                    )
-                )
+                providerFailure?.let { throw it }
+                persistCoreEmbedding(memory, buildEmbedding(memory.content, assistantId))
                 successCount++
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e is CancellationException) throw e
+                if (e is EmbeddingUnavailableException) providerFailure = providerFailure ?: e
+                PlatformLog.w(TAG, "Unable to rebuild Core memory ${memory.id}: ${e.message}")
                 failureCount++
             }
             onProgress(current, total)
         }
 
-        // Process Episodes that need embedding
-        episodesNeedingEmbedding.forEach { episode ->
+        allEpisodes.forEach { episode ->
             current++
             try {
-                val embeddingJson = embeddingCacheDAO.getEmbedding(episode.id, MemoryType.EPISODIC, currentModelId)?.embedding
-                    ?: JsonInstant.encodeToString(embeddingService.embed(episode.content, assistantId))
-                // Store in entity for backward compatibility
-                chatEpisodeDAO.insertEpisode(episode.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                // Store in cache for model-based persistence
-                embeddingCacheDAO.insertEmbedding(
-                    EmbeddingCacheEntity(
-                        memoryId = episode.id,
-                        memoryType = MemoryType.EPISODIC,
-                        modelId = currentModelId,
-                        embedding = embeddingJson
-                    )
-                )
+                providerFailure?.let { throw it }
+                persistEpisodeEmbedding(episode, buildEmbedding(episode.content, assistantId))
                 successCount++
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e is CancellationException) throw e
+                if (e is EmbeddingUnavailableException) providerFailure = providerFailure ?: e
+                PlatformLog.w(TAG, "Unable to rebuild Episodic memory ${episode.id}: ${e.message}")
                 failureCount++
             }
             onProgress(current, total)
@@ -612,61 +665,54 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         
         var successCount = 0
         var failureCount = 0
+        var providerFailure: Exception? = null
 
         // Filter to only memories that need embedding
         val memoriesNeedingEmbedding = memories.filter { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
+            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
         }
         val episodesNeedingEmbedding = episodes.filter { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
+            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
         }
 
-        // Process Core Memories that need embedding
         memoriesNeedingEmbedding.forEach { memory ->
             try {
-                val embeddingJson = embeddingCacheDAO.getEmbedding(memory.id, MemoryType.CORE, currentModelId)?.embedding
-                    ?: JsonInstant.encodeToString(embeddingService.embed(memory.content, assistantId))
-                memoryDAO.updateMemory(memory.copy(
-                    embedding = embeddingJson,
-                    embeddingModelId = currentModelId
-                ))
-                // Also cache
-                embeddingCacheDAO.insertEmbedding(
-                    EmbeddingCacheEntity(
-                        memoryId = memory.id,
-                        memoryType = MemoryType.CORE,
-                        modelId = currentModelId,
-                        embedding = embeddingJson
-                    )
+                val cached = cachedEmbedding(
+                    memory.id, MemoryType.CORE, memory.embedding, memory.embeddingBlob,
+                    memory.embeddingModelId, assistantId,
                 )
+                val stored = cached ?: if (providerFailure == null) {
+                    buildEmbedding(memory.content, assistantId)
+                } else {
+                    throw providerFailure
+                }
+                persistCoreEmbedding(memory, stored)
                 successCount++
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e is CancellationException) throw e
+                if (e is EmbeddingUnavailableException) providerFailure = providerFailure ?: e
+                PlatformLog.w(TAG, "Unable to repair Core memory ${memory.id}: ${e.message}")
                 failureCount++
             }
         }
 
-        // Process Episodes that need embedding
         episodesNeedingEmbedding.forEach { episode ->
             try {
-                val embeddingJson = embeddingCacheDAO.getEmbedding(episode.id, MemoryType.EPISODIC, currentModelId)?.embedding
-                    ?: JsonInstant.encodeToString(embeddingService.embed(episode.content, assistantId))
-                chatEpisodeDAO.insertEpisode(episode.copy(
-                    embedding = embeddingJson,
-                    embeddingModelId = currentModelId
-                ))
-                // Also cache
-                embeddingCacheDAO.insertEmbedding(
-                    EmbeddingCacheEntity(
-                        memoryId = episode.id,
-                        memoryType = MemoryType.EPISODIC,
-                        modelId = currentModelId,
-                        embedding = embeddingJson
-                    )
+                val cached = cachedEmbedding(
+                    episode.id, MemoryType.EPISODIC, episode.embedding, episode.embeddingBlob,
+                    episode.embeddingModelId, assistantId,
                 )
+                val stored = cached ?: if (providerFailure == null) {
+                    buildEmbedding(episode.content, assistantId)
+                } else {
+                    throw providerFailure
+                }
+                persistEpisodeEmbedding(episode, stored)
                 successCount++
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e is CancellationException) throw e
+                if (e is EmbeddingUnavailableException) providerFailure = providerFailure ?: e
+                PlatformLog.w(TAG, "Unable to repair Episodic memory ${episode.id}: ${e.message}")
                 failureCount++
             }
         }
@@ -684,12 +730,17 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
         
         val memoriesNeedingEmbedding = memories.count { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
+            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
         }
         val episodesNeedingEmbedding = episodes.count { 
-            (it.embedding == null && it.embeddingBlob == null) || it.embeddingModelId != currentModelId
+            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
         }
         
         return memoriesNeedingEmbedding + episodesNeedingEmbedding
+    }
+
+    private companion object {
+        const val TAG = "MemoryRepository"
+        const val LEXICAL_FALLBACK_THRESHOLD = 0.2f
     }
 }

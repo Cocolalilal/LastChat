@@ -15,6 +15,7 @@ class MemoryMathTest {
     @Test
     fun keywordScoreUsesTheSameTermCoverageSignalAsAndroidRecall() {
         assertEquals(2f / 3f, MemoryVectorMath.keywordScore("blue bicycle garden", "The blue bicycle is ready"))
+        assertEquals(1f, MemoryVectorMath.keywordScore("what was the blue bicycle", "The bicycle was blue"))
         assertEquals(0f, MemoryVectorMath.keywordScore("", "anything"))
     }
 

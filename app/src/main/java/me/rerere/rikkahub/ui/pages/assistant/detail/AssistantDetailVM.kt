@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import me.rerere.rikkahub.data.ai.rag.EmbeddingAvailability
+import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -35,6 +38,7 @@ class AssistantDetailVM(
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: me.rerere.ai.provider.ProviderManager,
     private val appStorageRepository: AppStorageRepository,
+    private val embeddingService: EmbeddingService,
 ) : ViewModel() {
     private val assistantId = runCatching { Uuid.parse(id) }
         .onFailure { Log.w(TAG, "Invalid assistant id route parameter: $id", it) }
@@ -76,7 +80,7 @@ class AssistantDetailVM(
                 id = -it.id, // Negative ID to distinguish from core memories
                 content = it.content, 
                 type = 1, // EPISODIC
-                hasEmbedding = it.embedding != null,
+                hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
                 embeddingModelId = it.embeddingModelId,
                 timestamp = it.startTime,
                 significance = it.significance
@@ -101,6 +105,13 @@ class AssistantDetailVM(
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
     )
+
+    val embeddingStatus: StateFlow<String?> = combine(assistant, settings) { currentAssistant, _ ->
+        when (val availability = embeddingService.getAvailability(currentAssistant.id.toString())) {
+            is EmbeddingAvailability.Available -> null
+            is EmbeddingAvailability.Unavailable -> availability.reason
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     val episodes = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
         .stateIn(
@@ -271,9 +282,9 @@ class AssistantDetailVM(
 
     // Check if any memories need embedding or have stale embeddings from a different model
     val needsEmbeddingRegeneration: StateFlow<Boolean> = combine(
-        memories, currentEmbeddingModelId
-    ) { memories, currentModelId ->
-        memories.any { memory ->
+        memories, currentEmbeddingModelId, embeddingStatus
+    ) { memories, currentModelId, status ->
+        status == null && memories.any { memory ->
             !memory.hasEmbedding ||
             (memory.embeddingModelId != null && memory.embeddingModelId != currentModelId)
         }
@@ -313,6 +324,7 @@ class AssistantDetailVM(
                 )
                 _retrievalResults.value = results
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.e(TAG, "Failed to test retrieval", e)
                 _snackbarMessage.value = "Retrieval failed: ${e.message}"
             }
@@ -345,6 +357,7 @@ class AssistantDetailVM(
                 }
                 Log.i(TAG, "Regenerated embeddings: $success success, $failure failed")
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _embeddingProgress.value = null
                 _snackbarMessage.value = "Error: ${e.message}"
                 Log.e(TAG, "Failed to regenerate embeddings", e)

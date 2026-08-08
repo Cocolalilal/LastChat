@@ -53,6 +53,7 @@ val viewModelModule = module {
             chatEpisodeDAO = get(),
             providerManager = get(),
             appStorageRepository = get(),
+            embeddingService = get(),
         )
     }
     viewModel<ShareHandlerVM> {

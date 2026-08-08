@@ -63,7 +63,7 @@ interface EmbeddingCacheDAO {
     @Query("SELECT * FROM embedding_cache")
     suspend fun getAllEmbeddings(): List<EmbeddingCacheEntity>
 
-    @Query("SELECT model_id AS modelId, COUNT(*) AS count, COALESCE(SUM(LENGTH(embedding)), 0) AS estimatedBytes FROM embedding_cache GROUP BY model_id ORDER BY count DESC")
+    @Query("SELECT model_id AS modelId, COUNT(*) AS count, COALESCE(SUM(LENGTH(embedding) + COALESCE(LENGTH(embedding_blob), 0)), 0) AS estimatedBytes FROM embedding_cache GROUP BY model_id ORDER BY count DESC")
     suspend fun getModelStats(): List<EmbeddingCacheModelStats>
 
     @Query("DELETE FROM embedding_cache WHERE model_id NOT IN (:activeModelIds)")

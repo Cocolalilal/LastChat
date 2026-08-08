@@ -451,6 +451,7 @@ fun AssistantDetailPage(
                 val embeddingProgress by vm.embeddingProgress.collectAsStateWithLifecycle()
                 val estimatedMemoryCapacity by vm.estimatedMemoryCapacity.collectAsStateWithLifecycle()
                 val needsEmbeddingRegeneration by vm.needsEmbeddingRegeneration.collectAsStateWithLifecycle()
+                val embeddingStatus by vm.embeddingStatus.collectAsStateWithLifecycle()
                 val retrievalResults by vm.retrievalResults.collectAsStateWithLifecycle()
                 AssistantMemorySettings(
                     assistant = assistant,
@@ -467,6 +468,7 @@ fun AssistantDetailPage(
                     assistantDetailVM = vm,
                     estimatedMemoryCapacity = estimatedMemoryCapacity,
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
+                    embeddingStatus = embeddingStatus,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
                     onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }

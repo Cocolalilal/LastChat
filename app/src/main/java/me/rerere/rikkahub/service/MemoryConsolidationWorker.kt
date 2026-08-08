@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.intOrNull
@@ -20,6 +21,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.ai.buildSummarizerGenerationParams
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.ai.rag.toByteArray
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -30,7 +32,6 @@ import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
-import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.util.concurrent.TimeUnit
@@ -63,6 +64,7 @@ class MemoryConsolidationWorker(
                 enqueuePendingConversations()
                 Result.success()
             }.getOrElse { throwable ->
+                if (throwable is CancellationException) throw throwable
                 PlatformLog.w(TAG, "Unable to queue memory catch-up: ${throwable.message}")
                 if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
             }
@@ -83,11 +85,17 @@ class MemoryConsolidationWorker(
                     }
                 },
                 onFailure = { throwable ->
+                    if (throwable is CancellationException) throw throwable
                     PlatformLog.w(
                         TAG,
                         "Unable to consolidate conversation $conversationId: ${throwable.message}",
                     )
-                    if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+                    if (runAttemptCount < MAX_RETRIES) {
+                        Result.retry()
+                    } else {
+                        recordConsolidationFailure(parsedId, throwable)
+                        Result.failure()
+                    }
                 },
             )
     }
@@ -98,6 +106,20 @@ class MemoryConsolidationWorker(
             .asSequence()
             .filter { it.enableMemory && it.enableMemoryConsolidation }
             .forEach { assistant ->
+                val repairResult = try {
+                    memoryRepository.embedMissingMemories(assistant.id.toString())
+                } catch (throwable: Throwable) {
+                    if (throwable is CancellationException) throw throwable
+                    PlatformLog.w(
+                        TAG,
+                        "Background embedding repair deferred for ${assistant.id}: ${throwable.message}",
+                    )
+                    null
+                }
+                val failedEmbeddings = repairResult?.second ?: 0
+                if (failedEmbeddings > 0) {
+                    PlatformLog.w(TAG, "Background embedding repair left $failedEmbeddings memories pending")
+                }
                 conversationRepository
                     .getPendingMemoryConversations(assistant.id, RECONCILE_BATCH_SIZE)
                     .forEach { conversation ->
@@ -207,12 +229,22 @@ class MemoryConsolidationWorker(
             ?.takeIf { it.isNotBlank() }
             ?: error("Memory consolidation returned an empty response")
         val parsed = parseEpisodeResponse(responseText)
-        val embeddingResult = embeddingService.embedWithModelId(
-            text = parsed.summary,
-            assistantId = assistant.id.toString(),
-        )
-        val embedding = embeddingResult.embeddings.firstOrNull()
-            ?: error("Memory consolidation could not create an episode embedding")
+        val embeddingResult = try {
+            embeddingService.embedWithModelId(
+                text = parsed.summary,
+                assistantId = assistant.id.toString(),
+            )
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            PlatformLog.w(
+                TAG,
+                "Saving episodic memory without a vector; lexical retrieval remains active: ${throwable.message}",
+            )
+            null
+        }
+        val embeddingBlob = embeddingResult?.embeddings
+            ?.map { it.toFloatArray() }
+            ?.toByteArray()
 
         // Generation and embedding may take long enough for another reply to land. Never commit a
         // stale snapshot or mark it complete; the replacement/retry job will consolidate the new
@@ -234,8 +266,9 @@ class MemoryConsolidationWorker(
                 ChatEpisodeEntity(
                     assistantId = assistant.id.toString(),
                     content = parsed.summary,
-                    embedding = JsonInstant.encodeToString(embedding),
-                    embeddingModelId = embeddingResult.modelId,
+                    embedding = null,
+                    embeddingBlob = embeddingBlob,
+                    embeddingModelId = embeddingResult?.modelId,
                     startTime = conversation.createAt.toEpochMilli(),
                     endTime = conversation.updateAt.toEpochMilli(),
                     lastAccessedAt = now,
@@ -246,8 +279,9 @@ class MemoryConsolidationWorker(
                 existingEpisode.copy(
                     assistantId = assistant.id.toString(),
                     content = parsed.summary,
-                    embedding = JsonInstant.encodeToString(embedding),
-                    embeddingModelId = embeddingResult.modelId,
+                    embedding = null,
+                    embeddingBlob = embeddingBlob,
+                    embeddingModelId = embeddingResult?.modelId,
                     endTime = conversation.updateAt.toEpochMilli(),
                     lastAccessedAt = now,
                     significance = parsed.significance,
@@ -262,9 +296,10 @@ class MemoryConsolidationWorker(
         }
         if (!committed) return ConsolidationOutcome.STALE
 
-        updateAssistantStats(assistant.id, now)
+        val (_, failedRepairs) = memoryRepository.embedMissingMemories(assistant.id.toString())
+        val embeddingHealthy = embeddingResult != null && failedRepairs == 0
+        updateAssistantStats(assistant.id, now, embeddingHealthy)
         pruneOldEpisodes(assistant.id.toString(), now)
-        memoryRepository.embedMissingMemories(assistant.id.toString())
         PlatformLog.i(TAG, "Consolidated ${conversation.id} for assistant ${assistant.id}")
         return ConsolidationOutcome.COMPLETE
     }
@@ -284,14 +319,42 @@ class MemoryConsolidationWorker(
         }
     }
 
-    private suspend fun updateAssistantStats(assistantId: Uuid, now: Long) {
+    private suspend fun updateAssistantStats(assistantId: Uuid, now: Long, embeddingHealthy: Boolean) {
         settingsStore.update { current ->
             current.copy(
                 assistants = current.assistants.map { assistant ->
                     if (assistant.id == assistantId) {
                         assistant.copy(
                             lastConsolidationTime = now,
-                            lastConsolidationResult = "Automatic consolidation complete",
+                            lastConsolidationResult = if (embeddingHealthy) {
+                                "Automatic consolidation complete"
+                            } else {
+                                "Automatic consolidation complete; vector embeddings unavailable, lexical retrieval active"
+                            },
+                        )
+                    } else {
+                        assistant
+                    }
+                },
+            )
+        }
+    }
+
+    private suspend fun recordConsolidationFailure(conversationId: Uuid, throwable: Throwable) {
+        val conversation = conversationRepository.getConversationById(conversationId) ?: return
+        val safeDetail = throwable.message
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.take(180)
+            ?: throwable::class.simpleName
+            ?: "unknown error"
+        settingsStore.update { current ->
+            current.copy(
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == conversation.assistantId) {
+                        assistant.copy(
+                            lastConsolidationTime = System.currentTimeMillis(),
+                            lastConsolidationResult = "Automatic consolidation could not complete: $safeDetail",
                         )
                     } else {
                         assistant
