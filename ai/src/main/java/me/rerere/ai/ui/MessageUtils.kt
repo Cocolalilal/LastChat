@@ -363,27 +363,15 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
     if (size <= 0) return emptyList()
     if (this.size <= size) return this
 
-    val startIndex = this.size - size
-    var adjustedStartIndex = startIndex
+    var adjustedStartIndex = this.size - size
 
-    // 循环往前查找，直到满足所有依赖条件
-    var needsAdjustment = true
-    val visitedIndices = mutableSetOf<Int>()
-
-    while (needsAdjustment && adjustedStartIndex > 0) {
-        needsAdjustment = false
-
-        // 防止无限循环
-        if (adjustedStartIndex in visitedIndices) break
-        visitedIndices.add(adjustedStartIndex)
-
-        val currentMessage = this[adjustedStartIndex]
-
-        // 如果当前消息包含tool result，往前查找对应的tool call
-        if (currentMessage.getToolResults().isNotEmpty()) {
-            val requiredResults = currentMessage.getToolResults()
-            val dependencyStart = requiredResults.mapNotNull { result ->
-                (adjustedStartIndex - 1 downTo 0).firstOrNull { index ->
+    // Close dependencies over the whole retained suffix. A result can occur after an unrelated
+    // retained message while its matching call is still before the initial boundary.
+    while (adjustedStartIndex > 0) {
+        var requiredStart = adjustedStartIndex
+        for (messageIndex in adjustedStartIndex until this.size) {
+            this[messageIndex].getToolResults().forEach { result ->
+                val callIndex = (messageIndex - 1 downTo 0).firstOrNull { index ->
                     this[index].getToolCalls().any { call ->
                         if (result.toolCallId.isNotBlank() && call.toolCallId.isNotBlank()) {
                             result.toolCallId == call.toolCallId
@@ -392,23 +380,18 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
                         }
                     }
                 }
-            }.minOrNull()
-            if (dependencyStart != null) {
-                adjustedStartIndex = dependencyStart
-                needsAdjustment = true
+                if (callIndex != null) requiredStart = minOf(requiredStart, callIndex)
             }
         }
-
-        // 如果当前消息包含tool call，往前查找对应的用户消息
-        if (currentMessage.getToolCalls().isNotEmpty()) {
-            for (i in adjustedStartIndex - 1 downTo 0) {
-                if (this[i].role == MessageRole.USER) {
-                    adjustedStartIndex = i
-                    needsAdjustment = true
-                    break
-                }
+        for (messageIndex in requiredStart until this.size) {
+            if (this[messageIndex].getToolCalls().isEmpty()) continue
+            val userIndex = (messageIndex - 1 downTo 0).firstOrNull { index ->
+                this[index].role == MessageRole.USER
             }
+            if (userIndex != null) requiredStart = minOf(requiredStart, userIndex)
         }
+        if (requiredStart == adjustedStartIndex) break
+        adjustedStartIndex = requiredStart
     }
 
     return this.subList(adjustedStartIndex, this.size)

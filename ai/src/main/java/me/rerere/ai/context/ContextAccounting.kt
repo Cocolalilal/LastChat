@@ -293,8 +293,11 @@ object ContextTokenEstimator {
         val skills = skillTokensOverride?.coerceAtLeast(0) ?: textTokens(skillText, model)
         val lorebook = lorebookTokensOverride?.coerceAtLeast(0) ?: textTokens(lorebookText, model)
         val embeddedTools = textTokens(embeddedToolText, model)
-        val toolDefinitions = toolDefinitionTokensOverride?.coerceAtLeast(0)
-            ?: (textTokens(toolDefinitionText, model) + embeddedTools)
+        val toolDefinitions = saturatedTokenSum(
+            toolDefinitionTokensOverride?.coerceAtLeast(0)
+                ?: textTokens(toolDefinitionText, model),
+            embeddedTools,
+        )
         // Request accounting names text already embedded in built messages; live UI accounting
         // supplies raw conversation messages, so its named context must be added independently.
         val embeddedNamedTokens = if (namedContextEmbeddedInMessages) {
@@ -368,7 +371,10 @@ fun probableTemporaryTokenReserve(
     model: Model,
     requestedOutputTokens: Int?,
     memoryEnabled: Boolean,
+    memoryRecallIsConditional: Boolean,
     memoryCandidateLimit: Int,
+    memoryCandidateTokens: Int,
+    memoryBudgetFraction: Double,
     observedMemoryTokenTotals: List<Int>,
     conditionalContextCandidateTokens: Int,
     observedConditionalTokenTotals: List<Int>,
@@ -381,10 +387,10 @@ fun probableTemporaryTokenReserve(
         return sorted[((sorted.lastIndex * 3) / 4).coerceIn(0, sorted.lastIndex)]
     }
 
-    val memoryCap = (inputBudget * 0.22f).toInt()
-    val memoryReserve = if (memoryEnabled) {
+    val memoryCap = (inputBudget * memoryBudgetFraction.coerceIn(0.0, 0.70)).toInt()
+    val memoryReserve = if (memoryEnabled && memoryRecallIsConditional && memoryCandidateTokens > 0) {
         probableObserved(observedMemoryTokenTotals)
-            ?: (memoryCandidateLimit.coerceIn(0, 12) * 96)
+            ?: minOf(memoryCandidateTokens, memoryCandidateLimit.coerceAtLeast(0) * 96)
     } else {
         0
     }.coerceAtMost(memoryCap)
@@ -396,7 +402,7 @@ fun probableTemporaryTokenReserve(
         ).coerceIn(0, minOf(conditionalContextCandidateTokens, conditionalCap))
 
     return (memoryReserve + conditionalReserve)
-        .coerceAtMost((inputBudget * 0.28f).toInt())
+        .coerceAtMost((inputBudget * 0.72f).toInt())
         .coerceAtLeast(0)
 }
 
@@ -540,10 +546,9 @@ fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
         availableAfterOutput,
         independentInputLimit,
     ).minOrNull() ?: return null
-    val marginBasis = window ?: independentInputLimit ?: return null
-    val safetyMargin = (marginBasis / 16)
+    val safetyMargin = (rawInputCeiling / 16)
         .coerceAtLeast(512)
-        .coerceAtMost((marginBasis / 4).coerceAtLeast(1))
+        .coerceAtMost((rawInputCeiling / 4).coerceAtLeast(1))
         .coerceAtMost((rawInputCeiling - 1).coerceAtLeast(0))
     return (rawInputCeiling - safetyMargin).coerceAtLeast(0)
 }
@@ -551,15 +556,19 @@ fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */
 fun smartOutputTokenBudget(model: Model, requestedOutputTokens: Int?): Int? {
     val window = model.contextWindowTokens?.takeIf { it > 0 }
+    val independentOutputLimit = model.maxOutputTokens?.takeIf { it > 0 }
+    val reference = window
+        ?: independentOutputLimit
         ?: model.maxInputTokens?.takeIf { it > 0 }
         ?: return null
-    val adaptiveReserve = (window / 10).coerceIn(1_024, 8_192).coerceAtMost(window / 2)
+    val adaptiveReserve = (reference / 10).coerceIn(1_024, 8_192).let { reserve ->
+        if (window != null) reserve.coerceAtMost((window / 2).coerceAtLeast(1)) else reserve
+    }
     val requested = requestedOutputTokens
         ?.takeIf { it > 0 }
-        ?.coerceAtMost(window / 2)
+        ?.let { tokens -> if (window != null) tokens.coerceAtMost(window / 2) else tokens }
         ?: adaptiveReserve
-    return model.maxOutputTokens
-        ?.takeIf { it > 0 }
+    return independentOutputLimit
         ?.let { requested.coerceAtMost(it) }
         ?: requested
 }

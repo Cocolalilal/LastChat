@@ -24,6 +24,7 @@ val viewModelModule = module {
             settingsStore = get(),
             conversationRepo = get(),
             chatAttachmentRepository = get(),
+            memoryRepository = get(),
             chatService = get(),
             updateChecker = get(),
             appScope = get(),

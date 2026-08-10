@@ -154,8 +154,10 @@ import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
 import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
+import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.ModeAttachmentType
@@ -1158,12 +1160,15 @@ private fun ChatPageContent(
     val blur = inheritedBlur ?: localBlur
     val requestContextUsage by vm.contextUsage.collectAsStateWithLifecycle()
     val contextManagementActivity by vm.contextManagementActivity.collectAsStateWithLifecycle()
+    val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
     val contextMeterUsage = rememberContextMeterUsage(
         enabled = setting.displaySetting.showContextTokenSummary,
         model = currentChatModel,
         conversation = conversation,
         assistant = currentAssistant,
         settings = setting,
+        memoryCandidates = assistantMemories,
+        persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
     )
@@ -3014,6 +3019,8 @@ private fun rememberContextMeterUsage(
     conversation: Conversation,
     assistant: Assistant,
     settings: Settings,
+    memoryCandidates: List<AssistantMemory>,
+    persistenceMode: ChatPersistenceMode,
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
 ): ContextUsageBreakdown? {
@@ -3033,10 +3040,29 @@ private fun rememberContextMeterUsage(
     val hasPendingInput = pendingParts.any { part ->
         part !is UIMessagePart.Text || part.text.isNotBlank()
     }
-    val sourceKey = remember(conversation, assistant, activeModel, settings) {
-        contextUsageSourceKey(conversation, assistant, activeModel, settings)
+    val memoryContextEnabled = assistant.enableMemory && persistenceMode == ChatPersistenceMode.NORMAL
+    val eligibleMemoryCandidates = remember(memoryCandidates, assistant, memoryContextEnabled) {
+        if (!memoryContextEnabled) {
+            emptyList()
+        } else if (!assistant.useRagMemoryRetrieval) {
+            memoryCandidates.filter { memory -> memory.type == 0 }.take(50)
+        } else {
+            memoryCandidates.filter { memory ->
+                (memory.type == 0 && assistant.ragIncludeCore) ||
+                    (memory.type == 1 && assistant.ragIncludeEpisodes)
+            }.take(1_000)
+        }
     }
-    if (!hasPendingInput && requestUsage?.sourceKey == sourceKey) return requestUsage
+    val memoryRevision = remember(eligibleMemoryCandidates) {
+        eligibleMemoryCandidates.map { memory ->
+            listOf(memory.id, memory.content, memory.type, memory.timestamp)
+        }.hashCode()
+    }
+    val sourceKey = remember(conversation, assistant, activeModel, settings, memoryRevision) {
+        contextUsageSourceKey(conversation, assistant, activeModel, settings, memoryRevision)
+    }
+    val matchingRequestUsage = requestUsage?.takeIf { usage -> usage.sourceKey == sourceKey }
+    if (!hasPendingInput && matchingRequestUsage != null) return matchingRequestUsage
 
     val observedMemoryTokenTotals = rawMessages.asReversed().mapNotNull { message ->
         message.usedMemories.orEmpty()
@@ -3070,6 +3096,27 @@ private fun rememberContextMeterUsage(
             .filter { lorebook -> lorebook.enabled && lorebook.id in activeLorebookIds }
             .flatMap { lorebook -> lorebook.entries.filter { it.enabled } }
     }
+    val deterministicLoreEntries = remember(activeLoreEntries, rawMessages) {
+        val recentText = rawMessages.takeLast(10).joinToString(" ") { message -> message.toText() }
+        activeLoreEntries.filter { entry ->
+            when (entry.activationType) {
+                LorebookActivationType.ALWAYS -> true
+                LorebookActivationType.RAG -> false
+                LorebookActivationType.KEYWORDS -> entry.keywords.any { keyword ->
+                    if (entry.useRegex) {
+                        runCatching {
+                            val options = if (entry.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                            Regex(keyword, options).containsMatchIn(recentText)
+                        }.getOrDefault(false)
+                    } else if (entry.caseSensitive) {
+                        recentText.contains(keyword)
+                    } else {
+                        recentText.contains(keyword, ignoreCase = true)
+                    }
+                }
+            }
+        }
+    }
     fun loreEntryTokenCost(entry: me.rerere.rikkahub.data.model.LorebookEntry): Int =
         ContextTokenEstimator.textTokens(entry.prompt, activeModel) +
             entry.attachments.sumOf { attachment ->
@@ -3087,7 +3134,7 @@ private fun rememberContextMeterUsage(
     }
     val observedConditionalTokenTotals = rawMessages.asReversed().mapNotNull { message ->
         message.usedLorebookEntries.orEmpty()
-            .filterNot { it.activationReason == "Always Active" }
+            .filter { it.activationReason?.startsWith("RAG Match") == true }
             .sumOf { used ->
                 used.contextTokenCount ?: loreEntryTokensById[used.entryId] ?: 0
             }
@@ -3095,14 +3142,26 @@ private fun rememberContextMeterUsage(
     }.take(6)
     val conditionalContextCandidateTokens = remember(activeLoreEntries, loreEntryTokensById) {
         activeLoreEntries
-            .filter { it.activationType != LorebookActivationType.ALWAYS }
+            .filter { it.activationType == LorebookActivationType.RAG }
             .sumOf { entry -> loreEntryTokensById[entry.id.toString()] ?: 0 }
+    }
+    val eligibleMemoryCandidateTokens = remember(eligibleMemoryCandidates, activeModel) {
+        eligibleMemoryCandidates.sumOf { memory ->
+            ContextTokenEstimator.textTokens(memory.content, activeModel).toLong()
+        }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
     val probableTemporaryTokens = probableTemporaryTokenReserve(
         model = activeModel,
         requestedOutputTokens = assistant.maxTokens,
-        memoryEnabled = assistant.enableMemory,
-        memoryCandidateLimit = assistant.ragLimit,
+        memoryEnabled = memoryContextEnabled,
+        memoryRecallIsConditional = assistant.useRagMemoryRetrieval,
+        memoryCandidateLimit = if (assistant.ragLimit > 50) 1_000 else assistant.ragLimit,
+        memoryCandidateTokens = eligibleMemoryCandidateTokens,
+        memoryBudgetFraction = when (assistant.contextPriority) {
+            me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> 0.20
+            me.rerere.rikkahub.data.model.ContextPriority.BALANCED -> 0.40
+            me.rerere.rikkahub.data.model.ContextPriority.MEMORIES -> 0.65
+        },
         observedMemoryTokenTotals = observedMemoryTokenTotals,
         conditionalContextCandidateTokens = conditionalContextCandidateTokens,
         observedConditionalTokenTotals = observedConditionalTokenTotals,
@@ -3117,10 +3176,8 @@ private fun rememberContextMeterUsage(
                 }
         }
     }
-    val lorebookText = remember(activeLoreEntries) {
-        activeLoreEntries
-            .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
-            .joinToString("\n") { entry -> entry.prompt }
+    val lorebookText = remember(deterministicLoreEntries) {
+        deterministicLoreEntries.joinToString("\n") { entry -> entry.prompt }
     }
     val skillTokens = remember(skillText, activeModel) {
         ContextTokenEstimator.textTokens(skillText, activeModel)
@@ -3134,13 +3191,12 @@ private fun rememberContextMeterUsage(
         ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url)
         ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(url, fileName, mime)
     }
-    val knownContextAttachments = remember(availableSkills, activeSkillIds, activeLoreEntries) {
+    val knownContextAttachments = remember(availableSkills, activeSkillIds, deterministicLoreEntries) {
         buildList {
             availableSkills
                 .filter { skill -> skill.id in activeSkillIds }
                 .flatMapTo(this) { skill -> skill.attachments.map { it.toContextPart() } }
-            activeLoreEntries
-                .filter { entry -> entry.activationType == LorebookActivationType.ALWAYS }
+            deterministicLoreEntries
                 .flatMapTo(this) { entry -> entry.attachments.map { it.toContextPart() } }
         }
     }
@@ -3192,7 +3248,9 @@ private fun rememberContextMeterUsage(
             .toInt()
     }
     val toolDefinitionText = toolAccounting.first
-    val toolDefinitionTokens = toolAccounting.second
+    // Once a request has resolved runtime/local/MCP/memory tools, retain that exact definition
+    // cost while typing instead of falling back to the necessarily incomplete settings preview.
+    val toolDefinitionTokens = matchingRequestUsage?.toolDefinitionTokens ?: toolAccounting.second
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
         if (assistant.learningMode) {
@@ -3208,17 +3266,55 @@ private fun rememberContextMeterUsage(
             append(block)
         }
     }
+    val baseSmartInputBudget = if (smartActive) {
+        smartInputBudget(activeModel, assistant.maxTokens)
+    } else {
+        null
+    }
+    val deterministicContextTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+        ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
+        skillTokens + lorebookTokens + toolDefinitionTokens + knownContextMediaTokens
+    val fixedMemorySelection = remember(
+        eligibleMemoryCandidates,
+        activeModel,
+        baseSmartInputBudget,
+        deterministicContextTokens,
+        messages,
+        assistant.contextPriority,
+        assistant.useRagMemoryRetrieval,
+    ) {
+        if (
+            !smartActive || assistant.useRagMemoryRetrieval ||
+            eligibleMemoryCandidates.isEmpty() || baseSmartInputBudget == null
+        ) {
+            null
+        } else {
+            selectSmartMemoryContext(
+                candidates = eligibleMemoryCandidates,
+                model = activeModel,
+                inputBudgetTokens = baseSmartInputBudget,
+                requiredContextTokens = deterministicContextTokens,
+                historyMessages = messages,
+                contextPriority = assistant.contextPriority,
+                episodeGroup = { "Older" },
+            )
+        }
+    }
+    val fixedMemoryText = fixedMemorySelection?.promptText.orEmpty()
+    val fixedMemoryTokens = fixedMemorySelection?.promptTokens ?: 0
+    val effectiveSmartInputBudget = baseSmartInputBudget?.let { budget ->
+        (budget - probableTemporaryTokens).coerceAtLeast(1)
+    }
     val pendingMessage = pendingParts.takeIf { hasPendingInput }?.let { parts ->
         UIMessage(role = MessageRole.USER, parts = parts)
     }
     val messagesToCount = if (smartActive) {
         val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
             ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-            skillTokens + lorebookTokens +
+            fixedMemoryTokens + skillTokens + lorebookTokens +
             toolDefinitionTokens +
-            knownContextMediaTokens +
-            probableTemporaryTokens
-        val messageBudget = ((smartInputBudget(activeModel, assistant.maxTokens) ?: Int.MAX_VALUE) - namedTokens)
+            knownContextMediaTokens
+        val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
             .coerceAtLeast(1)
         smartFitContext(
             messages = messages + listOfNotNull(pendingMessage),
@@ -3233,7 +3329,8 @@ private fun rememberContextMeterUsage(
         model = activeModel,
         systemPromptText = systemPromptText,
         summaryText = conversation.contextSummary.orEmpty(),
-        memoryTokensOverride = 0,
+        memoryText = fixedMemoryText,
+        memoryTokensOverride = fixedMemoryTokens,
         skillText = skillText,
         lorebookText = lorebookText,
         skillTokensOverride = skillTokens,
@@ -3241,7 +3338,7 @@ private fun rememberContextMeterUsage(
         toolDefinitionText = toolDefinitionText,
         toolDefinitionTokensOverride = toolDefinitionTokens,
         pendingParts = knownContextAttachments + if (smartActive) emptyList() else pendingParts,
-        usableInputTokens = if (smartActive) smartInputBudget(activeModel, assistant.maxTokens) else null,
+        usableInputTokens = effectiveSmartInputBudget,
         sourceKey = sourceKey,
     )
 }

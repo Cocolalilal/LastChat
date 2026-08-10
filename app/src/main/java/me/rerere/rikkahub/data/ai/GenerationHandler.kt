@@ -1201,6 +1201,7 @@ class GenerationHandler(
         // 3. Allocation Logic
         val selectedMessages = mutableListOf<UIMessage>()
         val selectedMemories = mutableListOf<AssistantMemory>()
+        var selectedMemoryPromptText = ""
         
         val remainingTokens = maxTokens - currentTokens
         if (remainingTokens <= 0) {
@@ -1211,20 +1212,18 @@ class GenerationHandler(
         if (smartEnabled) {
             // Start with all summarized/recent history; the final manager compacts low-value
             // payloads and removes complete old turn groups only when the real budget requires it.
-            selectedMessages.addAll(chatHistoryCandidates)
-            val memoryShare = when (assistant.contextPriority) {
-                me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> 0.12
-                me.rerere.rikkahub.data.model.ContextPriority.BALANCED -> 0.22
-                me.rerere.rikkahub.data.model.ContextPriority.MEMORIES -> 0.38
-            }
-            var memoryBudget = (remainingTokens.coerceAtLeast(0) * memoryShare).toInt()
-            for (memory in effectiveMemoriesCandidates) {
-                val cost = estimateTokens(memory.content)
-                if (cost <= memoryBudget) {
-                    selectedMemories.add(memory)
-                    memoryBudget -= cost
-                }
-            }
+            selectedMessages.addAll(imageArchivedMessages)
+            val memorySelection = selectSmartMemoryContext(
+                candidates = effectiveMemoriesCandidates,
+                model = model,
+                inputBudgetTokens = maxTokens,
+                requiredContextTokens = currentTokens,
+                historyMessages = imageArchivedMessages,
+                contextPriority = assistant.contextPriority,
+                episodeGroup = runtimeInfo::episodicMemoryGroup,
+            )
+            selectedMemories.addAll(memorySelection.memories)
+            selectedMemoryPromptText = memorySelection.promptText
         } else {
         // Minimums
         val minChatHistory = 2.coerceAtMost(chatHistoryCandidates.size)
@@ -1320,6 +1319,14 @@ class GenerationHandler(
                 }
             }
         }
+
+        if (selectedMemories.isNotEmpty() && selectedMemoryPromptText.isBlank()) {
+            selectedMemoryPromptText = renderMemoryContextPrompt(
+                model = model,
+                memories = selectedMemories,
+                episodeGroup = runtimeInfo::episodicMemoryGroup,
+            )
+        }
         }
 
         // 4. Construct Final List
@@ -1358,7 +1365,14 @@ class GenerationHandler(
         // Combine all context attachments
         val allContextAttachments = skillAttachmentParts + lorebookAttachmentParts
         
-        val orderedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
+        val orderedSelectedMessages = if (smartEnabled) {
+            // Smart preparation creates message copies (OCR/media/tool compaction), so looking
+            // them up in the original list can return -1 and reverse history. They are already
+            // chronological here.
+            selectedMessages.toList()
+        } else {
+            selectedMessages.sortedBy { messages.indexOf(it) }
+        }
         val timeAwarenessPrompt = buildTimeAwarenessBlock(
             enabled = assistant.enableTimeAwareness,
             fullMessages = messages,
@@ -1386,8 +1400,8 @@ class GenerationHandler(
                 if (!contextSummary.isNullOrBlank()) {
                     add("[Conversation Summary (Earlier context)]:\n$contextSummary")
                 }
-                if (selectedMemories.isNotEmpty()) {
-                    add(buildMemoryPrompt(model, selectedMemories))
+                if (selectedMemoryPromptText.isNotBlank()) {
+                    add(selectedMemoryPromptText)
                 }
                 if (!timeAwarenessPrompt.isNullOrBlank()) {
                     add(timeAwarenessPrompt)
@@ -1500,7 +1514,7 @@ class GenerationHandler(
                     model = model,
                     systemPromptText = systemPromptText,
                     summaryText = contextSummary.orEmpty(),
-                    memoryText = selectedMemories.joinToString("\n") { memory -> memory.content },
+                    memoryText = selectedMemoryPromptText,
                     skillText = skillText,
                     lorebookText = lorebookText,
                     toolDefinitionText = toolDefinitionText,

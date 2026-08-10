@@ -41,10 +41,20 @@ fun smartFitContext(
     val compacted = minimum.compactToTokenBudget(model, budget)
     if (ContextTokenEstimator.messagesTokens(compacted, model) <= budget) return compacted
 
-    // Preserve the actual latest user request if optional context cannot fit. If even a compacted
-    // latest request is mathematically impossible, return no messages and let the provider gate
-    // refuse or normalize the request rather than fabricating user intent.
-    val lastResort = listOfNotNull(messages.lastOrNull { it.role == MessageRole.USER })
+    // Keep the active turn atomic. In a tool loop the newest item may be TOOL, or a synthetic
+    // image-only USER message immediately following a tool result; selecting only the last user
+    // would silently detach the call/result chain.
+    val latest = messages.lastOrNull()
+    val suffixSize = if (
+        latest?.role == MessageRole.USER &&
+        latest.parts.none { it is UIMessagePart.Text && it.text.isNotBlank() } &&
+        messages.getOrNull(messages.lastIndex - 1)?.role == MessageRole.TOOL
+    ) {
+        2
+    } else {
+        1
+    }
+    val lastResort = messages.limitContext(suffixSize)
         .compactToTokenBudget(model, budget)
     return lastResort.takeIf { ContextTokenEstimator.messagesTokens(it, model) <= budget }
         ?: emptyList()

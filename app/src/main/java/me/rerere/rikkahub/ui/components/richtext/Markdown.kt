@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -226,7 +227,13 @@ private data class StreamingTextReveal(
     val ranges: List<StreamingSettleRange>,
     val nowMillis: Long,
     val color: Color,
-    val smoothedCharsPerSecond: Float
+    val smoothedCharsPerSecond: Float,
+    val blurEnabled: Boolean,
+)
+
+internal data class StreamingRevealVisuals(
+    val alpha: Float,
+    val blurRadius: Float,
 )
 
 internal data class StreamingSettleRange(
@@ -559,7 +566,8 @@ fun MarkdownBlock(
             ranges = settleRanges,
             nowMillis = streamingFrameMillis,
             color = contentColor,
-            smoothedCharsPerSecond = streamingPresentation.smoothedCharsPerSecond
+            smoothedCharsPerSecond = streamingPresentation.smoothedCharsPerSecond,
+            blurEnabled = settings.displaySetting.enableBlurEffect,
         )
     } else {
         null
@@ -890,6 +898,7 @@ private const val STREAMING_SETTLE_MIN_MILLIS = 180L
 private const val STREAMING_SETTLE_MAX_MILLIS = 360L
 private const val STREAMING_SETTLE_ALPHA_FAST = 0.42f
 private const val STREAMING_SETTLE_ALPHA_SLOW = 0.65f
+private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 5f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
 private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
@@ -2025,19 +2034,51 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
         // Smooth-step curve: 3t^2 - 2t^3
         val easedProgress = progress * progress * (3f - 2f * progress)
-        val alpha = startAlpha + (1f - startAlpha) * easedProgress
-        if (alpha >= 0.995f) return@fastForEach
+        val visuals = streamingRevealVisuals(
+            progress = easedProgress,
+            startAlpha = startAlpha,
+            blurEnabled = reveal.blurEnabled,
+        )
+        if (visuals.alpha >= 0.995f && visuals.blurRadius <= 0.01f) return@fastForEach
 
         val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
         val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
         if (rangeEnd <= rangeStart) return@fastForEach
 
         addStyle(
-            style = SpanStyle(color = reveal.color.copy(alpha = alpha)),
+            style = SpanStyle(
+                color = reveal.color.copy(alpha = visuals.alpha),
+                shadow = if (visuals.blurRadius > 0.01f) {
+                    Shadow(
+                        color = reveal.color.copy(alpha = visuals.alpha),
+                        offset = Offset.Zero,
+                        blurRadius = visuals.blurRadius,
+                    )
+                } else {
+                    null
+                },
+            ),
             start = rangeStart.coerceIn(outputStart, outputEnd),
             end = rangeEnd.coerceIn(outputStart, outputEnd)
         )
     }
+}
+
+internal fun streamingRevealVisuals(
+    progress: Float,
+    startAlpha: Float,
+    blurEnabled: Boolean,
+): StreamingRevealVisuals {
+    val safeProgress = progress.coerceIn(0f, 1f)
+    return StreamingRevealVisuals(
+        alpha = startAlpha.coerceIn(0f, 1f) +
+            (1f - startAlpha.coerceIn(0f, 1f)) * safeProgress,
+        blurRadius = if (blurEnabled) {
+            STREAMING_SETTLE_MAX_BLUR_RADIUS * (1f - safeProgress)
+        } else {
+            0f
+        },
+    )
 }
 
 private fun ASTNode.getTextInNode(text: String): String {

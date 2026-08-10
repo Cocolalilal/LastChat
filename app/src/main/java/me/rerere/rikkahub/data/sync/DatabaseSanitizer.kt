@@ -12,6 +12,34 @@ import java.io.File
 object DatabaseSanitizer {
     private const val TAG = "DatabaseSanitizer"
 
+    /**
+     * User-data tables copied into the clean Room database during restore.
+     *
+     * These are SQLite table names, which are not always the Kotlin entity names. Keep this
+     * ordered like AppDatabase.entities so parent records are restored before dependent rows.
+     * The backup round-trip test verifies this list against Room's current entity tables.
+     */
+    internal val PORTABLE_TABLES = listOf(
+        "ConversationEntity",
+        "MemoryEntity",
+        "GenMediaEntity",
+        "ChatEpisodeEntity",
+        "embedding_cache",
+        "daily_activity",
+        "usage_stats",
+        "chat_attachment",
+        "conversation_attachment_ref",
+        "workspaces",
+        "memory_claim",
+        "memory_claim_fts",
+        "memory_episode_v3",
+        "memory_episode_v3_fts",
+        "memory_source_v3",
+        "memory_source_v3_fts",
+        "memory_ingest_state",
+        "memory_projection",
+    )
+
     data class SanitizationResult(
         val totalRows: Int = 0,
         val skippedRows: Int = 0,
@@ -64,25 +92,7 @@ object DatabaseSanitizer {
             )
             sourceDb = db
 
-            val tables = listOf(
-                "ConversationEntity",
-                "MemoryEntity",
-                "GenMediaEntity",
-                "ChatEpisodeEntity",
-                "EmbeddingCacheEntity",
-                "memory_claim",
-                "memory_claim_fts",
-                "memory_episode_v3",
-                "memory_episode_v3_fts",
-                "memory_source_v3",
-                "memory_source_v3_fts",
-                "memory_ingest_state",
-                "memory_projection",
-                "daily_activity",
-                "usage_stats"
-            )
-
-            for (table in tables) {
+            for (table in PORTABLE_TABLES) {
                 // Check if table exists in source
                 try {
                     val cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table))

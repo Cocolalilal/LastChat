@@ -1514,6 +1514,54 @@ class ChatService(
             while (true) {
                 conversation = getConversationFlow(conversationId).value
                 try {
+                    val memoryContextEnabled = assistant.enableMemory &&
+                        getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+                    val memorySnapshot = if (memoryContextEnabled) {
+                        memoryRepository.getCombinedMemoriesFlow(conversation.assistantId.toString()).first()
+                    } else {
+                        emptyList()
+                    }
+                    val requestMemories = if (!memoryContextEnabled) {
+                        emptyList()
+                    } else if (assistant.useRagMemoryRetrieval) {
+                        val lastUserMessage = conversation.currentMessages
+                            .lastOrNull { it.role == MessageRole.USER }
+                            ?.toText()
+                            .orEmpty()
+                        if (settings.enableRagLogging) Log.d("RAG", "Query: $lastUserMessage")
+                        if (lastUserMessage.isNotBlank()) {
+                            memoryRepository.retrieveRelevantMemories(
+                                assistantId = conversation.assistantId.toString(),
+                                query = lastUserMessage,
+                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes,
+                            ).also { results ->
+                                if (settings.enableRagLogging) {
+                                    Log.d("RAG", "Retrieved ${results.size} memories")
+                                    results.forEach { memory ->
+                                        Log.d("RAG", " - [${memory.type}] ${memory.content.take(50)}...")
+                                    }
+                                }
+                            }
+                        } else {
+                            memorySnapshot.filter { it.type == 0 }.take(50)
+                        }
+                    } else {
+                        memorySnapshot.filter { it.type == 0 }.take(50)
+                    }
+                    val memoryRevisionCandidates = if (assistant.useRagMemoryRetrieval) {
+                        memorySnapshot.filter { memory ->
+                            (memory.type == 0 && assistant.ragIncludeCore) ||
+                                (memory.type == 1 && assistant.ragIncludeEpisodes)
+                        }.take(1_000)
+                    } else {
+                        memorySnapshot.filter { it.type == 0 }.take(50)
+                    }
+                    val memoryRevision = memoryRevisionCandidates.map { memory ->
+                        listOf(memory.id, memory.content, memory.type, memory.timestamp)
+                    }.hashCode()
                     // start generating
                     generationHandler.generateText(
                 settings = settings,
@@ -1526,45 +1574,7 @@ class ChatService(
                     }
                 },
                 assistant = assistant,
-                memories = if (
-                    assistant.enableMemory &&
-                    getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
-                ) {
-                    if (assistant.useRagMemoryRetrieval) {
-                        // RAG mode: retrieve relevant memories based on context
-                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-
-                        if (settings.enableRagLogging) {
-                            Log.d("RAG", "Query: $lastUserMessage")
-                        }
-
-                        if (lastUserMessage.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = conversation.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
-                            )
-                            if (settings.enableRagLogging) {
-                                Log.d("RAG", "Retrieved ${results.size} memories")
-                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
-                            }
-                            results
-                        } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
-                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                                .take(50)
-                        }
-                    } else {
-                        // Simple mode: inject recent memories
-                        memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                            .take(50)
-                    }
-                } else {
-                    emptyList()
-                },
+                memories = requestMemories,
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
                     val cwd = getWorkspaceCwd(
@@ -1585,7 +1595,7 @@ class ChatService(
                 contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
                 contextBudgetScale = contextBudgetScale,
                 contextUsageSourceKey = if (assistantRegeneration == null && messageRange == null) {
-                    contextUsageSourceKey(conversation, assistant, model, settings)
+                    contextUsageSourceKey(conversation, assistant, model, settings, memoryRevision)
                 } else {
                     null
                 },
@@ -2560,13 +2570,19 @@ class ChatService(
                 } else {
                     messages
                 }
-                val estimated = ContextTokenEstimator.messagesTokens(unsummarized, model) +
-                    ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
-                    ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
                 val usable = smartInputBudget(model, assistant.maxTokens)
                     ?: model.contextCapacityTokens
                     ?: Int.MAX_VALUE
-                estimated >= (usable * 0.68).toInt()
+                val oldHistory = unsummarized.dropLast(messagesToKeep.coerceAtMost(unsummarized.size))
+                val summarizableTokens = ContextTokenEstimator.messagesTokens(oldHistory, model)
+                val enoughUsefulHistory = summarizableTokens >= maxOf(1_024, (usable * 0.08).toInt())
+                val finalPlanUsage = _contextUsage.value[conversationId]
+                val pressureTokens = finalPlanUsage?.usedTokens ?: (
+                    ContextTokenEstimator.messagesTokens(unsummarized, model) +
+                        ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
+                        ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
+                    )
+                enoughUsefulHistory && pressureTokens >= (usable * 0.68).toInt()
             } else {
                 false
             }

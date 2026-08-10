@@ -47,12 +47,14 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.ContextManagementActivity
@@ -78,6 +80,7 @@ class ChatVM(
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
+    private val memoryRepository: MemoryRepository,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
     private val appScope: me.rerere.rikkahub.AppScope,
@@ -85,6 +88,11 @@ class ChatVM(
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
+    val assistantMemories: StateFlow<List<AssistantMemory>> = conversation
+        .map { current -> current.assistantId.toString() }
+        .distinctUntilChanged()
+        .flatMapLatest(memoryRepository::getCombinedMemoriesFlow)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
         .map { usageByConversation -> usageByConversation[_conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

@@ -18,7 +18,7 @@ class ContextAccountingTest {
 
         val budget = smartInputBudget(model, requestedOutputTokens = 4_000)
 
-        assertEquals(26_000, budget)
+        assertEquals(26_250, budget)
         assertEquals(4_000, smartOutputTokenBudget(model, requestedOutputTokens = 4_000))
     }
 
@@ -49,7 +49,20 @@ class ContextAccountingTest {
         val input = smartInputBudget(model, requestedOutputTokens = 20_000)
 
         assertEquals(8_000, output)
-        assertEquals(92_500, input)
+        assertEquals(93_750, input)
+    }
+
+    @Test
+    fun smartBudgetBasesSafetyOnIndependentInputCeiling() {
+        val model = Model(
+            modelId = "host-capped",
+            contextWindowTokens = 1_000_000,
+            maxInputTokens = 8_000,
+            maxOutputTokens = 4_000,
+        )
+
+        assertEquals(7_488, smartInputBudget(model, requestedOutputTokens = 4_000))
+        assertEquals(4_000, smartOutputTokenBudget(model, requestedOutputTokens = 4_000))
     }
 
     @Test
@@ -163,6 +176,22 @@ class ContextAccountingTest {
     }
 
     @Test
+    fun breakdownCountsToolSystemPromptAlongsideDefinitionOverride() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 8_192)
+
+        val usage = ContextTokenEstimator.breakdown(
+            messages = listOf(UIMessage.system("runtime tool instructions"), UIMessage.user("hello")),
+            model = model,
+            toolDefinitionTokensOverride = 40,
+            embeddedToolText = "runtime tool instructions",
+            namedContextEmbeddedInMessages = true,
+        )
+
+        assertTrue(usage.toolDefinitionTokens > 40)
+        assertEquals(usage.usedTokens, usage.conversationTokens + usage.toolDefinitionTokens)
+    }
+
+    @Test
     fun hardCompaction_preservesToolPairAndFitsBudget() {
         val model = Model(modelId = "private-model", contextWindowTokens = 2_048)
         val messages = listOf(
@@ -223,6 +252,34 @@ class ContextAccountingTest {
             retained.flatMap { it.parts }.filterIsInstance<UIMessagePart.ToolCall>()
                 .any { it.toolCallId == "call-a" }
         )
+    }
+
+    @Test
+    fun limitContextClosesDependenciesAcrossEntireRetainedSuffix() {
+        val messages = listOf(
+            UIMessage.user("originating request"),
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.ToolCall("call-a", "lookup", "{}")),
+            ),
+            UIMessage.assistant("intermediate"),
+            UIMessage.user("unrelated retained message"),
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        "call-a",
+                        "lookup",
+                        JsonPrimitive("result"),
+                        JsonPrimitive("{}"),
+                    )
+                ),
+            ),
+        )
+
+        val retained = messages.limitContext(2)
+
+        assertEquals(messages, retained)
     }
 
     @Test
@@ -379,13 +436,49 @@ class ContextAccountingTest {
             model = model,
             requestedOutputTokens = 4_000,
             memoryEnabled = true,
+            memoryRecallIsConditional = true,
             memoryCandidateLimit = 10,
+            memoryCandidateTokens = 2_000,
+            memoryBudgetFraction = 0.40,
             observedMemoryTokenTotals = listOf(100, 200, 500, 1_000),
             conditionalContextCandidateTokens = 2_000,
             observedConditionalTokenTotals = listOf(300),
         )
 
         assertEquals(800, reserve)
+    }
+
+    @Test
+    fun probableTemporaryReserveDoesNotHideDeterministicOrImpossibleMemory() {
+        val model = Model(modelId = "private-model", contextWindowTokens = 100_000)
+
+        val fixed = probableTemporaryTokenReserve(
+            model = model,
+            requestedOutputTokens = 4_000,
+            memoryEnabled = true,
+            memoryRecallIsConditional = false,
+            memoryCandidateLimit = 50,
+            memoryCandidateTokens = 20_000,
+            memoryBudgetFraction = 0.65,
+            observedMemoryTokenTotals = listOf(5_000),
+            conditionalContextCandidateTokens = 0,
+            observedConditionalTokenTotals = emptyList(),
+        )
+        val emptyRag = probableTemporaryTokenReserve(
+            model = model,
+            requestedOutputTokens = 4_000,
+            memoryEnabled = true,
+            memoryRecallIsConditional = true,
+            memoryCandidateLimit = 1_000,
+            memoryCandidateTokens = 0,
+            memoryBudgetFraction = 0.65,
+            observedMemoryTokenTotals = listOf(5_000),
+            conditionalContextCandidateTokens = 0,
+            observedConditionalTokenTotals = emptyList(),
+        )
+
+        assertEquals(0, fixed)
+        assertEquals(0, emptyRag)
     }
 
     @Test

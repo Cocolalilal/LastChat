@@ -11,6 +11,7 @@ internal fun contextUsageSourceKey(
     assistant: Assistant,
     model: Model,
     settings: Settings,
+    memoryRevision: Int = 0,
 ): Int = listOf(
     conversation.currentMessages,
     conversation.truncateIndex,
@@ -37,6 +38,7 @@ internal fun contextUsageSourceKey(
     assistant.ragSimilarityThreshold,
     assistant.ragIncludeCore,
     assistant.ragIncludeEpisodes,
+    memoryRevision,
     assistant.maxHistoryMessages,
     assistant.maxSearchResultsRetained,
     assistant.archiveImagesAfterMessageAge,

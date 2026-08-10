@@ -171,4 +171,40 @@ class StreamingTextPresentationStateTest {
             state.settleRanges
         )
     }
+
+    @Test
+    fun uiBlurAddsBlurWhileKeepingTheStreamingFade() {
+        val visuals = streamingRevealVisuals(
+            progress = 0.25f,
+            startAlpha = 0.4f,
+            blurEnabled = true,
+        )
+
+        assertEquals(0.55f, visuals.alpha, 0.001f)
+        assertTrue(visuals.blurRadius > 0f)
+    }
+
+    @Test
+    fun disabledUiBlurUsesFadeOnly() {
+        val visuals = streamingRevealVisuals(
+            progress = 0.25f,
+            startAlpha = 0.4f,
+            blurEnabled = false,
+        )
+
+        assertEquals(0.55f, visuals.alpha, 0.001f)
+        assertEquals(0f, visuals.blurRadius, 0.001f)
+    }
+
+    @Test
+    fun blurSettlesToCrispOpaqueText() {
+        val visuals = streamingRevealVisuals(
+            progress = 1f,
+            startAlpha = 0.4f,
+            blurEnabled = true,
+        )
+
+        assertEquals(1f, visuals.alpha, 0.001f)
+        assertEquals(0f, visuals.blurRadius, 0.001f)
+    }
 }

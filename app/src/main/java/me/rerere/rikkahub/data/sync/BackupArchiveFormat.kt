@@ -33,6 +33,8 @@ internal object BackupArchiveFormat {
         "chat_files",
         "lorebook_covers",
         "lorebook_attachments",
+        "skills",
+        "tool_outputs",
         WORKSPACES_DIR,
         "model_catalog",
     )
