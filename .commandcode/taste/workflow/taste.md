@@ -1,0 +1,1 @@
+- Works across multiple AI coding agents (Codex, Claude Code, Antigravity) and expects cross-agent taste learning — wants Command Code to recognize and import sessions from other agents to learn usage patterns. Confidence: 0.8

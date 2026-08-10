@@ -1123,23 +1123,6 @@
       "reasoning_content_replay_mode": "auto"
     },
     {
-      "id": "fb7b6165-8893-4cfc-82e0-26c6fd01d566",
-      "name": "Command Code",
-      "description": "Command Code API provider.",
-      "type": "openai",
-      "base_url": "https://api.commandcode.ai/alpha/generate",
-      "chat_completions_path": "/chat/completions",
-      "use_response_api": false,
-      "balance_option": {},
-      "icon": "icons/command-symbol.svg",
-      "preset": true,
-      "signup_url": "https://commandcode.ai",
-      "api_key_url": "https://commandcode.ai",
-      "stream_options_mode": "auto",
-      "image_response_modalities_mode": "auto",
-      "reasoning_content_replay_mode": "auto"
-    },
-    {
       "id": "3ca10648-755e-4a56-b90c-e6daec71d811",
       "name": "Lepton AI",
       "description": "Lepton AI API provider. Ensure you substitute the correct placeholders in the URL.",

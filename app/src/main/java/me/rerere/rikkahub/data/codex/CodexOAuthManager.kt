@@ -212,8 +212,8 @@ class CodexOAuthManager(
         private const val TAG = "CodexOAuthManager"
         private const val CALLBACK_PORTS_UNAVAILABLE = "OAuth callback ports are unavailable"
         const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-        const val TOKEN_URL = "https://auth.openai.com/oauth/token"
-        const val AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
+        const val TOKEN_URL = "https://auth0.openai.com/oauth/token"
+        const val AUTHORIZE_URL = "https://auth0.openai.com/oauth/authorize"
         const val DEFAULT_SCOPES = "openid profile email offline_access"
         const val REFRESH_SCOPES = "openid profile email"
         private val CALLBACK_PORTS = listOf(1455, 1457)
