@@ -300,8 +300,8 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = 6.dp
 private val PILL_HEIGHT = 36.dp
-private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
-private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
+private val PILL_MORPH_SPEC = spring<IntSize>(dampingRatio = 0.6f, stiffness = 350f)
+private val PILL_CORNER_SPEC = spring<Dp>(dampingRatio = 0.6f, stiffness = 350f)
 
 /**
  * Position of a pill in a row of pills.
@@ -460,8 +460,8 @@ private fun AnimatedSinglePill(
             scrollHandoffMode = timelineScrollHandoffMode,
             isLive = timelineLive,
         )
-    } else if (isExpandedReasoning) {
-        SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
+    } else if (isExpandedReasoning && state is ActivityState.Reasoning) {
+        SinglePillContentState.ExpandedReasoning(state)
     } else {
         SinglePillContentState.Compact(state)
     }
@@ -500,7 +500,7 @@ private fun AnimatedSinglePill(
     
     val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
     val pillColor by animateColorAsState(
-        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHighest,
         animationSpec = tween(150),
         label = "pill_color"
     )
@@ -916,8 +916,7 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    // Crossfade + slide up when the title changes between reasoning sections
-    val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
+    val displayTitle = stringResource(R.string.activity_timeline_reasoning)
     AnimatedContent(
         targetState = displayTitle,
         transitionSpec = {
@@ -1082,7 +1081,7 @@ private fun SinglePill(
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val pillShape = getCornerRadii(position, connectsToBubbleBelow)
 
     val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
@@ -1102,8 +1101,8 @@ private fun SinglePill(
         onClick = onClick
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             content()

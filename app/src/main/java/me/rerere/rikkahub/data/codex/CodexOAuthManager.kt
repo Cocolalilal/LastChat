@@ -105,37 +105,35 @@ class CodexOAuthManager(
                             when {
                                 session == null -> {
                                     _status.value = CodexOAuthStatus.Error("OAuth state mismatch")
-                                    call.respondText(callbackPage(false), ContentType.Text.Html)
+                                    call.respondText(callbackPage(false, "OAuth state mismatch"), ContentType.Text.Html)
                                 }
 
                                 !error.isNullOrBlank() -> {
                                     _status.value = CodexOAuthStatus.Error(error)
-                                    call.respondText(callbackPage(false), ContentType.Text.Html)
+                                    call.respondText(callbackPage(false, error), ContentType.Text.Html)
                                 }
 
                                 code.isNullOrBlank() -> {
                                     _status.value = CodexOAuthStatus.Error("Missing authorization code")
-                                    call.respondText(callbackPage(false), ContentType.Text.Html)
+                                    call.respondText(callbackPage(false, "Missing authorization code"), ContentType.Text.Html)
                                 }
 
                                 else -> {
-                                    call.respondText(callbackPage(true), ContentType.Text.Html)
-                                    scope.launch {
-                                        try {
-                                            val account = exchangeCode(code, session)
-                                            _status.value = CodexOAuthStatus.Success(account.id)
-                                            runCatching { repository.refreshAccount(account.id) }
-                                        } catch (error: Throwable) {
-                                            Log.e(
-                                                TAG,
-                                                "OAuth token exchange failed: " +
-                                                    "${error::class.java.name}: ${error.message}",
-                                                error,
-                                            )
-                                            _status.value = CodexOAuthStatus.Error(
-                                                error.message ?: "OAuth token exchange failed"
-                                            )
-                                        }
+                                    try {
+                                        val account = exchangeCode(code, session)
+                                        _status.value = CodexOAuthStatus.Success(account.id)
+                                        runCatching { repository.refreshAccount(account.id) }
+                                        call.respondText(callbackPage(true), ContentType.Text.Html)
+                                    } catch (error: Throwable) {
+                                        Log.e(
+                                            TAG,
+                                            "OAuth token exchange failed: " +
+                                                "${error::class.java.name}: ${error.message}",
+                                            error,
+                                        )
+                                        val message = error.message ?: "OAuth token exchange failed"
+                                        _status.value = CodexOAuthStatus.Error(message)
+                                        call.respondText(callbackPage(false, message), ContentType.Text.Html)
                                     }
                                 }
                             }
@@ -173,15 +171,20 @@ class CodexOAuthManager(
         return repository.saveLogin(body)
     }
 
-    private fun callbackPage(success: Boolean): String {
+    private fun callbackPage(success: Boolean, errorMessage: String? = null): String {
         val status = if (success) "success" else "error"
+        val packageName = context.packageName
         val deepLink = "lastchat://codex/oauth?status=${URLEncoder.encode(status, Charsets.UTF_8.name())}"
-        val heading = if (success) "Sign-in complete" else "Sign-in failed"
+        val intentUri = "intent://codex/oauth?status=${URLEncoder.encode(status, Charsets.UTF_8.name())}#Intent;scheme=lastchat;package=$packageName;end"
+        val title = if (success) "Sign-in complete" else "Sign-in failed"
         val message = if (success) {
-            "Returning to LastChat…"
+            "Successfully signed in to Codex. Returning to LastChat…"
         } else {
-            "Return to LastChat to try again."
+            errorMessage ?: "Return to LastChat to try again."
         }
+        val statusColor = if (success) "#10b981" else "#ef4444"
+        val statusIcon = if (success) "✓" else "✕"
+
         return """
             <!doctype html>
             <html>
@@ -189,13 +192,69 @@ class CodexOAuthManager(
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>LastChat Codex sign-in</title>
+                <style>
+                  body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    background-color: #0f172a;
+                    color: #f8fafc;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    margin: 0;
+                    padding: 20px;
+                    box-sizing: border-box;
+                  }
+                  .card {
+                    background-color: #1e293b;
+                    border-radius: 16px;
+                    padding: 32px 24px;
+                    max-width: 400px;
+                    width: 100%;
+                    text-align: center;
+                    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+                  }
+                  .icon {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 50%;
+                    background-color: ${statusColor}22;
+                    color: $statusColor;
+                    font-size: 28px;
+                    line-height: 56px;
+                    margin: 0 auto 16px auto;
+                    font-weight: bold;
+                  }
+                  h2 { margin: 0 0 8px 0; font-size: 20px; font-weight: 600; }
+                  p { margin: 0 0 20px 0; color: #94a3b8; font-size: 14px; line-height: 1.5; }
+                  a.btn {
+                    display: block;
+                    width: 100%;
+                    padding: 12px 0;
+                    background-color: #3b82f6;
+                    color: #ffffff;
+                    text-decoration: none;
+                    font-weight: 600;
+                    border-radius: 10px;
+                    box-sizing: border-box;
+                  }
+                </style>
               </head>
               <body>
-                <p>$heading</p>
-                <p>$message</p>
-                <p><a href="$deepLink">Return to LastChat</a></p>
+                <div class="card">
+                  <div class="icon">$statusIcon</div>
+                  <h2>$title</h2>
+                  <p>$message</p>
+                  <a href="$intentUri" class="btn">Return to LastChat</a>
+                </div>
                 <script>
-                  window.location.replace("$deepLink");
+                  setTimeout(function() {
+                    try {
+                      window.location.href = "$intentUri";
+                    } catch (e) {
+                      window.location.href = "$deepLink";
+                    }
+                  }, 300);
                 </script>
               </body>
             </html>
@@ -212,8 +271,8 @@ class CodexOAuthManager(
         private const val TAG = "CodexOAuthManager"
         private const val CALLBACK_PORTS_UNAVAILABLE = "OAuth callback ports are unavailable"
         const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-        const val TOKEN_URL = "https://auth0.openai.com/oauth/token"
-        const val AUTHORIZE_URL = "https://auth0.openai.com/oauth/authorize"
+        const val TOKEN_URL = "https://auth.openai.com/oauth/token"
+        const val AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
         const val DEFAULT_SCOPES = "openid profile email offline_access"
         const val REFRESH_SCOPES = "openid profile email"
         private val CALLBACK_PORTS = listOf(1455, 1457)

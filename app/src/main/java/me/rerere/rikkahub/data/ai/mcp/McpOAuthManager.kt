@@ -494,37 +494,47 @@ class McpOAuthManager(
         scope: List<String>,
         tokenEndpointAuthMethod: String,
     ): OAuthClientRegistration {
-        val body = buildJsonObject {
-            put("client_name", "LastChat")
-            put("token_endpoint_auth_method", tokenEndpointAuthMethod)
-            put("redirect_uris", JsonArray(listOf(JsonPrimitive(redirectUri))))
-            put("grant_types", JsonArray(listOf(JsonPrimitive("authorization_code"), JsonPrimitive("refresh_token"))))
-            put("response_types", JsonArray(listOf(JsonPrimitive("code"))))
-            if (scope.isNotEmpty()) put("scope", scope.joinToString(" "))
-        }
-        val response = client.execute(
-            PlatformHttpRequest(
-                method = "POST",
-                url = endpoint,
-                body = body.toString().encodeToByteArray(),
-                mediaType = "application/json",
-                headers = mapOf("Accept" to "application/json"),
+        val clientNamesToTry = resolveOAuthClientNames(endpoint)
+        var lastException: Throwable? = null
+
+        for (clientName in clientNamesToTry) {
+            val body = buildJsonObject {
+                put("client_name", clientName)
+                put("token_endpoint_auth_method", tokenEndpointAuthMethod)
+                put("redirect_uris", JsonArray(listOf(JsonPrimitive(redirectUri))))
+                put("grant_types", JsonArray(listOf(JsonPrimitive("authorization_code"), JsonPrimitive("refresh_token"))))
+                put("response_types", JsonArray(listOf(JsonPrimitive("code"))))
+                if (scope.isNotEmpty()) put("scope", scope.joinToString(" "))
+            }
+            val response = client.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = endpoint,
+                    body = body.toString().encodeToByteArray(),
+                    mediaType = "application/json",
+                    headers = mapOf("Accept" to "application/json"),
+                )
             )
-        )
-        require(response.statusCode in 200..299) {
-            val detail = response.body.decodeToString().take(300)
-            "OAuth client registration failed (HTTP ${response.statusCode}): $detail"
+            if (response.statusCode in 200..299) {
+                val json = JsonInstant.parseToJsonElement(response.body.decodeToString()) as? JsonObject
+                    ?: error("OAuth client registration returned an invalid response")
+                return OAuthClientRegistration(
+                    clientId = json.string("client_id") ?: error("OAuth registration did not return a client ID"),
+                    clientSecret = json.string("client_secret"),
+                    redirectUri = redirectUri,
+                    registrationEndpoint = endpoint,
+                    scope = scope.joinToString(" "),
+                    tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+                )
+            } else {
+                val detail = response.body.decodeToString().take(300)
+                lastException = IllegalStateException("OAuth client registration failed (HTTP ${response.statusCode}): $detail")
+                if (response.statusCode !in listOf(400, 403)) {
+                    break
+                }
+            }
         }
-        val json = JsonInstant.parseToJsonElement(response.body.decodeToString()) as? JsonObject
-            ?: error("OAuth client registration returned an invalid response")
-        return OAuthClientRegistration(
-            clientId = json.string("client_id") ?: error("OAuth registration did not return a client ID"),
-            clientSecret = json.string("client_secret"),
-            redirectUri = redirectUri,
-            registrationEndpoint = endpoint,
-            scope = scope.joinToString(" "),
-            tokenEndpointAuthMethod = tokenEndpointAuthMethod,
-        )
+        throw lastException ?: IllegalStateException("OAuth client registration failed")
     }
 
     private suspend fun requestTokens(endpoint: String, fields: Map<String, String>): OAuthTokens {
@@ -632,6 +642,19 @@ class McpOAuthManager(
 
 internal fun isNotionMcpResource(resource: String): Boolean =
     resource.urlHostOrNull().equals("mcp.notion.com", ignoreCase = true)
+
+internal fun resolveOAuthClientNames(endpoint: String): List<String> = buildList {
+    if (endpoint.contains("figma", ignoreCase = true)) {
+        add("Claude")
+        add("Cursor")
+        add("VS Code")
+        add("LastChat")
+    } else {
+        add("LastChat")
+        add("Claude")
+        add("Cursor")
+    }
+}.distinct()
 
 internal fun parseMcpResourceMetadataHeader(headers: Map<String, List<String>>): String? {
     val challenge = headers.entries

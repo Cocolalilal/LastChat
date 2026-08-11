@@ -47,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SegmentedButton
@@ -481,6 +482,12 @@ private fun McpConnectionsSheet(
     val haptics = rememberPremiumHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val isDarkMode = LocalDarkMode.current
+    val titleColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurface
+    val iconColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    val itemTextColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurface
+    val customServerContentColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+
     val filtered = remember(searchQuery) {
         if (searchQuery.isBlank()) POPULAR_MCP_CONNECTIONS else POPULAR_MCP_CONNECTIONS.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
@@ -502,7 +509,7 @@ private fun McpConnectionsSheet(
                         onDismiss()
                     }
                 }
-            ) { Icon(Icons.Rounded.KeyboardArrowDown, null) }
+            ) { Icon(Icons.Rounded.KeyboardArrowDown, null, tint = iconColor) }
         },
     ) {
         Column(
@@ -514,6 +521,7 @@ private fun McpConnectionsSheet(
             Text(
                 "Add a connection",
                 style = MaterialTheme.typography.headlineSmall,
+                color = titleColor,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 textAlign = TextAlign.Center,
             )
@@ -523,11 +531,25 @@ private fun McpConnectionsSheet(
                 modifier = Modifier.fillMaxWidth(),
                 shape = AppShapes.SearchField,
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = iconColor) },
                 trailingIcon = if (searchQuery.isNotEmpty()) {
-                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, "Clear") } }
+                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, "Clear", tint = iconColor) } }
                 } else null,
-                placeholder = { Text("Search connections") },
+                placeholder = { Text("Search connections", color = if (isDarkMode) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant) },
+                colors = if (isDarkMode) {
+                    OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLeadingIconColor = Color.White,
+                        unfocusedLeadingIconColor = Color.White,
+                        focusedTrailingIconColor = Color.White,
+                        unfocusedTrailingIconColor = Color.White,
+                        focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.5f),
+                    )
+                } else {
+                    OutlinedTextFieldDefaults.colors()
+                },
             )
             Spacer(Modifier.height(16.dp))
             LazyColumn(
@@ -543,17 +565,19 @@ private fun McpConnectionsSheet(
                         },
                         shape = AppShapes.CardMedium,
                         color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = customServerContentColor,
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(40.dp))
+                            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(40.dp), tint = customServerContentColor)
                             Text(
                                 "Custom MCP server",
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleMedium,
+                                color = customServerContentColor,
                             )
                         }
                     }
@@ -576,6 +600,7 @@ private fun McpConnectionsSheet(
                         modifier = Modifier.fillMaxWidth(),
                         shape = shape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = itemTextColor,
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -586,12 +611,17 @@ private fun McpConnectionsSheet(
                                 name = preset.name,
                                 customIconUri = preset.iconUri,
                                 modifier = Modifier.size(40.dp),
+                                contentColor = itemTextColor,
                             )
                             Column(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                Text(preset.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    preset.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = itemTextColor,
+                                )
                                 Text(
                                     preset.description,
                                     style = MaterialTheme.typography.bodySmall,
@@ -611,7 +641,7 @@ private fun McpConnectionsSheet(
                             Icon(
                                 if (installed) Icons.AutoMirrored.Rounded.Login else Icons.Rounded.Add,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = iconColor,
                             )
                         }
                     }

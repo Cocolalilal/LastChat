@@ -54,4 +54,13 @@ class McpOAuthDiscoveryTest {
 
         assertNull(result)
     }
+
+    @Test
+    fun resolvesClientNamesForFigmaAndDefaultEndpoints() {
+        val figmaNames = resolveOAuthClientNames("https://api.figma.com/v1/oauth/mcp/register")
+        assertEquals(listOf("Claude", "Cursor", "VS Code", "LastChat"), figmaNames)
+
+        val defaultNames = resolveOAuthClientNames("https://mcp.linear.app/register")
+        assertEquals(listOf("LastChat", "Claude", "Cursor"), defaultNames)
+    }
 }
