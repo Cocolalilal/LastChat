@@ -11,7 +11,7 @@ class CodexOAuthRedirectActivity : ComponentActivity() {
             Intent(this, me.rerere.rikkahub.RouteActivity::class.java).apply {
                 // Provider detail routes require a UUID. "codex" is the provider type,
                 // so navigating to it as an ID crashed the app after OAuth completed.
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
         )
         finish()
