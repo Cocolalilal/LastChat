@@ -73,6 +73,7 @@ import me.rerere.rikkahub.data.codex.CodexAccountRepository
 import me.rerere.rikkahub.data.codex.CodexCredentialStore
 import me.rerere.rikkahub.data.codex.CodexOAuthManager
 import me.rerere.rikkahub.data.codex.CodexProvider
+import me.rerere.rikkahub.data.codex.createCodexDnsResolver
 
 const val SEARCH_PLATFORM_HTTP_CLIENT = "searchPlatformHttpClient"
 private const val MCP_OKHTTP_CLIENT = "mcpOkHttpClient"
@@ -291,6 +292,7 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            .dns(createCodexDnsResolver())
             .build()
     }
 

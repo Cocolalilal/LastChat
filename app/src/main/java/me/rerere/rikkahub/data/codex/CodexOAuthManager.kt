@@ -131,7 +131,11 @@ class CodexOAuthManager(
                                                 "${error::class.java.name}: ${error.message}",
                                             error,
                                         )
-                                        val message = error.message ?: "OAuth token exchange failed"
+                                        val message = when (error) {
+                                            is java.net.UnknownHostException ->
+                                                context.getString(R.string.codex_oauth_dns_error)
+                                            else -> error.message ?: "OAuth token exchange failed"
+                                        }
                                         _status.value = CodexOAuthStatus.Error(message)
                                         call.respondText(callbackPage(false, message), ContentType.Text.Html)
                                     }

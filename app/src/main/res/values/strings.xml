@@ -1496,6 +1496,7 @@
   
   <string name="codex_oauth_success">Signed in to Codex</string>
   <string name="codex_oauth_ports_unavailable">Couldn\'t start the local sign-in callback</string>
+  <string name="codex_oauth_dns_error">Can\'t reach the OpenAI sign-in servers. Check your network connection (DNS resolution failed).</string>
   <string name="codex_provider_description">Connect your own OpenAI account to use Codex models. Sign-in opens in your browser, credentials stay on this device, and OpenAI usage limits apply.</string>
   <string name="codex_sign_in">Sign in with OpenAI</string>
   <string name="codex_sign_in_required">Sign in before enabling this provider</string>

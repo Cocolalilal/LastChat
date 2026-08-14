@@ -315,6 +315,7 @@ dependencies {
     // okhttp
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
+    implementation(libs.okhttp.dnsoverhttps)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization.json)
 
