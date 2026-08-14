@@ -32,9 +32,11 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
+import androidx.compose.ui.res.stringResource
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -54,26 +56,12 @@ fun AssistantSkillsSubPage(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Category,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.assistant_skills_empty),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.assistant_skills_empty_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            EmptyStateCard(
+                icon = Icons.Rounded.Category,
+                title = stringResource(R.string.assistant_skills_empty),
+                description = stringResource(R.string.assistant_skills_empty_hint),
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
         return
     }

@@ -84,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
@@ -108,6 +109,7 @@ import me.rerere.rikkahub.data.codex.CodexTokenStatus
 import me.rerere.rikkahub.data.codex.CodexUsageWindow
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
@@ -517,11 +519,9 @@ internal fun ColumnScope.ModelList(
             ) {
                 if (providers.isEmpty()) {
                     item {
-                        Text(
-                            text = stringResource(R.string.model_list_no_providers),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.extendColors.gray6,
-                            modifier = Modifier.padding(8.dp)
+                        EmptyStateCard(
+                            icon = Icons.Rounded.Cloud,
+                            title = stringResource(R.string.model_list_no_providers),
                         )
                     }
                 }

@@ -287,6 +287,49 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)
                 ) {
+                    if (mcpConfigs.isEmpty()) {
+                        item(key = "empty") {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (LocalDarkMode.current) {
+                                        MaterialTheme.colorScheme.surfaceContainerLow
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    }
+                                ),
+                                shape = AppShapes.CardLarge
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Extension,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found),
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                     itemsIndexed(mcpConfigs, key = { _, it -> it.id }) { index, mcpConfig ->
                         val position = when {
                             mcpConfigs.size == 1 -> ItemPosition.ONLY
@@ -346,6 +389,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                 }
+                }
 
                 Box(
                     modifier = Modifier
@@ -358,51 +402,6 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                             )
                         )
                 )
-            }
-
-            if (mcpConfigs.isEmpty()) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) {
-                            MaterialTheme.colorScheme.surfaceContainerLow
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        }
-                    ),
-                    shape = AppShapes.CardLarge,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Extension,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
             }
 
             PullToRefreshDefaults.Indicator(

@@ -41,7 +41,9 @@ class OnboardingVM(
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
     fun providerPresets(snapshot: ModelCatalogSnapshot?): List<ProviderPreset> {
-        return (snapshot?.toProviderPresets() ?: emptyList()).withSpecialProviderPresets()
+        return (snapshot?.toProviderPresets() ?: emptyList())
+            .withSpecialProviderPresets()
+            .filterNot { it.type == ProviderSetting.ComfyUI::class }
     }
 
     fun skipSetup(onDone: () -> Unit) {
