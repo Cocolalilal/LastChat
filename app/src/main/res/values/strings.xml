@@ -66,6 +66,8 @@
     <string name="assistant_page_local_tools_python_engine_desc">Execute Python code with pip packages and file I/O. Supports numpy and Pillow.</string>
     <string name="assistant_page_local_tools_linux_workspace_title">Linux Workspace</string>
     <string name="assistant_page_local_tools_linux_workspace_desc">Bind a local Linux workspace with shell, files, Python, and pip tools.</string>
+    <string name="workspace_required_card_title">Workspace Required for %1$s</string>
+    <string name="workspace_required_card_description">Archive and binary files require a bound Linux Workspace to extract, read, or execute.</string>
     <string name="assistant_page_local_tools_tts_title">Text to Speech</string>
     <string name="assistant_page_local_tools_tts_desc">Let the assistant read text aloud using your selected TTS provider</string>
     <string name="assistant_page_local_tools_character_questions_title">Character Questions</string>
@@ -730,6 +732,8 @@
     <string name="setting_provider_page_name">Name</string>
     <string name="setting_provider_page_network_proxy">Network Proxy</string>
     <string name="setting_provider_page_no_models">No models</string>
+    <string name="setting_provider_page_empty_title">No providers yet</string>
+    <string name="setting_provider_page_empty_desc">Tap + to add your first AI provider and start chatting</string>
     <string name="setting_provider_page_no_models_no_api_key">Couldn\'t fetch models from the API. Try adding an API key!</string>
     <string name="setting_provider_page_no_models_with_api_key">Couldn\'t fetch any models from the API. Maybe this provider doesn\'t support model fetching. You can add models manually though!</string>
     <string name="setting_provider_page_no_permission">No Permission</string>
@@ -796,6 +800,8 @@
     <string name="setting_provider_page_search_lobehub">Search LobeHub Icons</string>
     <string name="retry">Retry</string>
     <string name="setting_tts_page_add">Add</string>
+    <string name="setting_tts_page_empty_title">No TTS providers yet</string>
+    <string name="setting_tts_page_empty_desc">Tap + to add a text-to-speech provider</string>
     <string name="setting_tts_page_add_provider">Add TTS Provider</string>
     <string name="setting_tts_page_add_provider_content_description">Add TTS Provider</string>
     <string name="setting_tts_page_api_key">API Key</string>

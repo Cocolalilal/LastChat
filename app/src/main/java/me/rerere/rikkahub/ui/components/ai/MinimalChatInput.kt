@@ -301,6 +301,16 @@ fun MinimalChatInput(
     val currentQuestion = questionnaire?.questions?.getOrNull(questionnaireIndex)
     val isFinalQuestion = questionnaire != null && questionnaireIndex == questionnaire.questions.lastIndex
 
+    val attachedUnsupportedArchives = remember(state.pendingAttachments) {
+        state.pendingAttachments
+            .map { it.part }
+            .filterIsInstance<UIMessagePart.Document>()
+            .filter { me.rerere.rikkahub.data.ai.transformers.isArchiveOrBinaryFile(it.fileName, it.mime) }
+    }
+    var dismissedWorkspaceRequiredCardForAttachments by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val activeUnsupportedArchive = attachedUnsupportedArchives.firstOrNull { it.url !in dismissedWorkspaceRequiredCardForAttachments }
+    val isWorkspaceRequiredCardVisible = activeUnsupportedArchive != null && assistant.workspaceId == null
+
     // OLED dark mode handling for picker sheet
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
@@ -626,6 +636,22 @@ fun MinimalChatInput(
                             }
                         )
                     }
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isWorkspaceRequiredCardVisible && !isQuestionnaireActive && !isToolApprovalActive,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                activeUnsupportedArchive?.let { doc ->
+                    WorkspaceRequiredCard(
+                        fileName = doc.fileName,
+                        onDismiss = {
+                            dismissedWorkspaceRequiredCardForAttachments = dismissedWorkspaceRequiredCardForAttachments + doc.url
+                            haptics.perform(HapticPattern.Pop)
+                        }
+                    )
                 }
             }
 
@@ -1347,6 +1373,66 @@ private fun AttachmentImportAction(
             ContainedLoadingIndicator(modifier = Modifier.fillMaxSize())
         } else {
             idleContent()
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceRequiredCard(
+    fileName: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.FolderOpen,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.workspace_required_card_title, fileName),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.workspace_required_card_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.cancel),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

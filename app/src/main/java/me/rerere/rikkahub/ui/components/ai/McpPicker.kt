@@ -22,7 +22,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -36,15 +35,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Error
-import androidx.compose.material.icons.rounded.SpeakerNotesOff
-import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Extension
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import me.rerere.common.http.urlHostOrNull
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -104,7 +108,7 @@ fun McpPickerButton(
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Terminal,
+                            imageVector = Icons.Rounded.Extension,
                             contentDescription = stringResource(R.string.mcp_picker_title),
                         )
                     }
@@ -217,53 +221,60 @@ fun McpPicker(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        when (status) {
-                            McpStatus.Idle -> Icon(Icons.Rounded.SpeakerNotesOff, null)
-                            McpStatus.Connecting -> CircularProgressIndicator(
-                                modifier = Modifier.size(
-                                    24.dp
-                                )
-                            )
-
-                            McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
-                            is McpStatus.Error -> Icon(Icons.Rounded.Error, null)
-                        }
+                        McpServerFavicon(
+                            url = server.endpointUrl,
+                            modifier = Modifier.size(32.dp),
+                        )
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = server.commonOptions.name,
                                 style = MaterialTheme.typography.titleLarge,
+                                color = Color.White,
                             )
-                            Text(
-                                text = when (status) {
-                                    is McpStatus.Idle -> stringResource(R.string.mcp_status_idle)
-                                    is McpStatus.Connecting -> stringResource(R.string.mcp_status_connecting)
-                                    is McpStatus.Connected -> stringResource(R.string.mcp_status_connected)
-                                    is McpStatus.Error -> stringResource(
-                                        R.string.mcp_status_error,
-                                        (status as McpStatus.Error).message
-                                    )
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = LocalContentColor.current.copy(alpha = 0.8f),
-                                maxLines = 5
-                            )
-                            if (status == McpStatus.Connected) {
-                                val tools = server.commonOptions.tools
-                                val enabledTools = tools.fastFilter { it.enable }
-                                Tag(
-                                    type = TagType.INFO
-                                ) {
-                                    Text(
-                                        stringResource(
-                                            R.string.mcp_tools_enabled_count,
-                                            enabledTools.size,
-                                            tools.size
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (status == McpStatus.Connected) {
+                                    val tools = server.commonOptions.tools
+                                    val enabledTools = tools.fastFilter { it.enable }
+                                    Tag(type = TagType.INFO) {
+                                        Text(
+                                            stringResource(
+                                                R.string.mcp_tools_enabled_count,
+                                                enabledTools.size,
+                                                tools.size
+                                            )
                                         )
-                                    )
+                                    }
                                 }
+                                when (status) {
+                                    is McpStatus.Idle -> Tag(type = TagType.DEFAULT) {
+                                        Text(stringResource(R.string.mcp_status_disconnected))
+                                    }
+                                    is McpStatus.Connecting -> Tag(type = TagType.INFO) {
+                                        Text(stringResource(R.string.mcp_status_connecting))
+                                    }
+                                    is McpStatus.Connected -> Tag(type = TagType.SUCCESS) {
+                                        Text(stringResource(R.string.mcp_status_connected))
+                                    }
+                                    is McpStatus.Error -> Tag(type = TagType.ERROR) {
+                                        Text(stringResource(R.string.mcp_status_error_short))
+                                    }
+                                }
+                            }
+                            val currentStatus = status
+                            if (currentStatus is McpStatus.Error) {
+                                Text(
+                                    text = currentStatus.message,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                         HapticSwitch(
@@ -286,5 +297,36 @@ fun McpPicker(
                 }
             }
         }
+    }
+}
+
+private val McpServerConfig.endpointUrl: String
+    get() = when (this) {
+        is McpServerConfig.SseTransportServer -> url
+        is McpServerConfig.StreamableHTTPServer -> url
+    }
+
+@Composable
+private fun McpServerFavicon(
+    url: String,
+    modifier: Modifier = Modifier,
+) {
+    var failed by remember(url) { mutableStateOf(false) }
+    val faviconUrl = remember(url) {
+        url.urlHostOrNull()?.let { host ->
+            "https://www.google.com/s2/favicons?domain=$host&sz=64"
+        }
+    }
+    if (!failed && faviconUrl != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(faviconUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Fit,
+            onError = { failed = true },
+        )
     }
 }

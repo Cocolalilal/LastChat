@@ -233,6 +233,49 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
+                if (settings.ttsProviders.isEmpty()) {
+                    item(key = "empty") {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (LocalDarkMode.current) {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                }
+                            ),
+                            shape = AppShapes.CardLarge
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_tts_page_empty_title),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_tts_page_empty_desc),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                 itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -327,6 +370,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                     }
+                }
                 }
                 }
             }
@@ -568,6 +612,49 @@ internal fun TtsProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
+            if (settings.ttsProviders.isEmpty()) {
+                item(key = "empty") {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_tts_page_empty_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_tts_page_empty_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
             itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -655,6 +742,7 @@ internal fun TtsProvidersContent(
                             )
                         }
                     }
+                }
                 }
             }
         }

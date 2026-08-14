@@ -300,8 +300,8 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = 6.dp
 private val PILL_HEIGHT = 36.dp
-private val PILL_MORPH_SPEC = spring<IntSize>(dampingRatio = 0.6f, stiffness = 350f)
-private val PILL_CORNER_SPEC = spring<Dp>(dampingRatio = 0.6f, stiffness = 350f)
+private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
+private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
 
 /**
  * Position of a pill in a row of pills.
@@ -498,9 +498,8 @@ private fun AnimatedSinglePill(
         label = "corner_bottom_end"
     )
     
-    val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
     val pillColor by animateColorAsState(
-        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHighest,
+        targetValue = MaterialTheme.colorScheme.surfaceContainerHigh,
         animationSpec = tween(150),
         label = "pill_color"
     )
@@ -616,7 +615,8 @@ private fun AnimatedSinglePill(
                             var othersCanAppear by remember(key) { mutableStateOf(wasCompletedInitially) }
                             
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 items.forEachIndexed { index, item ->
@@ -627,60 +627,40 @@ private fun AnimatedSinglePill(
                                         else -> PillPosition.MIDDLE
                                     }
                                     
-                                    if (index == 0) {
-                                        LaunchedEffect(Unit) {
-                                            if (!wasCompletedInitially) {
-                                                delay(100L)
-                                            }
-                                            othersCanAppear = true
-                                        }
-                                        if (items.size == 1) {
-                                            ExpandedActivityPill(
-                                                item = item,
-                                                onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
-                                            )
-                                        } else {
-                                            CompactActivityPill(
-                                                item = item,
-                                                onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
-                                            )
-                                        }
+                                    if (wasCompletedInitially) {
+                                        GroupedActivityItemPill(
+                                            item = item,
+                                            onClick = { onClick(item.type) },
+                                            position = position
+                                        )
                                     } else {
-                                        if (wasCompletedInitially) {
-                                            CompactActivityPill(
+                                        var visible by remember(key) { mutableStateOf(false) }
+                                        LaunchedEffect(othersCanAppear) {
+                                            if (index == 0) {
+                                                delay(60L)
+                                                othersCanAppear = true
+                                                visible = true
+                                            } else if (othersCanAppear && !visible) {
+                                                delay(index * 40L)
+                                                visible = true
+                                            }
+                                        }
+                                        
+                                        AnimatedVisibility(
+                                            visible = visible,
+                                            enter = fadeIn(tween(180)) +
+                                                scaleIn(initialScale = 0.85f, animationSpec = spring(stiffness = 400f)) +
+                                                slideInHorizontally(
+                                                    initialOffsetX = { -it / 3 },
+                                                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                                ),
+                                            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.85f) + slideOutHorizontally(targetOffsetX = { -it / 3 })
+                                        ) {
+                                            GroupedActivityItemPill(
                                                 item = item,
                                                 onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                                position = position
                                             )
-                                        } else {
-                                            var visible by remember(key) { mutableStateOf(false) }
-                                            LaunchedEffect(othersCanAppear) {
-                                                if (othersCanAppear && !visible) {
-                                                    delay(index * 50L)
-                                                    visible = true
-                                                }
-                                            }
-                                            
-                                            AnimatedVisibility(
-                                                visible = visible,
-                                                enter = fadeIn(tween(150)) + slideInHorizontally(
-                                                    initialOffsetX = { -it / 2 },
-                                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
-                                                ),
-                                                exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
-                                            ) {
-                                                CompactActivityPill(
-                                                    item = item,
-                                                    onClick = { onClick(item.type) },
-                                                    position = position,
-                                                    connectsToBubbleBelow = connectsToBubbleBelow
-                                                )
-                                            }
                                         }
                                     }
                                 }
@@ -895,7 +875,7 @@ private fun ReasoningPreviewCard(
 }
 
 /**
- * Content for reasoning pill (live timer).
+ * Content for reasoning pill (minimized). Always displays "Reasoning".
  */
 @Composable
 private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
@@ -916,31 +896,14 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    val displayTitle = stringResource(R.string.activity_timeline_reasoning)
-    AnimatedContent(
-        targetState = displayTitle,
-        transitionSpec = {
-            (fadeIn(tween(220)) + slideInVertically(
-                animationSpec = tween(220),
-                initialOffsetY = { it / 2 }
-            )).togetherWith(
-                fadeOut(tween(150)) + slideOutVertically(
-                    animationSpec = tween(150),
-                    targetOffsetY = { -it / 2 }
-                )
-            )
-        },
-        label = "reasoning_title"
-    ) { text ->
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = if (isLive) Modifier.shimmer(true) else Modifier
-        )
-    }
+    Text(
+        text = stringResource(R.string.activity_timeline_reasoning),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = if (isLive) Modifier.shimmer(true) else Modifier
+    )
     Text(
         text = formatDuration(elapsedMs),
         style = MaterialTheme.typography.labelSmall,
@@ -952,7 +915,7 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
 @Composable
 private fun OcrContent(isLive: Boolean) {
     Icon(
-            imageVector = Icons.Rounded.Image,
+        imageVector = Icons.Rounded.Image,
         contentDescription = null,
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -988,6 +951,7 @@ private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolea
 
 /**
  * Content for expanded single activity (after completion).
+ * Matches the streaming layout (Icon + Label + Optional details/duration).
  */
 @Composable
 private fun ExpandedActivityContent(item: ActivityItem) {
@@ -998,36 +962,46 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    val text = when (item.type) {
+    when (item.type) {
         ActivityType.REASONING -> {
+            Text(
+                text = stringResource(R.string.activity_timeline_reasoning),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (item.durationMs != null) {
-                "Reasoned for ${formatDuration(item.durationMs)}"
-            } else {
-                "Reasoned"
+                Text(
+                    text = formatDuration(item.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-        ActivityType.OCR -> {
-            if (item.count > 1) {
-                stringResource(R.string.activity_pill_ocr_done_count, item.count)
-            } else {
-                stringResource(R.string.activity_pill_ocr_done)
+        else -> {
+            val text = when (item.type) {
+                ActivityType.OCR -> {
+                    if (item.count > 1) {
+                        stringResource(R.string.activity_pill_ocr_done_count, item.count)
+                    } else {
+                        stringResource(R.string.activity_pill_ocr_done)
+                    }
+                }
+                ActivityType.SEARCH -> if (item.count > 1) "Search Web ×${item.count}" else (item.displayName ?: "Search Web")
+                ActivityType.MEMORY_RECALL -> if (item.count > 1) stringResource(R.string.activity_pill_memory_recalled_count, item.count) else stringResource(R.string.activity_pill_memory_recalled)
+                ActivityType.PYTHON -> if (item.count > 1) "Python ×${item.count}" else (item.displayName ?: "Ran Python")
+                ActivityType.WORKSPACE -> if (item.count > 1) "Workspace ×${item.count}" else (item.displayName ?: "Used workspace")
+                ActivityType.SKILL -> if (item.count > 1) "Skills ×${item.count}" else "Managed skills"
+                ActivityType.MCP -> if (item.count > 1) "MCP ×${item.count}" else "MCP"
+                ActivityType.LOADING_MODEL -> "Loaded model"
+                ActivityType.TOOL_OTHER -> item.displayName ?: "Used tool"
             }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        ActivityType.SEARCH -> "Searched the Web"
-        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
-        ActivityType.PYTHON -> "Ran Python"
-        ActivityType.WORKSPACE -> "Used workspace"
-        ActivityType.SKILL -> "Managed skills"
-        ActivityType.MCP -> "MCP"
-        ActivityType.TOOL_OTHER -> "Used tool"
-        ActivityType.LOADING_MODEL -> "Loading model"
     }
-
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
 }
 
 /**
@@ -1081,7 +1055,7 @@ private fun SinglePill(
     isLoading: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val pillColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val pillShape = getCornerRadii(position, connectsToBubbleBelow)
 
     val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
@@ -1101,8 +1075,8 @@ private fun SinglePill(
         onClick = onClick
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             content()
@@ -1267,6 +1241,64 @@ private fun ExpandedActivityPill(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Grouped activity item pill inside the multi-step grouped container.
+ * Uses surfaceContainerHighest background (same color as Imagine and Stats buttons in sidepanel)
+ * and optical corner shapes matching its position in the group.
+ */
+@Composable
+private fun GroupedActivityItemPill(
+    item: ActivityItem,
+    onClick: () -> Unit,
+    position: PillPosition,
+    modifier: Modifier = Modifier
+) {
+    val shape = when (position) {
+        PillPosition.SINGLE -> RoundedCornerShape(16.dp)
+        PillPosition.FIRST -> RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 6.dp, bottomEnd = 6.dp)
+        PillPosition.MIDDLE -> RoundedCornerShape(6.dp)
+        PillPosition.LAST -> RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 16.dp, bottomEnd = 16.dp)
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier
+            .height(28.dp)
+            .testTag(item.type.toTestTag())
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = item.type.getIcon(),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            val text = when (item.type) {
+                ActivityType.REASONING -> {
+                    item.durationMs?.let { formatDuration(it) }
+                }
+                else -> null
+            }
+
+            if (text != null) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

@@ -869,7 +869,7 @@ internal fun deriveActivityState(
             .map { categorizeToolName(resolveActivityToolName(it.toolName, it.arguments)) }
             .distinct()
         
-        val hasReasoning = totalReasoningMs > 0
+        val hasReasoning = totalReasoningMs > 0 || reasoningParts.isNotEmpty()
         val hasTools = toolCategories.isNotEmpty()
         val hasOcr = ocrAnnotations.isNotEmpty()
         

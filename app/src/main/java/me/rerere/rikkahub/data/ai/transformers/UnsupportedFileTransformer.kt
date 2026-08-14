@@ -39,8 +39,12 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                             part.mime.startsWith("audio/") ||
                             part.mime == "application/pdf"
 
-                        if (!isNative && isWorkspaceEnabled) {
-                            UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
+                        if (!isNative) {
+                            if (isWorkspaceEnabled) {
+                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
+                            } else {
+                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - This file format cannot be processed directly by the model. A Linux workspace must be bound to this assistant to extract or process archive and binary files.]\n")
+                            }
                         } else {
                             part
                         }

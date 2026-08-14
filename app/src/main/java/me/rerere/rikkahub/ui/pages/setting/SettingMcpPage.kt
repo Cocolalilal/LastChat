@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
@@ -61,7 +62,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -86,9 +88,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.CommentsDisabled
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Info
@@ -96,7 +98,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Terminal
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -243,17 +244,23 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         val scope = rememberCoroutineScope()
         val state = rememberPullToRefreshState()
         val loading = status.values.any { it == McpStatus.Connecting }
-        PullToRefreshBox(
-            isRefreshing = loading,
-            onRefresh = {
-                scope.launch {
-                    mcpManager.syncAll()
-                }
-            },
-            state = state,
+        val canRefresh = lazyListState.firstVisibleItemIndex == 0 &&
+            lazyListState.firstVisibleItemScrollOffset == 0 &&
+            scrollBehavior.state.collapsedFraction == 0f
+        Box(
             modifier = Modifier
                 .padding(top = innerPadding.calculateTopPadding())
                 .consumeWindowInsets(innerPadding)
+                .pullToRefresh(
+                    state = state,
+                    isRefreshing = loading,
+                    enabled = canRefresh,
+                    onRefresh = {
+                        scope.launch {
+                            mcpManager.syncAll()
+                        }
+                    }
+                )
         ) {
             // Track which item is being dragged and its offset
             var draggingIndex by remember { mutableStateOf(-1) }
@@ -354,19 +361,55 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             }
 
             if (mcpConfigs.isEmpty()) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (LocalDarkMode.current) {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                    ),
+                    shape = AppShapes.CardLarge,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 16.dp)
                 ) {
-                    Text(text = "No connections yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "Tap + to choose a popular service or add your own MCP server.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Extension,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
+
+            PullToRefreshDefaults.Indicator(
+                state = state,
+                isRefreshing = loading,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
     
@@ -748,9 +791,9 @@ private fun McpServerItem(
                     )
                 } else {
                     when (status) {
-                        McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
+                        McpStatus.Idle -> Icon(Icons.Rounded.Extension, null)
                         McpStatus.Connecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
+                        McpStatus.Connected -> Icon(Icons.Rounded.Extension, null)
                         is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
                     }
                 }

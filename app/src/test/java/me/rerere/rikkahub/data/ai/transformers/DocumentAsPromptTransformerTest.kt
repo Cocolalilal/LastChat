@@ -49,4 +49,16 @@ class DocumentAsPromptTransformerTest {
         assertEquals(listOf(2), prompt.ocrPageNumbers)
         assertEquals(listOf(1), renderedPageIndexes)
     }
+
+    @Test
+    fun `isArchiveOrBinaryFile correctly identifies archives and binary formats`() {
+        assertTrue(isArchiveOrBinaryFile("archive.zip", "application/zip"))
+        assertTrue(isArchiveOrBinaryFile("data.tar.gz", "application/gzip"))
+        assertTrue(isArchiveOrBinaryFile("app.apk", "application/vnd.android.package-archive"))
+        assertTrue(isArchiveOrBinaryFile("binary.bin", "application/octet-stream"))
+        
+        assertFalse(isArchiveOrBinaryFile("document.txt", "text/plain"))
+        assertFalse(isArchiveOrBinaryFile("code.kt", "text/x-kotlin"))
+        assertFalse(isArchiveOrBinaryFile("config.json", "application/json"))
+    }
 }

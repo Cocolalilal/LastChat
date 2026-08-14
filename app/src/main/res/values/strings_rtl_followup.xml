@@ -29,9 +29,11 @@
     <string name="chat_message_cached">(%1$s cached)</string>
     <string name="chat_message_tokens_per_second">%1$.1f tok/s</string>
     <string name="mcp_status_idle">Idle</string>
+    <string name="mcp_status_disconnected">Disconnected</string>
     <string name="mcp_status_connecting">Connecting</string>
     <string name="mcp_status_connected">Connected</string>
     <string name="mcp_status_error">Error: %1$s</string>
+    <string name="mcp_status_error_short">Error</string>
     <string name="mcp_tools_enabled_count">%1$d/%2$d tools</string>
     <string name="export_include_memories">Include Memories</string>
     <string name="export_include_linked_lorebooks">Include Linked Lorebooks</string>

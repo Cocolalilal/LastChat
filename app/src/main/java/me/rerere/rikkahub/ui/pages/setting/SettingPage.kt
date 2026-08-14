@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
@@ -160,7 +161,7 @@ fun SettingPage(
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),
-                        icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
+                        icon = { Icon(Icons.Rounded.Extension, null, modifier = Modifier.size(20.dp)) },
                         contentPadding = mainSettingItemPadding,
                         onClick = { navController.navigate(Screen.SettingMcp) }
                     )

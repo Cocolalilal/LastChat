@@ -321,6 +321,8 @@
 
     <!-- Search settings -->
     <string name="setting_search_delete_service">Are you sure you want to delete this search service?</string>
+    <string name="setting_search_empty_title">No search providers yet</string>
+    <string name="setting_search_empty_desc">Tap + to add a search provider</string>
     <string name="setting_search_service_generic">Search Service</string>
     <string name="setting_search_edit_service">Edit %1$s</string>
     <string name="setting_search_bing_no_config">Bing search doesn\'t require any configuration.</string>

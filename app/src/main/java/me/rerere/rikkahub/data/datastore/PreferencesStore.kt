@@ -560,7 +560,11 @@ class SettingsStore(
 
             preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(normalizedSettings.searchServices)
             preferences[SEARCH_COMMON] = JsonInstant.encodeToString(normalizedSettings.searchCommonOptions)
-            preferences[SEARCH_SELECTED] = normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
+            preferences[SEARCH_SELECTED] = if (normalizedSettings.searchServices.isEmpty()) {
+                0
+            } else {
+                normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
+            }
 
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(normalizedSettings.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
