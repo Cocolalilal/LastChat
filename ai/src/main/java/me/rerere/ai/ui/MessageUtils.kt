@@ -360,7 +360,7 @@ fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
 }
 
 fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
-    if (size <= 0) return emptyList()
+    if (size <= 0) return this
     if (this.size <= size) return this
 
     var adjustedStartIndex = this.size - size

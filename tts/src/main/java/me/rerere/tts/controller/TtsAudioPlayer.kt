@@ -15,5 +15,8 @@ interface TtsAudioPlayer {
     fun release()
     fun seekBy(ms: Long)
     fun setSpeed(speed: Float)
-    suspend fun play(response: TTSResponse)
+    fun skipNext()
+    fun setTotalChunks(total: Int)
+    fun enqueue(chunkIndex: Int, totalChunks: Int, response: TTSResponse)
 }
+

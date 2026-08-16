@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
@@ -29,8 +28,6 @@ import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.create
 import platform.darwin.NSObject
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** AVFoundation playback implementation used by the shared TTS queue on iOS. */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
@@ -43,6 +40,13 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
     private var delegate: PlaybackDelegate? = null
     private var positionJob: Job? = null
     private var speed = 1.0f
+    private var totalChunksCount = 0
+    private val queuedItems = mutableListOf<QueuedAudioItem>()
+
+    private data class QueuedAudioItem(
+        val chunkIndex: Int,
+        val response: TTSResponse
+    )
 
     override fun pause() {
         player?.pause()
@@ -51,13 +55,18 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
     }
 
     override fun resume() {
-        player?.play()
-        startPositionUpdates()
-        mutablePlaybackState.update { it.copy(status = PlaybackStatus.Playing) }
+        if (player == null && queuedItems.isNotEmpty()) {
+            playNextQueued()
+        } else {
+            player?.play()
+            startPositionUpdates()
+            mutablePlaybackState.update { it.copy(status = PlaybackStatus.Playing) }
+        }
     }
 
     override fun stop() {
         player?.stop()
+        clear()
         stopPositionUpdates()
         mutablePlaybackState.update { it.copy(status = PlaybackStatus.Idle, positionMs = 0L) }
     }
@@ -66,11 +75,12 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
         player?.delegate = null
         player = null
         delegate = null
+        queuedItems.clear()
+        totalChunksCount = 0
     }
 
     override fun release() {
         stop()
-        clear()
         scope.cancel()
     }
 
@@ -90,12 +100,50 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
         mutablePlaybackState.update { it.copy(speed = speed) }
     }
 
-    override suspend fun play(response: TTSResponse) = suspendCancellableCoroutine { continuation ->
-        val bytes = if (response.format == AudioFormat.PCM) {
-            pcmToWavBytes(response.audioData, response.sampleRate ?: 24_000)
-        } else {
-            response.audioData
+    override fun skipNext() {
+        if (queuedItems.isNotEmpty()) {
+            player?.stop()
+            player?.delegate = null
+            player = null
+            delegate = null
+            playNextQueued()
         }
+    }
+
+    override fun setTotalChunks(total: Int) {
+        totalChunksCount = total
+        mutablePlaybackState.update { it.copy(totalChunks = total) }
+    }
+
+    override fun enqueue(chunkIndex: Int, totalChunks: Int, response: TTSResponse) {
+        totalChunksCount = totalChunks
+        queuedItems.add(QueuedAudioItem(chunkIndex, response))
+        mutablePlaybackState.update {
+            it.copy(
+                totalChunks = totalChunks,
+                status = if (player?.isPlaying == true) PlaybackStatus.Playing else PlaybackStatus.Buffering
+            )
+        }
+
+        if (player == null || player?.isPlaying != true) {
+            playNextQueued()
+        }
+    }
+
+    private fun playNextQueued() {
+        if (queuedItems.isEmpty()) {
+            stopPositionUpdates()
+            mutablePlaybackState.update { it.copy(status = PlaybackStatus.Ended) }
+            return
+        }
+
+        val item = queuedItems.removeAt(0)
+        val bytes = if (item.response.format == AudioFormat.PCM) {
+            pcmToWavBytes(item.response.audioData, item.response.sampleRate ?: 24_000)
+        } else {
+            item.response.audioData
+        }
+
         val session = AVAudioSession.sharedInstance()
         session.setCategory(AVAudioSessionCategoryPlayback, error = null)
 
@@ -103,23 +151,14 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
         val playbackDelegate = PlaybackDelegate(
             onFinished = {
                 stopPositionUpdates()
-                mutablePlaybackState.update {
-                    it.copy(
-                        status = PlaybackStatus.Ended,
-                        positionMs = (current.duration * 1_000).toLong(),
-                        durationMs = (current.duration * 1_000).toLong(),
-                    )
-                }
-                if (continuation.isActive) continuation.resume(Unit)
+                playNextQueued()
             },
             onError = { error ->
                 stopPositionUpdates()
                 mutablePlaybackState.update {
                     it.copy(status = PlaybackStatus.Error, errorMessage = error.localizedDescription)
                 }
-                if (continuation.isActive) {
-                    continuation.resumeWithException(IllegalStateException(error.localizedDescription))
-                }
+                playNextQueued()
             },
         )
         current.delegate = playbackDelegate
@@ -127,30 +166,29 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
         current.rate = speed
         player = current
         delegate = playbackDelegate
+
+        val current1Based = item.chunkIndex + 1
         mutablePlaybackState.update {
             it.copy(
                 status = PlaybackStatus.Buffering,
                 positionMs = 0L,
                 durationMs = (current.duration * 1_000).toLong(),
                 speed = speed,
+                currentChunkIndex = current1Based,
+                totalChunks = totalChunksCount.coerceAtLeast(current1Based),
                 errorMessage = null,
             )
         }
+
         current.prepareToPlay()
-        if (!current.play()) {
-            val error = IllegalStateException("AVAudioPlayer could not start playback")
+        if (current.play()) {
+            mutablePlaybackState.update { it.copy(status = PlaybackStatus.Playing) }
+            startPositionUpdates()
+        } else {
             mutablePlaybackState.update {
-                it.copy(status = PlaybackStatus.Error, errorMessage = error.message)
+                it.copy(status = PlaybackStatus.Error, errorMessage = "AVAudioPlayer could not start playback")
             }
-            continuation.resumeWithException(error)
-            return@suspendCancellableCoroutine
-        }
-        mutablePlaybackState.update { it.copy(status = PlaybackStatus.Playing) }
-        startPositionUpdates()
-        continuation.invokeOnCancellation {
-            current.delegate = null
-            current.stop()
-            stopPositionUpdates()
+            playNextQueued()
         }
     }
 
@@ -199,3 +237,4 @@ private fun ByteArray.toNSData(): NSData = if (isEmpty()) {
 } else {
     usePinned { pinned -> NSData.create(bytes = pinned.addressOf(0), length = size.toULong()) }
 }
+

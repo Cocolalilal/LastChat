@@ -473,11 +473,28 @@ private fun speakablePrefixLength(text: String, final: Boolean): Int {
     val paragraphBreak = text.indexOf("\n\n")
     if (paragraphBreak >= 0) return paragraphBreak + 2
 
-    val sentenceBoundary = text.indexOfFirst { it == '.' || it == '!' || it == '?' || it == '。' || it == '！' || it == '？' }
-    if (sentenceBoundary >= 0) return sentenceBoundary + 1
+    for (i in text.indices) {
+        val c = text[i]
+        if (c == '。' || c == '！' || c == '？' || c == '…') {
+            return i + 1
+        }
+        if (c == '!' || c == '?') {
+            return i + 1
+        }
+        if (c == '.') {
+            val prevIsDigit = i > 0 && text[i - 1].isDigit()
+            val nextIsDigit = i + 1 < text.length && text[i + 1].isDigit()
+            if (!prevIsDigit || !nextIsDigit) {
+                val nextIsBoundary = i + 1 == text.length || text[i + 1].isWhitespace() || text[i + 1] == '\n' || text[i + 1] == '"' || text[i + 1] == '\''
+                if (nextIsBoundary) {
+                    return i + 1
+                }
+            }
+        }
+    }
 
-    val softBoundary = text.indexOfFirst { it == '\n' || it == ';' || it == '；' }
-    if (softBoundary >= 0) return softBoundary + 1
+    val lineBreak = text.indexOf('\n')
+    if (lineBreak >= 0) return lineBreak + 1
 
     return if (final) trimmedEnd + 1 else 0
 }
@@ -537,6 +554,8 @@ private fun ChatTtsAutoplayEffect(
             completedMessageId = latestMessage.id
             return@LaunchedEffect
         }
+
+        if (mode != TtsAutoplayMode.WHILE_GENERATING) return@LaunchedEffect
 
         if (!wasGenerating) {
             val baselineMessage = latestAssistantSpeechMessage(conversation)
