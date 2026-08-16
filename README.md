@@ -78,14 +78,4 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
     * **Antigravity**
 
 ##
-
-<a href="https://www.star-history.com/?repos=Cocolalilal%2FLastChat&type=date&legend=bottom-right">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Cocolalilal/LastChat&type=date&legend=top-left" />
- </picture>
-</a>
-
-##
 *Note: This project is a fork and may contain modifications or features not present in the original RikkaHub repository.*
