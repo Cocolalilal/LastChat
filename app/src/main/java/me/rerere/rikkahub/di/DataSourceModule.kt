@@ -246,6 +246,7 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            .fastFallback(true)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
@@ -267,6 +268,8 @@ val dataSourceModule = module {
             .writeTimeout(120.seconds)
             .followSslRedirects(true)
             .followRedirects(true)
+            .retryOnConnectionFailure(true)
+            .fastFallback(true)
             .build()
     }
 
@@ -292,6 +295,7 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            .fastFallback(true)
             .dns(createCodexDnsResolver())
             .build()
     }
@@ -364,6 +368,7 @@ val dataSourceModule = module {
                     .followRedirects(false)
                     .authenticator(authHandler)
                     .addNetworkInterceptor(authHandler)
+                    .fastFallback(true)
                     .writeTimeout(5.minutes)
                     .build()
             }

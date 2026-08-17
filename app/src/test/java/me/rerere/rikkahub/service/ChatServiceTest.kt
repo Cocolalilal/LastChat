@@ -107,6 +107,31 @@ class ChatServiceTest {
     }
 
     @Test
+    fun shouldPreserveInMemoryConversationKeepsMultiTurnConversations() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.assistant("Spontaneous greeting")),
+                MessageNode.of(UIMessage.user("Hello back!")),
+                MessageNode.of(UIMessage.assistant("How are you today?")),
+            ),
+        )
+
+        assertTrue(
+            shouldPreserveInMemoryConversation(
+                conversation = conversation,
+                persistenceMode = ChatPersistenceMode.NORMAL,
+            )
+        )
+        assertTrue(
+            shouldPreserveInMemoryConversation(
+                conversation = conversation,
+                persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
+            )
+        )
+    }
+
+    @Test
     fun hasDurableAssistantProgressRequiresVisibleAssistantWork() {
         assertFalse(
             UIMessage(

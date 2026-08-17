@@ -16,6 +16,14 @@ private const val DOH_CLIENT_TIMEOUT_MS = 8_000L
  * Tries: system DNS -> Google DoH -> AliDNS DoH (China-reachable).
  */
 fun createCodexDnsResolver(): Dns {
+    val cloudflare = DnsOverHttps.Builder()
+        .client(newDohClient())
+        .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+        .bootstrapDnsHosts(
+            InetAddress.getByName("1.1.1.1"),
+            InetAddress.getByName("1.0.0.1"),
+        )
+        .build()
     val google = DnsOverHttps.Builder()
         .client(newDohClient())
         .url("https://dns.google/dns-query".toHttpUrl())
@@ -32,28 +40,40 @@ fun createCodexDnsResolver(): Dns {
             InetAddress.getByName("223.6.6.6"),
         )
         .build()
-    return FallbackDns(Dns.SYSTEM, FallbackDns(google, alidns))
+    return FallbackDns(Dns.SYSTEM, FallbackDns(cloudflare, FallbackDns(google, alidns)))
 }
 
 private fun newDohClient(): OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(DOH_CLIENT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     .readTimeout(DOH_CLIENT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    .fastFallback(true)
     .build()
 
-private class FallbackDns(
+internal class FallbackDns(
     private val primary: Dns,
     private val fallback: Dns,
 ) : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
+        val primaryResult = runCatching { primary.lookup(hostname) }
+        val addresses = primaryResult.getOrNull()
+        if (!addresses.isNullOrEmpty()) {
+            return addresses
+        }
+        val primaryError = primaryResult.exceptionOrNull()
         try {
-            return primary.lookup(hostname)
-        } catch (primaryError: UnknownHostException) {
-            try {
-                return fallback.lookup(hostname)
-            } catch (fallbackError: UnknownHostException) {
-                fallbackError.addSuppressed(primaryError)
-                throw fallbackError
+            return fallback.lookup(hostname)
+        } catch (fallbackError: Throwable) {
+            val finalError = if (fallbackError is UnknownHostException) {
+                fallbackError
+            } else {
+                UnknownHostException("Failed to resolve $hostname: ${fallbackError.message}").apply {
+                    initCause(fallbackError)
+                }
             }
+            if (primaryError != null && primaryError !== finalError) {
+                finalError.addSuppressed(primaryError)
+            }
+            throw finalError
         }
     }
 }

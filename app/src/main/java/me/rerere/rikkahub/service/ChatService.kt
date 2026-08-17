@@ -831,7 +831,17 @@ class ChatService(
     fun ensureConversationPersistenceMode(conversationId: Uuid, mode: ChatPersistenceMode) {
         val currentMode = getConversationPersistenceMode(conversationId)
         if (currentMode == ChatPersistenceMode.NORMAL && mode != ChatPersistenceMode.NORMAL) {
+            val inMemory = getConversationState(conversationId)?.value
+            if (inMemory != null && inMemory.messageNodes.isNotEmpty()) {
+                val isDraft = inMemory.messageNodes.size == 1 &&
+                    inMemory.messageNodes.first().messages.all { it.role == MessageRole.ASSISTANT }
+                if (!isDraft && mode == ChatPersistenceMode.PERSIST_ON_REPLY) {
+                    return
+                }
+            }
             setConversationPersistenceMode(conversationId, mode)
+        } else if (mode == ChatPersistenceMode.NORMAL && currentMode != ChatPersistenceMode.NORMAL) {
+            setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
         }
     }
 
@@ -919,6 +929,20 @@ class ChatService(
     ): Conversation {
         val trimmedContent = content.trim()
         require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
+
+        val existingInDb = withContext(Dispatchers.IO) {
+            conversationRepo.getConversationById(conversationId)
+        }
+        if (existingInDb != null) {
+            setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
+            updateConversation(conversationId, existingInDb)
+            return existingInDb
+        }
+
+        val inMemory = getConversationState(conversationId)?.value
+        if (inMemory != null && inMemory.messageNodes.isNotEmpty()) {
+            return inMemory
+        }
 
         val conversation = Conversation.ofId(
             id = conversationId,

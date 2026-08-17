@@ -423,7 +423,14 @@ class ChatVM(
 
     fun applyRoutePersistenceMode(mode: ChatPersistenceMode?) {
         if (mode == null) return
-        chatService.ensureConversationPersistenceMode(_conversationId, mode)
+        viewModelScope.launch(Dispatchers.IO) {
+            val existsInDb = conversationRepo.getConversationById(_conversationId) != null
+            if (!existsInDb) {
+                chatService.ensureConversationPersistenceMode(_conversationId, mode)
+            } else {
+                chatService.ensureConversationPersistenceMode(_conversationId, ChatPersistenceMode.NORMAL)
+            }
+        }
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {

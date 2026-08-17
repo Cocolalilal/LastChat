@@ -161,6 +161,7 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
@@ -654,6 +655,14 @@ fun ChatPage(
 
     LaunchedEffect(id, persistenceMode) {
         vm.applyRoutePersistenceMode(ChatPersistenceMode.fromRouteValue(persistenceMode))
+    }
+
+    LaunchedEffect(conversationPersistenceMode) {
+        if (conversationPersistenceMode == ChatPersistenceMode.NORMAL && target.persistenceMode != null) {
+            navController.currentBackStackEntry
+                ?.savedStateHandle
+                ?.set(CHAT_ROUTE_TARGET_KEY, target.copy(persistenceMode = null))
+        }
     }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)

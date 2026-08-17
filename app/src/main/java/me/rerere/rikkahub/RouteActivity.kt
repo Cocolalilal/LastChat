@@ -172,16 +172,25 @@ internal suspend fun resolveSpontaneousNotificationTarget(
 
     getConsumedTarget(data.eventId)?.let { consumedTarget ->
         updateAssistantSelection(consumedTarget.assistantId)
+        val conversationExists = hasConversation(consumedTarget.conversationId)
+        if (conversationExists) {
+            val resolvedTarget = consumedTarget.copy(
+                persistenceMode = ChatPersistenceMode.NORMAL,
+                focusLatestMessageKey = data.eventId,
+            )
+            markEventConsumed(data.eventId, resolvedTarget)
+            return resolvedTarget
+        }
         if (consumedTarget.persistenceMode != ChatPersistenceMode.NORMAL) {
             seedDraftConversation(
                 consumedTarget.assistantId,
                 message,
                 consumedTarget.conversationId,
             ) ?: return null
-        } else if (!hasConversation(consumedTarget.conversationId)) {
+            return consumedTarget.copy(focusLatestMessageKey = data.eventId)
+        } else {
             return null
         }
-        return consumedTarget.copy(focusLatestMessageKey = data.eventId)
     }
 
     if (isEventConsumed(data.eventId)) {

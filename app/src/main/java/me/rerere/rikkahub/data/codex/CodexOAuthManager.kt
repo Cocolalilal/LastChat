@@ -134,6 +134,8 @@ class CodexOAuthManager(
                                         val message = when (error) {
                                             is java.net.UnknownHostException ->
                                                 context.getString(R.string.codex_oauth_dns_error)
+                                            is java.net.SocketTimeoutException ->
+                                                context.getString(R.string.codex_oauth_network_timeout)
                                             else -> error.message ?: "OAuth token exchange failed"
                                         }
                                         _status.value = CodexOAuthStatus.Error(message)
