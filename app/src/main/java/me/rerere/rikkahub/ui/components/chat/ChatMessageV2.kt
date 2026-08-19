@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -1093,7 +1094,9 @@ fun ChatMessageTurn(
                     },
                     onTimelineDismiss = { timelineOpen = false },
                     onBubbleClick = {
-                        if (isLastTurn) {
+                        if (timelineOpen) {
+                            timelineOpen = false
+                        } else if (isLastTurn) {
                             showActionsSheet = true
                         } else {
                             actionsExpanded = !actionsExpanded
@@ -1401,6 +1404,17 @@ private fun AssistantMessageTurn(
                             durationMillis = 220,
                             easing = LinearOutSlowInEasing
                         )
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .then(
+                if (timelineOpen) {
+                    Modifier.combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onTimelineDismiss
                     )
                 } else {
                     Modifier

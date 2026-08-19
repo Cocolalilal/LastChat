@@ -56,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -453,13 +454,23 @@ private fun AnimatedSinglePill(
 ) {
     val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning && !timelineOpen
     val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
-        SinglePillContentState.ExpandedTimeline(
-            entries = timelineEntries,
-            initialRequest = initialTimelineOpenRequest,
-            assistantId = assistantId,
-            scrollHandoffMode = timelineScrollHandoffMode,
-            isLive = timelineLive,
-        )
+        if (timelineEntries.size == 1 && timelineEntries.first() is TimelineEntry.Reasoning) {
+            val reasoningEntry = timelineEntries.first() as TimelineEntry.Reasoning
+            SinglePillContentState.ExpandedReasoning(
+                ActivityState.Reasoning(
+                    startTimeMs = System.currentTimeMillis() - (reasoningEntry.durationMs ?: 0L),
+                    reasoningText = reasoningEntry.content
+                )
+            )
+        } else {
+            SinglePillContentState.ExpandedTimeline(
+                entries = timelineEntries,
+                initialRequest = initialTimelineOpenRequest,
+                assistantId = assistantId,
+                scrollHandoffMode = timelineScrollHandoffMode,
+                isLive = timelineLive,
+            )
+        }
     } else if (isExpandedReasoning && state is ActivityState.Reasoning) {
         SinglePillContentState.ExpandedReasoning(state)
     } else {
@@ -498,8 +509,9 @@ private fun AnimatedSinglePill(
         label = "corner_bottom_end"
     )
     
+    val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
     val pillColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.surfaceContainerHigh,
+        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
         animationSpec = tween(150),
         label = "pill_color"
     )
@@ -587,7 +599,8 @@ private fun AnimatedSinglePill(
                 is SinglePillContentState.ExpandedReasoning -> {
                     ReasoningPreviewCard(
                         state = (state as? ActivityState.Reasoning) ?: targetContentState.state,
-                        active = surfaceExpanded
+                        active = surfaceExpanded,
+                        onHeaderClick = if (timelineOpen) onTimelineDismiss else null
                     )
                 }
                 is SinglePillContentState.Compact -> {
@@ -615,8 +628,7 @@ private fun AnimatedSinglePill(
                             var othersCanAppear by remember(key) { mutableStateOf(wasCompletedInitially) }
                             
                             Row(
-                                modifier = Modifier.padding(3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 items.forEachIndexed { index, item ->
@@ -627,40 +639,60 @@ private fun AnimatedSinglePill(
                                         else -> PillPosition.MIDDLE
                                     }
                                     
-                                    if (wasCompletedInitially) {
-                                        GroupedActivityItemPill(
-                                            item = item,
-                                            onClick = { onClick(item.type) },
-                                            position = position
-                                        )
-                                    } else {
-                                        var visible by remember(key) { mutableStateOf(false) }
-                                        LaunchedEffect(othersCanAppear) {
-                                            if (index == 0) {
-                                                delay(60L)
-                                                othersCanAppear = true
-                                                visible = true
-                                            } else if (othersCanAppear && !visible) {
-                                                delay(index * 40L)
-                                                visible = true
+                                    if (index == 0) {
+                                        LaunchedEffect(Unit) {
+                                            if (!wasCompletedInitially) {
+                                                delay(100L)
                                             }
+                                            othersCanAppear = true
                                         }
-                                        
-                                        AnimatedVisibility(
-                                            visible = visible,
-                                            enter = fadeIn(tween(180)) +
-                                                scaleIn(initialScale = 0.85f, animationSpec = spring(stiffness = 400f)) +
-                                                slideInHorizontally(
-                                                    initialOffsetX = { -it / 3 },
-                                                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                                                ),
-                                            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.85f) + slideOutHorizontally(targetOffsetX = { -it / 3 })
-                                        ) {
-                                            GroupedActivityItemPill(
+                                        if (items.size == 1) {
+                                            ExpandedActivityPill(
                                                 item = item,
                                                 onClick = { onClick(item.type) },
-                                                position = position
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
                                             )
+                                        } else {
+                                            CompactActivityPill(
+                                                item = item,
+                                                onClick = { onClick(item.type) },
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                            )
+                                        }
+                                    } else {
+                                        if (wasCompletedInitially) {
+                                            CompactActivityPill(
+                                                item = item,
+                                                onClick = { onClick(item.type) },
+                                                position = position,
+                                                connectsToBubbleBelow = connectsToBubbleBelow
+                                            )
+                                        } else {
+                                            var visible by remember(key) { mutableStateOf(false) }
+                                            LaunchedEffect(othersCanAppear) {
+                                                if (othersCanAppear && !visible) {
+                                                    delay(index * 50L)
+                                                    visible = true
+                                                }
+                                            }
+                                            
+                                            AnimatedVisibility(
+                                                visible = visible,
+                                                enter = fadeIn(tween(150)) + slideInHorizontally(
+                                                    initialOffsetX = { -it / 2 },
+                                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                                                ),
+                                                exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
+                                            ) {
+                                                CompactActivityPill(
+                                                    item = item,
+                                                    onClick = { onClick(item.type) },
+                                                    position = position,
+                                                    connectsToBubbleBelow = connectsToBubbleBelow
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -742,6 +774,7 @@ private fun AnimatedSinglePill(
 private fun ReasoningPreviewCard(
     state: ActivityState.Reasoning,
     active: Boolean,
+    onHeaderClick: (() -> Unit)? = null
 ) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
     val scrollState = rememberScrollState()
@@ -813,6 +846,17 @@ private fun ReasoningPreviewCard(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onHeaderClick != null) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onHeaderClick
+                        )
+                    } else Modifier
+                ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -855,12 +899,29 @@ private fun ReasoningPreviewCard(
             )
         }
 
+        val canScrollBackward by remember { derivedStateOf { scrollState.canScrollBackward } }
+        val canScrollForward by remember { derivedStateOf { scrollState.canScrollForward } }
+        val topFadeProgress by animateFloatAsState(
+            targetValue = if (canScrollBackward) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+            label = "reasoning_top_fade"
+        )
+        val bottomFadeProgress by animateFloatAsState(
+            targetValue = if (canScrollForward) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+            label = "reasoning_bottom_fade"
+        )
+
         MarkdownBlock(
             content = previewText,
             modifier = Modifier
                 .fillMaxWidth()
-                .fadeEdges(fadeTop = true, fadeBottom = true)
-                .heightIn(max = 120.dp)
+                .fadeEdges(
+                    topProgress = topFadeProgress,
+                    bottomProgress = bottomFadeProgress,
+                    fadeHeight = 64f
+                )
+                .heightIn(max = if (active && onHeaderClick == null) 120.dp else 280.dp)
                 .verticalScroll(scrollState),
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurface
@@ -875,7 +936,7 @@ private fun ReasoningPreviewCard(
 }
 
 /**
- * Content for reasoning pill (minimized). Always displays "Reasoning".
+ * Content for reasoning pill (live timer).
  */
 @Composable
 private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
@@ -896,14 +957,32 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Text(
-        text = stringResource(R.string.activity_timeline_reasoning),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
+    // Crossfade + slide up when the title changes between reasoning sections
+    val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
+    AnimatedContent(
+        targetState = displayTitle,
+        transitionSpec = {
+            (fadeIn(tween(220)) + slideInVertically(
+                animationSpec = tween(220),
+                initialOffsetY = { it / 2 }
+            )).togetherWith(
+                fadeOut(tween(150)) + slideOutVertically(
+                    animationSpec = tween(150),
+                    targetOffsetY = { -it / 2 }
+                )
+            )
+        },
+        label = "reasoning_title"
+    ) { text ->
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        )
+    }
     Text(
         text = formatDuration(elapsedMs),
         style = MaterialTheme.typography.labelSmall,
@@ -951,7 +1030,6 @@ private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolea
 
 /**
  * Content for expanded single activity (after completion).
- * Matches the streaming layout (Icon + Label + Optional details/duration).
  */
 @Composable
 private fun ExpandedActivityContent(item: ActivityItem) {
@@ -962,46 +1040,36 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    when (item.type) {
+    val text = when (item.type) {
         ActivityType.REASONING -> {
-            Text(
-                text = stringResource(R.string.activity_timeline_reasoning),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             if (item.durationMs != null) {
-                Text(
-                    text = formatDuration(item.durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                "Reasoned for ${formatDuration(item.durationMs)}"
+            } else {
+                "Reasoned"
             }
         }
-        else -> {
-            val text = when (item.type) {
-                ActivityType.OCR -> {
-                    if (item.count > 1) {
-                        stringResource(R.string.activity_pill_ocr_done_count, item.count)
-                    } else {
-                        stringResource(R.string.activity_pill_ocr_done)
-                    }
-                }
-                ActivityType.SEARCH -> if (item.count > 1) "Search Web ×${item.count}" else (item.displayName ?: "Search Web")
-                ActivityType.MEMORY_RECALL -> if (item.count > 1) stringResource(R.string.activity_pill_memory_recalled_count, item.count) else stringResource(R.string.activity_pill_memory_recalled)
-                ActivityType.PYTHON -> if (item.count > 1) "Python ×${item.count}" else (item.displayName ?: "Ran Python")
-                ActivityType.WORKSPACE -> if (item.count > 1) "Workspace ×${item.count}" else (item.displayName ?: "Used workspace")
-                ActivityType.SKILL -> if (item.count > 1) "Skills ×${item.count}" else "Managed skills"
-                ActivityType.MCP -> if (item.count > 1) "MCP ×${item.count}" else "MCP"
-                ActivityType.LOADING_MODEL -> "Loaded model"
-                ActivityType.TOOL_OTHER -> item.displayName ?: "Used tool"
+        ActivityType.OCR -> {
+            if (item.count > 1) {
+                stringResource(R.string.activity_pill_ocr_done_count, item.count)
+            } else {
+                stringResource(R.string.activity_pill_ocr_done)
             }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
+        ActivityType.SEARCH -> "Searched the Web"
+        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
+        ActivityType.PYTHON -> "Ran Python"
+        ActivityType.WORKSPACE -> "Used workspace"
+        ActivityType.SKILL -> "Managed skills"
+        ActivityType.MCP -> "MCP"
+        ActivityType.TOOL_OTHER -> "Used tool"
+        ActivityType.LOADING_MODEL -> "Loading model"
     }
+
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 /**
@@ -1241,64 +1309,6 @@ private fun ExpandedActivityPill(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-/**
- * Grouped activity item pill inside the multi-step grouped container.
- * Uses surfaceContainerHighest background (same color as Imagine and Stats buttons in sidepanel)
- * and optical corner shapes matching its position in the group.
- */
-@Composable
-private fun GroupedActivityItemPill(
-    item: ActivityItem,
-    onClick: () -> Unit,
-    position: PillPosition,
-    modifier: Modifier = Modifier
-) {
-    val shape = when (position) {
-        PillPosition.SINGLE -> RoundedCornerShape(16.dp)
-        PillPosition.FIRST -> RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 6.dp, bottomEnd = 6.dp)
-        PillPosition.MIDDLE -> RoundedCornerShape(6.dp)
-        PillPosition.LAST -> RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp, topEnd = 16.dp, bottomEnd = 16.dp)
-    }
-
-    Surface(
-        onClick = onClick,
-        shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier
-            .height(28.dp)
-            .testTag(item.type.toTestTag())
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = item.type.getIcon(),
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            val text = when (item.type) {
-                ActivityType.REASONING -> {
-                    item.durationMs?.let { formatDuration(it) }
-                }
-                else -> null
-            }
-
-            if (text != null) {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
 

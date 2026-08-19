@@ -466,4 +466,51 @@ class ActivityTimelinePanelTest {
         composeRule.onNodeWithText(memoryRecallLabel).assertExists()
         composeRule.onNodeWithText(recallSummary).assertExists()
     }
+
+    @Test
+    fun chatMessageTurn_singleCompletedActivityOpensDirectlyWithoutMinimization() {
+        val reasoningMarker = "single-completed-reasoning-marker"
+        val assistantNode = MessageNode.of(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(
+                    UIMessagePart.Reasoning(
+                        reasoning = reasoningMarker,
+                        createdAt = Clock.System.now() - 2.seconds,
+                        finishedAt = Clock.System.now()
+                    ),
+                    UIMessagePart.Text("Answer text")
+                )
+            )
+        )
+        val group = MessageTurnGroup(
+            nodes = listOf(assistantNode),
+            role = MessageRole.ASSISTANT
+        )
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    ChatMessageTurn(
+                        group = group,
+                        isLastTurn = false,
+                        onCitationClick = {},
+                        loading = false,
+                        showRegenerate = false
+                    )
+                }
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_pill_reasoning").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Clicking the single activity pill should immediately reveal the content without needing to expand an accordion
+        composeRule.onNodeWithTag("activity_pill_reasoning").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("activity_timeline_panel").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(reasoningMarker, substring = true).assertExists()
+    }
 }

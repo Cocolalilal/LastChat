@@ -18,6 +18,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 class ActivityTimelineParsingTest {
     @Test
@@ -590,5 +592,22 @@ class ActivityTimelineParsingTest {
         val toolState = state as ActivityState.ToolUse
         assertEquals("eval_python", toolState.toolName)
         assertEquals("Running Python", toolState.displayName)
+    }
+
+    @Test
+    fun deriveActivityState_singleCompletedActivityReturnsCompletedSingle() {
+        val singleReasoningMessage = listOf(
+            UIMessagePart.Reasoning(
+                reasoning = "Just reasoning",
+                createdAt = Clock.System.now() - 2.seconds,
+                finishedAt = Clock.System.now()
+            )
+        )
+        val state = deriveActivityState(
+            parts = singleReasoningMessage,
+            loading = false
+        )
+        assertTrue(state is ActivityState.CompletedSingle)
+        assertEquals(ActivityType.REASONING, (state as ActivityState.CompletedSingle).type)
     }
 }
