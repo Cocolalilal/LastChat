@@ -149,9 +149,6 @@ class SettingsStore(
         val SKILLS = stringPreferencesKey("skills")
         val CHAT_STORAGE = stringPreferencesKey("chat_storage")
 
-        // Dismissed banners
-        val DISMISSED_BANNERS = stringPreferencesKey("dismissed_banners")
-
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
         val ASSISTANT_OVERLAY_CONFIG = stringPreferencesKey("assistant_overlay_config")
@@ -269,9 +266,6 @@ class SettingsStore(
                     chatStorage = preferences[CHAT_STORAGE]?.let {
                         JsonInstant.decodeFromString<ChatStorageSettings>(it)
                     } ?: ChatStorageSettings(),
-                    dismissedBanners = preferences[DISMISSED_BANNERS]?.let {
-                        JsonInstant.decodeFromString(it)
-                    } ?: emptySet(),
                     textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: TextSelectionConfig(),
@@ -589,7 +583,6 @@ class SettingsStore(
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
             preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
-            preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
         }

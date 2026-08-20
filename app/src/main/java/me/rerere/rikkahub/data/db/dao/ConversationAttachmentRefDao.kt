@@ -15,9 +15,6 @@ interface ConversationAttachmentRefDao {
     @Query("SELECT * FROM conversation_attachment_ref")
     suspend fun getAll(): List<ConversationAttachmentRefEntity>
 
-    @Query("SELECT attachment_id FROM conversation_attachment_ref WHERE conversation_id = :conversationId")
-    suspend fun getAttachmentIdsForConversation(conversationId: String): List<String>
-
     @Query("SELECT conversation_id FROM conversation_attachment_ref WHERE attachment_id = :attachmentId")
     suspend fun getConversationIdsForAttachment(attachmentId: String): List<String>
 

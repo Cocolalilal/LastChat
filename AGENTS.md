@@ -8,7 +8,7 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this
 
 - `applicationId`: `lastchat.rikkafork.cocolal`
 - Kotlin namespace: `me.rerere.rikkahub` (DO NOT rename — would break Room migrations, DataStore keys, catalog UUIDs, schema paths)
-- Version: 1.4.5 / versionCode 34
+- Version: 1.4.6 / versionCode 34
 - SDK: compile=36, target=36, min=28, JVM=17
 - ABIs: `arm64-v8a`, `armeabi-v7a`, `x86_64`, universal APK (splits auto-disabled when building AAB)
 

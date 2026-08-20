@@ -213,17 +213,6 @@ class WorkspaceRepository(
         return deleted
     }
 
-    suspend fun moveFile(
-        id: String,
-        source: String,
-        target: String,
-        overwrite: Boolean,
-    ): WorkspaceFileEntry = withContext(Dispatchers.IO) {
-        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        manager.ensureWorkspace(workspace.root)
-        manager.moveFile(workspace.root, source, target, overwrite)
-    }
-
     suspend fun executeCommand(
         id: String,
         command: String,

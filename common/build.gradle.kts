@@ -37,7 +37,6 @@ kotlin {
                 api(libs.okhttp)
                 api(libs.okhttp.sse)
                 api(libs.okhttp.logging)
-                api(libs.commons.text)
                 api("io.github.petterpx:floatingx:2.3.7")
                 api("io.github.petterpx:floatingx-compose:2.3.7")
                 implementation(libs.androidx.core.ktx)

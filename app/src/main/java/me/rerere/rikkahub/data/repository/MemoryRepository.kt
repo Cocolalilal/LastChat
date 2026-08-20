@@ -92,20 +92,12 @@ class MemoryRepository(
         )
     }
 
-    suspend fun getMemoryEntitiesOfAssistant(assistantId: String): List<MemoryEntity> {
-        return memoryDAO.getMemoriesOfAssistant(assistantId)
-    }
-
     suspend fun getMemoryEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<MemoryEntity> {
         return memoryDAO.getMemoriesOfAssistantLimited(assistantId, limit)
     }
 
     suspend fun getEpisodeEntitiesOfAssistant(assistantId: String): List<ChatEpisodeEntity> {
         return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
-    }
-
-    suspend fun getEpisodeEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<ChatEpisodeEntity> {
-        return chatEpisodeDAO.getEpisodesOfAssistantLimited(assistantId, limit)
     }
 
     suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
@@ -198,14 +190,6 @@ class MemoryRepository(
 
     private fun calculateKeywordScore(query: String, content: String): Float {
         return MemoryVectorMath.keywordScore(query, content)
-    }
-
-suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistantId: String): Boolean {
-        val modelId = embeddingService.getEmbeddingModelId(assistantId)
-        val cacheKey = "$memoryType:$memoryId:$modelId"
-        if (embeddingCache.containsKey(cacheKey)) return true
-        val cached = embeddingCacheDAO.getEmbedding(memoryId, memoryType, modelId) ?: return false
-        return decodeEmbeddings(cached.embedding, cached.embeddingBlob) != null
     }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
@@ -823,25 +807,6 @@ suspend fun hasEmbeddingForCurrentModel(memoryId: Int, memoryType: Int, assistan
         }
         
         return successCount to failureCount
-    }
-
-    /**
-     * Count how many memories need embedding (no embedding or wrong model).
-     * Used to determine if the regenerate button should be shown.
-     */
-    suspend fun countMemoriesNeedingEmbedding(assistantId: String): Int {
-        val memories = memoryDAO.getMemoriesOfAssistant(assistantId)
-        val episodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
-        val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
-        
-        val memoriesNeedingEmbedding = memories.count { 
-            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
-        }
-        val episodesNeedingEmbedding = episodes.count { 
-            decodeEmbeddings(it.embedding, it.embeddingBlob) == null || it.embeddingModelId != currentModelId
-        }
-        
-        return memoriesNeedingEmbedding + episodesNeedingEmbedding
     }
 
     private companion object {

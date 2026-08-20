@@ -92,13 +92,6 @@ class ConversationRepository(
             }
     }
 
-    fun getAllLightConversations(): Flow<List<Conversation>> {
-        return conversationDAO.getAllLight()
-            .map { list ->
-                list.map { conversationSummaryToConversation(it) }
-            }
-    }
-
     fun getConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
@@ -110,68 +103,6 @@ class ConversationRepository(
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
         }
-    }
-
-    fun searchConversations(titleKeyword: String): Flow<List<Conversation>> {
-        return conversationDAO
-            .searchConversations(titleKeyword)
-            .map { list ->
-                list.map { entity ->
-                    conversationEntityToConversation(entity)
-                }.filter { conversation ->
-                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
-                        conversation.messageNodes.any { node ->
-                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
-                        }
-                }
-            }
-    }
-
-    fun searchConversationsPaging(titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
-        config = PagingConfig(
-            pageSize = PAGE_SIZE,
-            initialLoadSize = INITIAL_LOAD_SIZE,
-            enablePlaceholders = false
-        ),
-        pagingSourceFactory = { conversationDAO.searchConversationsPaging(titleKeyword) }
-    ).flow.map { pagingData ->
-        pagingData.map { entity ->
-            conversationSummaryToConversation(entity)
-        }.filter { conversation ->
-            if (conversation.title.contains(titleKeyword, ignoreCase = true)) {
-                true
-            } else {
-                val fullEntity = withContext(Dispatchers.IO) {
-                    conversationDAO.getConversationById(conversation.id.toString())
-                }
-                if (fullEntity != null) {
-                    val messageNodes = runCatching {
-                        JsonInstant.decodeFromString<List<MessageNode>>(fullEntity.nodes)
-                    }.getOrNull() ?: emptyList()
-                    
-                    messageNodes.any { node ->
-                        node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
-                    }
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
-    fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {
-        return conversationDAO
-            .searchConversationsOfAssistant(assistantId.toString(), titleKeyword)
-            .map { list ->
-                list.map { entity ->
-                    conversationEntityToConversation(entity)
-                }.filter { conversation ->
-                    conversation.title.contains(titleKeyword, ignoreCase = true) ||
-                        conversation.messageNodes.any { node ->
-                            node.currentMessage.toText().contains(titleKeyword, ignoreCase = true)
-                        }
-                }
-            }
     }
 
     fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
@@ -346,27 +277,10 @@ class ConversationRepository(
         )
     }
 
-    fun getPinnedConversations(): Flow<List<Conversation>> {
-        return conversationDAO
-            .getPinnedConversations()
-            .map { flow ->
-                flow.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
-    }
-
     suspend fun togglePinStatus(conversationId: Uuid) {
         conversationDAO.updatePinStatus(
             id = conversationId.toString(),
             isPinned = !(getConversationById(conversationId)?.isPinned ?: false)
-        )
-    }
-
-    suspend fun markAsConsolidated(conversationId: Uuid) {
-        conversationDAO.updateConsolidatedStatus(
-            id = conversationId.toString(),
-            isConsolidated = true
         )
     }
 
@@ -393,29 +307,9 @@ class ConversationRepository(
             }
     }
 
-    // Optimized stats queries - delegate to SQL for performance
-    fun getConversationCountFlow(): Flow<Int> = conversationDAO.getConversationCountFlow()
-
-    fun getDistinctCreateDatesFlow(): Flow<List<String>> = conversationDAO.getDistinctCreateDatesFlow()
-
-    fun getMostActiveAssistantIdFlow(): Flow<String?> = conversationDAO.getMostActiveAssistantFlow()
-        .map { it?.assistantId }
-
-    fun getConversationHoursFlow(): Flow<List<Int>> = conversationDAO.getConversationHoursFlow()
-
-    fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int> = 
-        conversationDAO.getConversationCountByAssistantFlow(assistantId)
-
     suspend fun hasSuccessfulAssistantReply(): Boolean = withContext(Dispatchers.IO) {
         conversationDAO.hasUserAssistantConversation()
     }
-
-    /**
-     * Get the most frequently used model ID for an assistant using the last_model_id column.
-     * Returns the model UUID as string, or null if no model found.
-     */
-    fun getMostUsedModelIdForAssistantFlow(assistantId: String): Flow<String?> = 
-        kotlinx.coroutines.flow.flow { emit(conversationDAO.getMostUsedModelIdForAssistant(assistantId)) }
 
     // ===== Daily Activity Tracking (for the activity heatmap) =====
     
@@ -441,17 +335,6 @@ class ConversationRepository(
                 delay(delaysMs[attempt])
             }
         }
-    }
-    
-    fun getWeeklyActivityFlow(startDate: String): Flow<List<me.rerere.rikkahub.data.db.entity.DailyActivityEntity>> =
-        dailyActivityDAO.getWeeklyActivityFlow(startDate)
-    
-    /**
-     * Check if user has sent a message today.
-     */
-    fun hasChattedTodayFlow(): Flow<Boolean> {
-        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-        return dailyActivityDAO.hasActivityForDateFlow(today)
     }
     
     /**
@@ -562,9 +445,6 @@ class ConversationRepository(
     suspend fun initUsageStats() {
         usageStatsDAO.initIfEmpty()
     }
-    
-    /** Get usage stats as a Flow for reactive UI */
-    fun getUsageStatsFlow(): Flow<UsageStatsEntity?> = usageStatsDAO.getStatsFlow()
 
     /**
      * 12-month rolling usage stats for the statistics page.
@@ -672,19 +552,9 @@ class ConversationRepository(
     /** Get all daily activity entries for heatmap */
     fun getAllDailyActivityFlow() = dailyActivityDAO.getAllActivityFlow()
     
-    /** Increment the persistent conversation counter */
-    suspend fun incrementConversationCount() {
-        usageStatsDAO.incrementConversations()
-    }
-    
     /** Add token usage to persistent cumulative counters */
     suspend fun addTokenUsage(inputTokens: Long, outputTokens: Long, cachedTokens: Long) {
         usageStatsDAO.addTokenUsage(inputTokens, outputTokens, cachedTokens)
-    }
-    
-    /** Increment persistent message counter */
-    suspend fun incrementMessageCount(count: Int = 1) {
-        usageStatsDAO.incrementMessages(count)
     }
     
     /** Increment app launch counter */

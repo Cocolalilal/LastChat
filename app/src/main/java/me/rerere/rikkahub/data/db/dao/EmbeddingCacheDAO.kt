@@ -34,12 +34,6 @@ interface EmbeddingCacheDAO {
     suspend fun hasEmbedding(memoryId: Int, memoryType: Int, modelId: String): Boolean
     
     /**
-     * Get all embeddings for a specific model (useful for cleanup when model is deleted).
-     */
-    @Query("SELECT * FROM embedding_cache WHERE model_id = :modelId")
-    suspend fun getEmbeddingsByModel(modelId: String): List<EmbeddingCacheEntity>
-    
-    /**
      * Delete all embeddings for a specific model.
      */
     @Query("DELETE FROM embedding_cache WHERE model_id = :modelId")
@@ -51,18 +45,6 @@ interface EmbeddingCacheDAO {
     @Query("DELETE FROM embedding_cache WHERE memory_id = :memoryId AND memory_type = :memoryType")
     suspend fun deleteByMemoryId(memoryId: Int, memoryType: Int)
     
-    /**
-     * Count embeddings for a specific model (for statistics).
-     */
-    @Query("SELECT COUNT(*) FROM embedding_cache WHERE model_id = :modelId")
-    suspend fun countEmbeddingsByModel(modelId: String): Int
-    
-    /**
-     * Get all cached embeddings (for debugging).
-     */
-    @Query("SELECT * FROM embedding_cache")
-    suspend fun getAllEmbeddings(): List<EmbeddingCacheEntity>
-
     @Query("SELECT model_id AS modelId, COUNT(*) AS count, COALESCE(SUM(LENGTH(embedding) + COALESCE(LENGTH(embedding_blob), 0)), 0) AS estimatedBytes FROM embedding_cache GROUP BY model_id ORDER BY count DESC")
     suspend fun getModelStats(): List<EmbeddingCacheModelStats>
 

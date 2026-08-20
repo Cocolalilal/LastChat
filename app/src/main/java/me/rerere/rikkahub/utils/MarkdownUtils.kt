@@ -15,7 +15,6 @@ private val REGEX_LIST_NUMBERED = Regex("(?m)^\\s*\\d+\\.\\s+")
 private val REGEX_BLOCKQUOTE = Regex("(?m)^>\\s*")
 private val REGEX_HORIZONTAL_RULE = Regex("(?m)^(\\s*[-*_]){3,}\\s*$")
 private val REGEX_MULTIPLE_NEWLINES = Regex("\n{3,}")
-private val REGEX_BOLD_LINE = Regex("^\\*\\*(.+?)\\*\\*$")
 
 /**
  * 移除字符串中的Markdown格式
@@ -47,24 +46,4 @@ fun String.stripMarkdown(): String {
         // 将多个换行符压缩，以保留段落
         .replace(REGEX_MULTIPLE_NEWLINES, "\n\n")
         .trim()
-}
-
-fun String.extractGeminiThinkingTitle(): String? {
-    // 按行分割文本
-    val lines = this.lines()
-
-    // 从后往前查找最后一个符合条件的加粗文本行
-    for (i in lines.indices.reversed()) {
-        val line = lines[i].trim()
-
-        // 检查是否为加粗格式且独占一整行
-        val match = REGEX_BOLD_LINE.find(line)
-
-        if (match != null) {
-            // 返回加粗标记内的文本内容
-            return match.groupValues[1].trim()
-        }
-    }
-
-    return null
 }

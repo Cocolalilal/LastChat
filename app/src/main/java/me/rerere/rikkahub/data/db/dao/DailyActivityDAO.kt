@@ -18,12 +18,6 @@ interface DailyActivityDAO {
     suspend fun insert(activity: DailyActivityEntity)
     
     /**
-     * Get activity for a specific date
-     */
-    @Query("SELECT * FROM daily_activity WHERE date = :date")
-    suspend fun getActivityForDate(date: String): DailyActivityEntity?
-    
-    /**
      * Get all activity dates ordered by date descending (most recent first)
      * Used to deduplicate historical activity backfills.
      */
@@ -35,12 +29,6 @@ interface DailyActivityDAO {
      */
     @Query("SELECT EXISTS(SELECT 1 FROM daily_activity WHERE date = :date)")
     fun hasActivityForDateFlow(date: String): Flow<Boolean>
-    
-    /**
-     * Get activity for a specific date as a Flow
-     */
-    @Query("SELECT * FROM daily_activity WHERE date = :date")
-    fun getActivityForDateFlow(date: String): Flow<DailyActivityEntity?>
     
     /**
      * Increment message count for a date or insert if not exists.

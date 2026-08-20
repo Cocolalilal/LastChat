@@ -97,7 +97,6 @@ data class Settings(
     val lorebooks: List<Lorebook> = emptyList(),
     val skills: List<Skill> = emptyList(),
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
-    val dismissedBanners: Set<String> = emptySet(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),
 ) {
@@ -236,7 +235,6 @@ data class DisplaySetting(
     val showContextTokenSummary: Boolean = true,
     val autoCloseThinking: Boolean = true,
     val reasoningPreviewEnabled: Boolean = false,
-    val showUpdates: Boolean = false,
     val checkForUpdates: Boolean = true,
     val showMessageJumper: Boolean = false,
     val messageJumperOnLeft: Boolean = false,
