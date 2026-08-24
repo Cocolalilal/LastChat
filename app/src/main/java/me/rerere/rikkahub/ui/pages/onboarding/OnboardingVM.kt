@@ -159,7 +159,10 @@ class OnboardingVM(
     ) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val configuredProvider = provider.copyProvider(models = selectedModels)
+                val configuredProvider = provider.copyProvider(
+                    enabled = true,
+                    models = selectedModels,
+                )
                 val current = settings.value
                 val nextSettings = current.copy(
                     setupCompleted = true,

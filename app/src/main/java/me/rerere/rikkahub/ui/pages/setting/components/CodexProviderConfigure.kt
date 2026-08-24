@@ -77,6 +77,9 @@ fun CodexProviderConfigure(
                     type = ToastType.Success,
                 )
                 oauthManager.consumeResult()
+                if (!provider.enabled) {
+                    onEdit(provider.copy(enabled = true))
+                }
             }
 
             is CodexOAuthStatus.Error -> {

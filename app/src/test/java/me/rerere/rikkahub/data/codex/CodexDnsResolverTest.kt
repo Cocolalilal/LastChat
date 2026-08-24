@@ -72,4 +72,76 @@ class CodexDnsResolverTest {
             assertEquals(1, e.suppressed.size)
         }
     }
+
+    @Test
+    fun `racing dns returns address when first resolver succeeds`() {
+        val addr1 = InetAddress.getByName("1.1.1.1")
+        val r1 = Dns { listOf(addr1) }
+        val r2 = Dns {
+            Thread.sleep(500)
+            listOf(InetAddress.getByName("8.8.8.8"))
+        }
+
+        val resolver = RacingDns(listOf(r1, r2), timeoutMs = 2_000L)
+        val result = resolver.lookup("example.com")
+
+        assertEquals(listOf(addr1), result)
+    }
+
+    @Test
+    fun `racing dns returns address from surviving resolver when one throws`() {
+        val addr2 = InetAddress.getByName("8.8.8.8")
+        val r1 = Dns { throw UnknownHostException("R1 failed") }
+        val r2 = Dns { listOf(addr2) }
+
+        val resolver = RacingDns(listOf(r1, r2), timeoutMs = 2_000L)
+        val result = resolver.lookup("example.com")
+
+        assertEquals(listOf(addr2), result)
+    }
+
+    @Test
+    fun `racing dns returns address when fast resolver finishes before slow failing resolver`() {
+        val addr2 = InetAddress.getByName("8.8.8.8")
+        val r1 = Dns {
+            Thread.sleep(800)
+            throw SocketTimeoutException("R1 timeout")
+        }
+        val r2 = Dns { listOf(addr2) }
+
+        val resolver = RacingDns(listOf(r1, r2), timeoutMs = 2_000L)
+        val result = resolver.lookup("example.com")
+
+        assertEquals(listOf(addr2), result)
+    }
+
+    @Test
+    fun `racing dns throws UnknownHostException when all resolvers fail`() {
+        val r1 = Dns { throw UnknownHostException("R1 error") }
+        val r2 = Dns { throw SocketTimeoutException("R2 timeout") }
+
+        val resolver = RacingDns(listOf(r1, r2), timeoutMs = 2_000L)
+        try {
+            resolver.lookup("example.com")
+            fail("Expected UnknownHostException")
+        } catch (e: UnknownHostException) {
+            org.junit.Assert.assertTrue(e.suppressed.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `racing dns throws UnknownHostException on overall timeout`() {
+        val r1 = Dns {
+            Thread.sleep(500)
+            listOf(InetAddress.getByName("1.1.1.1"))
+        }
+
+        val resolver = RacingDns(listOf(r1), timeoutMs = 50L)
+        try {
+            resolver.lookup("example.com")
+            fail("Expected UnknownHostException on timeout")
+        } catch (e: UnknownHostException) {
+            // expected timeout exception
+        }
+    }
 }

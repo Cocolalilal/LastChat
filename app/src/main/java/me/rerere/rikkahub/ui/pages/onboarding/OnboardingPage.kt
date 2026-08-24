@@ -344,8 +344,10 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     loading = manualModelsLoading,
                     onSignedIn = {
                         val provider = manualProvider ?: return@CodexSignInPage
+                        val enabledProvider = provider.copyProvider(enabled = true)
+                        manualProvider = enabledProvider
                         manualModelsLoading = true
-                        vm.fetchModels(provider) { models ->
+                        vm.fetchModels(enabledProvider) { models ->
                             manualModelsLoading = false
                             manualModels = models
                             selectedModels.clear()
@@ -373,7 +375,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                             onContinue = {
                                 val provider = manualProvider ?: return@CustomProviderKeyPage
                                 haptics.perform(HapticPattern.Pop)
-                                val keyedProvider = vm.providerWithKey(provider, apiKey)
+                                val keyedProvider = vm.providerWithKey(provider, apiKey).copyProvider(enabled = true)
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
@@ -394,7 +396,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                             onContinue = {
                                 val provider = manualProvider ?: return@PasteKeyPage
                                 haptics.perform(HapticPattern.Pop)
-                                val keyedProvider = vm.providerWithKey(provider, apiKey)
+                                val keyedProvider = vm.providerWithKey(provider, apiKey).copyProvider(enabled = true)
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
@@ -433,6 +435,16 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     },
                     onContinue = {
                         haptics.perform(HapticPattern.Pop)
+                        val firstModel = selectedModels.firstOrNull()
+                        val visionModel = selectedModels.firstOrNull { Modality.IMAGE in it.inputModalities }
+                        if (roleModels.chat == null) {
+                            roleModels = roleModels.copy(
+                                chat = firstModel?.id,
+                                title = roleModels.title ?: firstModel?.id,
+                                summarizer = roleModels.summarizer ?: firstModel?.id,
+                                ocr = roleModels.ocr ?: visionModel?.id,
+                            )
+                        }
                         goTo(SetupPage.ManualDefaults)
                     },
                 )
@@ -921,12 +933,7 @@ private fun CodexSignInPage(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> leftApp = true
-                Lifecycle.Event.ON_RESUME -> {
-                    if (leftApp && oauthManager.status.value is CodexOAuthStatus.Waiting) {
-                        oauthManager.consumeResult()
-                    }
-                    leftApp = false
-                }
+                Lifecycle.Event.ON_RESUME -> leftApp = false
                 else -> Unit
             }
         }
@@ -1094,7 +1101,7 @@ private fun ManualDefaultsPage(
     onContinue: () -> Unit,
 ) {
     val providers = remember(provider, models) {
-        provider?.copyProvider(models = models)?.let(::listOf) ?: emptyList()
+        provider?.copyProvider(enabled = true, models = models)?.let(::listOf) ?: emptyList()
     }
     SetupScaffold(
         bottom = {

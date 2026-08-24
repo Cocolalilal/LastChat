@@ -65,3 +65,9 @@ sealed class McpServerConfig {
         }
     }
 }
+
+val McpServerConfig.endpointUrl: String
+    get() = when (this) {
+        is McpServerConfig.SseTransportServer -> url
+        is McpServerConfig.StreamableHTTPServer -> url
+    }

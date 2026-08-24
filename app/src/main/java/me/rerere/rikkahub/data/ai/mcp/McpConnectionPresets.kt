@@ -207,3 +207,26 @@ val POPULAR_MCP_CONNECTIONS = listOf(
         documentationUrl = "https://github.com/upstash/context7",
     ),
 )
+
+fun findMcpConnectionPreset(presetId: String?, url: String? = null, name: String? = null): McpConnectionPreset? {
+    if (!presetId.isNullOrBlank()) {
+        POPULAR_MCP_CONNECTIONS.firstOrNull { it.id == presetId }?.let { return it }
+    }
+    if (!url.isNullOrBlank()) {
+        val cleanUrl = url.trim().trimEnd('/')
+        POPULAR_MCP_CONNECTIONS.firstOrNull { it.url.trimEnd('/') == cleanUrl }?.let { return it }
+    }
+    if (!name.isNullOrBlank()) {
+        val cleanName = name.trim()
+        POPULAR_MCP_CONNECTIONS.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }?.let { return it }
+    }
+    return null
+}
+
+fun findMcpConnectionPreset(server: McpServerConfig): McpConnectionPreset? {
+    return findMcpConnectionPreset(
+        presetId = server.commonOptions.presetId,
+        url = server.endpointUrl,
+        name = server.commonOptions.name,
+    )
+}

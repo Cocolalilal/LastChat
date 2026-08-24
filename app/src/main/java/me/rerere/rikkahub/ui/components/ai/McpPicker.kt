@@ -53,7 +53,11 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
+import me.rerere.rikkahub.data.ai.mcp.endpointUrl
+import me.rerere.rikkahub.data.ai.mcp.findMcpConnectionPreset
 import me.rerere.rikkahub.data.model.Assistant
+import androidx.compose.material3.LocalContentColor
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
@@ -221,8 +225,8 @@ fun McpPicker(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        McpServerFavicon(
-                            url = server.endpointUrl,
+                        McpServerIcon(
+                            server = server,
                             modifier = Modifier.size(32.dp),
                         )
                         Column(
@@ -300,33 +304,64 @@ fun McpPicker(
     }
 }
 
-private val McpServerConfig.endpointUrl: String
-    get() = when (this) {
-        is McpServerConfig.SseTransportServer -> url
-        is McpServerConfig.StreamableHTTPServer -> url
+@Composable
+fun McpServerIcon(
+    server: McpServerConfig,
+    modifier: Modifier = Modifier,
+    contentColor: Color = LocalContentColor.current,
+) {
+    val preset = remember(server) {
+        findMcpConnectionPreset(server)
     }
+    if (preset != null) {
+        AutoAIIconWithUrl(
+            name = preset.name,
+            customIconUri = preset.iconUri,
+            modifier = modifier,
+            contentColor = contentColor,
+        )
+    } else {
+        McpServerFavicon(
+            url = server.endpointUrl,
+            modifier = modifier,
+        )
+    }
+}
 
 @Composable
-private fun McpServerFavicon(
+fun McpServerFavicon(
     url: String,
     modifier: Modifier = Modifier,
+    fallback: @Composable () -> Unit = {
+        Icon(
+            imageVector = Icons.Rounded.Extension,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+        )
+    },
 ) {
     var failed by remember(url) { mutableStateOf(false) }
     val faviconUrl = remember(url) {
-        url.urlHostOrNull()?.let { host ->
+        url.urlHostOrNull()?.takeIf { it.isNotBlank() }?.let { host ->
             "https://www.google.com/s2/favicons?domain=$host&sz=64"
         }
     }
     if (!failed && faviconUrl != null) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(faviconUrl)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            modifier = modifier,
-            contentScale = ContentScale.Fit,
-            onError = { failed = true },
-        )
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(faviconUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                onError = { failed = true },
+            )
+        }
+    } else {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            fallback()
+        }
     }
 }

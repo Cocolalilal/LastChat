@@ -113,6 +113,9 @@ import me.rerere.rikkahub.data.ai.mcp.McpOAuthStatus
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.mcp.POPULAR_MCP_CONNECTIONS
+import me.rerere.rikkahub.data.ai.mcp.endpointUrl
+import me.rerere.rikkahub.data.ai.mcp.findMcpConnectionPreset
+import me.rerere.rikkahub.ui.components.ai.McpServerFavicon
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -709,8 +712,8 @@ private fun McpServerItem(
     val status by mcpManager.getStatus(item).collectAsStateWithLifecycle(McpStatus.Idle)
     val oauthStatuses by oauthManager.statuses.collectAsStateWithLifecycle()
     val oauthStatus = oauthStatuses[item.id] ?: McpOAuthStatus.Idle
-    val preset = remember(item.commonOptions.presetId) {
-        POPULAR_MCP_CONNECTIONS.firstOrNull { it.id == item.commonOptions.presetId }
+    val preset = remember(item) {
+        findMcpConnectionPreset(item)
     }
     val hasOAuthCredentials = remember(oauthStatuses, item.id) {
         oauthManager.hasCredentials(item.id)
@@ -789,12 +792,18 @@ private fun McpServerItem(
                         modifier = Modifier.size(40.dp),
                     )
                 } else {
-                    when (status) {
-                        McpStatus.Idle -> Icon(Icons.Rounded.Extension, null)
-                        McpStatus.Connecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        McpStatus.Connected -> Icon(Icons.Rounded.Extension, null)
-                        is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
-                    }
+                    McpServerFavicon(
+                        url = item.endpointUrl,
+                        modifier = Modifier.size(40.dp),
+                        fallback = {
+                            when (status) {
+                                McpStatus.Idle -> Icon(Icons.Rounded.Extension, null)
+                                McpStatus.Connecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                McpStatus.Connected -> Icon(Icons.Rounded.Extension, null)
+                                is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
+                            }
+                        }
+                    )
                 }
             }
 

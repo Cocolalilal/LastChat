@@ -4,6 +4,7 @@ import kotlinx.serialization.decodeFromString
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,5 +62,33 @@ class McpConnectionPresetsTest {
         )
 
         assertEquals(McpAuthMode.CUSTOM_HEADERS, config.commonOptions.authMode)
+    }
+
+    @Test
+    fun findMcpConnectionPresetMatchesPresetOrReturnsNull() {
+        val notion = POPULAR_MCP_CONNECTIONS.first { it.id == "notion" }
+        val config = notion.createConfig()
+
+        // Match by server config
+        assertEquals("notion", findMcpConnectionPreset(config)?.id)
+        assertEquals("icons/notion.svg", findMcpConnectionPreset(config)?.iconUri)
+
+        // Match by preset ID
+        assertEquals("linear", findMcpConnectionPreset(presetId = "linear")?.id)
+
+        // Match by URL
+        assertEquals("figma", findMcpConnectionPreset(presetId = null, url = "https://mcp.figma.com/mcp")?.id)
+        assertEquals("figma", findMcpConnectionPreset(presetId = null, url = "https://mcp.figma.com/mcp/")?.id)
+
+        // Match by Name
+        assertEquals("Canva", findMcpConnectionPreset(presetId = null, url = null, name = "canva")?.name)
+
+        // Custom unknown server returns null
+        val customConfig = McpServerConfig.StreamableHTTPServer(
+            commonOptions = McpCommonOptions(name = "My Custom MCP"),
+            url = "https://custom.example.com/mcp",
+        )
+        assertNull(findMcpConnectionPreset(customConfig))
+        assertEquals("https://custom.example.com/mcp", customConfig.endpointUrl)
     }
 }
