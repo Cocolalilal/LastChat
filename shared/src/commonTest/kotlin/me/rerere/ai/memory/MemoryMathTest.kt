@@ -22,6 +22,7 @@ class MemoryMathTest {
     @Test
     fun lexicalEvidenceSurvivesAWeakButAvailableVector() {
         assertTrue(MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 1f, threshold = 0.45f))
+        assertTrue(!MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 0.2f, threshold = 0.45f))
         assertTrue(!MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 0f, threshold = 0.45f))
     }
 

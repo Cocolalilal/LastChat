@@ -265,38 +265,102 @@ class MemoryRepository(
 
     suspend fun updateContent(id: Int, content: String): AssistantMemory {
         val memory = memoryDAO.getMemoryById(id) ?: error("Memory not found")
-        val newMemory = memory.copy(content = content, embedding = null, embeddingBlob = null, embeddingModelId = null)
+        val chunks = MemoryChunker.chunkText(content)
+        val embeddingResult = try {
+            embeddingService.embedBatch(chunks, memory.assistantId)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            PlatformLog.w(TAG, "Core memory updated without an embedding: ${e.message}")
+            null
+        }
+        val floatArrays = embeddingResult?.embeddings?.map { it.toFloatArray() }
+        val blob = floatArrays?.toByteArray()
+
+        val newMemory = memory.copy(
+            content = content,
+            embedding = null,
+            embeddingBlob = blob,
+            embeddingModelId = embeddingResult?.modelId,
+        )
         memoryDAO.updateMemory(newMemory)
 
-        // Invalidate cache
+        // Invalidate old cache
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
         embeddingCache.keys.removeAll { it.startsWith("${MemoryType.CORE}:$id:") }
+
+        if (embeddingResult != null) {
+            val modelId = embeddingResult.modelId
+            embeddingCacheDAO.insertEmbedding(
+                EmbeddingCacheEntity(
+                    memoryId = id,
+                    memoryType = MemoryType.CORE,
+                    modelId = modelId,
+                    embedding = "",
+                    embeddingBlob = blob,
+                )
+            )
+            embeddingCache["${MemoryType.CORE}:$id:$modelId"] =
+                embeddingResult.embeddings.map { it.toFloatArray() }
+        }
 
         return AssistantMemory(
             id = newMemory.id,
             content = newMemory.content,
             type = newMemory.type,
-            hasEmbedding = false,
-            timestamp = newMemory.createdAt
+            hasEmbedding = embeddingResult != null,
+            embeddingModelId = embeddingResult?.modelId,
+            timestamp = newMemory.createdAt,
         )
     }
 
     suspend fun updateEpisodeContent(id: Int, content: String): AssistantMemory {
         val episode = chatEpisodeDAO.getEpisodeById(id) ?: error("Episode not found")
-        val newEpisode = episode.copy(content = content, embedding = null, embeddingBlob = null, embeddingModelId = null)
+        val chunks = MemoryChunker.chunkText(content)
+        val embeddingResult = try {
+            embeddingService.embedBatch(chunks, episode.assistantId)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            PlatformLog.w(TAG, "Episodic memory updated without an embedding: ${e.message}")
+            null
+        }
+        val floatArrays = embeddingResult?.embeddings?.map { it.toFloatArray() }
+        val blob = floatArrays?.toByteArray()
+
+        val newEpisode = episode.copy(
+            content = content,
+            embedding = null,
+            embeddingBlob = blob,
+            embeddingModelId = embeddingResult?.modelId,
+        )
         chatEpisodeDAO.insertEpisode(newEpisode)
 
-        // Invalidate cache
+        // Invalidate old cache
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
         embeddingCache.keys.removeAll { it.startsWith("${MemoryType.EPISODIC}:$id:") }
+
+        if (embeddingResult != null) {
+            val modelId = embeddingResult.modelId
+            embeddingCacheDAO.insertEmbedding(
+                EmbeddingCacheEntity(
+                    memoryId = id,
+                    memoryType = MemoryType.EPISODIC,
+                    modelId = modelId,
+                    embedding = "",
+                    embeddingBlob = blob,
+                )
+            )
+            embeddingCache["${MemoryType.EPISODIC}:$id:$modelId"] =
+                embeddingResult.embeddings.map { it.toFloatArray() }
+        }
 
         return AssistantMemory(
             id = -newEpisode.id,
             content = newEpisode.content,
             type = MemoryType.EPISODIC,
-            hasEmbedding = false,
+            hasEmbedding = embeddingResult != null,
+            embeddingModelId = embeddingResult?.modelId,
             timestamp = newEpisode.startTime,
-            significance = newEpisode.significance
+            significance = newEpisode.significance,
         )
     }
 

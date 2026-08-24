@@ -29,6 +29,8 @@ import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
+import me.rerere.rikkahub.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -302,7 +304,19 @@ class MemoryConsolidationWorker(
                     significance = parsed.significance,
                 )
             }
-            chatEpisodeDAO.insertEpisode(episode)
+            val episodeId = chatEpisodeDAO.insertEpisode(episode).toInt()
+            val effectiveEpisodeId = if (existingEpisode == null) episodeId else existingEpisode.id
+            if (embeddingResult != null && embeddingBlob != null) {
+                database.embeddingCacheDao().insertEmbedding(
+                    EmbeddingCacheEntity(
+                        memoryId = effectiveEpisodeId,
+                        memoryType = MemoryType.EPISODIC,
+                        modelId = embeddingResult.modelId,
+                        embedding = "",
+                        embeddingBlob = embeddingBlob,
+                    )
+                )
+            }
             database.conversationDao().updateConsolidatedStatus(
                 conversation.id.toString(),
                 isConsolidated = true,
