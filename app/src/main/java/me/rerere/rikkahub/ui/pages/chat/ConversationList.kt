@@ -98,7 +98,7 @@ sealed class ConversationListItem {
 fun ColumnScope.ConversationList(
     current: Conversation,
     conversations: LazyPagingItems<ConversationListItem>,
-    conversationJobs: Collection<Uuid>,
+    conversationJobs: Set<Uuid>,
     completedGenerationIds: Set<Uuid> = emptySet(),
     recentlyRestoredIds: Set<Uuid> = emptySet(),
     searchQuery: String,

@@ -200,6 +200,15 @@ data class AssistantRegex(
     val visualOnly: Boolean = false, // 是否仅在视觉上影响
 )
 
+private val compiledRegexCache = android.util.LruCache<String, Regex>(128)
+
+internal fun getOrCompileRegex(pattern: String): Regex? {
+    if (pattern.isBlank()) return null
+    return compiledRegexCache.get(pattern) ?: runCatching {
+        Regex(pattern).also { compiledRegexCache.put(pattern, it) }
+    }.getOrNull()
+}
+
 fun String.replaceRegexes(
     assistant: Assistant?,
     scope: AssistantAffectScope,
@@ -209,16 +218,17 @@ fun String.replaceRegexes(
     if (assistant.regexes.isEmpty()) return this
     return assistant.regexes.fold(this) { acc, regex ->
         if (regex.enabled && regex.visualOnly == visual && regex.affectingScope.contains(scope)) {
-            try {
-                val result = acc.replace(
-                    regex = Regex(regex.findRegex),
-                    replacement = regex.replaceString,
-                )
-                // println("Regex: ${regex.findRegex} -> ${result}")
-                result
-            } catch (e: Exception) {
-                e.printStackTrace()
-                // 如果正则表达式格式错误，返回原字符串
+            val compiled = getOrCompileRegex(regex.findRegex)
+            if (compiled != null) {
+                try {
+                    acc.replace(
+                        regex = compiled,
+                        replacement = regex.replaceString,
+                    )
+                } catch (e: Exception) {
+                    acc
+                }
+            } else {
                 acc
             }
         } else {

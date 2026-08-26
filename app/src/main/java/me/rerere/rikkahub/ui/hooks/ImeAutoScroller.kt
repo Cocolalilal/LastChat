@@ -19,17 +19,21 @@ fun ImeLazyListAutoScroller(
     lazyListState: LazyListState,
 ) {
     val ime = WindowInsets.ime
-    val localDensity = LocalDensity.current
+    val density = LocalDensity.current
     var imeHeight by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(density) {
         snapshotFlow {
-            ime.getBottom(localDensity)
+            ime.getBottom(density)
         }.collect { currentImeHeight ->
             val diff = currentImeHeight - imeHeight
             imeHeight = currentImeHeight
 
-            lazyListState.scrollBy(diff.toFloat())
+            if (diff > 0 && !lazyListState.isScrollInProgress) {
+                runCatching {
+                    lazyListState.scrollBy(diff.toFloat())
+                }
+            }
         }
     }
 }

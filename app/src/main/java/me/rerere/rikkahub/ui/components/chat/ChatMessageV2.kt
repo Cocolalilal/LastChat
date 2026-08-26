@@ -1217,18 +1217,22 @@ private fun UserMessageTurn(
                         onToggleToolbar()
                     }
                 ) {
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
-                        content = part.text
+                    val userNickname = settings.displaySetting.userNickname
+                    val displayContent = remember(part.text, assistant, userNickname) {
+                        part.text
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
-                                userNickname = settings.displaySetting.userNickname,
+                                userNickname = userNickname,
                             )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.USER,
                                 visual = true,
-                            ),
+                            )
+                    }
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = displayContent,
                         paragraphSpacing = 12.dp,
                         onClickCitation = {}
                     )
@@ -1528,18 +1532,22 @@ private fun AssistantMessageTurn(
                     modifier = Modifier.widthIn(max = maxWidth),
                     onClick = handleBubbleClick
                 ) {
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
-                        content = part.text.trimStart()
+                    val userNickname = settings.displaySetting.userNickname
+                    val displayContent = remember(part.text, assistant, userNickname) {
+                        part.text.trimStart()
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
-                                userNickname = settings.displaySetting.userNickname,
+                                userNickname = userNickname,
                             )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.ASSISTANT,
                                 visual = true,
-                            ),
+                            )
+                    }
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = displayContent,
                         paragraphSpacing = 12.dp,
                         streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                         onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
@@ -1607,18 +1615,22 @@ private fun AssistantMessageTurn(
             )
 
             allTextBubbles.forEachIndexed { index, (_, part) ->
-                MarkdownBlock(
-                    workspaceId = assistant?.workspaceId?.toString(),
-                    content = part.text.trimStart()
+                val userNickname = settings.displaySetting.userNickname
+                val displayContent = remember(part.text, assistant, userNickname) {
+                    part.text.trimStart()
                         .replacePersonaPlaceholders(
                             assistant = assistant,
-                            userNickname = settings.displaySetting.userNickname,
+                            userNickname = userNickname,
                         )
                         .replaceRegexes(
                             assistant = assistant,
                             scope = AssistantAffectScope.ASSISTANT,
                             visual = true,
-                        ),
+                        )
+                }
+                MarkdownBlock(
+                    workspaceId = assistant?.workspaceId?.toString(),
+                    content = displayContent,
                     paragraphSpacing = 12.dp,
                     streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,

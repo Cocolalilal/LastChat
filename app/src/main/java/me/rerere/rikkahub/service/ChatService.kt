@@ -988,6 +988,7 @@ class ChatService(
     private suspend fun persistConversationToRepository(
         conversation: Conversation,
         preserveConsolidation: Boolean = false,
+        syncAttachments: Boolean = true,
     ): Boolean {
         val normalizedConversation = normalizeConversation(conversation)
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
@@ -1002,6 +1003,7 @@ class ChatService(
                         conversationRepo.updateConversation(
                             conversation = normalizedConversation,
                             preserveConsolidation = preserveConsolidation,
+                            syncAttachments = syncAttachments,
                         )
                     }
                 }
@@ -1728,6 +1730,7 @@ class ChatService(
                             if (persistConversationToRepository(
                                     conversation = updatedConversation,
                                     preserveConsolidation = preserveConsolidation,
+                                    syncAttachments = false,
                                 )
                             ) {
                                 lastStreamingPersistMs = nowMs
@@ -2924,10 +2927,18 @@ class ChatService(
         }
     }
 
+    private fun removeContextUsage(conversationId: Uuid) {
+        val current = _contextUsage.value
+        if (current.containsKey(conversationId)) {
+            _contextUsage.value = current - conversationId
+        }
+    }
+
     fun cleanupConversation(conversationId: Uuid) {
         getGenerationJob(conversationId)?.cancel()
         removeGenerationJob(conversationId)
         removeConversationState(conversationId)
+        removeContextUsage(conversationId)
         setContextManagementActivity(conversationId, null)
         setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
@@ -82,8 +83,8 @@ class LastChatApp : Application() {
         SearchService.installAcceptLanguageProvider { acceptLanguageHeader() }
         this.createNotificationChannel()
 
-        // set cursor window size
-        DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)
+        // set cursor window size (4MB avoids native virtual memory exhaustion)
+        DatabaseUtil.setCursorWindowSize(4 * 1024 * 1024)
 
         // delete temp files
         deleteTempFiles()
@@ -147,7 +148,9 @@ class LastChatApp : Application() {
                 .distinctUntilChanged()
                 .collect { (recentlyUsed, assistants, isInit) ->
                     if (!isInit) {
-                        appShortcutManager.updateAssistantShortcuts(recentlyUsed, assistants)
+                        withContext(Dispatchers.IO) {
+                            appShortcutManager.updateAssistantShortcuts(recentlyUsed, assistants)
+                        }
                     }
                 }
         }
@@ -248,13 +251,21 @@ class LastChatApp : Application() {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
             level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
         ) {
-            get<LocalInferenceManager>().requestEviction()
+            runCatching { get<LocalInferenceManager>().requestEviction() }
+            runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
+            runCatching { get<me.rerere.rikkahub.service.ChatService>().checkAllConversationsReferences() }
+            runCatching { get<me.rerere.rikkahub.data.ai.AILoggingManager>().clearLogs() }
+            runCatching { me.rerere.rikkahub.service.assist.AssistScreenHolder.clear() }
         }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        get<LocalInferenceManager>().requestEviction()
+        runCatching { get<LocalInferenceManager>().requestEviction() }
+        runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
+        runCatching { get<me.rerere.rikkahub.service.ChatService>().checkAllConversationsReferences() }
+        runCatching { get<me.rerere.rikkahub.data.ai.AILoggingManager>().clearLogs() }
+        runCatching { me.rerere.rikkahub.service.assist.AssistScreenHolder.clear() }
     }
 }
 

@@ -30,6 +30,8 @@ import kotlin.uuid.Uuid
 private const val MEMORY_SEARCH_MAX_LIMIT = 8
 private const val MEMORY_SEARCH_CHAT_SUMMARY_LIMIT = 2
 private const val MEMORY_SEARCH_MAX_QUERIES = 8
+private val WHITESPACE_REGEX = Regex("\\s+")
+private val NON_ALPHANUM_REGEX = Regex("[^\\p{L}\\p{N}]+")
 
 internal data class ConversationRecallSpan(
     val conversationId: Uuid,
@@ -155,7 +157,7 @@ internal fun buildDeterministicMemoryRecallQueries(
     )
 
     fun add(text: String, source: String) {
-        val compact = text.replace(Regex("\\s+"), " ").trim()
+        val compact = text.replace(WHITESPACE_REGEX, " ").trim()
         if (compact.length >= 3) {
             queries += MemoryRecallSearchQuery(compact, source)
         }
@@ -278,7 +280,7 @@ private data class MemoryRecallQueryPlan(
         fun from(query: String): MemoryRecallQueryPlan {
             val originalTokens = query
                 .lowercase()
-                .split(Regex("[^\\p{L}\\p{N}]+"))
+                .split(NON_ALPHANUM_REGEX)
                 .map { it.trim() }
                 .filter { it.length >= 3 }
                 .distinct()

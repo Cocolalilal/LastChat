@@ -93,6 +93,7 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
@@ -341,13 +342,22 @@ private fun SharedTransitionScope.ChatListNormal(
     val context = LocalContext.current
     val navController = LocalNavController.current
 
+    var scrollJob: Job? by remember { mutableStateOf(null) }
     suspend fun snapToStreamingBottom() {
         val targetIndex = (state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
         if (targetIndex <= 0) return
         try {
             state.scrollToItem(targetIndex)
-        } catch (_: IllegalStateException) {
+        } catch (_: Exception) {
             // The lazy list can be between measure passes while a streaming turn morphs.
+        }
+    }
+
+    fun requestSnapToStreamingBottom() {
+        if (scrollJob?.isActive == true) return
+        scrollJob = scope.launch {
+            snapToStreamingBottom()
+            delay(64)
         }
     }
 
@@ -472,8 +482,8 @@ private fun SharedTransitionScope.ChatListNormal(
                     loading = loadingState
                 )
             }.collect {
-                if (loadingState && followStreamingBottom) {
-                    snapToStreamingBottom()
+                if (loadingState && followStreamingBottom && !state.isScrollInProgress) {
+                    requestSnapToStreamingBottom()
                 }
             }
         }
@@ -653,9 +663,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
                                     {
                                         if (followStreamingBottom && !state.isScrollInProgress) {
-                                            scope.launch {
-                                                snapToStreamingBottom()
-                                            }
+                                            requestSnapToStreamingBottom()
                                         }
                                     }
                                 } else {
@@ -664,9 +672,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 modifier = if (loading && isLastTurn) {
                                     Modifier.onSizeChanged {
                                         if (followStreamingBottom && !state.isScrollInProgress) {
-                                            scope.launch {
-                                                snapToStreamingBottom()
-                                            }
+                                            requestSnapToStreamingBottom()
                                         }
                                     }
                                 } else {

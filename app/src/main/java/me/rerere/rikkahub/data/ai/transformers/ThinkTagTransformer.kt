@@ -42,12 +42,13 @@ object ThinkTagTransformer : OutputMessageTransformer {
 
             message.copy(
                 parts = message.parts.flatMap { part ->
-                    if (part !is UIMessagePart.Text || !THINKING_REGEX.containsMatchIn(part.text)) {
+                    if (part !is UIMessagePart.Text || !part.text.contains("<think", ignoreCase = true)) {
                         return@flatMap listOf(part)
                     }
 
-                    val reasoning = THINKING_REGEX.find(part.text)?.groupValues?.getOrNull(1)?.trim().orEmpty()
-                    val strippedText = part.text.replace(THINKING_REGEX, "").trim()
+                    val match = THINKING_REGEX.find(part.text) ?: return@flatMap listOf(part)
+                    val reasoning = match.groupValues.getOrNull(1)?.trim().orEmpty()
+                    val strippedText = (part.text.substring(0, match.range.first) + part.text.substring(match.range.last + 1)).trim()
                     if (reasoning.isBlank()) {
                         return@flatMap listOf(part.copy(text = strippedText))
                     }

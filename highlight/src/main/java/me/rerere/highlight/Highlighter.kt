@@ -24,7 +24,6 @@ interface Highlighter {
 private val format by lazy {
     Json {
         ignoreUnknownKeys = true
-        prettyPrint = true
     }
 }
 

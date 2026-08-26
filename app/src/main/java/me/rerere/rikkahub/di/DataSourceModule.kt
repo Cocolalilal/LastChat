@@ -394,7 +394,7 @@ val dataSourceModule = module {
                 .crossfade(true)
                 .memoryCache {
                     MemoryCache.Builder()
-                        .maxSizePercent(context, 0.25)
+                        .maxSizePercent(context, 0.15)
                         .build()
                 }
                 .diskCache {

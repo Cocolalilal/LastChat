@@ -657,19 +657,15 @@ class GenerationHandler(
                 settings = settings,
                 messages = messages,
                 onUpdateMessages = {
-                    messages = it.transforms(
-                        transformers = outputTransformers,
-                        context = context,
-                        model = model,
-                        assistant = assistant
-                    )
+                    messages = it
                     send(
                         GenerationChunk.Messages(
                             messages.visualTransforms(
                                 transformers = outputTransformers,
                                 context = context,
                                 model = model,
-                                assistant = assistant
+                                assistant = assistant,
+                                onlyLatest = true
                             )
                         )
                     )

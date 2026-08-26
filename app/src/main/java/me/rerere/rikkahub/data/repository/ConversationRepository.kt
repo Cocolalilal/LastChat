@@ -153,8 +153,16 @@ class ConversationRepository(
         try { usageStatsDAO.incrementConversations() } catch (_: Exception) {}
     }
 
-    suspend fun updateConversation(conversation: Conversation, preserveConsolidation: Boolean = false) {
-        val syncedConversation = chatAttachmentRepository.syncConversationAttachments(conversation)
+    suspend fun updateConversation(
+        conversation: Conversation,
+        preserveConsolidation: Boolean = false,
+        syncAttachments: Boolean = true,
+    ) {
+        val syncedConversation = if (syncAttachments) {
+            chatAttachmentRepository.syncConversationAttachments(conversation)
+        } else {
+            conversation
+        }
         // Invalidation Logic: If a consolidated conversation is updated (e.g. new message),
         // we must invalidate the old memory episode to allow re-consolidation.
         if (shouldInvalidateConsolidation(syncedConversation, preserveConsolidation)) {

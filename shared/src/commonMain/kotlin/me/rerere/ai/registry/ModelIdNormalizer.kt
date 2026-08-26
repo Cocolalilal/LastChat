@@ -1,5 +1,14 @@
 package me.rerere.ai.registry
 
+private val COLON_TAG_REGEX = Regex(":(?:\\d+|[a-z0-9._-]+)$")
+private val VERSION_SUFFIX_REGEX = Regex("-v\\d+(?::\\d+)?$")
+private val DATE_SUFFIX_REGEX = Regex("-(?:20\\d{2}-\\d{2}-\\d{2}|20\\d{6})$")
+private val PREVIEW_SUFFIX_REGEX = Regex("-(?:preview|exp)-\\d{2}-\\d{2}$")
+private val MULTI_DASH_REGEX = Regex("-{2,}")
+private val DATE_YYYYMMDD_REGEX = Regex("20\\d{6}")
+private val YEAR_REGEX = Regex("20\\d{2}")
+private val TWO_DIGIT_REGEX = Regex("\\d{2}")
+
 object ModelIdNormalizer {
     private val providerNamespaces = listOf(
         "anthropic.",
@@ -62,14 +71,14 @@ object ModelIdNormalizer {
         working = working.substringAfterLast("/")
         working = working.substringAfterLast("models/")
         working = stripProviderNamespace(working)
-        working = working.replace(Regex(":(?:\\d+|[a-z0-9._-]+)$"), "")
-        working = working.replace(Regex("-v\\d+(?::\\d+)?$"), "")
-        working = working.replace(Regex("-(?:20\\d{2}-\\d{2}-\\d{2}|20\\d{6})$"), "")
-        working = working.replace(Regex("-(?:preview|exp)-\\d{2}-\\d{2}$"), "")
+        working = working.replace(COLON_TAG_REGEX, "")
+        working = working.replace(VERSION_SUFFIX_REGEX, "")
+        working = working.replace(DATE_SUFFIX_REGEX, "")
+        working = working.replace(PREVIEW_SUFFIX_REGEX, "")
         working = normalizeVersionTokens(working)
         working = stripTrailingNoise(working)
         working = stripTrailingDates(working)
-        working = working.replace(Regex("-{2,}"), "-").trim('-')
+        working = working.replace(MULTI_DASH_REGEX, "-").trim('-')
 
         return working
     }
@@ -88,9 +97,9 @@ object ModelIdNormalizer {
         working = working.substringAfterLast("/")
         working = working.substringAfterLast("models/")
         working = stripProviderNamespace(working)
-        working = working.replace(Regex(":(?:\\d+|[a-z0-9._-]+)$"), "")
+        working = working.replace(COLON_TAG_REGEX, "")
         working = normalizeVersionTokens(working)
-        working = working.replace(Regex("-{2,}"), "-").trim('-')
+        working = working.replace(MULTI_DASH_REGEX, "-").trim('-')
 
         return working
     }
@@ -188,15 +197,15 @@ object ModelIdNormalizer {
         val tokens = value.split('-').filter { it.isNotBlank() }.toMutableList()
         while (tokens.isNotEmpty()) {
             val last = tokens.last()
-            if (last.matches(Regex("20\\d{6}"))) {
+            if (last.matches(DATE_YYYYMMDD_REGEX)) {
                 tokens.removeAt(tokens.lastIndex)
                 continue
             }
             if (
                 tokens.size >= 3 &&
-                tokens[tokens.lastIndex - 2].matches(Regex("20\\d{2}")) &&
-                tokens[tokens.lastIndex - 1].matches(Regex("\\d{2}")) &&
-                last.matches(Regex("\\d{2}"))
+                tokens[tokens.lastIndex - 2].matches(YEAR_REGEX) &&
+                tokens[tokens.lastIndex - 1].matches(TWO_DIGIT_REGEX) &&
+                last.matches(TWO_DIGIT_REGEX)
             ) {
                 repeat(3) { tokens.removeAt(tokens.lastIndex) }
                 continue
