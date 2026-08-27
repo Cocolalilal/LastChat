@@ -139,8 +139,10 @@ suspend fun List<UIMessage>.visualTransforms(
                 acc
             }
         }
-        val newLastMsg = transformedLastList.firstOrNull() ?: lastMsg
-        return if (newLastMsg === lastMsg) this else this.toMutableList().apply { set(lastIndex, newLastMsg) }
+        if (transformedLastList.size == 1 && transformedLastList[0] === lastMsg) {
+            return this
+        }
+        return this.subList(0, lastIndex) + transformedLastList
     }
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {

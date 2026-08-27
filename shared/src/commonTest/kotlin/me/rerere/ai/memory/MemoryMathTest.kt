@@ -10,6 +10,16 @@ class MemoryMathTest {
         assertEquals(1f, MemoryVectorMath.cosineSimilarity(listOf(1f, 0f), listOf(1f, 0f)))
         assertEquals(0f, MemoryVectorMath.cosineSimilarity(listOf(1f, 0f), listOf(0f, 1f)))
         assertEquals(0f, MemoryVectorMath.cosineSimilarity(listOf(1f), listOf(1f, 0f)))
+
+        // Test FloatArray overloads and bound clamping
+        val v1 = floatArrayOf(1f, 0f)
+        val v2 = floatArrayOf(1f, 0f)
+        val v3 = floatArrayOf(0f, 1f)
+        assertEquals(1f, MemoryVectorMath.cosineSimilarity(v1, v2))
+        assertEquals(0f, MemoryVectorMath.cosineSimilarity(v1, v3))
+        assertEquals(0f, MemoryVectorMath.cosineSimilarity(floatArrayOf(1f), v1))
+        assertTrue(MemoryVectorMath.cosineSimilarity(v1, v2) <= 1.0f)
+        assertTrue(MemoryVectorMath.cosineSimilarity(v1, v2) >= -1.0f)
     }
 
     @Test

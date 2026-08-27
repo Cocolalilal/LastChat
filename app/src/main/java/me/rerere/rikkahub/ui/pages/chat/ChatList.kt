@@ -343,9 +343,12 @@ private fun SharedTransitionScope.ChatListNormal(
     val navController = LocalNavController.current
 
     var scrollJob: Job? by remember { mutableStateOf(null) }
+    var hasPendingStreamingSnap by remember { mutableStateOf(false) }
+
     suspend fun snapToStreamingBottom() {
-        val targetIndex = (state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-        if (targetIndex <= 0) return
+        val totalCount = state.layoutInfo.totalItemsCount
+        if (totalCount <= 0) return
+        val targetIndex = totalCount - 1
         try {
             state.scrollToItem(targetIndex)
         } catch (_: Exception) {
@@ -354,10 +357,16 @@ private fun SharedTransitionScope.ChatListNormal(
     }
 
     fun requestSnapToStreamingBottom() {
-        if (scrollJob?.isActive == true) return
+        if (scrollJob?.isActive == true) {
+            hasPendingStreamingSnap = true
+            return
+        }
         scrollJob = scope.launch {
-            snapToStreamingBottom()
-            delay(64)
+            do {
+                hasPendingStreamingSnap = false
+                snapToStreamingBottom()
+                delay(64)
+            } while (hasPendingStreamingSnap)
         }
     }
 

@@ -54,10 +54,18 @@ fun isJsonExprValid(input: String): Boolean = parseExpression(input).success
  * @return 作为字符串的评估值。
  */
 fun evaluateJsonExpr(input: String, root: JsonObject): String {
-    if (input.isNotEmpty() && input.all { it.isLetterOrDigit() || it == '_' }) {
-        val direct = root[input]
-        if (direct is JsonPrimitive) {
-            return direct.content
+    if (input.isNotEmpty() && (input[0].isLetter() || input[0] == '_') && input.all { it.isLetterOrDigit() || it == '_' }) {
+        when (val direct = root[input]) {
+            null, is JsonNull -> return ""
+            is JsonPrimitive -> {
+                if (direct.isString) return direct.content
+                val num = direct.doubleOrNull()
+                if (num != null) {
+                    return formatNumber(round(num * 100.0) / 100.0)
+                }
+                return direct.content
+            }
+            is JsonObject, is JsonArray -> return direct.toString()
         }
     }
     val lexer = Lexer(input)

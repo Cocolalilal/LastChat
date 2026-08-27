@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 
 @Composable
@@ -23,15 +24,27 @@ fun ImeLazyListAutoScroller(
     var imeHeight by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(density) {
+        var pendingScroll = 0f
         snapshotFlow {
             ime.getBottom(density)
         }.collect { currentImeHeight ->
             val diff = currentImeHeight - imeHeight
             imeHeight = currentImeHeight
 
-            if (diff > 0 && !lazyListState.isScrollInProgress) {
-                runCatching {
-                    lazyListState.scrollBy(diff.toFloat())
+            if (diff > 0) {
+                pendingScroll += diff
+            } else if (diff < 0) {
+                pendingScroll = (pendingScroll + diff).coerceAtLeast(0f)
+            }
+
+            if (pendingScroll > 0f && !lazyListState.isScrollInProgress) {
+                val toScroll = pendingScroll
+                try {
+                    val consumed = lazyListState.scrollBy(toScroll)
+                    pendingScroll = (pendingScroll - consumed).coerceAtLeast(0f)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
                 }
             }
         }

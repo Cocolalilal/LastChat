@@ -200,13 +200,35 @@ data class AssistantRegex(
     val visualOnly: Boolean = false, // 是否仅在视觉上影响
 )
 
-private val compiledRegexCache = android.util.LruCache<String, Regex>(128)
+private val regexCacheLock = Any()
+private val compiledRegexCache = object : LinkedHashMap<String, Regex>(128, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Regex>?): Boolean = size > 128
+}
+private val INVALID_REGEX_SENTINEL = Regex("\u0000\u0000\u0000")
 
 internal fun getOrCompileRegex(pattern: String): Regex? {
     if (pattern.isBlank()) return null
-    return compiledRegexCache.get(pattern) ?: runCatching {
-        Regex(pattern).also { compiledRegexCache.put(pattern, it) }
-    }.getOrNull()
+    synchronized(regexCacheLock) {
+        val cached = compiledRegexCache[pattern]
+        if (cached != null) {
+            return if (cached === INVALID_REGEX_SENTINEL) null else cached
+        }
+    }
+    val compiled = try {
+        Regex(pattern)
+    } catch (_: Exception) {
+        INVALID_REGEX_SENTINEL
+    }
+    synchronized(regexCacheLock) {
+        compiledRegexCache[pattern] = compiled
+    }
+    return if (compiled === INVALID_REGEX_SENTINEL) null else compiled
+}
+
+fun clearCompiledRegexCache() {
+    synchronized(regexCacheLock) {
+        compiledRegexCache.clear()
+    }
 }
 
 fun String.replaceRegexes(

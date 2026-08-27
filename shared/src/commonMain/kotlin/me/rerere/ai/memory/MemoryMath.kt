@@ -26,7 +26,7 @@ object MemoryVectorMath {
             secondNorm += b * b
         }
         return if (firstNorm == 0.0 || secondNorm == 0.0) 0f
-        else (dot / (sqrt(firstNorm) * sqrt(secondNorm))).toFloat()
+        else (dot / (sqrt(firstNorm) * sqrt(secondNorm))).toFloat().coerceIn(-1f, 1f)
     }
 
     fun cosineSimilarity(first: List<Float>, second: List<Float>): Float {
@@ -42,7 +42,7 @@ object MemoryVectorMath {
             secondNorm += b * b
         }
         return if (firstNorm == 0.0 || secondNorm == 0.0) 0f
-        else (dot / (sqrt(firstNorm) * sqrt(secondNorm))).toFloat()
+        else (dot / (sqrt(firstNorm) * sqrt(secondNorm))).toFloat().coerceIn(-1f, 1f)
     }
 
     fun keywordScore(query: String, content: String): Float {

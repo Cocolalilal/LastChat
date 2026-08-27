@@ -254,8 +254,11 @@ class LastChatApp : Application() {
             runCatching { get<LocalInferenceManager>().requestEviction() }
             runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
             runCatching { get<me.rerere.rikkahub.service.ChatService>().checkAllConversationsReferences() }
-            runCatching { get<me.rerere.rikkahub.data.ai.AILoggingManager>().clearLogs() }
+            runCatching { me.rerere.rikkahub.data.model.clearCompiledRegexCache() }
             runCatching { me.rerere.rikkahub.service.assist.AssistScreenHolder.clear() }
+        }
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            runCatching { get<me.rerere.rikkahub.data.ai.AILoggingManager>().clearLogs() }
         }
     }
 
@@ -264,6 +267,7 @@ class LastChatApp : Application() {
         runCatching { get<LocalInferenceManager>().requestEviction() }
         runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
         runCatching { get<me.rerere.rikkahub.service.ChatService>().checkAllConversationsReferences() }
+        runCatching { me.rerere.rikkahub.data.model.clearCompiledRegexCache() }
         runCatching { get<me.rerere.rikkahub.data.ai.AILoggingManager>().clearLogs() }
         runCatching { me.rerere.rikkahub.service.assist.AssistScreenHolder.clear() }
     }
