@@ -69,23 +69,6 @@ class LiteRtCatalog(private val context: Context) {
         result
     }
 
-    /**
-     * The recommended model for this device: the most capable curated model whose minimum RAM
-     * requirement fits, preferring multimodal + thinking models, then larger models.
-     */
-    suspend fun recommendedModel(deviceRamGb: Int): LocalModelMetadata? {
-        val chatModels = catalog().models.filter { it.kind == LocalModelKind.LLM }
-        val fitting = chatModels.filter { it.minDeviceMemoryInGb <= deviceRamGb }
-        if (fitting.isEmpty()) return chatModels.minByOrNull { it.minDeviceMemoryInGb }
-        return fitting.maxWithOrNull(
-            compareBy(
-                { if (it.supportsImage) 1 else 0 },
-                { if (it.supportsThinking) 1 else 0 },
-                { it.sizeInBytes },
-            )
-        )
-    }
-
     /** Returns the catalog metadata for [installed] if a newer revision is available. */
     suspend fun updateFor(installed: InstalledLocalModel): LocalModelMetadata? {
         val meta = catalog().models.firstOrNull { it.id == installed.id } ?: return null
@@ -152,6 +135,6 @@ class LiteRtCatalog(private val context: Context) {
     companion object {
         /** Gallery allowlist used for update detection. Kept in sync with the bundled snapshot version. */
         const val ALLOWLIST_URL =
-            "https://raw.githubusercontent.com/google-ai-edge/gallery/main/model_allowlists/1_0_15.json"
+            "https://raw.githubusercontent.com/google-ai-edge/gallery/main/model_allowlists/1_0_19.json"
     }
 }
