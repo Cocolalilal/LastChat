@@ -426,12 +426,42 @@ class ModelCatalogTest {
         assertTrue("Qwen 3.8 Max should support vision", qwen38.supportsVision)
         assertEquals("Qwen 3.8 Max should use BUDGET reasoning", me.rerere.ai.provider.ReasoningModeType.BUDGET, qwen38.reasoningConfig?.type)
 
+        // Qwen Plus (1M context, text only)
+        val qwenPlus = getEntry("qwen-plus")
+        assertTrue("Qwen Plus should support function calling", qwenPlus.supportsFunctionCalling)
+        assertTrue("Qwen Plus should NOT support vision", !qwenPlus.supportsVision)
+        assertEquals("Qwen Plus should have 1M context window", 1000000, qwenPlus.contextWindowTokens)
+
+        // Qwen Long (1M context)
+        val qwenLong = getEntry("qwen-long")
+        assertTrue("Qwen Long should support function calling", qwenLong.supportsFunctionCalling)
+        assertEquals("Qwen Long should have 1M context window", 1000000, qwenLong.contextWindowTokens)
+
+        // Qwen 2.5 VL (Vision + Tools)
+        val qwen25Vl = getEntry("qwen2.5-vl-72b-instruct")
+        assertTrue("Qwen 2.5 VL should support function calling", qwen25Vl.supportsFunctionCalling)
+        assertTrue("Qwen 2.5 VL should support vision", qwen25Vl.supportsVision)
+        assertTrue("Qwen 2.5 VL should NOT support reasoning", !qwen25Vl.supportsReasoning)
+
+        // QvQ (Vision + Reasoning + Tools)
+        val qvq = getEntry("qvq-72b")
+        assertTrue("QvQ should support function calling", qvq.supportsFunctionCalling)
+        assertTrue("QvQ should support vision", qvq.supportsVision)
+        assertTrue("QvQ should support reasoning", qvq.supportsReasoning)
+
         // DeepSeek V4 Pro
         val dsV4 = getEntry("deepseek-v4-pro")
         assertTrue("DeepSeek V4 Pro should support function calling", dsV4.supportsFunctionCalling)
         assertTrue("DeepSeek V4 Pro should support reasoning", dsV4.supportsReasoning)
         assertEquals("DeepSeek V4 Pro should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, dsV4.reasoningConfig?.type)
         assertEquals("DeepSeek V4 Pro should have 1M context window", 1000000, dsV4.contextWindowTokens)
+
+        // DeepSeek V4 Vision Exp
+        val dsVision = getEntry("deepseek-v4-flash-vision-exp")
+        assertTrue("DeepSeek V4 Vision should support function calling", dsVision.supportsFunctionCalling)
+        assertTrue("DeepSeek V4 Vision should support vision", dsVision.supportsVision)
+        assertTrue("DeepSeek V4 Vision should support reasoning", dsVision.supportsReasoning)
+        assertEquals("DeepSeek V4 Vision should have 1M context window", 1000000, dsVision.contextWindowTokens)
 
         // MiniMax M3
         val m3 = getEntry("MiniMax-M3")

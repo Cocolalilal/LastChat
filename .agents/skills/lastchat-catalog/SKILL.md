@@ -231,13 +231,18 @@ Common correct values by family (as of 2026):
 | Gemma 2 (27B, 9B, 2B) | 8 192 |
 | Llama 4 Scout | 10 000 000 |
 | Llama 4 Maverick | 1 000 000 |
-| DeepSeek-V4 Pro/Flash | 1 000 000 |
+| DeepSeek-V4 Pro/Flash | 1 000 000 (Max output 384k) |
+| DeepSeek-V4 Vision Exp | 1 000 000 (Vision: TEXT+IMAGE) |
+| DeepSeek-VL2 | 128 000 (Vision: TEXT+IMAGE) |
 | DeepSeek-V3, R1 | 128 000 |
 | Mistral Large 2 | 128 000 |
 | Mistral Small 4 | 256 000 |
 | Pixtral 12B / Large | 128 000 |
-| Qwen 3.8-Max, 3.8-27B | 1 000 000 |
-| Qwen 2.5, QwQ | 128 000 |
+| Qwen 3 (3.8-Max, 3.5, 3-VL) | 1 000 000 (Vision: TEXT+IMAGE) |
+| Qwen-Plus, Qwen-Turbo, Qwen-Long | 1 000 000 |
+| Qwen-Max | 262 144 |
+| Qwen 2.5-VL, QvQ-72B | 131 072 (Vision: TEXT+IMAGE) |
+| QwQ-32B, Qwen 2.5 | 131 072 |
 | Grok 3/3-mini | 131 072 |
 | Grok 4 | 256 000 |
 | MiniMax-M3 | 1 000 000 |
