@@ -1487,6 +1487,7 @@
         "REASONING"
       ],
       "provider_slug": "openai",
+      "context_window": 131072,
       "versions": []
     },
     {
@@ -1636,13 +1637,36 @@
           "context_window": 128000
         },
         {
+          "id": "gpt-4.1",
+          "aliases": [
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano"
+          ],
+          "match_patterns": [
+            "gpt-4\\.1"
+          ],
+          "type": "CHAT",
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "output_modalities": [
+            "TEXT"
+          ],
+          "abilities": [
+            "TOOL"
+          ],
+          "context_window": 1000000,
+          "max_images_in_context": 500
+        },
+        {
           "id": "gpt-vision",
           "aliases": [
             "gpt-vision"
           ],
           "match_patterns": [
             "gpt-4o",
-            "gpt-4\\.1",
             "gpt-4-turbo"
           ],
           "input_modalities": [
@@ -1652,7 +1676,8 @@
           "abilities": [
             "TOOL"
           ],
-          "context_window": 128000
+          "context_window": 128000,
+          "max_images_in_context": 50
         },
         {
           "id": "gpt-image",
@@ -1670,7 +1695,8 @@
           "output_modalities": [
             "IMAGE"
           ],
-          "abilities": []
+          "abilities": [],
+          "max_images_in_context": 1
         },
         {
           "id": "openai-embedding",
@@ -1780,7 +1806,7 @@
           "reasoning_config": {
             "type": "budget",
             "min_tokens": 1024,
-            "max_tokens": 64000,
+            "max_tokens": 128000,
             "step_tokens": 1024,
             "preset_tokens": [
               1024,
@@ -1788,7 +1814,8 @@
               8192,
               16000,
               32000,
-              64000
+              64000,
+              128000
             ]
           },
           "context_window": 200000
@@ -1803,7 +1830,22 @@
           ],
           "abilities": [
             "TOOL"
-          ]
+          ],
+          "context_window": 200000
+        },
+        {
+          "id": "claude-3-5-haiku",
+          "aliases": [
+            "claude-3-5-haiku"
+          ],
+          "match_patterns": [
+            "claude-3-5-haiku",
+            "claude-3\\.5-haiku"
+          ],
+          "abilities": [
+            "TOOL"
+          ],
+          "context_window": 200000
         }
       ],
       "reasoning_config": {
@@ -1954,6 +1996,20 @@
           ],
           "context_window": 1000000,
           "max_images_in_context": 3600
+        },
+        {
+          "id": "gemini-1.5-pro",
+          "aliases": [
+            "gemini-1.5-pro"
+          ],
+          "match_patterns": [
+            "gemini-1\\.5-pro"
+          ],
+          "abilities": [
+            "TOOL"
+          ],
+          "context_window": 2000000,
+          "max_images_in_context": 3600
         }
       ],
       "context_window": 1000000,
@@ -1998,7 +2054,7 @@
             "REASONING"
           ],
           "context_window": 1000000,
-          "max_images_in_context": 16,
+          "max_images_in_context": 600,
           "reasoning_config": {
             "type": "effort",
             "supported_levels": [
@@ -2079,7 +2135,7 @@
           "abilities": [
             "TOOL"
           ],
-          "context_window": 128000,
+          "context_window": 129280,
           "max_images_in_context": 16
         },
         {
@@ -2162,14 +2218,17 @@
           "reasoning_config": {
             "type": "budget",
             "min_tokens": 1024,
-            "max_tokens": 32768,
+            "max_tokens": 262144,
             "step_tokens": 1024,
             "preset_tokens": [
               1024,
               4096,
               8192,
               16000,
-              32000
+              32000,
+              65536,
+              131072,
+              262144
             ]
           },
           "context_window": 1000000,
@@ -2198,14 +2257,16 @@
           "reasoning_config": {
             "type": "budget",
             "min_tokens": 1024,
-            "max_tokens": 32768,
+            "max_tokens": 262144,
             "step_tokens": 1024,
             "preset_tokens": [
               1024,
               4096,
               8192,
               16000,
-              32000
+              32000,
+              65536,
+              131072
             ]
           },
           "context_window": 131072,
@@ -2233,14 +2294,16 @@
           "reasoning_config": {
             "type": "budget",
             "min_tokens": 1024,
-            "max_tokens": 32768,
+            "max_tokens": 262144,
             "step_tokens": 1024,
             "preset_tokens": [
               1024,
               4096,
               8192,
               16000,
-              32000
+              32000,
+              65536,
+              131072
             ]
           },
           "context_window": 131072
@@ -2450,7 +2513,8 @@
           ],
           "abilities": [
             "TOOL"
-          ]
+          ],
+          "max_images_in_context": 30
         },
         {
           "id": "mistral-reasoning",
@@ -2458,13 +2522,56 @@
             "magistral"
           ],
           "match_patterns": [
-            "magistral",
-            "mistral-medium-3\\.5"
+            "magistral"
           ],
           "abilities": [
             "TOOL",
             "REASONING"
-          ]
+          ],
+          "context_window": 128000
+        },
+        {
+          "id": "mistral-medium-3.5",
+          "aliases": [
+            "mistral-medium-3.5"
+          ],
+          "match_patterns": [
+            "mistral-medium-3\\.5",
+            "mistral-medium-3-5"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "context_window": 256000,
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "off",
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "max_images_in_context": 30
+        },
+        {
+          "id": "codestral",
+          "aliases": [
+            "codestral"
+          ],
+          "match_patterns": [
+            "codestral"
+          ],
+          "abilities": [
+            "TOOL"
+          ],
+          "context_window": 256000
         },
         {
           "id": "mistral-embed",
@@ -2517,7 +2624,8 @@
           "id": "devstral",
           "aliases": [
             "devstral",
-            "devstral-small-2505"
+            "devstral-small-2505",
+            "devstral-2"
           ],
           "match_patterns": [
             "devstral"
@@ -2526,7 +2634,12 @@
             "TOOL",
             "REASONING"
           ],
-          "context_window": 128000,
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "context_window": 256000,
+          "max_images_in_context": 30,
           "reasoning_config": {
             "type": "effort",
             "supported_levels": [
@@ -2788,7 +2901,8 @@
           "input_modalities": [
             "TEXT",
             "IMAGE"
-          ]
+          ],
+          "max_images_in_context": 10
         },
         {
           "id": "grok-4",
@@ -2825,7 +2939,7 @@
           "max_images_in_context": 20
         }
       ],
-      "context_window": 256000,
+      "context_window": 131072,
       "reasoning_config": {
         "type": "effort",
         "supported_levels": [
@@ -2865,7 +2979,8 @@
         {
           "id": "glm-5-vision",
           "match_patterns": [
-            "glm[-_]?5.*(?:v|vision)"
+            "glm[-_]?5.*(?:v|vision)",
+            "glm[-_]?5\\.3[-_]?flash"
           ],
           "input_modalities": [
             "TEXT",
@@ -2874,7 +2989,9 @@
           "abilities": [
             "TOOL",
             "REASONING"
-          ]
+          ],
+          "context_window": 1000000,
+          "max_images_in_context": 50
         },
         {
           "id": "glm-5",
@@ -2895,7 +3012,8 @@
               "off",
               "auto",
               "low",
-              "high"
+              "high",
+              "max"
             ]
           }
         },
@@ -2911,7 +3029,8 @@
           "abilities": [
             "TOOL",
             "REASONING"
-          ]
+          ],
+          "max_images_in_context": 10
         },
         {
           "id": "glm-4.5",
@@ -2938,7 +3057,8 @@
           "abilities": [
             "TOOL",
             "REASONING"
-          ]
+          ],
+          "max_images_in_context": 10
         },
         {
           "id": "glm-reasoning",
@@ -2973,7 +3093,8 @@
             "zero",
             "z1",
             "rumination"
-          ]
+          ],
+          "max_images_in_context": 10
         },
         {
           "id": "glm-4",
@@ -3089,7 +3210,8 @@
               "off",
               "auto",
               "low",
-              "high"
+              "high",
+              "max"
             ]
           }
         },
@@ -3200,7 +3322,8 @@
             "TEXT",
             "IMAGE"
           ],
-          "context_window": 1000000
+          "context_window": 1000000,
+          "max_images_in_context": 10
         }
       ],
       "context_window": 1000000,
@@ -3303,7 +3426,8 @@
             "IMAGE"
           ],
           "abilities": [],
-          "context_window": 256000
+          "context_window": 256000,
+          "max_images_in_context": 1
         },
         {
           "id": "doubao-pro",
@@ -3708,7 +3832,8 @@
             "TEXT",
             "IMAGE"
           ],
-          "context_window": 128000
+          "context_window": 128000,
+          "max_images_in_context": 10
         },
         {
           "id": "cobuddy",
@@ -3847,7 +3972,8 @@
           "output_modalities": [
             "IMAGE"
           ],
-          "abilities": []
+          "abilities": [],
+          "max_images_in_context": 1
         },
         {
           "id": "flux-1.1-pro-ultra",
@@ -3990,7 +4116,8 @@
             "TEXT"
           ],
           "abilities": [],
-          "context_window": 128000
+          "context_window": 128000,
+          "max_images_in_context": 1
         }
       ],
       "context_window": 128000
@@ -4448,6 +4575,8 @@
           "reasoning_config": {
             "type": "effort",
             "supported_levels": [
+              "off",
+              "auto",
               "low",
               "medium",
               "high"
@@ -5452,7 +5581,8 @@
           ],
           "output_modalities": [
             "IMAGE"
-          ]
+          ],
+          "max_images_in_context": 1
         }
       ]
     },
@@ -5620,7 +5750,8 @@
       "type": "IMAGE",
       "output_modalities": [
         "IMAGE"
-      ]
+      ],
+      "context_window": 4096
     },
     {
       "id": "gpt-image-1-mini",
@@ -5630,7 +5761,12 @@
       ],
       "input_modalities": [
         "TEXT"
-      ]
+      ],
+      "type": "IMAGE",
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 4096
     },
     {
       "id": "gemini-2.5-flash-image",
@@ -5647,7 +5783,17 @@
       ],
       "abilities": [
         "TOOL"
-      ]
+      ],
+      "type": "IMAGE",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 32768,
+      "max_images_in_context": 1
     },
     {
       "id": "gemini-3.1-flash-image-preview",
@@ -5664,7 +5810,17 @@
       ],
       "abilities": [
         "TOOL"
-      ]
+      ],
+      "type": "IMAGE",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 32768,
+      "max_images_in_context": 1
     },
     {
       "id": "gemini-3-pro-image-preview",
@@ -5681,7 +5837,17 @@
       ],
       "abilities": [
         "TOOL"
-      ]
+      ],
+      "type": "IMAGE",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 32768,
+      "max_images_in_context": 1
     },
     {
       "id": "gemini-embedding-001",
@@ -5703,7 +5869,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 2048
     },
     {
       "id": "multimodal-embedding-v1",
@@ -5722,7 +5889,9 @@
       "type": "EMBEDDING",
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 2048,
+      "max_images_in_context": 1
     },
     {
       "id": "openrouter/free",
@@ -5746,7 +5915,9 @@
       "provider_slugs": [],
       "match_patterns": [],
       "exclude_patterns": [],
-      "base_url_patterns": []
+      "base_url_patterns": [],
+      "context_window": 128000,
+      "max_images_in_context": 50
     },
     {
       "id": "arcee-ai/trinity-large-thinking:free",
@@ -5765,7 +5936,8 @@
         "TOOL",
         "REASONING"
       ],
-      "provider_slug": "arcee-ai"
+      "provider_slug": "arcee-ai",
+      "context_window": 512000
     },
     {
       "id": "poolside/laguna-m.1:free",
@@ -5783,7 +5955,8 @@
       "abilities": [
         "TOOL"
       ],
-      "provider_slug": "poolside"
+      "provider_slug": "poolside",
+      "context_window": 262144
     },
     {
       "id": "poolside/laguna-xs.2:free",
@@ -5801,7 +5974,8 @@
       "abilities": [
         "TOOL"
       ],
-      "provider_slug": "poolside"
+      "provider_slug": "poolside",
+      "context_window": 131072
     },
     {
       "id": "rekaai/reka-edge",
@@ -5811,7 +5985,8 @@
       ],
       "type": "CHAT",
       "input_modalities": [
-        "TEXT"
+        "TEXT",
+        "IMAGE"
       ],
       "output_modalities": [
         "TEXT"
@@ -5819,7 +5994,9 @@
       "abilities": [
         "TOOL"
       ],
-      "provider_slug": "rekaai"
+      "provider_slug": "rekaai",
+      "context_window": 16384,
+      "max_images_in_context": 10
     },
     {
       "id": "baidu/cobuddy:free",
@@ -5837,7 +6014,8 @@
       "abilities": [
         "TOOL"
       ],
-      "provider_slug": "baidu"
+      "provider_slug": "baidu",
+      "context_window": 131072
     },
     {
       "id": "baidu/qianfan-ocr-fast",
@@ -5848,7 +6026,13 @@
       "input_modalities": [
         "TEXT",
         "IMAGE"
-      ]
+      ],
+      "type": "CHAT",
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 65536,
+      "max_images_in_context": 10
     },
     {
       "id": "gpt-oss:120b",
@@ -5856,7 +6040,15 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "gpt-oss:20b",
@@ -5864,7 +6056,15 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "gpt-oss:120b-cloud",
@@ -5872,7 +6072,15 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "gpt-oss:20b-cloud",
@@ -5880,7 +6088,15 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "qwen3-vl:235b",
@@ -5888,7 +6104,17 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 256000,
+      "max_images_in_context": 50
     },
     {
       "id": "qwen3-coder:480b",
@@ -5896,7 +6122,15 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 262144
     },
     {
       "id": "gemma4:31b",
@@ -5904,7 +6138,17 @@
       "provider_ids": [
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
-      "provider_slug": "ollama"
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 256000,
+      "max_images_in_context": 10
     },
     {
       "id": "gemma3:27b",
@@ -5913,9 +6157,16 @@
         "1a6829ca-f376-4e9d-9bed-07eb85cf8bdd"
       ],
       "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "provider_slug": "ollama",
+      "type": "CHAT",
+      "output_modalities": [
         "TEXT"
       ],
-      "provider_slug": "ollama"
+      "context_window": 128000,
+      "max_images_in_context": 10
     },
     {
       "id": "BAAI/bge-m3",
@@ -5934,7 +6185,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 8192
     },
     {
       "id": "black-forest-labs/FLUX.1-schnell",
@@ -5942,7 +6194,15 @@
       "provider_ids": [
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
       ],
-      "provider_slug": "siliconflow"
+      "provider_slug": "siliconflow",
+      "type": "IMAGE",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 2048
     },
     {
       "id": "doubao-seedream-3-0-t2i-250415",
@@ -5954,7 +6214,12 @@
       "input_modalities": [
         "TEXT"
       ],
-      "provider_slug": "volcengine"
+      "provider_slug": "volcengine",
+      "type": "IMAGE",
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 2048
     },
     {
       "id": "doubao-seedream-4-0-250828",
@@ -5966,7 +6231,12 @@
       "input_modalities": [
         "TEXT"
       ],
-      "provider_slug": "volcengine"
+      "provider_slug": "volcengine",
+      "type": "IMAGE",
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 2048
     },
     {
       "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -5974,7 +6244,15 @@
       "provider_ids": [
         "bf741ca1-57d6-4444-93ff-18305c43d9b4"
       ],
-      "provider_slug": "together"
+      "provider_slug": "together",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "meta-llama/Llama-3.1-8B-Instruct-Turbo",
@@ -5982,7 +6260,15 @@
       "provider_ids": [
         "bf741ca1-57d6-4444-93ff-18305c43d9b4"
       ],
-      "provider_slug": "together"
+      "provider_slug": "together",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek-ai/DeepSeek-V3",
@@ -5999,7 +6285,15 @@
       ],
       "abilities": [
         "TOOL"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek-ai/DeepSeek-R1",
@@ -6014,7 +6308,15 @@
         "9fa2c4d8-c71b-457f-b88e-df41f23da4b9",
         "7f3a8b2c-d1a4-45d3-89ea-fd2b4a5d3c8e",
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "meta-llama/Llama-3.3-70B-Instruct",
@@ -6028,7 +6330,15 @@
         "9fa2c4d8-c71b-457f-b88e-df41f23da4b9",
         "7f3a8b2c-d1a4-45d3-89ea-fd2b4a5d3c8e",
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "accounts/fireworks/models/llama-v3p3-70b-instruct",
@@ -6036,7 +6346,15 @@
       "provider_ids": [
         "8e9f2910-c114-411a-b302-18cb92193b2a"
       ],
-      "provider_slug": "fireworks"
+      "provider_slug": "fireworks",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "accounts/fireworks/models/llama-v3p1-8b-instruct",
@@ -6044,7 +6362,15 @@
       "provider_ids": [
         "8e9f2910-c114-411a-b302-18cb92193b2a"
       ],
-      "provider_slug": "fireworks"
+      "provider_slug": "fireworks",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "accounts/fireworks/models/deepseek-v3",
@@ -6054,7 +6380,15 @@
       ],
       "abilities": [
         "TOOL"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "nvidia/llama-3.1-nemotron-51b-instruct",
@@ -6062,7 +6396,15 @@
       "provider_ids": [
         "d7f8a9e0-cb41-45bd-89d2-e6fdbe4c2d3a"
       ],
-      "provider_slug": "nvidia"
+      "provider_slug": "nvidia",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "openrouter/auto",
@@ -6082,7 +6424,9 @@
         "TOOL",
         "REASONING"
       ],
-      "provider_slug": "openrouter"
+      "provider_slug": "openrouter",
+      "context_window": 128000,
+      "max_images_in_context": 50
     },
     {
       "id": "text-embedding-3-small",
@@ -6096,7 +6440,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 8191
     },
     {
       "id": "text-embedding-3-large",
@@ -6110,7 +6455,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 8191
     },
     {
       "id": "text-embedding-ada-002",
@@ -6124,7 +6470,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 8191
     },
     {
       "id": "nvidia/embed-qa-4",
@@ -6138,14 +6485,23 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 512
     },
     {
       "id": "whisper-1",
       "canonical_model_id": "whisper-1",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "whisper-large-v3",
@@ -6155,7 +6511,15 @@
         "c7e2b7da-a579-4a94-9b24-9b24bfa1e9ad",
         "8e9f2910-c114-411a-b302-18cb92193b2a",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "whisper-large-v3-turbo",
@@ -6164,14 +6528,30 @@
         "f9fe0a18-2b30-46e1-9c57-5562654e8d64",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "bf741ca1-57d6-4444-93ff-18305c43d9b4"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "distil-whisper-large-v3-en",
       "canonical_model_id": "distil-whisper-large-v3-en",
       "provider_ids": [
         "f9fe0a18-2b30-46e1-9c57-5562654e8d64"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "gpt-4o-transcribe",
@@ -6186,7 +6566,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 448
     },
     {
       "id": "gpt-4o-mini-transcribe",
@@ -6201,7 +6582,8 @@
       ],
       "output_modalities": [
         "TEXT"
-      ]
+      ],
+      "context_window": 448
     },
     {
       "id": "FunAudioLLM/SenseVoiceSmall",
@@ -6209,7 +6591,15 @@
       "provider_ids": [
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "paraformer-realtime-v2",
@@ -6217,7 +6607,15 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "gpt-5.6-sol",
@@ -6230,14 +6628,32 @@
       "input_cost_per_token": 4e-06,
       "output_cost_per_token": 2e-05,
       "context_window": 1050000,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "openai/gpt-5.6-sol",
       "canonical_model_id": "gpt-5.6-sol",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1050000,
+      "max_images_in_context": 50
     },
     {
       "id": "gpt-5.6-terra",
@@ -6250,14 +6666,32 @@
       "input_cost_per_token": 2e-06,
       "output_cost_per_token": 1.2e-05,
       "context_window": 1050000,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "openai/gpt-5.6-terra",
       "canonical_model_id": "gpt-5.6-terra",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1050000,
+      "max_images_in_context": 50
     },
     {
       "id": "gpt-5.6-luna",
@@ -6270,14 +6704,32 @@
       "input_cost_per_token": 2e-07,
       "output_cost_per_token": 1.2e-06,
       "context_window": 512000,
-      "max_images_in_context": 20
+      "max_images_in_context": 20,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "openai/gpt-5.6-luna",
       "canonical_model_id": "gpt-5.6-luna",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 512000,
+      "max_images_in_context": 20
     },
     {
       "id": "gpt-5",
@@ -6287,14 +6739,33 @@
         "c5e85cbb-8e28-454c-96d0-0585750d081c",
         "5d8c3e12-b147-4977-bc5b-426b68da401f"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 50
     },
     {
       "id": "openai/gpt-5",
       "canonical_model_id": "gpt-5",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 50
     },
     {
       "id": "gpt-5-mini",
@@ -6304,14 +6775,33 @@
         "c5e85cbb-8e28-454c-96d0-0585750d081c",
         "5d8c3e12-b147-4977-bc5b-426b68da401f"
       ],
-      "context_window": 128000
+      "context_window": 128000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 50
     },
     {
       "id": "openai/gpt-5-mini",
       "canonical_model_id": "gpt-5-mini",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000,
+      "max_images_in_context": 50
     },
     {
       "id": "o4-mini",
@@ -6320,14 +6810,33 @@
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 200000
+      "context_window": 200000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 50
     },
     {
       "id": "openai/o4-mini",
       "canonical_model_id": "o4-mini",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000,
+      "max_images_in_context": 50
     },
     {
       "id": "o3",
@@ -6336,14 +6845,33 @@
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 200000
+      "context_window": 200000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 50
     },
     {
       "id": "openai/o3",
       "canonical_model_id": "o3",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000,
+      "max_images_in_context": 50
     },
     {
       "id": "o3-mini",
@@ -6351,14 +6879,30 @@
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000
     },
     {
       "id": "openai/o3-mini",
       "canonical_model_id": "o3-mini",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000
     },
     {
       "id": "chatgpt-4o-latest",
@@ -6366,14 +6910,34 @@
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000,
+      "max_images_in_context": 50
     },
     {
       "id": "openai/chatgpt-4o-latest",
       "canonical_model_id": "chatgpt-4o-latest",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000,
+      "max_images_in_context": 50
     },
     {
       "id": "claude-fable-5",
@@ -6384,14 +6948,33 @@
       ],
       "input_cost_per_token": 1e-05,
       "output_cost_per_token": 5e-05,
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 100
     },
     {
       "id": "anthropic/claude-fable-5",
       "canonical_model_id": "claude-fable-5",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 100
     },
     {
       "id": "claude-opus-5",
@@ -6402,14 +6985,33 @@
       ],
       "input_cost_per_token": 5e-06,
       "output_cost_per_token": 2.5e-05,
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 100
     },
     {
       "id": "anthropic/claude-opus-5",
       "canonical_model_id": "claude-opus-5",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 100
     },
     {
       "id": "claude-sonnet-5",
@@ -6420,14 +7022,33 @@
       ],
       "input_cost_per_token": 2e-06,
       "output_cost_per_token": 1e-05,
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 100
     },
     {
       "id": "anthropic/claude-sonnet-5",
       "canonical_model_id": "claude-sonnet-5",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 100
     },
     {
       "id": "claude-3-7-sonnet-20250219",
@@ -6436,14 +7057,33 @@
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 100
     },
     {
       "id": "anthropic/claude-3.7-sonnet",
       "canonical_model_id": "claude-3-7-sonnet",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 100
     },
     {
       "id": "claude-3-5-sonnet-20241022",
@@ -6451,7 +7091,17 @@
       "provider_ids": [
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000,
+      "max_images_in_context": 100
     },
     {
       "id": "claude-3-5-haiku-20241022",
@@ -6459,7 +7109,17 @@
       "provider_ids": [
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 200000,
+      "max_images_in_context": 100
     },
     {
       "id": "gemini-2.0-flash",
@@ -6467,14 +7127,34 @@
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "google/gemini-2.0-flash",
       "canonical_model_id": "gemini-2.0-flash",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "gemini-2.0-flash-lite",
@@ -6482,7 +7162,17 @@
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "gemini-2.5-flash",
@@ -6490,14 +7180,34 @@
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "google/gemini-2.5-flash",
       "canonical_model_id": "gemini-2.5-flash",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "gemini-2.5-pro",
@@ -6505,14 +7215,34 @@
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "google/gemini-2.5-pro",
       "canonical_model_id": "gemini-2.5-pro",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "gemini-3.7-flash",
@@ -6520,14 +7250,32 @@
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 3600
     },
     {
       "id": "imagen-3.0-generate-002",
       "canonical_model_id": "imagen-3",
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886"
-      ]
+      ],
+      "type": "IMAGE",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "IMAGE"
+      ],
+      "context_window": 2048
     },
     {
       "id": "grok-3",
@@ -6535,14 +7283,29 @@
       "provider_ids": [
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 131072
+      "context_window": 131072,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "x-ai/grok-3",
       "canonical_model_id": "grok-3",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "grok-3-mini",
@@ -6550,14 +7313,29 @@
       "provider_ids": [
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 131072
+      "context_window": 131072,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "x-ai/grok-3-mini",
       "canonical_model_id": "grok-3-mini",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "qwen3.8-max",
@@ -6566,14 +7344,34 @@
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 50
     },
     {
       "id": "qwen/qwen-3.8-max",
       "canonical_model_id": "qwen3.8-max",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 50
     },
     {
       "id": "qwen3.8-27b",
@@ -6581,7 +7379,17 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 262144,
+      "max_images_in_context": 50
     },
     {
       "id": "qwen3.8-flash-next",
@@ -6589,7 +7397,17 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 262144,
+      "max_images_in_context": 50
     },
     {
       "id": "qwen3.5-plus",
@@ -6597,7 +7415,17 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000,
+      "max_images_in_context": 50
     },
     {
       "id": "qwq-32b",
@@ -6606,7 +7434,15 @@
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "f9fe0a18-2b30-46e1-9c57-5562654e8d64"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072
     },
     {
       "id": "qvq-72b-preview",
@@ -6614,7 +7450,17 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 131072,
+      "max_images_in_context": 50
     },
     {
       "id": "deepseek-chat",
@@ -6625,14 +7471,30 @@
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d",
         "5d8c3e12-b147-4977-bc5b-426b68da401f",
         "f8e32910-c114-411a-b302-18cb92193b3b"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek/deepseek-chat",
       "canonical_model_id": "deepseek-chat",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek-reasoner",
@@ -6643,14 +7505,30 @@
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d",
         "5d8c3e12-b147-4977-bc5b-426b68da401f",
         "f8e32910-c114-411a-b302-18cb92193b3b"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek/deepseek-r1",
       "canonical_model_id": "deepseek-reasoner",
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "deepseek-v4-pro",
@@ -6660,7 +7538,14 @@
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "deepseek-v4-flash",
@@ -6670,7 +7555,14 @@
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "glm-5",
@@ -6679,7 +7571,14 @@
         "e4fce9f0-b4d2-453f-90b6-e1c5b615269c",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "glm-5v-turbo",
@@ -6687,7 +7586,17 @@
       "provider_ids": [
         "e4fce9f0-b4d2-453f-90b6-e1c5b615269c",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 202752,
+      "max_images_in_context": 10
     },
     {
       "id": "glm-5.3",
@@ -6695,7 +7604,15 @@
       "provider_ids": [
         "e4fce9f0-b4d2-453f-90b6-e1c5b615269c",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 1000000
     },
     {
       "id": "kimi-k3",
@@ -6703,7 +7620,16 @@
       "provider_ids": [
         "0ff8e630-f703-4f95-a2f2-95f0cf52b202"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 10
     },
     {
       "id": "MiniMax-M2.7",
@@ -6711,7 +7637,16 @@
       "provider_ids": [
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 204800
+      "context_window": 204800,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 10
     },
     {
       "id": "llama-3.3-70b-instruct",
@@ -6722,7 +7657,14 @@
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d",
         "11c4728d-d349-4328-8d07-28d5d4d5e901"
       ],
-      "context_window": 128000
+      "context_window": 128000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ]
     },
     {
       "id": "meta-llama/llama-3.3-70b-instruct",
@@ -6730,7 +7672,15 @@
       "provider_ids": [
         "d5734028-d39b-4d41-9841-fd648d65440e",
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d"
-      ]
+      ],
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
     },
     {
       "id": "sensevoice-v1",
@@ -6738,7 +7688,15 @@
       "provider_ids": [
         "5e729975-9794-4013-af7e-63a548cf3356",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717"
-      ]
+      ],
+      "type": "STT",
+      "input_modalities": [
+        "AUDIO"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "context_window": 448
     },
     {
       "id": "MiniMax-M3",
@@ -6746,13 +7704,31 @@
       "provider_ids": [
         "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
-      "context_window": 1000000
+      "context_window": 1000000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 10
     },
     {
       "id": "kimi-k2.5",
       "canonical_model_id": "kimi-k2.5",
       "provider_ids": [],
-      "context_window": 256000
+      "context_window": 256000,
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "max_images_in_context": 10
     }
   ],
   "stt_providers": [
