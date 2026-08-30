@@ -7340,27 +7340,14 @@
     {
       "id": "qwen3.8-max",
       "canonical_model_id": "qwen3.8-max",
-      "provider_ids": [
-        "5e729975-9794-4013-af7e-63a548cf3356",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+      "api_aliases": [
+        "qwen-3.8-max",
+        "qwen/qwen-3.8-max",
+        "qwen/qwen3.8-max",
+        "Qwen/Qwen3.8-Max"
       ],
-      "type": "CHAT",
-      "input_modalities": [
-        "TEXT",
-        "IMAGE"
-      ],
-      "output_modalities": [
-        "TEXT"
-      ],
-      "context_window": 1000000,
-      "max_images_in_context": 50
-    },
-    {
-      "id": "qwen/qwen-3.8-max",
-      "canonical_model_id": "qwen3.8-max",
-      "provider_ids": [
-        "d5734028-d39b-4d41-9841-fd648d65440e"
+      "match_patterns": [
+        "(^|[/._-])qwen[-_ ]?3[._-]?8[-_ ]?max"
       ],
       "type": "CHAT",
       "input_modalities": [
@@ -7376,9 +7363,14 @@
     {
       "id": "qwen3.8-27b",
       "canonical_model_id": "qwen3.8-27b",
-      "provider_ids": [
-        "5e729975-9794-4013-af7e-63a548cf3356",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      "api_aliases": [
+        "qwen-3.8-27b",
+        "qwen/qwen-3.8-27b",
+        "qwen/qwen3.8-27b",
+        "Qwen/Qwen3.8-27B"
+      ],
+      "match_patterns": [
+        "(^|[/._-])qwen[-_ ]?3[._-]?8[-_ ]?27b"
       ],
       "type": "CHAT",
       "input_modalities": [
@@ -7394,9 +7386,13 @@
     {
       "id": "qwen3.8-flash-next",
       "canonical_model_id": "qwen3.8-flash-next",
-      "provider_ids": [
-        "5e729975-9794-4013-af7e-63a548cf3356",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      "api_aliases": [
+        "qwen-3.8-flash-next",
+        "qwen/qwen-3.8-flash-next",
+        "qwen/qwen3.8-flash-next"
+      ],
+      "match_patterns": [
+        "(^|[/._-])qwen[-_ ]?3[._-]?8[-_ ]?flash[-_ ]?next"
       ],
       "type": "CHAT",
       "input_modalities": [
@@ -7412,9 +7408,14 @@
     {
       "id": "qwen3.5-plus",
       "canonical_model_id": "qwen3.5-plus",
-      "provider_ids": [
-        "5e729975-9794-4013-af7e-63a548cf3356",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+      "api_aliases": [
+        "qwen-3.5-plus",
+        "qwen/qwen-3.5-plus",
+        "qwen/qwen3.5-plus",
+        "Qwen/Qwen3.5-Plus"
+      ],
+      "match_patterns": [
+        "(^|[/._-])qwen[-_ ]?3[._-]?5[-_ ]?plus"
       ],
       "type": "CHAT",
       "input_modalities": [

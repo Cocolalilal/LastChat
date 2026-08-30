@@ -70,9 +70,7 @@ class ModelMetadataResolver(
                 catalogEntry?.reasoningConfig ?: model.reasoningConfig
             },
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
-            // Context capacity is deployment-specific. Never infer it from catalog/model-family
-            // metadata; keep only provider/runtime-reported or user-entered values.
-            contextWindowTokens = model.contextWindowTokens,
+            contextWindowTokens = model.contextWindowTokens ?: catalogEntry?.contextWindowTokens,
             maxImagesInContext = model.maxImagesInContext ?: catalogEntry?.maxImagesInContext,
         )
     }

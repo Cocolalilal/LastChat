@@ -444,9 +444,13 @@ data class ModelCatalogSnapshot(
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
     val ttsProviders: List<CatalogTTSProvider> = emptyList(),
     val sttProviders: List<CatalogServiceProvider> = emptyList(),
+    val schemaVersion: Int = 1,
+    val updatedAt: String? = null,
 ) {
     val catalog: LastChatCatalog
         get() = LastChatCatalog(
+            schemaVersion = schemaVersion,
+            updatedAt = updatedAt,
             providers = providers,
             modelFamilies = modelFamilies,
             globalRules = globalRules,
@@ -559,6 +563,8 @@ object ModelCatalogParser {
             searchProviders = catalog.searchProviders,
             ttsProviders = catalog.ttsProviders,
             sttProviders = catalog.sttProviders,
+            schemaVersion = catalog.schemaVersion,
+            updatedAt = catalog.updatedAt,
         )
     }
 }
@@ -946,8 +952,28 @@ class ModelCatalogService(
     }
 
     private suspend fun readActiveCatalog(): LoadedCatalog {
-        readDownloadedCatalogOrNull()?.let { return it }
-        return readBundledCatalog()
+        val downloaded = readDownloadedCatalogOrNull()
+        val bundled = readBundledCatalog()
+
+        if (downloaded == null) return bundled
+
+        val downloadedDate = downloaded.snapshot.updatedAt.orEmpty()
+        val bundledDate = bundled.snapshot.updatedAt.orEmpty()
+        val downloadedSchema = downloaded.snapshot.schemaVersion
+        val bundledSchema = bundled.snapshot.schemaVersion
+
+        val bundledIsNewerOrEqual = when {
+            bundledSchema > downloadedSchema -> true
+            bundledSchema < downloadedSchema -> false
+            else -> bundledDate >= downloadedDate
+        }
+
+        return if (bundledIsNewerOrEqual) {
+            runCatching { fileStore.delete(MODEL_CATALOG_FILE_PATH) }
+            bundled
+        } else {
+            downloaded
+        }
     }
 
     private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? {

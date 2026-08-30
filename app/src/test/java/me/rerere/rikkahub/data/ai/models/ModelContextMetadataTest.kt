@@ -7,7 +7,7 @@ import org.junit.Test
 
 class ModelContextMetadataTest {
     @Test
-    fun catalogContextWindow_isNotUsedAsDeploymentLimit() {
+    fun catalogContextMetadata_reachesResolvedModelWhenUnset() {
         val snapshot = ModelCatalogParser.parse(
             """
             {
@@ -23,7 +23,30 @@ class ModelContextMetadataTest {
         )
         val resolved = ModelMetadataResolver { snapshot }.applyToModel(Model(modelId = "test-model"))
 
-        assertNull(resolved.contextWindowTokens)
+        assertEquals(65_536, resolved.contextWindowTokens)
+        assertEquals(6, resolved.maxImagesInContext)
+    }
+
+    @Test
+    fun explicitContextWindow_takesPrecedenceOverCatalog() {
+        val snapshot = ModelCatalogParser.parse(
+            """
+            {
+              "schema_version": 1,
+              "model_families": [{
+                "id": "test-family",
+                "match_patterns": ["test-model"],
+                "context_window": 65536,
+                "max_images_in_context": 6
+              }]
+            }
+            """.trimIndent()
+        )
+        val resolved = ModelMetadataResolver { snapshot }.applyToModel(
+            Model(modelId = "test-model", contextWindowTokens = 32_768)
+        )
+
+        assertEquals(32_768, resolved.contextWindowTokens)
         assertEquals(6, resolved.maxImagesInContext)
     }
 }
