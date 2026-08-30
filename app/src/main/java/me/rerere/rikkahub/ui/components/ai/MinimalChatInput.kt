@@ -2253,6 +2253,7 @@ private fun MinimalPickerContent(
     // Reasoning picker sheet
     if (showReasoningPicker) {
         ReasoningPicker(
+            model = currentChatModel,
             reasoningTokens = assistant.thinkingBudget ?: 0,
             onDismissRequest = { showReasoningPicker = false },
             onUpdateReasoningTokens = { tokens ->

@@ -55,6 +55,11 @@ import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.search.SearchService
 import org.koin.core.qualifier.named
 
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
+
 private const val TAG = "LastChatApp"
 private const val MEMORY_MAINTENANCE_WORK_NAME = "memory_consolidation_automatic"
 
@@ -62,10 +67,14 @@ const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID = "local_model_download"
 
-class LastChatApp : Application() {
+class LastChatApp : Application(), SingletonImageLoader.Factory {
     companion object {
         lateinit var instance: LastChatApp
             private set
+    }
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        return get<AppImageLoaderFactory>().create(context)
     }
 
     override fun onCreate() {
@@ -77,6 +86,7 @@ class LastChatApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
+        SingletonImageLoader.setSafe(this)
         val searchHttpClient = get<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT))
         SearchService.installPlatformHttpClient(searchHttpClient)
         SearchService.installBingSearchClient(AndroidBingSearchClient(searchHttpClient))

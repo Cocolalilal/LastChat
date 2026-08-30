@@ -704,6 +704,8 @@ internal fun buildTimelineEntries(
             is UIMessagePart.Reasoning -> {
                 val durationMs = if (part.finishedAt != null) {
                     (part.finishedAt!! - part.createdAt).inWholeMilliseconds
+                } else if (!loading) {
+                    (kotlin.time.Clock.System.now() - part.createdAt).inWholeMilliseconds.coerceAtLeast(0L)
                 } else 0L
                 
                 entries.add(TimelineEntry.Reasoning(
@@ -711,7 +713,7 @@ internal fun buildTimelineEntries(
                     content = part.reasoning,
                     durationMs = durationMs,
                     title = part.title,
-                    isInProgress = part.finishedAt == null
+                    isInProgress = loading && part.finishedAt == null
                 ))
             }
             is UIMessagePart.ToolCall -> {
@@ -1348,6 +1350,7 @@ private fun AssistantMessageTurn(
     ttsProviderOverride: me.rerere.tts.provider.TTSProviderSetting?,
     modifier: Modifier = Modifier
 ) {
+    val isTimelineLive = loading && isLastTurn
     val settings = LocalSettings.current
     val context = LocalContext.current
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
@@ -1474,7 +1477,7 @@ private fun AssistantMessageTurn(
                         timelineEntries = timelineEntries,
                         initialTimelineOpenRequest = initialTimelineOpenRequest,
                         assistantId = assistant?.id?.toString(),
-                        timelineLive = loading,
+                        timelineLive = isTimelineLive,
                         onTimelineDismiss = {
                             haptics.perform(HapticPattern.Pop)
                             onTimelineDismiss()
@@ -1600,7 +1603,7 @@ private fun AssistantMessageTurn(
                     timelineEntries = timelineEntries,
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistant?.id?.toString(),
-                    timelineLive = loading,
+                    timelineLive = isTimelineLive,
                     onTimelineDismiss = {
                         haptics.perform(HapticPattern.Pop)
                         onTimelineDismiss()

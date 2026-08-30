@@ -392,4 +392,112 @@ class ModelCatalogTest {
             assertTrue("Provider $id should exist in catalog", actualProviderIds.contains(id))
         }
     }
+
+    @Test
+    fun test2026ModelsAndReasoningConfig() {
+        val file = File("../catalog/lastchat_catalog.json")
+        val rawJson = file.readText()
+        val snapshot = ModelCatalogParser.parse(rawJson)
+
+        fun getEntry(modelId: String): ModelCatalogEntry {
+            return snapshot.exactEntries[modelId.lowercase()]
+                ?: snapshot.inferFamilyEntry(modelId)
+                ?: error("Model not found in catalog: $modelId")
+        }
+
+        // GPT-5.6 Sol
+        val gptSol = getEntry("gpt-5.6-sol")
+        assertTrue("GPT-5.6 Sol should support function calling", gptSol.supportsFunctionCalling)
+        assertTrue("GPT-5.6 Sol should support reasoning", gptSol.supportsReasoning)
+        assertTrue("GPT-5.6 Sol should support vision", gptSol.supportsVision)
+        assertEquals("GPT-5.6 Sol should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, gptSol.reasoningConfig?.type)
+
+        // Claude Fable 5
+        val claudeFable = getEntry("claude-fable-5")
+        assertTrue("Claude Fable 5 should support function calling", claudeFable.supportsFunctionCalling)
+        assertTrue("Claude Fable 5 should support reasoning", claudeFable.supportsReasoning)
+        assertTrue("Claude Fable 5 should support vision", claudeFable.supportsVision)
+        assertEquals("Claude Fable 5 should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, claudeFable.reasoningConfig?.type)
+
+        // Qwen 3.8 Max
+        val qwen38 = getEntry("qwen3.8-max")
+        assertTrue("Qwen 3.8 Max should support function calling", qwen38.supportsFunctionCalling)
+        assertTrue("Qwen 3.8 Max should support reasoning", qwen38.supportsReasoning)
+        assertTrue("Qwen 3.8 Max should support vision", qwen38.supportsVision)
+        assertEquals("Qwen 3.8 Max should use BUDGET reasoning", me.rerere.ai.provider.ReasoningModeType.BUDGET, qwen38.reasoningConfig?.type)
+
+        // DeepSeek V4 Pro
+        val dsV4 = getEntry("deepseek-v4-pro")
+        assertTrue("DeepSeek V4 Pro should support function calling", dsV4.supportsFunctionCalling)
+        assertTrue("DeepSeek V4 Pro should support reasoning", dsV4.supportsReasoning)
+        assertEquals("DeepSeek V4 Pro should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, dsV4.reasoningConfig?.type)
+        assertEquals("DeepSeek V4 Pro should have 1M context window", 1000000, dsV4.contextWindowTokens)
+
+        // MiniMax M3
+        val m3 = getEntry("MiniMax-M3")
+        assertTrue("MiniMax M3 should support function calling", m3.supportsFunctionCalling)
+        assertTrue("MiniMax M3 should support reasoning", m3.supportsReasoning)
+        assertTrue("MiniMax M3 should support vision", m3.supportsVision)
+        assertEquals("MiniMax M3 should have 1M context window", 1000000, m3.contextWindowTokens)
+        assertEquals("MiniMax M3 should have 10 max images", 10, m3.maxImagesInContext)
+
+        // Kimi K3
+        val kimiK3 = getEntry("kimi-k3")
+        assertTrue("Kimi K3 should support function calling", kimiK3.supportsFunctionCalling)
+        assertTrue("Kimi K3 should support reasoning", kimiK3.supportsReasoning)
+        assertTrue("Kimi K3 should support vision", kimiK3.supportsVision)
+        assertEquals("Kimi K3 should have 1M context window", 1000000, kimiK3.contextWindowTokens)
+
+        // Gemma 4 31B: Vision, Tools, Reasoning, 256k context
+        val gemma4 = getEntry("google/gemma-4-31b-it")
+        assertTrue("Gemma 4 should support function calling", gemma4.supportsFunctionCalling)
+        assertTrue("Gemma 4 should support reasoning", gemma4.supportsReasoning)
+        assertTrue("Gemma 4 should support vision", gemma4.supportsVision)
+        assertEquals("Gemma 4 should have 256k context window", 256000, gemma4.contextWindowTokens)
+        assertEquals("Gemma 4 should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, gemma4.reasoningConfig?.type)
+
+        // Gemma 3 27B: Vision, Tools, No Reasoning, 128k context
+        val gemma3 = getEntry("google/gemma-3-27b-it")
+        assertTrue("Gemma 3 should support function calling", gemma3.supportsFunctionCalling)
+        assertTrue("Gemma 3 should NOT support reasoning", !gemma3.supportsReasoning)
+        assertTrue("Gemma 3 should support vision", gemma3.supportsVision)
+        assertEquals("Gemma 3 should have 128k context window", 128000, gemma3.contextWindowTokens)
+
+        // Seed 2.1 (ByteDance)
+        val seed2 = getEntry("doubao-seed-2.1")
+        assertTrue("Seed 2.1 should support function calling", seed2.supportsFunctionCalling)
+        assertTrue("Seed 2.1 should support reasoning", seed2.supportsReasoning)
+        assertTrue("Seed 2.1 should support vision", seed2.supportsVision)
+        assertEquals("Seed 2.1 should have 256k context window", 256000, seed2.contextWindowTokens)
+
+        // Command A+ (Cohere)
+        val commandA = getEntry("command-a-plus")
+        assertTrue("Command A+ should support function calling", commandA.supportsFunctionCalling)
+        assertTrue("Command A+ should support reasoning", commandA.supportsReasoning)
+        assertTrue("Command A+ should support vision", commandA.supportsVision)
+        assertEquals("Command A+ should have 128k context window", 128000, commandA.contextWindowTokens)
+
+        // Wan 2.1 (Video/Image)
+        val wan = getEntry("wan2.1-t2v-14b")
+        assertEquals("Wan 2.1 should have IMAGE mode", "image", wan.mode)
+        assertEquals("Wan 2.1 should have IMAGE output", listOf(me.rerere.ai.provider.Modality.IMAGE), wan.outputModalities)
+
+        // Stable Diffusion 3.5 Large
+        val sd35 = getEntry("stable-diffusion-3.5-large")
+        assertEquals("SD 3.5 should have IMAGE mode", "image", sd35.mode)
+        assertEquals("SD 3.5 should have IMAGE output", listOf(me.rerere.ai.provider.Modality.IMAGE), sd35.outputModalities)
+
+        // DALL-E 3 output modality fix
+        val dalle3 = getEntry("dall-e-3")
+        assertEquals("DALL-E 3 should have image output modality", listOf(me.rerere.ai.provider.Modality.IMAGE), dalle3.outputModalities)
+
+        // STT Modality check: GPT-4o Transcribe & Whisper
+        val transcribe = getEntry("gpt-4o-transcribe")
+        assertEquals("gpt-4o-transcribe should have STT mode", "stt", transcribe.mode)
+        assertEquals("gpt-4o-transcribe should have AUDIO input", listOf(me.rerere.ai.provider.Modality.AUDIO), transcribe.inputModalities)
+
+        val whisper = getEntry("whisper-large-v3-turbo")
+        assertEquals("whisper should have STT mode", "stt", whisper.mode)
+        assertEquals("whisper should have AUDIO input", listOf(me.rerere.ai.provider.Modality.AUDIO), whisper.inputModalities)
+    }
 }

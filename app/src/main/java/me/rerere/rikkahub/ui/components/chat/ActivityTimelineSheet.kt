@@ -609,7 +609,8 @@ internal fun ActivityTimelinePanel(
                             }
                         },
                         canRestore = assistantId != null,
-                        followLiveContent = autoFollowCurrentEntry &&
+                        followLiveContent = isLive &&
+                            autoFollowCurrentEntry &&
                             currentEntryId != null &&
                             currentEntryId == entry.id,
                         onClickEntry = onTimelineClick,

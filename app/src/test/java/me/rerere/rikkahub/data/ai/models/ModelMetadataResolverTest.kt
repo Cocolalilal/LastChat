@@ -628,7 +628,7 @@ class ModelMetadataResolverTest {
 
         assertNull(resolved.customIconUri)
         assertEquals(
-            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/gemini-new.svg",
+            "icons/gemini-new.svg".toCatalogIconUrl(),
             resolved.iconUrl,
         )
     }
@@ -761,7 +761,7 @@ class ModelMetadataResolverTest {
         assertEquals("secret", openRouter.apiKey)
         assertEquals("My OpenRouter", openRouter.name)
         assertEquals(
-            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            "icons/openrouter-new.svg".toCatalogIconUrl(),
             openRouter.customIconUri,
         )
         assertEquals(
@@ -803,7 +803,7 @@ class ModelMetadataResolverTest {
         )
 
         assertEquals(
-            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            "icons/openrouter-new.svg".toCatalogIconUrl(),
             merged.providers.single().customIconUri,
         )
     }
@@ -852,9 +852,38 @@ class ModelMetadataResolverTest {
 
         assertEquals(1, merged.providers.size)
         assertEquals(
-            "https://raw.githubusercontent.com/Cocolalilal/LastChat/main/catalog/icons/openrouter-new.svg",
+            "icons/openrouter-new.svg".toCatalogIconUrl(),
             merged.providers.single().customIconUri,
         )
+    }
+
+    @Test
+    fun resolvesReasoningConfigFromCatalog() {
+        val resolver = resolverFor(
+            """
+            {
+              "schema_version": 2,
+              "model_families": [{
+                "id": "gpt",
+                "match_patterns": ["gpt-5"],
+                "icon": "icons/openai.svg",
+                "reasoning_config": {
+                  "type": "effort",
+                  "supported_levels": ["off", "auto", "low", "medium", "high", "max"]
+                }
+              }],
+              "models": []
+            }
+            """.trimIndent()
+        )
+
+        val resolved = resolver.applyToModel(
+            Model(modelId = "gpt-5.6-sol")
+        )
+
+        assertNotNull(resolved.reasoningConfig)
+        assertEquals(me.rerere.ai.provider.ReasoningModeType.EFFORT, resolved.reasoningConfig?.type)
+        assertEquals(listOf("off", "auto", "low", "medium", "high", "max"), resolved.reasoningConfig?.supportedLevels)
     }
 
     private fun resolverFor(rawJson: String): ModelMetadataResolver {

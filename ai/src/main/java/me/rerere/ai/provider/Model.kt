@@ -29,6 +29,7 @@ data class Model(
     val customIconUri: String? = null,
     val imageGenerationMethod: ImageGenerationMethod? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
+    val reasoningConfig: ReasoningConfig? = null,
     val sttOptions: SttOptions? = null,
     /** Total input + output context supported by this API model. Null means unknown. */
     val contextWindowTokens: Int? = null,

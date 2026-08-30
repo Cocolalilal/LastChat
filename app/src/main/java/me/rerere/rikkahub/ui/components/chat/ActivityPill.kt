@@ -316,7 +316,11 @@ enum class PillPosition {
 
 private sealed interface SinglePillContentState {
     data class Compact(val state: ActivityState) : SinglePillContentState
-    data class ExpandedReasoning(val state: ActivityState.Reasoning) : SinglePillContentState
+    data class ExpandedReasoning(
+        val state: ActivityState.Reasoning,
+        val durationMs: Long? = null,
+        val isLive: Boolean = true
+    ) : SinglePillContentState
     data class ExpandedTimeline(
         val entries: List<TimelineEntry>,
         val initialRequest: TimelineOpenRequest?,
@@ -456,11 +460,15 @@ private fun AnimatedSinglePill(
     val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
         if (timelineEntries.size == 1 && timelineEntries.first() is TimelineEntry.Reasoning) {
             val reasoningEntry = timelineEntries.first() as TimelineEntry.Reasoning
+            val isLive = timelineLive && reasoningEntry.isInProgress
             SinglePillContentState.ExpandedReasoning(
-                ActivityState.Reasoning(
-                    startTimeMs = System.currentTimeMillis() - (reasoningEntry.durationMs ?: 0L),
+                state = ActivityState.Reasoning(
+                    startTimeMs = System.currentTimeMillis() - (reasoningEntry.durationMs),
+                    title = reasoningEntry.title,
                     reasoningText = reasoningEntry.content
-                )
+                ),
+                durationMs = reasoningEntry.durationMs,
+                isLive = isLive
             )
         } else {
             SinglePillContentState.ExpandedTimeline(
@@ -472,7 +480,11 @@ private fun AnimatedSinglePill(
             )
         }
     } else if (isExpandedReasoning && state is ActivityState.Reasoning) {
-        SinglePillContentState.ExpandedReasoning(state)
+        SinglePillContentState.ExpandedReasoning(
+            state = state,
+            durationMs = null,
+            isLive = timelineLive
+        )
     } else {
         SinglePillContentState.Compact(state)
     }
@@ -598,8 +610,14 @@ private fun AnimatedSinglePill(
                 }
                 is SinglePillContentState.ExpandedReasoning -> {
                     ReasoningPreviewCard(
-                        state = (state as? ActivityState.Reasoning) ?: targetContentState.state,
+                        state = if (targetContentState.isLive) {
+                            (state as? ActivityState.Reasoning) ?: targetContentState.state
+                        } else {
+                            targetContentState.state
+                        },
                         active = surfaceExpanded,
+                        isLive = targetContentState.isLive,
+                        durationMs = targetContentState.durationMs,
                         onHeaderClick = if (timelineOpen) onTimelineDismiss else null
                     )
                 }
@@ -774,23 +792,33 @@ private fun AnimatedSinglePill(
 private fun ReasoningPreviewCard(
     state: ActivityState.Reasoning,
     active: Boolean,
+    isLive: Boolean = true,
+    durationMs: Long? = null,
     onHeaderClick: (() -> Unit)? = null
 ) {
-    var elapsedMs by remember { mutableLongStateOf(0L) }
+    var elapsedMs by remember { mutableLongStateOf(durationMs ?: 0L) }
     val scrollState = rememberScrollState()
     var previewAutoFollowPaused by remember(state.startTimeMs) { mutableStateOf(false) }
     var programmaticScrollInProgress by remember { mutableStateOf(false) }
     var previousScrollValue by remember(state.startTimeMs) { mutableIntStateOf(0) }
 
-    LaunchedEffect(state.startTimeMs) {
-        while (isActive) {
-            elapsedMs = System.currentTimeMillis() - state.startTimeMs
-            delay(50)
+    if (isLive) {
+        LaunchedEffect(state.startTimeMs) {
+            while (isActive) {
+                elapsedMs = System.currentTimeMillis() - state.startTimeMs
+                delay(50)
+            }
+        }
+    } else {
+        LaunchedEffect(durationMs) {
+            if (durationMs != null) {
+                elapsedMs = durationMs
+            }
         }
     }
 
-    LaunchedEffect(scrollState, active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(scrollState, active && isLive) {
+        if (!active || !isLive) return@LaunchedEffect
         snapshotFlow {
             Triple(
                 scrollState.value,
@@ -810,8 +838,8 @@ private fun ReasoningPreviewCard(
         }
     }
 
-    LaunchedEffect(scrollState, previewAutoFollowPaused, active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(scrollState, previewAutoFollowPaused, active && isLive) {
+        if (!active || !isLive) return@LaunchedEffect
         snapshotFlow { scrollState.maxValue }.collect { maxValue ->
             if (!previewAutoFollowPaused) {
                 programmaticScrollInProgress = true
@@ -826,8 +854,8 @@ private fun ReasoningPreviewCard(
 
     var streamingLayoutTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(streamingLayoutTick, previewAutoFollowPaused, active) {
-        if (!active || previewAutoFollowPaused) return@LaunchedEffect
+    LaunchedEffect(streamingLayoutTick, previewAutoFollowPaused, active && isLive) {
+        if (!active || !isLive || previewAutoFollowPaused) return@LaunchedEffect
         delay(16)
         programmaticScrollInProgress = true
         try {
@@ -888,15 +916,18 @@ private fun ReasoningPreviewCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.shimmer(true)
+                    modifier = if (isLive) Modifier.shimmer(true) else Modifier
                 )
             }
-            Text(
-                text = formatDuration(elapsedMs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.shimmer(true)
-            )
+            val formattedDuration = formatDuration(if (isLive) elapsedMs else (durationMs ?: elapsedMs))
+            if (formattedDuration.isNotBlank()) {
+                Text(
+                    text = formattedDuration,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = if (isLive) Modifier.shimmer(true) else Modifier
+                )
+            }
         }
 
         val canScrollBackward by remember { derivedStateOf { scrollState.canScrollBackward } }
@@ -921,15 +952,15 @@ private fun ReasoningPreviewCard(
                     bottomProgress = bottomFadeProgress,
                     fadeHeight = 64f
                 )
-                .heightIn(max = if (active && onHeaderClick == null) 120.dp else 280.dp)
+                .heightIn(max = if (active && isLive && onHeaderClick == null) 120.dp else 280.dp)
                 .verticalScroll(scrollState),
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),
             paragraphSpacing = 8.dp,
-            streamingTextReveal = active,
+            streamingTextReveal = isLive,
             onExpandedStreamingCodeBlockChanged = {
-                streamingLayoutTick++
+                if (isLive) streamingLayoutTick++
             }
         )
     }

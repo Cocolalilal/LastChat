@@ -610,4 +610,42 @@ class ActivityTimelineParsingTest {
         assertTrue(state is ActivityState.CompletedSingle)
         assertEquals(ActivityType.REASONING, (state as ActivityState.CompletedSingle).type)
     }
+
+    @Test
+    fun buildTimelineEntries_reasoningProgressAndDurationLifecycle() {
+        val now = Clock.System.now()
+        val part = UIMessagePart.Reasoning(
+            reasoning = "Thinking deeply",
+            createdAt = now - 3.seconds,
+            finishedAt = null
+        )
+
+        // 1. While loading and unclosed: in progress, durationMs = 0
+        val liveEntries = buildTimelineEntries(
+            parts = listOf(part),
+            loading = true
+        )
+        val liveReasoning = liveEntries.single() as TimelineEntry.Reasoning
+        assertTrue(liveReasoning.isInProgress)
+        assertEquals(0L, liveReasoning.durationMs)
+
+        // 2. Generation finished without finishedAt: not in progress, duration computed from createdAt
+        val finishedUnclosedEntries = buildTimelineEntries(
+            parts = listOf(part),
+            loading = false
+        )
+        val finishedUnclosedReasoning = finishedUnclosedEntries.single() as TimelineEntry.Reasoning
+        assertFalse(finishedUnclosedReasoning.isInProgress)
+        assertTrue(finishedUnclosedReasoning.durationMs >= 3000L)
+
+        // 3. Generation finished with finishedAt: not in progress, exact duration
+        val closedPart = part.copy(finishedAt = now)
+        val closedEntries = buildTimelineEntries(
+            parts = listOf(closedPart),
+            loading = false
+        )
+        val closedReasoning = closedEntries.single() as TimelineEntry.Reasoning
+        assertFalse(closedReasoning.isInProgress)
+        assertEquals(3000L, closedReasoning.durationMs)
+    }
 }

@@ -64,6 +64,11 @@ class ModelMetadataResolver(
             } else {
                 catalogEntry?.reasoningBehavior ?: model.reasoningBehavior
             },
+            reasoningConfig = if (options.preserveExistingConfiguration) {
+                model.reasoningConfig
+            } else {
+                catalogEntry?.reasoningConfig ?: model.reasoningConfig
+            },
             providerSlug = catalogEntry?.providerSlug?.toIconProviderSlug(),
             // Context capacity is deployment-specific. Never infer it from catalog/model-family
             // metadata; keep only provider/runtime-reported or user-entered values.

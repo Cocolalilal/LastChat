@@ -131,7 +131,7 @@ internal data class TimelineInitialFocus(
 
 internal fun buildEntryFollowSignature(entry: TimelineEntry): String {
     return when (entry) {
-        is TimelineEntry.Reasoning -> entry.content
+        is TimelineEntry.Reasoning -> "${entry.content}|${entry.isInProgress}|${entry.durationMs}"
         is TimelineEntry.ToolCall -> buildString {
             append(entry.resultText.orEmpty())
             append('|')

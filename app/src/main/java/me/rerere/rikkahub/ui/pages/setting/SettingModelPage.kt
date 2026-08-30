@@ -1086,6 +1086,7 @@ private fun HelperReasoningSettings(
         ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
         ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
         ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+        ReasoningLevel.MAX -> "Max"
     }
 
     val subtitle = when (currentLevel) {
@@ -1094,6 +1095,7 @@ private fun HelperReasoningSettings(
         ReasoningLevel.LOW -> stringResource(R.string.reasoning_light_desc)
         ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium_desc)
         ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy_desc)
+        ReasoningLevel.MAX -> "Maximum reasoning effort"
     }
 
     val icon = when (currentLevel) {

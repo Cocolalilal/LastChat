@@ -32,9 +32,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import coil3.ImageLoader
-import coil3.compose.setSingletonImageLoaderFactory
-import coil3.request.crossfade
+
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import kotlinx.serialization.Serializable
@@ -58,7 +56,6 @@ import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.hooks.rememberCustomSttState
-import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 import me.rerere.rikkahub.ui.motion.rootEnterTransition
@@ -301,7 +298,6 @@ private fun me.rerere.rikkahub.data.datastore.ConsumedSpontaneousEventRecord.toR
 
 class RouteActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
-    private val imageLoaderFactory by inject<AppImageLoaderFactory>()
     private val settingsStore by inject<SettingsStore>()
     private val spontaneousMessagingStateStore by inject<SpontaneousMessagingStateStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
@@ -375,7 +371,6 @@ class RouteActivity : ComponentActivity() {
                 this.navStack = navStack
                 RikkahubTheme {
                     val startScreen = initialChatScreen
-                    setSingletonImageLoaderFactory(imageLoaderFactory::create)
                     if (startScreen == null) {
                         Box(
                             modifier = Modifier
