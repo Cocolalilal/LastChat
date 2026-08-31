@@ -39,6 +39,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.model.AssistantOverlayConfig
 import me.rerere.rikkahub.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.utils.JsonInstant
@@ -142,21 +143,15 @@ class SettingsStore(
         val WEB_SERVER_ACCESS_PASSWORD = stringPreferencesKey("web_server_access_password")
         val WEB_SERVER_BACKGROUND_SETUP_SHOWN = booleanPreferencesKey("web_server_background_setup_shown")
 
-        // Background Worker
-        val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
-        val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
-
         // Prompt Injections
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val SKILLS = stringPreferencesKey("skills")
         val CHAT_STORAGE = stringPreferencesKey("chat_storage")
 
-        // Dismissed banners
-        val DISMISSED_BANNERS = stringPreferencesKey("dismissed_banners")
-
         // Android Integration
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
+        val ASSISTANT_OVERLAY_CONFIG = stringPreferencesKey("assistant_overlay_config")
 
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
@@ -259,8 +254,6 @@ class SettingsStore(
                     webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
                     webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
                     webServerBackgroundSetupShown = preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] == true,
-                    consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
-                    consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                     modes = preferences[MODES]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: emptyList(),
@@ -273,12 +266,12 @@ class SettingsStore(
                     chatStorage = preferences[CHAT_STORAGE]?.let {
                         JsonInstant.decodeFromString<ChatStorageSettings>(it)
                     } ?: ChatStorageSettings(),
-                    dismissedBanners = preferences[DISMISSED_BANNERS]?.let {
-                        JsonInstant.decodeFromString(it)
-                    } ?: emptySet(),
                     textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                         JsonInstant.decodeFromString(it)
                     } ?: TextSelectionConfig(),
+                    assistantOverlayConfig = preferences[ASSISTANT_OVERLAY_CONFIG]?.let {
+                        JsonInstant.decodeFromString(it)
+                    } ?: AssistantOverlayConfig(),
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -317,6 +310,7 @@ class SettingsStore(
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
             ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
+                .normalizeLocalProvider().normalizeMemorySettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -326,6 +320,9 @@ class SettingsStore(
                     .distinctBy { it.id }
                     .map { provider ->
                     when (provider) {
+                        is ProviderSetting.Codex -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
+                        )
                         is ProviderSetting.OpenAI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                         )
@@ -341,6 +338,10 @@ class SettingsStore(
                         is ProviderSetting.ComfyUI -> provider.copy(
                             models = provider.models.distinctBy { model -> model.id }
                                 .map { model -> model.withComfyDefaults() }
+                        )
+
+                        is ProviderSetting.LiteRtLocal -> provider.copy(
+                            models = provider.models.distinctBy { model -> model.id }
                         )
                     }
                 },
@@ -494,6 +495,9 @@ class SettingsStore(
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
+            .normalizeLocalProvider()
+            .normalizeMemorySettings()
+            .clearMissingModelReferences()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
@@ -550,7 +554,11 @@ class SettingsStore(
 
             preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(normalizedSettings.searchServices)
             preferences[SEARCH_COMMON] = JsonInstant.encodeToString(normalizedSettings.searchCommonOptions)
-            preferences[SEARCH_SELECTED] = normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
+            preferences[SEARCH_SELECTED] = if (normalizedSettings.searchServices.isEmpty()) {
+                0
+            } else {
+                normalizedSettings.searchServiceSelected.coerceIn(0, normalizedSettings.searchServices.size - 1)
+            }
 
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(normalizedSettings.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
@@ -571,15 +579,12 @@ class SettingsStore(
             preferences[WEB_SERVER_ACCESS_PASSWORD] = normalizedSettings.webServerAccessPassword
             preferences[WEB_SERVER_BACKGROUND_SETUP_SHOWN] = normalizedSettings.webServerBackgroundSetupShown
 
-            preferences[CONSOLIDATION_WORKER_INTERVAL] = normalizedSettings.consolidationWorkerIntervalMinutes
-            preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = normalizedSettings.consolidationRequiresDeviceIdle
-
             preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
             preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
-            preferences[DISMISSED_BANNERS] = JsonInstant.encodeToString(normalizedSettings.dismissedBanners)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
+            preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
         }
     }
 

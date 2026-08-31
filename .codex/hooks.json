@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\julian\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\graphify.EXE hook-check"
+          }
+        ]
+      }
+    ]
+  }
+}

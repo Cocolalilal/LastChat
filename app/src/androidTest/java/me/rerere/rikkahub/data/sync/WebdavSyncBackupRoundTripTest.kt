@@ -28,8 +28,12 @@ import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.Migration_6_7
+import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
+import me.rerere.rikkahub.data.db.entity.ConversationAttachmentRefEntity
+import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.InjectionPosition
@@ -40,7 +44,6 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.ModeAttachmentType
 import me.rerere.rikkahub.data.model.TextSelectionConfig
-import me.rerere.rikkahub.data.ai.tools.PythonSandbox
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -108,7 +111,9 @@ class WebdavSyncBackupRoundTripTest {
         val restoredFontPath = restoredSettings.displaySetting.fontSettings.headerFont.customFontPath
         assertNotNull(restoredFontPath)
         assertTrue(File(restoredFontPath ?: "").exists())
-        assertTrue(fixture.pythonOutputFile(env).exists())
+        assertTrue(fixture.workspaceOutputFile(env).exists())
+        assertTrue(fixture.skillFile(env).exists())
+        assertTrue(fixture.toolOutputFile(env).exists())
 
         val restoredPrefs = env.context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE)
         assertTrue(restoredPrefs.getBoolean("create_new_conversation_on_start", false))
@@ -124,14 +129,61 @@ class WebdavSyncBackupRoundTripTest {
             val restoredConversation =
                 restoredDb.conversationDao().getConversationById(fixture.conversationId.toString())
             assertNotNull(restoredConversation)
-            assertTrue(restoredConversation?.nodes?.contains(fixture.pythonOutputUri.toString()) == true)
+            assertTrue(restoredConversation?.nodes?.contains(fixture.workspaceOutputUri.toString()) == true)
 
             val restoredMedia = restoredDb.genMediaDao().getAllMedia()
             assertEquals(1, restoredMedia.size)
             assertEquals("images/generated-image.png", restoredMedia.single().path)
+
+            assertNotNull(restoredDb.chatAttachmentDao().getById(fixture.attachmentId))
+            assertEquals(
+                listOf(fixture.attachmentId),
+                restoredDb.conversationAttachmentRefDao()
+                    .getAttachmentIdsForConversation(fixture.conversationId.toString()),
+            )
+            assertNotNull(restoredDb.workspaceDao().getById(fixture.workspaceId))
+            assertNotNull(
+                restoredDb.embeddingCacheDao().getEmbedding(
+                    memoryId = 42,
+                    memoryType = 0,
+                    modelId = "portable-embedding-model",
+                )
+            )
         } finally {
             restoredDb.close()
         }
+    }
+
+    @Test
+    fun sanitizerPortableTablesMatchCurrentRoomEntities() {
+        val env = createEnvironment("portable-tables")
+        val ftsTables = setOf(
+            "memory_claim_fts",
+            "memory_episode_v3_fts",
+            "memory_source_v3_fts",
+        )
+        val roomEntityTables = env.appDatabase.openHelper.readableDatabase
+            .query("SELECT name FROM sqlite_master WHERE type='table'")
+            .use { cursor ->
+                buildSet {
+                    while (cursor.moveToNext()) {
+                        val table = cursor.getString(0)
+                        val isFtsShadow = ftsTables.any { fts ->
+                            table.startsWith("${fts}_")
+                        }
+                        if (
+                            table != "android_metadata" &&
+                            table != "room_master_table" &&
+                            table != "sqlite_sequence" &&
+                            !isFtsShadow
+                        ) {
+                            add(table)
+                        }
+                    }
+                }
+            }
+
+        assertEquals(roomEntityTables, DatabaseSanitizer.PORTABLE_TABLES.toSet())
     }
 
     @Test
@@ -294,13 +346,31 @@ class WebdavSyncBackupRoundTripTest {
         val chatAttachment = writeFile(env.context.filesDir, "chat_files/attachment.txt", "chat-file")
         val importedAttachment = writeFile(env.context.filesDir, "lorebook_attachments/imported.txt", "imported-file")
 
-        val pythonConversationId = conversationId
-        val pythonSandbox = PythonSandbox(env.context)
-        val pythonOutputUri = pythonSandbox.saveOutputFile(
-            pythonConversationId,
-            "report.txt",
-            "python-output".toByteArray(),
+        // Formerly produced via PythonSandbox.saveOutputFile (now removed). Keep a generated
+        // file inside the workspace fixture to verify that workspace-owned output survives
+        // restore and its URI stays intact inside the conversation node.
+        val workspaceConversationId = conversationId
+        val workspaceOutputFile = writeFile(
+            env.context.filesDir,
+            "workspaces/${workspaceConversationId}/report.txt",
+            "workspace-output",
         )
+        val workspaceOutputUri = Uri.fromFile(workspaceOutputFile)
+        val skillFile = writeFile(
+            env.context.filesDir,
+            "skills/portable-skill/SKILL.md",
+            "# Portable skill",
+        )
+        val toolOutputFile = writeFile(
+            env.context.filesDir,
+            "tool_outputs/portable-result.txt",
+            "portable tool output",
+        )
+        assertTrue(skillFile.exists())
+        assertTrue(toolOutputFile.exists())
+
+        val attachmentId = Uuid.random().toString()
+        val workspaceId = Uuid.random().toString()
 
         val providerModel = Model(
             modelId = "portable-model",
@@ -387,7 +457,7 @@ class WebdavSyncBackupRoundTripTest {
                                 UIMessage(
                                     role = MessageRole.ASSISTANT,
                                     parts = listOf(
-                                        UIMessagePart.Text("Download: ${pythonOutputUri}")
+                                        UIMessagePart.Text("Download: ${workspaceOutputUri}")
                                     ),
                                 )
                             )
@@ -408,6 +478,46 @@ class WebdavSyncBackupRoundTripTest {
                     createAt = 30L,
                 )
             )
+            env.appDatabase.chatAttachmentDao().insert(
+                ChatAttachmentEntity(
+                    id = attachmentId,
+                    filePath = "chat_files/${chatAttachment.name}",
+                    displayName = chatAttachment.name,
+                    sha256 = "portable-sha256",
+                    mime = "text/plain",
+                    kind = "DOCUMENT",
+                    sizeBytes = chatAttachment.length(),
+                    ocrStatus = "NONE",
+                    createdAt = 40L,
+                    updatedAt = 40L,
+                )
+            )
+            env.appDatabase.conversationAttachmentRefDao().insertAll(
+                listOf(
+                    ConversationAttachmentRefEntity(
+                        conversationId = conversationId.toString(),
+                        attachmentId = attachmentId,
+                    )
+                )
+            )
+            env.appDatabase.workspaceDao().upsert(
+                WorkspaceEntity(
+                    id = workspaceId,
+                    name = "Portable Workspace",
+                    root = workspaceConversationId.toString(),
+                    createdAt = 50L,
+                    updatedAt = 50L,
+                )
+            )
+            env.appDatabase.embeddingCacheDao().insertEmbedding(
+                EmbeddingCacheEntity(
+                    memoryId = 42,
+                    memoryType = 0,
+                    modelId = "portable-embedding-model",
+                    embedding = "[0.1,0.2]",
+                    createdAt = 60L,
+                )
+            )
         }
 
         env.context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE)
@@ -423,8 +533,10 @@ class WebdavSyncBackupRoundTripTest {
         return RoundTripFixture(
             assistant = assistant,
             conversationId = conversationId,
-            pythonConversationId = pythonConversationId,
-            pythonOutputUri = pythonOutputUri,
+            workspaceConversationId = workspaceConversationId,
+            workspaceOutputUri = workspaceOutputUri,
+            attachmentId = attachmentId,
+            workspaceId = workspaceId,
         )
     }
 
@@ -500,18 +612,28 @@ class WebdavSyncBackupRoundTripTest {
     private data class RoundTripFixture(
         val assistant: Assistant,
         val conversationId: Uuid,
-        val pythonConversationId: Uuid,
-        val pythonOutputUri: Uri,
+        val workspaceConversationId: Uuid,
+        val workspaceOutputUri: Uri,
+        val attachmentId: String,
+        val workspaceId: String,
     ) {
         fun avatarFile(env: TestEnvironment): File {
             return File(env.context.filesDir, "avatars/assistant-avatar.png")
         }
 
-        fun pythonOutputFile(env: TestEnvironment): File {
+        fun workspaceOutputFile(env: TestEnvironment): File {
             return File(
                 env.context.filesDir,
-                "workspaces/${pythonConversationId}/report.txt",
+                "workspaces/${workspaceConversationId}/report.txt",
             )
+        }
+
+        fun skillFile(env: TestEnvironment): File {
+            return File(env.context.filesDir, "skills/portable-skill/SKILL.md")
+        }
+
+        fun toolOutputFile(env: TestEnvironment): File {
+            return File(env.context.filesDir, "tool_outputs/portable-result.txt")
         }
     }
 

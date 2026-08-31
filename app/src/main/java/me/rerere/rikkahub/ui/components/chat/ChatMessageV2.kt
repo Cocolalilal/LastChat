@@ -18,13 +18,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +46,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,7 +95,6 @@ import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
-import me.rerere.rikkahub.ui.components.ui.DocumentChip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -587,7 +581,6 @@ private fun AttachmentRow(
 
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
-    val horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
     val saturationMatrix = remember {
         android.graphics.ColorMatrix().apply { setSaturation(0f) }
     }
@@ -600,58 +593,9 @@ private fun AttachmentRow(
         }
     }
 
-    val listState = rememberLazyListState()
-    val canScrollLeft by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        }
-    }
-    val canScrollRight by remember {
-        derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index < layoutInfo.totalItemsCount - 1 ||
-                lastVisibleItem.offset + lastVisibleItem.size > layoutInfo.viewportEndOffset
-        }
-    }
-    val leftFadeAlpha by animateFloatAsState(
-        targetValue = if (canScrollLeft) 1f else 0f,
-        animationSpec = tween(180),
-        label = "attachment_left_fade"
-    )
-    val rightFadeAlpha by animateFloatAsState(
-        targetValue = if (canScrollRight) 1f else 0f,
-        animationSpec = tween(180),
-        label = "attachment_right_fade"
-    )
-
-    LazyRow(
-        state = listState,
-        horizontalArrangement = Arrangement.spacedBy(8.dp, horizontalAlignment),
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                compositingStrategy = CompositingStrategy.Offscreen
-            }
-            .drawWithContent {
-                drawContent()
-                if ((leftFadeAlpha > 0f || rightFadeAlpha > 0f) && size.width > 0f) {
-                    val fadeWidthPx = 32.dp.toPx()
-                    val leftEnd = (fadeWidthPx / size.width).coerceAtMost(0.35f)
-                    val rightStart = (1f - fadeWidthPx / size.width).coerceAtLeast(0.65f)
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Black.copy(alpha = 1f - leftFadeAlpha),
-                                leftEnd to Color.Black,
-                                rightStart to Color.Black,
-                                1f to Color.Black.copy(alpha = 1f - rightFadeAlpha),
-                            )
-                        ),
-                        blendMode = BlendMode.DstIn
-                    )
-                }
-            }
+    LastChatMessageAttachmentRow(
+        alignEnd = alignEnd,
+        modifier = modifier,
     ) {
         items(
             items = attachments,
@@ -685,13 +629,12 @@ private fun AttachmentRow(
                 }
 
                 is RenderableAttachment.File -> {
-                    DocumentChip(
+                    LastChatDocumentAttachmentTile(
                         fileName = if (attachment.archived && attachment.url.isBlank()) {
                             "${attachment.fileName} (archived)"
                         } else {
                             attachment.fileName
                         },
-                        mimeType = attachment.mimeType,
                         modifier = Modifier
                             .size(72.dp)
                             .graphicsLayer(alpha = if (attachment.archived) 0.72f else 1f),
@@ -708,9 +651,8 @@ private fun AttachmentRow(
                 }
 
                 is RenderableAttachment.Placeholder -> {
-                    DocumentChip(
+                    LastChatDocumentAttachmentTile(
                         fileName = attachment.fileName,
-                        mimeType = attachment.mimeType,
                         modifier = Modifier
                             .size(72.dp)
                             .graphicsLayer(alpha = 0.72f),
@@ -762,6 +704,8 @@ internal fun buildTimelineEntries(
             is UIMessagePart.Reasoning -> {
                 val durationMs = if (part.finishedAt != null) {
                     (part.finishedAt!! - part.createdAt).inWholeMilliseconds
+                } else if (!loading) {
+                    (kotlin.time.Clock.System.now() - part.createdAt).inWholeMilliseconds.coerceAtLeast(0L)
                 } else 0L
                 
                 entries.add(TimelineEntry.Reasoning(
@@ -769,7 +713,7 @@ internal fun buildTimelineEntries(
                     content = part.reasoning,
                     durationMs = durationMs,
                     title = part.title,
-                    isInProgress = part.finishedAt == null
+                    isInProgress = loading && part.finishedAt == null
                 ))
             }
             is UIMessagePart.ToolCall -> {
@@ -928,7 +872,7 @@ internal fun deriveActivityState(
             .map { categorizeToolName(resolveActivityToolName(it.toolName, it.arguments)) }
             .distinct()
         
-        val hasReasoning = totalReasoningMs > 0
+        val hasReasoning = totalReasoningMs > 0 || reasoningParts.isNotEmpty()
         val hasTools = toolCategories.isNotEmpty()
         val hasOcr = ocrAnnotations.isNotEmpty()
         
@@ -1152,7 +1096,9 @@ fun ChatMessageTurn(
                     },
                     onTimelineDismiss = { timelineOpen = false },
                     onBubbleClick = {
-                        if (isLastTurn) {
+                        if (timelineOpen) {
+                            timelineOpen = false
+                        } else if (isLastTurn) {
                             showActionsSheet = true
                         } else {
                             actionsExpanded = !actionsExpanded
@@ -1273,18 +1219,22 @@ private fun UserMessageTurn(
                         onToggleToolbar()
                     }
                 ) {
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
-                        content = part.text
+                    val userNickname = settings.displaySetting.userNickname
+                    val displayContent = remember(part.text, assistant, userNickname) {
+                        part.text
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
-                                userNickname = settings.displaySetting.userNickname,
+                                userNickname = userNickname,
                             )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.USER,
                                 visual = true,
-                            ),
+                            )
+                    }
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = displayContent,
                         paragraphSpacing = 12.dp,
                         onClickCitation = {}
                     )
@@ -1400,6 +1350,7 @@ private fun AssistantMessageTurn(
     ttsProviderOverride: me.rerere.tts.provider.TTSProviderSetting?,
     modifier: Modifier = Modifier
 ) {
+    val isTimelineLive = loading && isLastTurn
     val settings = LocalSettings.current
     val context = LocalContext.current
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
@@ -1464,6 +1415,17 @@ private fun AssistantMessageTurn(
                 } else {
                     Modifier
                 }
+            )
+            .then(
+                if (timelineOpen) {
+                    Modifier.combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onTimelineDismiss
+                    )
+                } else {
+                    Modifier
+                }
             ),
         verticalArrangement = Arrangement.spacedBy(
             if (showAssistantBubbles) elementSpacing else 3.dp
@@ -1515,6 +1477,7 @@ private fun AssistantMessageTurn(
                         timelineEntries = timelineEntries,
                         initialTimelineOpenRequest = initialTimelineOpenRequest,
                         assistantId = assistant?.id?.toString(),
+                        timelineLive = isTimelineLive,
                         onTimelineDismiss = {
                             haptics.perform(HapticPattern.Pop)
                             onTimelineDismiss()
@@ -1572,18 +1535,22 @@ private fun AssistantMessageTurn(
                     modifier = Modifier.widthIn(max = maxWidth),
                     onClick = handleBubbleClick
                 ) {
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
-                        content = part.text.trimStart()
+                    val userNickname = settings.displaySetting.userNickname
+                    val displayContent = remember(part.text, assistant, userNickname) {
+                        part.text.trimStart()
                             .replacePersonaPlaceholders(
                                 assistant = assistant,
-                                userNickname = settings.displaySetting.userNickname,
+                                userNickname = userNickname,
                             )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.ASSISTANT,
                                 visual = true,
-                            ),
+                            )
+                    }
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = displayContent,
                         paragraphSpacing = 12.dp,
                         streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                         onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
@@ -1636,6 +1603,7 @@ private fun AssistantMessageTurn(
                     timelineEntries = timelineEntries,
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistant?.id?.toString(),
+                    timelineLive = isTimelineLive,
                     onTimelineDismiss = {
                         haptics.perform(HapticPattern.Pop)
                         onTimelineDismiss()
@@ -1650,18 +1618,22 @@ private fun AssistantMessageTurn(
             )
 
             allTextBubbles.forEachIndexed { index, (_, part) ->
-                MarkdownBlock(
-                    workspaceId = assistant?.workspaceId?.toString(),
-                    content = part.text.trimStart()
+                val userNickname = settings.displaySetting.userNickname
+                val displayContent = remember(part.text, assistant, userNickname) {
+                    part.text.trimStart()
                         .replacePersonaPlaceholders(
                             assistant = assistant,
-                            userNickname = settings.displaySetting.userNickname,
+                            userNickname = userNickname,
                         )
                         .replaceRegexes(
                             assistant = assistant,
                             scope = AssistantAffectScope.ASSISTANT,
                             visual = true,
-                        ),
+                        )
+                }
+                MarkdownBlock(
+                    workspaceId = assistant?.workspaceId?.toString(),
+                    content = displayContent,
                     paragraphSpacing = 12.dp,
                     streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,

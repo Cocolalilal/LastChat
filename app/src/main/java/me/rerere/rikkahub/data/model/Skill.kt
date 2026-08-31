@@ -36,6 +36,16 @@ data class Skill(
     val userInvocable: Boolean = true,            // Legacy field retained for backward compatibility
     @SerialName("argument_hint")
     val argumentHint: String? = null,             // Slash command hint e.g. "/skill-name"
+    // Agent Skills frontmatter. These are retained when importing a package so a
+    // LastChat export remains portable instead of flattening the skill to a prompt.
+    val license: String? = null,
+    val compatibility: String? = null,
+    val metadata: Map<String, String> = emptyMap(),
+    @SerialName("allowed_tools")
+    val allowedTools: String? = null,
+    /** Directory name below app-private `files/skills`. Never a user supplied path. */
+    @SerialName("package_root")
+    val packageRoot: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -46,6 +56,13 @@ data class Skill(
     fun canAssistantAutonomouslyToggle(assistantId: Uuid): Boolean {
         return isAvailableForAssistant(assistantId)
     }
+
+    /** The package path exposed by the workspace bind mount; never uses a raw name. */
+    fun workspaceDirectory(): String = "/skills/${safePackageRoot()}"
+
+    fun safePackageRoot(): String = packageRoot
+        ?.takeIf { it.matches(Regex("skill-[0-9a-f-]+")) }
+        ?: "skill-$id"
 }
 
 val SKILL_SELECTION_OVERRIDE_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000001")

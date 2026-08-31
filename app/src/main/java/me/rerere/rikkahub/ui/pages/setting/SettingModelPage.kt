@@ -75,10 +75,12 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DownloadForOffline
 
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.VoiceSelector
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
@@ -86,6 +88,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.components.settings.LastChatModelFeatureCard
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -173,6 +176,7 @@ private fun DefaultSTTModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    val navController = LocalNavController.current
     var showModal by remember { mutableStateOf(false) }
     var promptPending by remember { mutableStateOf(false) }
     ModelFeatureCard(
@@ -200,6 +204,11 @@ private fun DefaultSTTModelSetting(
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
                 )
+            }
+            IconButton(
+                onClick = { navController.navigate(me.rerere.rikkahub.Screen.SettingLocalLlm) }
+            ) {
+                Icon(Icons.Rounded.DownloadForOffline, "Manage local speech models")
             }
             IconButton(
                 onClick = {
@@ -317,6 +326,7 @@ private fun DefaultTranslationModelSetting(
                 ModelSelector(
                     modelId = settings.translateModeId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -417,6 +427,7 @@ private fun DefaultSuggestionModelSetting(
                 ModelSelector(
                     modelId = settings.suggestionModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -532,6 +543,7 @@ private fun DefaultTitleModelSetting(
                 ModelSelector(
                     modelId = settings.titleModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
@@ -638,6 +650,7 @@ private fun DefaultSummarizerModelSetting(
                 ModelSelector(
                     modelId = settings.summarizerModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = { selectedModel ->
                         vm.updateSettings(
                             settings.copy(
@@ -717,6 +730,7 @@ private fun DefaultSubagentModelSetting(
                 ModelSelector(
                     modelId = settings.subagentModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     onSelect = { selectedModel ->
                         vm.updateSettings(
                             settings.copy(
@@ -835,6 +849,7 @@ private fun DefaultOcrModelSetting(
                 ModelSelector(
                     modelId = settings.ocrModelId,
                     type = ModelType.CHAT,
+                    allowBackendModels = true,
                     modelFilter = { model -> model.inputModalities.contains(Modality.IMAGE) },
                     onSelect = {
                         vm.updateSettings(
@@ -1071,6 +1086,7 @@ private fun HelperReasoningSettings(
         ReasoningLevel.LOW -> stringResource(R.string.reasoning_light)
         ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium)
         ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy)
+        ReasoningLevel.MAX -> "Max"
     }
 
     val subtitle = when (currentLevel) {
@@ -1079,6 +1095,7 @@ private fun HelperReasoningSettings(
         ReasoningLevel.LOW -> stringResource(R.string.reasoning_light_desc)
         ReasoningLevel.MEDIUM -> stringResource(R.string.reasoning_medium_desc)
         ReasoningLevel.HIGH -> stringResource(R.string.reasoning_heavy_desc)
+        ReasoningLevel.MAX -> "Maximum reasoning effort"
     }
 
     val icon = when (currentLevel) {
@@ -1103,7 +1120,7 @@ private fun HelperReasoningSettings(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(
-                    color = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
                 .clickable {
                     haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
@@ -1155,52 +1172,12 @@ private fun ModelFeatureCard(
     title: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit
 ) {
-    Card(
+    LastChatModelFeatureCard(
+        darkTheme = LocalDarkMode.current,
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
-        )
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        icon()
-                        ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                            title()
-                        }
-                    }
-                    ProvideTextStyle(
-                        MaterialTheme.typography.bodySmall.copy(
-                            color = LocalContentColor.current.copy(
-                                alpha = 0.7f
-                            )
-                        )
-                    ) {
-                        description()
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                actions()
-            }
-        }
-    }
+        description = description,
+        icon = icon,
+        title = title,
+        actions = actions,
+    )
 }

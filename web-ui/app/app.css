@@ -66,6 +66,7 @@
   --popover: oklch(0.2264 0 0);
   --popover-foreground: oklch(0.9173 0.0133 82.4015);
   --primary: oklch(0.4325 0.0376 198.3573);
+  --primary-content: color-mix(in oklab, var(--primary) 65%, var(--foreground));
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.3329 0 0);
   --secondary-foreground: oklch(0.8055 0.0194 100.1916);
@@ -199,6 +200,7 @@
   --popover: oklch(0.3085 0.0035 106.6039);
   --popover-foreground: oklch(0.9211 0.004 106.4781);
   --primary: oklch(0.6724 0.1308 38.7559);
+  --primary-content: var(--primary);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.3715 0 0);
   --secondary-foreground: oklch(0.9851 0 0);
@@ -307,6 +309,7 @@
   --popover: oklch(0.1548 0.0132 338.9015);
   --popover-foreground: oklch(0.9647 0.0091 341.8035);
   --primary: oklch(0.4607 0.1853 4.0994);
+  --primary-content: color-mix(in oklab, var(--primary) 50%, var(--foreground));
   --primary-foreground: oklch(0.856 0.0618 346.3684);
   --secondary: oklch(0.3137 0.0306 310.061);
   --secondary-foreground: oklch(0.8483 0.0382 307.9613);
@@ -415,6 +418,7 @@
   --popover: oklch(0.2686 0 0);
   --popover-foreground: oklch(0.9851 0 0);
   --primary: oklch(0.5555 0 0);
+  --primary-content: color-mix(in oklab, var(--primary) 90%, var(--foreground));
   --primary-foreground: oklch(0.9851 0 0);
   --secondary: oklch(0.2686 0 0);
   --secondary-foreground: oklch(0.9851 0 0);
@@ -523,6 +527,7 @@
   --popover: oklch(0.2735 0.0127 62.0705);
   --popover-foreground: oklch(0.9239 0.019 83.0636);
   --primary: oklch(0.5959 0.0448 65.5786);
+  --primary-content: color-mix(in oklab, var(--primary) 95%, var(--foreground));
   --primary-foreground: oklch(0.2747 0.0139 57.6523);
   --secondary: oklch(0.3795 0.0181 57.128);
   --secondary-foreground: oklch(0.9239 0.019 83.0636);
@@ -643,6 +648,17 @@
   ::selection {
     background: color-mix(in oklab, var(--primary) 20%, transparent);
   }
+}
+
+/*
+ * Filled controls need the original primary color, but that same color can be
+ * too dim when used directly for text and icons on a dark canvas. Keep the
+ * theme hue while raising only content uses to readable contrast.
+ */
+.dark .text-primary,
+.dark [class~="hover:text-primary"]:hover,
+.dark [class~="[&>a:hover]:text-primary"] > a:hover {
+  color: var(--primary-content);
 }
 
 [data-message-role="user"] [data-message-bubble] {

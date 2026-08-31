@@ -24,7 +24,7 @@
 -keep @kotlinx.serialization.Serializable class * {*;}
 
 # keep jlatexmath
--keep class org.scilab.forge.jlatexmath.** {*;}
+-keep class ru.noties.jlatexmath.** {*;}
 
 # Ktor pulls a JVM-only debugger probe which references java.lang.management.
 # Those types don't exist on Android and are safe to ignore for release builds.
@@ -48,4 +48,17 @@
 }
 -dontwarn com.termux.**
 
+# On-device embeddings (EmbeddingGemma via the AI Edge RAG library). The library ships no consumer
+# R8 rules and reaches its model/proto classes through name-based JNI + native RegisterNatives
+# callbacks, so keep the RAG + MediaPipe boundary intact in release builds.
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keep class com.google.ai.edge.localagents.** { *; }
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.ai.edge.litertlm.**
+-dontwarn com.google.ai.edge.localagents.**
+-dontwarn com.google.mediapipe.**
+
 -dontobfuscate
+
+# Tasks GenAI (AutoValue/JavaPoet) references javax.lang.model which is not on Android
+-dontwarn javax.lang.model.**

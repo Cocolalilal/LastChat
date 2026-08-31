@@ -24,6 +24,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.context.smartInputBudget
+import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -43,11 +47,15 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.withContext
+import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -58,6 +66,9 @@ import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.truncate
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY
+import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
+import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
@@ -92,6 +103,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.currentVersionMessages
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -114,6 +126,38 @@ private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
+private const val SMART_CONTEXT_OVERFLOW_RETRIES = 6
+
+private fun Throwable.isContextWindowOverflow(): Boolean = generateSequence(this) { it.cause }
+    .mapNotNull { it.message?.lowercase(Locale.ROOT) }
+    .any { message ->
+        listOf(
+            "context length",
+            "context window",
+            "maximum context",
+            "max context",
+            "too many tokens",
+            "token limit",
+            "prompt is too long",
+            "input is too long",
+            "input too long",
+            "context_length_exceeded",
+            "request too large",
+            "prompt too large",
+            "exceeds the model's context",
+            "exceeds model context",
+            "reduce the length",
+            "reduce your prompt",
+            "input tokens exceed",
+            "tokens exceed",
+        ).any(message::contains)
+    }
+
+private data class AssistantRegenerationContext(
+    val inputMessages: List<UIMessage>,
+    val turnStartNodeIndex: Int,
+    val versionTag: String,
+)
 
 internal fun shouldPreserveInMemoryConversation(
     conversation: Conversation?,
@@ -228,6 +272,47 @@ internal fun selectConversationTurnVersion(
     return normalizeConversation(
         normalizedConversation.copy(messageNodes = updatedNodes)
     )
+}
+
+internal fun mergeRegeneratedAssistantTurn(
+    conversation: Conversation,
+    turnStartIndex: Int,
+    versionTag: String,
+    generatedMessages: List<UIMessage>,
+): Conversation {
+    if (turnStartIndex !in 0..conversation.messageNodes.size) return conversation
+
+    val nodes = conversation.messageNodes.toMutableList()
+    generatedMessages.forEachIndexed { offset, generatedMessage ->
+        val taggedMessage = if (generatedMessage.versionTag == versionTag) {
+            generatedMessage
+        } else {
+            generatedMessage.copy(versionTag = versionTag)
+        }
+        val nodeIndex = turnStartIndex + offset
+        val currentTurnEnd = nodes
+            .subList(turnStartIndex, nodes.size)
+            .indexOfFirst { it.role == MessageRole.USER }
+            .let { if (it == -1) nodes.size else turnStartIndex + it }
+
+        if (nodeIndex < currentTurnEnd) {
+            val node = nodes[nodeIndex]
+            val existingIndex = node.messages.indexOfFirst { it.id == taggedMessage.id }
+            val updatedMessages = node.messages.toMutableList()
+            val selectedIndex = if (existingIndex >= 0) {
+                updatedMessages[existingIndex] = taggedMessage
+                existingIndex
+            } else {
+                updatedMessages += taggedMessage
+                updatedMessages.lastIndex
+            }
+            nodes[nodeIndex] = node.copy(messages = updatedMessages, selectIndex = selectedIndex)
+        } else {
+            nodes.add(nodeIndex, MessageNode.of(taggedMessage))
+        }
+    }
+
+    return conversation.copy(messageNodes = nodes)
 }
 
 internal suspend fun buildForkConversationSnapshot(
@@ -585,6 +670,14 @@ class ChatService(
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs
         .asStateFlow()
 
+    private val _contextUsage = MutableStateFlow<Map<Uuid, ContextUsageBreakdown>>(emptyMap())
+    val contextUsage: StateFlow<Map<Uuid, ContextUsageBreakdown>> = _contextUsage.asStateFlow()
+
+    private val _contextManagementActivity =
+        MutableStateFlow<Map<Uuid, ContextManagementActivity>>(emptyMap())
+    val contextManagementActivity: StateFlow<Map<Uuid, ContextManagementActivity>> =
+        _contextManagementActivity.asStateFlow()
+
     // 错误流
     private val _errorFlow = MutableSharedFlow<Throwable>()
     val errorFlow: SharedFlow<Throwable> = _errorFlow.asSharedFlow()
@@ -657,6 +750,9 @@ class ChatService(
             TAG,
             "Added reference for $conversationId (current references: $referenceCount)"
         )
+        // Opening or starting another chat is a cheap opportunity to catch up eligible prior
+        // conversations. WorkManager keeps this non-blocking and deduplicates concurrent scans.
+        MemoryConsolidationWorker.enqueueCatchUp(context)
     }
 
     // 移除引用
@@ -679,6 +775,9 @@ class ChatService(
         )
         appScope.launch {
             delay(500)
+            if (referenceCount == 0) {
+                enqueueAutomaticMemoryConsolidation(conversationId)
+            }
             checkAllConversationsReferences()
         }
     }
@@ -732,7 +831,17 @@ class ChatService(
     fun ensureConversationPersistenceMode(conversationId: Uuid, mode: ChatPersistenceMode) {
         val currentMode = getConversationPersistenceMode(conversationId)
         if (currentMode == ChatPersistenceMode.NORMAL && mode != ChatPersistenceMode.NORMAL) {
+            val inMemory = getConversationState(conversationId)?.value
+            if (inMemory != null && inMemory.messageNodes.isNotEmpty()) {
+                val isDraft = inMemory.messageNodes.size == 1 &&
+                    inMemory.messageNodes.first().messages.all { it.role == MessageRole.ASSISTANT }
+                if (!isDraft && mode == ChatPersistenceMode.PERSIST_ON_REPLY) {
+                    return
+                }
+            }
             setConversationPersistenceMode(conversationId, mode)
+        } else if (mode == ChatPersistenceMode.NORMAL && currentMode != ChatPersistenceMode.NORMAL) {
+            setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
         }
     }
 
@@ -821,6 +930,20 @@ class ChatService(
         val trimmedContent = content.trim()
         require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
 
+        val existingInDb = withContext(Dispatchers.IO) {
+            conversationRepo.getConversationById(conversationId)
+        }
+        if (existingInDb != null) {
+            setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
+            updateConversation(conversationId, existingInDb)
+            return existingInDb
+        }
+
+        val inMemory = getConversationState(conversationId)?.value
+        if (inMemory != null && inMemory.messageNodes.isNotEmpty()) {
+            return inMemory
+        }
+
         val conversation = Conversation.ofId(
             id = conversationId,
             assistantId = assistantId,
@@ -865,6 +988,7 @@ class ChatService(
     private suspend fun persistConversationToRepository(
         conversation: Conversation,
         preserveConsolidation: Boolean = false,
+        syncAttachments: Boolean = true,
     ): Boolean {
         val normalizedConversation = normalizeConversation(conversation)
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
@@ -879,6 +1003,7 @@ class ChatService(
                         conversationRepo.updateConversation(
                             conversation = normalizedConversation,
                             preserveConsolidation = preserveConsolidation,
+                            syncAttachments = syncAttachments,
                         )
                     }
                 }
@@ -1116,7 +1241,7 @@ class ChatService(
                     suppressCompletionNotification = true,
                 )
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 e.printStackTrace()
                 _errorFlow.emit(e)
@@ -1229,7 +1354,7 @@ class ChatService(
                     )
                 }
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 e.printStackTrace()
                 _errorFlow.emit(e)
@@ -1250,13 +1375,10 @@ class ChatService(
     // When regenerating an assistant message, we regenerate the entire turn
     // by finding the last user message and regenerating from there
     //
-    // forceWipe: If true, completely removes the old turn and replaces it with a new one.
-    //            If false, preserves old versions for simple messages (text only).
     fun regenerateAtMessage(
         conversationId: Uuid,
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
-        forceWipe: Boolean = false,
         suppressCompletionNotification: Boolean = false,
     ) {
         getGenerationJob(conversationId)?.cancel()
@@ -1294,101 +1416,44 @@ class ChatService(
                             .indexOfLast { it.role == MessageRole.USER }
 
                         if (lastUserIndex >= 0) {
-                            // Find turn boundaries (first assistant node to end of turn)
+                            // Find the assistant turn start.
                             val firstAssistantIndex = lastUserIndex + 1
-                            val turnEndIndex = conversation.messageNodes
-                                .subList(firstAssistantIndex, conversation.messageNodes.size)
-                                .indexOfFirst { it.role == MessageRole.USER }
-                                .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
 
-                            if (forceWipe) {
-                                // WIPE MODE: Completely remove old turn and replace with new assistant node
-                                // This is used for complex messages with tool calls
-                                val nodesBeforeTurn = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-
-                                // Create a fresh assistant node
-                                val freshAssistantNode = MessageNode(
-                                    id = kotlin.uuid.Uuid.random(),
-                                    messages = listOf(
-                                        UIMessage(
-                                            role = MessageRole.ASSISTANT,
-                                            parts = emptyList(),
-                                            versionTag = null  // No versioning when wiping
-                                        )
-                                    ),
-                                    selectIndex = 0
+                            // Preserve every previous turn snapshot, including tool calls/results.
+                            // Generated nodes are merged positionally into this turn under one tag;
+                            // nodes absent from a shorter version remain stored but are not selected.
+                            val versionTag = kotlin.uuid.Uuid.random().toString()
+                            val oldFirstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
+                            if (oldFirstAssistant != null) {
+                                val blankMessage = UIMessage(
+                                    role = MessageRole.ASSISTANT,
+                                    parts = emptyList(),
+                                    versionTag = versionTag,
                                 )
-                                nodesBeforeTurn.add(freshAssistantNode)
-
-                                // Add any nodes after this turn
-                                if (turnEndIndex < conversation.messageNodes.size) {
-                                    nodesBeforeTurn.addAll(
-                                        conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size)
-                                    )
-                                }
-
-                                val newConversation = conversation.copy(
-                                    messageNodes = nodesBeforeTurn
-                                )
-                                saveConversation(
-                                    conversationId = conversationId,
-                                    conversation = newConversation,
-                                    preserveConsolidation = true,
-                                )
-                                handleMessageComplete(
-                                    conversationId = conversationId,
-                                    messageRange = 0..lastUserIndex,
-                                    preserveConsolidation = true,
-                                    suppressCompletionNotification = suppressCompletionNotification,
-                                )
-                            } else {
-                                // VERSION HISTORY MODE: Keep ALL nodes in the turn but add new versions with shared versionTag
-                                // This is used for simple messages (text/reasoning only)
-                                val versionTag = kotlin.uuid.Uuid.random().toString()
-
-                                // Keep nodes up to user, then just the first assistant node with new version
-                                val nodesBeforeTurn = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-
-                                // For the first assistant node, add a new blank version with versionTag
-                                val oldFirstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
-                                if (oldFirstAssistant != null) {
-                                    val blankMessage = UIMessage(
-                                        role = MessageRole.ASSISTANT,
-                                        parts = emptyList(),  // Empty parts = Waiting state
-                                        versionTag = versionTag
-                                    )
-                                    val newMessages = oldFirstAssistant.messages + blankMessage
-                                    val newAssistantNode = oldFirstAssistant.copy(
+                                val newMessages = oldFirstAssistant.messages + blankMessage
+                                val seededNodes = conversation.messageNodes.toMutableList().apply {
+                                    this[firstAssistantIndex] = oldFirstAssistant.copy(
                                         messages = newMessages,
-                                        selectIndex = newMessages.lastIndex
+                                        selectIndex = newMessages.lastIndex,
                                     )
-                                    nodesBeforeTurn.add(newAssistantNode)
-
-                                    // NOTE: We DON'T keep old tool nodes - they'll be replaced by new ones
-                                    // during streaming. The versionTag filtering in UI will handle showing
-                                    // correct content for each version.
-
-                                    // Add any nodes after this turn (other user/assistant turns)
-                                    if (turnEndIndex < conversation.messageNodes.size) {
-                                        nodesBeforeTurn.addAll(
-                                            conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size)
-                                        )
-                                    }
                                 }
-
-                                val newConversation = conversation.copy(
-                                    messageNodes = nodesBeforeTurn
-                                )
+                                val inputMessages = conversation.messageNodes
+                                    .subList(0, lastUserIndex + 1)
+                                    .currentVersionMessages()
                                 saveConversation(
                                     conversationId = conversationId,
-                                    conversation = newConversation,
+                                    conversation = conversation.copy(messageNodes = seededNodes),
                                     preserveConsolidation = true,
                                 )
                                 handleMessageComplete(
                                     conversationId = conversationId,
-                                    messageRange = 0..lastUserIndex,
                                     preserveConsolidation = true,
                                     suppressCompletionNotification = suppressCompletionNotification,
+                                    assistantRegeneration = AssistantRegenerationContext(
+                                        inputMessages = inputMessages,
+                                        turnStartNodeIndex = firstAssistantIndex,
+                                        versionTag = versionTag,
+                                    ),
                                 )
                             }
                         } else {
@@ -1409,7 +1474,7 @@ class ChatService(
                     }
                 }
 
-                _generationDoneFlow.emit(conversationId)
+                emitGenerationDone(conversationId)
             } catch (e: Exception) {
                 _errorFlow.emit(e)
             }
@@ -1432,6 +1497,7 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         preserveConsolidation: Boolean = false,
         suppressCompletionNotification: Boolean = false,
+        assistantRegeneration: AssistantRegenerationContext? = null,
     ) {
         val settings = settingsStore.settingsFlow.first()
 
@@ -1440,6 +1506,8 @@ class ChatService(
         var firstTokenTime: Long? = null
         var lastStreamingPersistMs = 0L
         var autoResumeAttempts = 0
+        var contextOverflowAttempts = 0
+        var contextBudgetScale = 1.0
 
         runCatching {
             var conversation = normalizeConversation(getConversationFlow(conversationId).value)
@@ -1472,11 +1540,59 @@ class ChatService(
             while (true) {
                 conversation = getConversationFlow(conversationId).value
                 try {
+                    val memoryContextEnabled = assistant.enableMemory &&
+                        getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
+                    val memorySnapshot = if (memoryContextEnabled) {
+                        memoryRepository.getCombinedMemoriesFlow(conversation.assistantId.toString()).first()
+                    } else {
+                        emptyList()
+                    }
+                    val requestMemories = if (!memoryContextEnabled) {
+                        emptyList()
+                    } else if (assistant.useRagMemoryRetrieval) {
+                        val lastUserMessage = conversation.currentMessages
+                            .lastOrNull { it.role == MessageRole.USER }
+                            ?.toText()
+                            .orEmpty()
+                        if (settings.enableRagLogging) Log.d("RAG", "Query: $lastUserMessage")
+                        if (lastUserMessage.isNotBlank()) {
+                            memoryRepository.retrieveRelevantMemories(
+                                assistantId = conversation.assistantId.toString(),
+                                query = lastUserMessage,
+                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes,
+                            ).also { results ->
+                                if (settings.enableRagLogging) {
+                                    Log.d("RAG", "Retrieved ${results.size} memories")
+                                    results.forEach { memory ->
+                                        Log.d("RAG", " - [${memory.type}] ${memory.content.take(50)}...")
+                                    }
+                                }
+                            }
+                        } else {
+                            memorySnapshot.filter { it.type == 0 }.take(50)
+                        }
+                    } else {
+                        memorySnapshot.filter { it.type == 0 }.take(50)
+                    }
+                    val memoryRevisionCandidates = if (assistant.useRagMemoryRetrieval) {
+                        memorySnapshot.filter { memory ->
+                            (memory.type == 0 && assistant.ragIncludeCore) ||
+                                (memory.type == 1 && assistant.ragIncludeEpisodes)
+                        }.take(1_000)
+                    } else {
+                        memorySnapshot.filter { it.type == 0 }.take(50)
+                    }
+                    val memoryRevision = memoryRevisionCandidates.map { memory ->
+                        listOf(memory.id, memory.content, memory.type, memory.timestamp)
+                    }.hashCode()
                     // start generating
                     generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = conversation.currentMessages.let {
+                messages = assistantRegeneration?.inputMessages ?: conversation.currentMessages.let {
                     if (messageRange != null) {
                         it.subList(messageRange.start, messageRange.endInclusive + 1)
                     } else {
@@ -1484,45 +1600,7 @@ class ChatService(
                     }
                 },
                 assistant = assistant,
-                memories = if (
-                    assistant.enableMemory &&
-                    getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
-                ) {
-                    if (assistant.useRagMemoryRetrieval) {
-                        // RAG mode: retrieve relevant memories based on context
-                        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        
-                        if (settings.enableRagLogging) {
-                            Log.d("RAG", "Query: $lastUserMessage")
-                        }
-
-                        if (lastUserMessage.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(
-                                assistantId = conversation.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes
-                            )
-                            if (settings.enableRagLogging) {
-                                Log.d("RAG", "Retrieved ${results.size} memories")
-                                results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
-                            }
-                            results
-                        } else {
-                            if (settings.enableRagLogging) Log.d("RAG", "Empty query, using recent memories")
-                            memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                                .take(50)
-                        }
-                    } else {
-                        // Simple mode: inject recent memories
-                        memoryRepository.getMemoriesOfAssistant(conversation.assistantId.toString())
-                            .take(50)
-                    }
-                } else {
-                    emptyList()
-                },
+                memories = requestMemories,
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
                     val cwd = getWorkspaceCwd(
@@ -1539,19 +1617,50 @@ class ChatService(
                 enabledModeIds = conversation.enabledModeIds,
                 enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
+                contextSummary = conversation.contextSummary,
+                contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
+                contextBudgetScale = contextBudgetScale,
+                contextUsageSourceKey = if (assistantRegeneration == null && messageRange == null) {
+                    contextUsageSourceKey(conversation, assistant, model, settings, memoryRevision)
+                } else {
+                    null
+                },
+                onContextUsage = { usage ->
+                    val current = _contextUsage.value
+                    _contextUsage.value = current + (conversationId to usage)
+                },
             ).onCompletion { cause ->
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
                 // 可能被取消了，或者意外结束，兜底更新
                 val currentConversation = getConversationFlow(conversationId).value
+                val regenerationLastNodeIndex = assistantRegeneration?.let { regeneration ->
+                    val turnEndIndex = currentConversation.messageNodes
+                        .subList(regeneration.turnStartNodeIndex, currentConversation.messageNodes.size)
+                        .indexOfFirst { it.role == MessageRole.USER }
+                        .let { offset ->
+                            if (offset == -1) currentConversation.messageNodes.size
+                            else regeneration.turnStartNodeIndex + offset
+                        }
+                    (regeneration.turnStartNodeIndex until turnEndIndex).lastOrNull { index ->
+                        currentConversation.messageNodes[index].messages.any {
+                            it.versionTag == regeneration.versionTag
+                        }
+                    }
+                }
                 val updatedConversation = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes.mapIndexed { index, node ->
-                        val isLastNode = index == currentConversation.messageNodes.lastIndex
                         node.copy(messages = node.messages.map { msg ->
                             val finishedMsg = msg.finishReasoning()
                             // Add generation duration to the last assistant message
-                            if (isLastNode && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
+                            val isCompletionTarget = if (assistantRegeneration == null) {
+                                index == currentConversation.messageNodes.lastIndex
+                            } else {
+                                index == regenerationLastNodeIndex &&
+                                    finishedMsg.versionTag == assistantRegeneration.versionTag
+                            }
+                            if (isCompletionTarget && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
                                 // Debug usage
                                 if (finishedMsg.usage == null) {
                                     Log.w(TAG, "Assistant message usage is null in onCompletion")
@@ -1596,9 +1705,17 @@ class ChatService(
                 
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
-                            .copy(updateAt = Instant.now())
+                        val currentConversation = getConversationFlow(conversationId).value
+                        val updatedConversation = if (assistantRegeneration != null) {
+                            mergeRegeneratedAssistantTurn(
+                                conversation = currentConversation,
+                                turnStartIndex = assistantRegeneration.turnStartNodeIndex,
+                                versionTag = assistantRegeneration.versionTag,
+                                generatedMessages = chunk.messages.drop(assistantRegeneration.inputMessages.size),
+                            )
+                        } else {
+                            currentConversation.updateCurrentMessages(chunk.messages)
+                        }.copy(updateAt = Instant.now())
                         updateConversation(conversationId, updatedConversation)
 
                         val nowMs = System.currentTimeMillis()
@@ -1613,6 +1730,7 @@ class ChatService(
                             if (persistConversationToRepository(
                                     conversation = updatedConversation,
                                     preserveConsolidation = preserveConsolidation,
+                                    syncAttachments = false,
                                 )
                             ) {
                                 lastStreamingPersistMs = nowMs
@@ -1623,6 +1741,22 @@ class ChatService(
             }
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
+                    if (
+                        assistant.smartContextManagement &&
+                        model.contextCapacityTokens != null &&
+                        contextOverflowAttempts < SMART_CONTEXT_OVERFLOW_RETRIES &&
+                        error.isContextWindowOverflow()
+                    ) {
+                        contextOverflowAttempts++
+                        contextBudgetScale = (contextBudgetScale * 0.65).coerceAtLeast(0.08)
+                        Log.w(
+                            TAG,
+                            "Provider rejected context; silently retrying with budget scale " +
+                                "$contextBudgetScale ($contextOverflowAttempts/$SMART_CONTEXT_OVERFLOW_RETRIES)",
+                        )
+                        firstTokenTime = null
+                        continue
+                    }
                     val latestConversation = getConversationFlow(conversationId).value
                     if (
                         autoResumeAttempts < AUTO_RESUME_MAX_RETRIES &&
@@ -1716,6 +1850,7 @@ class ChatService(
         conversation: Conversation,
         model: Model,
     ): List<Tool> {
+        if (!model.abilities.contains(ModelAbility.TOOL)) return emptyList()
         return buildList {
             val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
 
@@ -1753,20 +1888,75 @@ class ChatService(
                 )
             }
 
-            mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
+            mcpManager.getAvailableTools(assistant).forEach { (serverId, tool) ->
                 add(
                     Tool(
                         name = tool.name,
                         description = tool.description ?: "",
                         parameters = { tool.inputSchema },
                         execute = {
-                            mcpManager.callTool(serverId, tool.name, it.jsonObject).truncateLargeJsonText()
+                            val contextAwareCharacterLimit = (
+                                (model.contextCapacityTokens?.toLong() ?: 16_000L) * 2L
+                                ).coerceIn(2_000L, 32_000L).toInt()
+                            mcpManager.callTool(serverId, tool.name, it.jsonObject)
+                                .truncateLargeJsonText(contextAwareCharacterLimit)
                         },
                     )
                 )
             }
-        }
+
+            // look_at_screen: available whenever a fresh assist screenshot was captured (i.e.
+            // the assistant overlay was just summoned) and screenshot-attach is enabled. Vision
+            // models get the image (injected as a follow-up USER message via
+            // TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY so it isn't stuffed into a tool result);
+            // non-vision models get OCR text.
+            if (settings.assistantOverlayConfig.attachScreenshot && AssistScreenHolder.hasFreshScreenshot()) {
+                add(createLookAtScreenTool(model))
+            }
+        }.withUniqueToolNames()
     }
+
+    private fun createLookAtScreenTool(model: Model): Tool = Tool(
+        name = "look_at_screen",
+        description = "Look at a screenshot of the user's current screen, captured when the " +
+            "assistant was summoned. Use this when you need visual context about what the user " +
+            "is looking at.",
+        parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+        approvalMode = ToolApprovalMode.Auto,
+        execute = {
+            AssistScreenHolder.notifyScreenRead()
+            val dataUrl = AssistScreenHolder.dataUrlOrNull()
+            if (dataUrl.isNullOrBlank()) {
+                buildJsonObject {
+                    put("note", JsonPrimitive("No screenshot is available."))
+                }
+            } else if (model.inputModalities.contains(Modality.IMAGE)) {
+                // Vision model: hand the image over as a follow-up USER message (providers can't
+                // carry images inside a tool result — doing so 400s).
+                buildJsonObject {
+                    put("note", JsonPrimitive("Screenshot of the user's screen is attached below."))
+                    put(
+                        TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                        JsonArray(listOf(JsonPrimitive(dataUrl))),
+                    )
+                }
+            } else {
+                // Non-vision model: OCR fallback.
+                val ocrText = runCatching {
+                    OcrTransformer.performOcr(UIMessagePart.Image(url = dataUrl))
+                }.getOrNull()
+                buildJsonObject {
+                    put("type", JsonPrimitive("ocr_text"))
+                    if (ocrText.isNullOrBlank()) {
+                        put("text", JsonPrimitive(""))
+                        put("note", JsonPrimitive("OCR could not extract text from the screenshot."))
+                    } else {
+                        put("text", JsonPrimitive(ocrText))
+                    }
+                }
+            }
+        },
+    )
 
     private suspend fun createToolApprovalResolution(
         toolCall: UIMessagePart.ToolCall,
@@ -2330,6 +2520,26 @@ class ChatService(
             normalizedConversation
     }
 
+    private suspend fun emitGenerationDone(conversationId: Uuid) {
+        enqueueAutomaticMemoryConsolidation(conversationId)
+        _generationDoneFlow.emit(conversationId)
+    }
+
+    private suspend fun enqueueAutomaticMemoryConsolidation(conversationId: Uuid) {
+        if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) return
+        val conversation = getConversationState(conversationId)?.value
+            ?: conversationRepo.getConversationById(conversationId)
+            ?: return
+        val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
+            ?: return
+        if (!assistant.enableMemory || !assistant.enableMemoryConsolidation) return
+        MemoryConsolidationWorker.enqueueForConversation(
+            context = context,
+            conversation = conversation,
+            consolidationDelayMinutes = assistant.consolidationDelayMinutes,
+        )
+    }
+
     // 检查文件删除
     private suspend fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
         // Attachment lifecycle is synchronized through ChatAttachmentRepository.
@@ -2362,21 +2572,11 @@ class ChatService(
     ) {
         try {
             val assistant = settings.resolveConversationContext(conversation).assistant
-            
-            // Check if auto-summarization is enabled and configured with a limit
-            if (!assistant.shouldAutoSummarizeMessages()) {
-                return
-            }
-            
-            // Get max history messages setting (null = unlimited, don't auto-summarize)
-            val maxMessages = assistant.maxHistoryMessages ?: return
-            
-            // Calculate new messages since last summary
             val messages = conversation.currentMessages
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
             
-            val messagesToKeep = 2 // Keep last user+assistant exchange
+            val messagesToKeep = 4 // Keep last 2 user+assistant exchanges
             val messagesToSummarizeCount = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 // Messages after last summary, minus the ones we keep
                 (messages.size - lastSummaryIndex - 1 - messagesToKeep).coerceAtLeast(0)
@@ -2385,9 +2585,44 @@ class ChatService(
                 (messages.size - messagesToKeep).coerceAtLeast(0)
             }
             
-            // Check if we've reached the max history messages limit
-            if (messagesToSummarizeCount >= maxMessages) {
-                Log.i(TAG, "Auto-summarization triggered: $messagesToSummarizeCount messages >= max $maxMessages")
+            val conversationContext = settings.resolveConversationContext(conversation)
+            val model = conversationContext.chatModel
+            val smartThresholdReached = if (
+                assistant.smartContextManagement &&
+                model?.contextCapacityTokens != null &&
+                messagesToSummarizeCount >= 6
+            ) {
+                val unsummarized = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
+                    messages.drop(lastSummaryIndex + 1)
+                } else {
+                    messages
+                }
+                val usable = smartInputBudget(model, assistant.maxTokens)
+                    ?: model.contextCapacityTokens
+                    ?: Int.MAX_VALUE
+                val oldHistory = unsummarized.dropLast(messagesToKeep.coerceAtMost(unsummarized.size))
+                val summarizableTokens = ContextTokenEstimator.messagesTokens(oldHistory, model)
+                val enoughUsefulHistory = summarizableTokens >= maxOf(1_024, (usable * 0.08).toInt())
+                val finalPlanUsage = _contextUsage.value[conversationId]
+                val pressureTokens = finalPlanUsage?.usedTokens ?: (
+                    ContextTokenEstimator.messagesTokens(unsummarized, model) +
+                        ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
+                        ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
+                    )
+                enoughUsefulHistory && pressureTokens >= (usable * 0.68).toInt()
+            } else {
+                false
+            }
+            val manualThresholdReached = !assistant.smartContextManagement &&
+                assistant.shouldAutoSummarizeMessages() &&
+                assistant.maxHistoryMessages?.let { messagesToSummarizeCount >= it } == true
+
+            if (smartThresholdReached || manualThresholdReached) {
+                Log.i(
+                    TAG,
+                    "Auto-summarization triggered by " +
+                        if (smartThresholdReached) "smart context pressure" else "manual history limit",
+                )
                 val result = summarizeAndRefresh(conversationId)
                 if (result.success) {
                     Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")
@@ -2431,11 +2666,11 @@ class ChatService(
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
             
-            // Keep the last 2 messages (user + assistant exchange) so the AI remembers what was just said
-            val messagesToKeep = 2
+            // Keep the last 4 messages (2 user + assistant exchanges) so the AI remembers what was just said
+            val messagesToKeep = 4
             val lastIndexToSummarize = (messages.size - messagesToKeep - 1).coerceAtLeast(0)
             
-            // Only get messages AFTER the last summary index, but before the last 2 messages
+            // Only get messages AFTER the last summary index, but before the last 4 messages
             val startIndex = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 (lastSummaryIndex + 1).coerceAtMost(messages.size)
             } else {
@@ -2504,14 +2739,19 @@ class ChatService(
 
             // Call the model
             val providerHandler = providerManager.getProviderByType(provider)
-            val response = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
-                params = settings.buildSummarizerGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
+            val response = try {
+                setContextManagementActivity(conversationId, ContextManagementActivity.SUMMARIZING)
+                providerHandler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = settings.buildSummarizerGenerationParams(
+                        model = model,
+                        temperature = 0.3f,
+                    )
                 )
-            )
+            } finally {
+                setContextManagementActivity(conversationId, null)
+            }
 
             val summary = response.choices.firstOrNull()?.message?.toContentText()
                 ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
@@ -2675,10 +2915,31 @@ class ChatService(
     }
 
     // 清理对话相关资源
+    private fun setContextManagementActivity(
+        conversationId: Uuid,
+        activity: ContextManagementActivity?,
+    ) {
+        val current = _contextManagementActivity.value
+        _contextManagementActivity.value = if (activity == null) {
+            current - conversationId
+        } else {
+            current + (conversationId to activity)
+        }
+    }
+
+    private fun removeContextUsage(conversationId: Uuid) {
+        val current = _contextUsage.value
+        if (current.containsKey(conversationId)) {
+            _contextUsage.value = current - conversationId
+        }
+    }
+
     fun cleanupConversation(conversationId: Uuid) {
         getGenerationJob(conversationId)?.cancel()
         removeGenerationJob(conversationId)
         removeConversationState(conversationId)
+        removeContextUsage(conversationId)
+        setContextManagementActivity(conversationId, null)
         setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 
         Log.i(
@@ -2688,22 +2949,90 @@ class ChatService(
     }
 }
 
-private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
-    return when (this) {
+internal fun List<Tool>.withUniqueToolNames(): List<Tool> {
+    val occurrences = mutableMapOf<String, Int>()
+    return map { tool ->
+        val occurrence = (occurrences[tool.name] ?: 0) + 1
+        occurrences[tool.name] = occurrence
+        if (occurrence == 1) {
+            tool
+        } else {
+            val suffix = "__${occurrence}"
+            tool.copy(name = tool.name.take((64 - suffix.length).coerceAtLeast(1)) + suffix)
+        }
+    }
+
+}
+
+private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(
+    maxLength: Int = 32_000,
+): kotlinx.serialization.json.JsonElement {
+    var remaining = maxLength.coerceAtLeast(256)
+    var omittedCharacters = 0
+    fun recordOmitted(amount: Long) {
+        omittedCharacters = (omittedCharacters.toLong() + amount.coerceAtLeast(0L))
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
+    fun compact(element: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement = when (element) {
         is kotlinx.serialization.json.JsonPrimitive -> {
-            if (this.isString) {
-                val content = this.content
-                if (content.length > maxLength) {
-                    kotlinx.serialization.json.JsonPrimitive(content.take(maxLength) + "... (truncated ${content.length - maxLength} chars)")
-                } else {
-                    this
-                }
+            val content = element.content
+            if (remaining <= 0) {
+                recordOmitted(content.length.toLong())
+                kotlinx.serialization.json.JsonPrimitive("[Additional MCP result content omitted]")
+            } else if (!element.isString || content.length <= remaining) {
+                remaining = (remaining - content.length).coerceAtLeast(0)
+                element
             } else {
-                this
+                val kept = remaining
+                remaining = 0
+                recordOmitted((content.length - kept).toLong())
+                kotlinx.serialization.json.JsonPrimitive(
+                    content.take(kept) + "... [MCP result compacted]"
+                )
             }
         }
-        is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
-        is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
+        is kotlinx.serialization.json.JsonObject -> {
+            val values = linkedMapOf<String, kotlinx.serialization.json.JsonElement>()
+            for ((key, value) in element) {
+                if (remaining <= 0) {
+                    recordOmitted(value.toString().length.toLong())
+                    values["__lastchat_context_note"] = kotlinx.serialization.json.JsonPrimitive(
+                        "Additional MCP result fields omitted"
+                    )
+                    break
+                }
+                remaining = (remaining - key.length).coerceAtLeast(0)
+                values[key] = compact(value)
+            }
+            kotlinx.serialization.json.JsonObject(values)
+        }
+        is kotlinx.serialization.json.JsonArray -> {
+            val values = mutableListOf<kotlinx.serialization.json.JsonElement>()
+            for ((index, value) in element.withIndex()) {
+                if (remaining <= 0) {
+                    recordOmitted(element.drop(index).sumOf { it.toString().length.toLong() })
+                    values += kotlinx.serialization.json.JsonPrimitive(
+                        "[${element.size - index} additional MCP result items omitted]"
+                    )
+                    break
+                }
+                values += compact(value)
+            }
+            kotlinx.serialization.json.JsonArray(values)
+        }
+    }
+
+    val compacted = compact(this)
+    return if (omittedCharacters > 0 && compacted is kotlinx.serialization.json.JsonObject) {
+        kotlinx.serialization.json.JsonObject(
+            compacted + ("__lastchat_context_note" to kotlinx.serialization.json.JsonPrimitive(
+                "$omittedCharacters characters omitted from this MCP result to protect context"
+            ))
+        )
+    } else {
+        compacted
     }
 }
 

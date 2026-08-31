@@ -13,7 +13,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -31,8 +30,6 @@ private val ExtendDarkColors = darkExtendColors()
 val LocalExtendColors = compositionLocalOf { ExtendLightColors }
 
 val LocalDarkMode = compositionLocalOf { false }
-
-private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
 
 @Serializable
 enum class ColorMode {
@@ -64,14 +61,7 @@ fun RikkahubTheme(
         else -> findPresetTheme(settings.themeId).getColorScheme(dark = false)
     }
     val colorSchemeConverted = remember(darkTheme, colorScheme) {
-        if (darkTheme) {
-            colorScheme.copy(
-                background = AMOLED_DARK_BACKGROUND,
-                surface = AMOLED_DARK_BACKGROUND,
-            )
-        } else {
-            colorScheme
-        }
+        colorScheme.withLastChatAmoledSurface(darkTheme)
     }
     val extendColors = if (darkTheme) ExtendDarkColors else ExtendLightColors
     val statusBarColor = colorSchemeConverted.background

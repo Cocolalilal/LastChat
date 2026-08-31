@@ -1,0 +1,57 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'shared/**'
+      - 'common/**'
+      - 'ai/**'
+      - 'search/**'
+      - 'tts/**'
+      - 'ui-core/**'
+      - 'iosApp/**'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Compile Kotlin iOS targets
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :ui-core:compileKotlinIosArm64 \
+            :ui-core:compileKotlinIosSimulatorArm64 \
+            :ui-core:compileKotlinIosX64 \
+            :iosApp:compileKotlinIosArm64 \
+            :iosApp:compileKotlinIosSimulatorArm64 \
+            :iosApp:compileKotlinIosX64 \
+            :iosApp:iosSimulatorArm64Test \
+            :tts:allTests \
+            :ui-core:testDebugUnitTest \
+            :shared:allTests
+
+      - name: Build simulator app
+        run: |
+          xcodebuild \
+            -project iosApp/xcode/LastChatIOS.xcodeproj \
+            -scheme LastChatIOS \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

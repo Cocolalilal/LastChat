@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="me.rerere.rikkahub.service.assist.LastChatVoiceInteractionSessionService"
+    android:recognitionService="me.rerere.rikkahub.service.assist.LastChatRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLocalInteraction="false"
+    android:supportsLaunchVoiceAssistFromKeyguard="false" />

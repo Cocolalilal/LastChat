@@ -23,6 +23,8 @@ class SecretKeyManager(
         private const val TTS_PROVIDER_APIKEY_PREFIX = "tts_provider_apikey_"
         private const val STT_PROVIDER_APIKEY_PREFIX = "stt_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
+        private const val HUGGINGFACE_TOKEN_KEY = "huggingface_token"
+        private const val MCP_OAUTH_PREFIX = "mcp_oauth_"
     }
 
     // ========== Provider API Key Management ==========
@@ -126,6 +128,41 @@ class SecretKeyManager(
         }
     }
 
+    // ========== HuggingFace Token Management ==========
+
+    fun getHuggingFaceToken(): String? {
+        return secureStore.getSecret(HUGGINGFACE_TOKEN_KEY)
+    }
+
+    fun setHuggingFaceToken(token: String) {
+        if (token.isNotBlank()) {
+            secureStore.putSecret(HUGGINGFACE_TOKEN_KEY, token)
+        } else {
+            secureStore.removeSecret(HUGGINGFACE_TOKEN_KEY)
+        }
+    }
+
+    // ========== MCP OAuth Management ==========
+
+    fun getMcpOAuthSecret(serverId: Uuid, name: String): String? {
+        return secureStore.getSecret("$MCP_OAUTH_PREFIX${serverId}_$name")
+    }
+
+    fun setMcpOAuthSecret(serverId: Uuid, name: String, value: String?) {
+        val key = "$MCP_OAUTH_PREFIX${serverId}_$name"
+        if (value.isNullOrBlank()) {
+            secureStore.removeSecret(key)
+        } else {
+            secureStore.putSecret(key, value)
+        }
+    }
+
+    fun removeMcpOAuthSecrets(serverId: Uuid) {
+        secureStore.getAllKeys()
+            .filter { it.startsWith("$MCP_OAUTH_PREFIX${serverId}_") }
+            .forEach(secureStore::removeSecret)
+    }
+
     // ========== Migration Logic ==========
 
     /**
@@ -179,6 +216,16 @@ class SecretKeyManager(
      * This should be called BEFORE migrateSecretsFromSettings() in the update flow.
      */
     fun handleExplicitSecretDeletions(oldSettings: Settings, newSettings: Settings) {
+        // Provider presets have stable IDs. If a deleted provider's secrets remain in
+        // SecureStore, adding the same preset again silently restores those credentials.
+        // Treat removal from Settings as deletion of every secret owned by that provider.
+        val newProviderIds = newSettings.providers.asSequence().map { it.id }.toHashSet()
+        oldSettings.providers
+            .asSequence()
+            .map { it.id }
+            .filterNot(newProviderIds::contains)
+            .forEach(::removeProviderSecrets)
+
         // Handle provider secrets (API keys and private keys)
         for (newProvider in newSettings.providers) {
             val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue
@@ -251,6 +298,7 @@ class SecretKeyManager(
      */
     private fun migrateProviderSecrets(provider: ProviderSetting): ProviderSetting {
         return when (provider) {
+            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> {
                 if (provider.apiKey.isNotBlank()) {
                     setApiKey(provider.id, provider.apiKey)
@@ -278,6 +326,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider // on-device, no secrets
         }
     }
 
@@ -422,6 +471,7 @@ class SecretKeyManager(
      */
     private fun populateProviderSecrets(provider: ProviderSetting): ProviderSetting {
         return when (provider) {
+            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }
@@ -437,6 +487,7 @@ class SecretKeyManager(
             }
 
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider // on-device, no secrets
         }
     }
 

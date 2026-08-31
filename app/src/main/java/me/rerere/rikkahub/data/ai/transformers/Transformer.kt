@@ -125,8 +125,25 @@ suspend fun List<UIMessage>.visualTransforms(
     context: Context,
     model: Model,
     assistant: Assistant,
+    onlyLatest: Boolean = false,
 ): List<UIMessage> {
+    if (isEmpty()) return this
     val ctx = TransformerContext(context, model, assistant)
+    if (onlyLatest) {
+        val lastIndex = this.lastIndex
+        val lastMsg = this[lastIndex]
+        val transformedLastList = transformers.fold(listOf(lastMsg)) { acc, transformer ->
+            if (transformer is OutputMessageTransformer) {
+                transformer.visualTransform(ctx, acc)
+            } else {
+                acc
+            }
+        }
+        if (transformedLastList.size == 1 && transformedLastList[0] === lastMsg) {
+            return this
+        }
+        return this.subList(0, lastIndex) + transformedLastList
+    }
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
             transformer.visualTransform(ctx, acc)

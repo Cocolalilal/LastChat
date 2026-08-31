@@ -35,7 +35,7 @@ object ExaSearchService : SearchService<SearchServiceOptions.ExaOptions> {
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.ExaOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             val body = buildJsonObject {

@@ -40,7 +40,7 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.SearXNGOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             require(serviceOptions.url.isNotBlank()) {
                 "SearXNG URL cannot be empty"
@@ -176,7 +176,11 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
     }
 
     private fun basicAuth(username: String, password: String): String {
-        val credentials = "$username:$password".toByteArray(Charsets.ISO_8859_1)
+        val credentials = "$username:$password".encodeLatin1()
         return "Basic ${Base64.Default.encode(credentials)}"
     }
+}
+
+private fun String.encodeLatin1(): ByteArray = ByteArray(length) { index ->
+    this[index].code.coerceAtMost(0xFF).toByte()
 }

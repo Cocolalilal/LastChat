@@ -108,9 +108,17 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                     )
                                         .let { buildTextDocumentPrompt(document.fileName, it) }
 
-                                    else -> buildTextDocumentPrompt(document.fileName, parser.readText(document.url))
+                                    else -> {
+                                        if (isSupportedTextDocument(document.url, document.fileName, document.mime)) {
+                                            buildTextDocumentPrompt(document.fileName, parser.readText(document.url))
+                                        } else {
+                                            null
+                                        }
+                                    }
                                 }
-                                add(0, UIMessagePart.Text(prompt))
+                                if (prompt != null) {
+                                    add(0, UIMessagePart.Text(prompt))
+                                }
                             }
                         }
                     }
@@ -159,3 +167,74 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
         """.trimIndent()
     }
 }
+
+internal const val MAX_TEXT_FILE_SIZE_BYTES = 5L * 1024 * 1024 // 5 MB
+
+internal val ARCHIVE_AND_BINARY_EXTENSIONS = setOf(
+    "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "z", "lz", "lzma", "lzh",
+    "apk", "jar", "war", "ear", "aab", "dex", "class",
+    "iso", "img", "dmg", "vmdk", "qcow2",
+    "bin", "exe", "dll", "so", "dylib", "elf", "o", "obj", "pyc", "pyo", "pyd",
+    "db", "sqlite", "sqlite3", "dat", "bak"
+)
+
+internal val EXPLICIT_BINARY_MIME_TYPES = setOf(
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-bzip2",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed",
+    "application/octet-stream",
+    "application/vnd.android.package-archive",
+    "application/x-executable",
+    "application/x-sharedlib",
+    "application/java-archive"
+)
+
+fun isArchiveOrBinaryFile(fileName: String, mime: String): Boolean {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    if (ext in ARCHIVE_AND_BINARY_EXTENSIONS) return true
+    if (mime.lowercase() in EXPLICIT_BINARY_MIME_TYPES) return true
+    return false
+}
+
+internal fun isSupportedTextDocument(
+    documentUrl: String,
+    fileName: String,
+    mime: String,
+): Boolean {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    if (ext in ARCHIVE_AND_BINARY_EXTENSIONS) return false
+    if (mime.lowercase() in EXPLICIT_BINARY_MIME_TYPES) return false
+
+    val file: java.io.File = runCatching {
+        java.io.File(java.net.URI(documentUrl))
+    }.getOrNull() ?: runCatching {
+        java.io.File(documentUrl.removePrefix("file://"))
+    }.getOrNull() ?: return false
+
+    if (!file.exists() || !file.isFile) return false
+
+    // Size limit check (max 5MB for direct text embedding into prompt)
+    if (file.length() > MAX_TEXT_FILE_SIZE_BYTES) return false
+
+    // Binary byte sample check (first 4KB for null bytes)
+    return runCatching {
+        file.inputStream().use { stream ->
+            val buffer = ByteArray(4096)
+            val read = stream.read(buffer)
+            if (read > 0) {
+                for (i in 0 until read) {
+                    if (buffer[i] == 0.toByte()) {
+                        return@use false // Null byte indicates binary file
+                    }
+                }
+            }
+            true
+        }
+    }.getOrDefault(false)
+}
+

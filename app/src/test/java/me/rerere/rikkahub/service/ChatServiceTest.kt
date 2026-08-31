@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -17,6 +18,17 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 class ChatServiceTest {
+    @Test
+    fun withUniqueToolNamesKeepsStableRoutingNamesForCollisions() {
+        val first = Tool(name = "search", description = "one", execute = { JsonPrimitive("one") })
+        val second = Tool(name = "search", description = "two", execute = { JsonPrimitive("two") })
+        val third = Tool(name = "search", description = "three", execute = { JsonPrimitive("three") })
+
+        val unique = listOf(first, second, third).withUniqueToolNames()
+
+        assertEquals(listOf("search", "search__2", "search__3"), unique.map { it.name })
+    }
+
     @Test
     fun dropDanglingAutoToolCallNodes_removesOnlyAutoToolCallsWithoutResults() {
         val autoNode = MessageNode.of(
@@ -90,6 +102,31 @@ class ChatServiceTest {
             shouldPreserveInMemoryConversation(
                 conversation = conversation,
                 persistenceMode = ChatPersistenceMode.NORMAL,
+            )
+        )
+    }
+
+    @Test
+    fun shouldPreserveInMemoryConversationKeepsMultiTurnConversations() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.assistant("Spontaneous greeting")),
+                MessageNode.of(UIMessage.user("Hello back!")),
+                MessageNode.of(UIMessage.assistant("How are you today?")),
+            ),
+        )
+
+        assertTrue(
+            shouldPreserveInMemoryConversation(
+                conversation = conversation,
+                persistenceMode = ChatPersistenceMode.NORMAL,
+            )
+        )
+        assertTrue(
+            shouldPreserveInMemoryConversation(
+                conversation = conversation,
+                persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
             )
         )
     }
@@ -460,6 +497,89 @@ class ChatServiceTest {
         assertEquals(1, updated.messageNodes[1].selectIndex)
         assertEquals(1, updated.messageNodes[2].selectIndex)
         assertFalse(updated.messageNodes.any { it.messages.isEmpty() })
+    }
+
+    @Test
+    fun currentMessagesDoNotMixNodesFromDifferentAssistantVersions() {
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("first question")),
+                MessageNode(
+                    messages = listOf(
+                        UIMessage.assistant("old first").copy(versionTag = "v1"),
+                        UIMessage.assistant("new only").copy(versionTag = "v2"),
+                    ),
+                    selectIndex = 1,
+                ),
+                MessageNode.of(UIMessage.assistant("old second").copy(versionTag = "v1")),
+                MessageNode.of(UIMessage.user("later question")),
+                MessageNode.of(UIMessage.assistant("later answer")),
+            ),
+        )
+
+        assertEquals(
+            listOf("first question", "new only", "later question", "later answer"),
+            conversation.currentMessages.map { it.toContentText() },
+        )
+
+        val streamedUpdate = conversation.updateCurrentMessages(
+            conversation.currentMessages + UIMessage.assistant("new tail"),
+        )
+        assertTrue(streamedUpdate.messageNodes[2].messages.any { it.toContentText() == "old second" })
+        assertEquals(
+            listOf("first question", "new only", "later question", "later answer", "new tail"),
+            streamedUpdate.currentMessages.map { it.toContentText() },
+        )
+    }
+
+    @Test
+    fun regeneratedTurnMergePreservesOldReplyAndLaterTurns() {
+        val firstAssistantId = Uuid.random()
+        val laterUserId = Uuid.random()
+        val conversation = Conversation.ofId(
+            id = Uuid.random(),
+            messages = listOf(
+                MessageNode.of(UIMessage.user("question")),
+                MessageNode(
+                    id = firstAssistantId,
+                    messages = listOf(
+                        UIMessage.assistant("old first").copy(versionTag = "v1"),
+                        UIMessage.assistant("").copy(versionTag = "v2"),
+                    ),
+                    selectIndex = 1,
+                ),
+                MessageNode.of(UIMessage.assistant("old second").copy(versionTag = "v1")),
+                MessageNode(id = laterUserId, messages = listOf(UIMessage.user("later"))),
+                MessageNode.of(UIMessage.assistant("later answer")),
+            ),
+        )
+
+        val merged = mergeRegeneratedAssistantTurn(
+            conversation = conversation,
+            turnStartIndex = 1,
+            versionTag = "v2",
+            generatedMessages = listOf(
+                UIMessage.assistant("new first"),
+                UIMessage.assistant("new second"),
+                UIMessage.assistant("new third"),
+            ),
+        )
+
+        assertEquals(6, merged.messageNodes.size)
+        assertEquals(laterUserId, merged.messageNodes[4].id)
+        assertTrue(merged.messageNodes[1].messages.any { it.toContentText() == "old first" })
+        assertTrue(merged.messageNodes[2].messages.any { it.toContentText() == "old second" })
+        assertEquals(
+            listOf("question", "new first", "new second", "new third", "later", "later answer"),
+            merged.currentMessages.map { it.toContentText() },
+        )
+
+        val switchedBack = selectConversationTurnVersion(merged, firstAssistantId, 0)
+        assertEquals(
+            listOf("question", "old first", "old second", "later", "later answer"),
+            switchedBack.currentMessages.map { it.toContentText() },
+        )
     }
 
     @Test

@@ -268,12 +268,12 @@ class SpontaneousWorker(
             } else {
                 val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
                 memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
-                    .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                    .map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
             }
         } else {
             val limit = (if (assistant.ragLimit > 50) 9999 else assistant.ragLimit).coerceAtMost(100)
             memoryRepository.getMemoryEntitiesOfAssistantLimited(assistantId, limit)
-                .map { AssistantMemory(it.id, it.content, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                .map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
         }
 
         val episodicMemories = if (conversation == null && retrievedMemories.size < 5) {
@@ -284,7 +284,7 @@ class SpontaneousWorker(
                         id = -episode.id,
                         content = episode.content,
                         type = 1,
-                        hasEmbedding = episode.embedding != null,
+                        hasEmbedding = !episode.embedding.isNullOrBlank() || episode.embeddingBlob != null,
                         embeddingModelId = episode.embeddingModelId,
                         timestamp = episode.startTime,
                         significance = episode.significance,

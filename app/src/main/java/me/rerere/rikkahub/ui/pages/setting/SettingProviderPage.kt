@@ -72,11 +72,13 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewList
@@ -102,6 +104,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.isSystemInDarkTheme
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -199,10 +202,13 @@ fun SettingProviderPage(
     
     var showSearchCommonOptions by remember { mutableStateOf(false) }
     var showTtsFilterSettings by remember { mutableStateOf(false) }
-    val providerPresets = remember(catalogSnapshot) {
+    val providerPresets = remember(catalogSnapshot, settings.providers) {
         (catalogSnapshot?.toProviderPresets()?.takeIf { it.isNotEmpty() }
             ?: FALLBACK_PROVIDER_PRESETS
-        ).withSpecialProviderPresets()
+        ).withSpecialProviderPresets().filterNot { preset ->
+            preset.type == ProviderSetting.LiteRtLocal::class &&
+                settings.providers.any { it is ProviderSetting.LiteRtLocal }
+        }
     }
     
     // Search query state
@@ -239,15 +245,24 @@ fun SettingProviderPage(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val httpClient = koinInject<PlatformHttpClient>()
     fun addProvider(provider: ProviderSetting) {
+        if (provider is ProviderSetting.LiteRtLocal && settings.providers.any { it is ProviderSetting.LiteRtLocal }) {
+            navController.navigate(Screen.SettingLocalLlm)
+            return
+        }
         val providerToAdd = provider.withUniqueId(settings.providers)
         vm.updateSettings(
             settings.copy(
                 providers = listOf(providerToAdd) + settings.providers
-            )
+            ),
+            afterPersist = if (providerToAdd is ProviderSetting.LiteRtLocal) {
+                { navController.navigate(Screen.SettingLocalLlm) }
+            } else {
+                null
+            },
         )
         
         // Asynchronously check if we can query LobeHub for a monochrome icon
-        if (providerToAdd.customIconUri.isNullOrBlank()) {
+        if (providerToAdd !is ProviderSetting.LiteRtLocal && providerToAdd.customIconUri.isNullOrBlank()) {
             val providerName = providerToAdd.name
             val hasLocalIcon = computeAIIconByName(providerName) != null || 
                     getProviderSlugFromName(providerName) != null
@@ -416,7 +431,11 @@ fun SettingProviderPage(
                 contentPadding = PaddingValues(bottom = innerPadding.calculateBottomPadding()),
                 searchQuery = searchQuery,
                 onNavigateToDetail = { provider ->
-                    navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
+                    if (provider is ProviderSetting.LiteRtLocal) {
+                        navController.navigate(Screen.SettingLocalLlm)
+                    } else {
+                        navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
+                    }
                 },
                 onDeleteRequest = { provider ->
                     providerToDelete = provider
@@ -615,7 +634,7 @@ private fun ProviderListView(
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
-    
+
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val fromProvider = providers.getOrNull(from.index)
         val toProvider = providers.getOrNull(to.index)
@@ -653,8 +672,52 @@ private fun ProviderListView(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState,
         ) {
+            // Show empty state when no providers at all
+            if (providers.isEmpty() && matchingPreset == null) {
+                item(key = "empty") {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Cloud,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_provider_page_empty_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_provider_page_empty_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             // Show preset suggestion if no providers match but preset exists
-            if (matchingPreset != null) {
+            else if (matchingPreset != null) {
                 item {
                     Column(
                         modifier = Modifier
@@ -678,7 +741,7 @@ private fun ProviderListView(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        color = if (isSystemInDarkTheme()) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Row(
                             modifier = Modifier
@@ -687,15 +750,26 @@ private fun ProviderListView(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AutoAIIconWithUrl(
-                                name = matchingPreset.name,
-                                customIconUri = matchingPreset.customIconUri,
-                                modifier = Modifier.size(40.dp)
-                            )
+                            if (matchingPreset.type == ProviderSetting.LiteRtLocal::class) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PhoneAndroid,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            } else {
+                                AutoAIIconWithUrl(
+                                    name = matchingPreset.name,
+                                    customIconUri = matchingPreset.customIconUri,
+                                    modifier = Modifier.size(40.dp),
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = matchingPreset.name,
-                                    style = MaterialTheme.typography.titleMedium
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
                                     text = matchingPreset.description,
@@ -1371,6 +1445,12 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                     }
                 }
+                val localPreset = filteredPresets.firstOrNull {
+                    it.type == ProviderSetting.LiteRtLocal::class
+                }
+                val remotePresets = filteredPresets.filterNot {
+                    it.type == ProviderSetting.LiteRtLocal::class
+                }
                 
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
@@ -1397,7 +1477,49 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = PaddingValues(bottom = 16.dp)
                     ) {
-                    // Add Custom Provider card at the top
+                    // The on-device option is deliberately first and opens its dedicated manager.
+                    localPreset?.let { preset ->
+                        item {
+                            Surface(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onAdd(preset.toProviderSetting())
+                                    showBottomSheet = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PhoneAndroid,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = preset.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            text = preset.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+
+                    // Custom remote provider setup follows the dedicated local option.
                     item {
                         Card(
                             onClick = {
@@ -1430,11 +1552,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
-                                    Text(
-                                        text = stringResource(R.string.setting_provider_page_add_custom_provider_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                    )
                                 }
                             }
                         }
@@ -1442,11 +1559,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     }
                     
                     // Provider presets
-                    itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
+                    itemsIndexed(remotePresets, key = { _, preset -> preset.name }) { index, preset ->
                         val position = when {
-                            filteredPresets.size == 1 -> ItemPosition.ONLY
+                            remotePresets.size == 1 -> ItemPosition.ONLY
                             index == 0 -> ItemPosition.FIRST
-                            index == filteredPresets.lastIndex -> ItemPosition.LAST
+                            index == remotePresets.lastIndex -> ItemPosition.LAST
                             else -> ItemPosition.MIDDLE
                         }
                         
@@ -1466,7 +1583,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = shape,
-                            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1478,12 +1595,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 AutoAIIconWithUrl(
                                     name = preset.name,
                                     customIconUri = preset.customIconUri,
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(40.dp),
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = preset.name,
-                                        style = MaterialTheme.typography.titleMedium
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
                                         text = preset.description,
@@ -1564,11 +1683,10 @@ private fun ProviderItemContent(
     else 
         MaterialTheme.colorScheme.surfaceContainerHigh
     
-    // Disabled cards: transparent background (black in dark mode) with outline
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        Color.Black 
+        androidx.compose.ui.graphics.Color.Black 
     else 
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.surfaceContainerHighest
     
     Row(
         modifier = Modifier

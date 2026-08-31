@@ -5,10 +5,14 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
@@ -19,6 +23,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderPresets
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
+import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.search.SearchServiceOptions
 import kotlin.uuid.Uuid
 
@@ -28,19 +33,98 @@ class OnboardingVM(
     private val modelCatalogService: ModelCatalogService,
     private val modelMetadataResolver: ModelMetadataResolver,
 ) : ViewModel() {
+    private var localProviderBeforeSetup: ProviderSetting.LiteRtLocal? = null
+
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
 
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
     fun providerPresets(snapshot: ModelCatalogSnapshot?): List<ProviderPreset> {
-        return snapshot?.toProviderPresets() ?: emptyList()
+        return (snapshot?.toProviderPresets() ?: emptyList())
+            .withSpecialProviderPresets()
+            .filterNot { it.type == ProviderSetting.ComfyUI::class }
     }
 
     fun skipSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 settingsStore.update(settings.value.copy(setupCompleted = true))
+            }
+            onDone()
+        }
+    }
+
+    fun beginLocalSetup(provider: ProviderSetting.LiteRtLocal, onReady: () -> Unit) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val current = settings.value
+                localProviderBeforeSetup = current.providers
+                    .filterIsInstance<ProviderSetting.LiteRtLocal>()
+                    .firstOrNull()
+                val localProvider = localProviderBeforeSetup ?: provider
+                settingsStore.update(
+                    current.copy(
+                        providers = listOf(localProvider) +
+                            current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
+                    )
+                )
+            }
+            onReady()
+        }
+    }
+
+    fun cancelLocalSetup(onDone: () -> Unit) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val current = settings.value
+                val restoredLocalProvider = localProviderBeforeSetup
+                settingsStore.update(
+                    current.copy(
+                        providers = listOfNotNull(restoredLocalProvider) +
+                            current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
+                    )
+                )
+                localProviderBeforeSetup = null
+            }
+            onDone()
+        }
+    }
+
+    fun completeLocalSetup(onDone: () -> Unit) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val syncedSettings = withTimeoutOrNull(5_000) {
+                    settingsStore.settingsFlow.first { current ->
+                        current.providers
+                            .filterIsInstance<ProviderSetting.LiteRtLocal>()
+                            .firstOrNull()
+                            ?.models
+                            ?.any { it.type == ModelType.CHAT } == true
+                    }
+                } ?: settingsStore.settingsFlow.value
+                val localProvider = syncedSettings.providers
+                    .filterIsInstance<ProviderSetting.LiteRtLocal>()
+                    .firstOrNull()
+                val chatModel = localProvider?.models?.firstOrNull { it.type == ModelType.CHAT }
+                val visionModel = localProvider?.models?.firstOrNull {
+                    it.type == ModelType.CHAT && Modality.IMAGE in it.inputModalities
+                }
+                val embeddingModel = localProvider?.models?.firstOrNull {
+                    it.type == ModelType.EMBEDDING
+                }
+
+                settingsStore.update(
+                    syncedSettings.copy(
+                        setupCompleted = true,
+                        chatModelId = chatModel?.id ?: syncedSettings.chatModelId,
+                        titleModelId = chatModel?.id ?: syncedSettings.titleModelId,
+                        summarizerModelId = chatModel?.id ?: syncedSettings.summarizerModelId,
+                        ocrModelId = visionModel?.id ?: syncedSettings.ocrModelId,
+                        embeddingModelId = embeddingModel?.id ?: syncedSettings.embeddingModelId,
+                    )
+                )
+                localProviderBeforeSetup = null
             }
             onDone()
         }
@@ -75,7 +159,10 @@ class OnboardingVM(
     ) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val configuredProvider = provider.copyProvider(models = selectedModels)
+                val configuredProvider = provider.copyProvider(
+                    enabled = true,
+                    models = selectedModels,
+                )
                 val current = settings.value
                 val nextSettings = current.copy(
                     setupCompleted = true,
@@ -102,10 +189,12 @@ class OnboardingVM(
 
     fun providerWithKey(provider: ProviderSetting, apiKey: String): ProviderSetting {
         return when (provider) {
+            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Google -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Claude -> provider.copy(apiKey = apiKey)
             is ProviderSetting.ComfyUI -> provider
+            is ProviderSetting.LiteRtLocal -> provider
         }
     }
 

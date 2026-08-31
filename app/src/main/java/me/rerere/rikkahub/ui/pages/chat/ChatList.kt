@@ -93,6 +93,7 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
@@ -125,6 +126,7 @@ import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.resolveBidiDirection
+import me.rerere.rikkahub.utils.navigateToChatPage
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.style.TextDirection
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
@@ -340,13 +342,31 @@ private fun SharedTransitionScope.ChatListNormal(
     val context = LocalContext.current
     val navController = LocalNavController.current
 
+    var scrollJob: Job? by remember { mutableStateOf(null) }
+    var hasPendingStreamingSnap by remember { mutableStateOf(false) }
+
     suspend fun snapToStreamingBottom() {
-        val targetIndex = (state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-        if (targetIndex <= 0) return
+        val totalCount = state.layoutInfo.totalItemsCount
+        if (totalCount <= 0) return
+        val targetIndex = totalCount - 1
         try {
             state.scrollToItem(targetIndex)
-        } catch (_: IllegalStateException) {
+        } catch (_: Exception) {
             // The lazy list can be between measure passes while a streaming turn morphs.
+        }
+    }
+
+    fun requestSnapToStreamingBottom() {
+        if (scrollJob?.isActive == true) {
+            hasPendingStreamingSnap = true
+            return
+        }
+        scrollJob = scope.launch {
+            do {
+                hasPendingStreamingSnap = false
+                snapToStreamingBottom()
+                delay(64)
+            } while (hasPendingStreamingSnap)
         }
     }
 
@@ -471,8 +491,8 @@ private fun SharedTransitionScope.ChatListNormal(
                     loading = loadingState
                 )
             }.collect {
-                if (loadingState && followStreamingBottom) {
-                    snapToStreamingBottom()
+                if (loadingState && followStreamingBottom && !state.isScrollInProgress) {
+                    requestSnapToStreamingBottom()
                 }
             }
         }
@@ -652,9 +672,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
                                     {
                                         if (followStreamingBottom && !state.isScrollInProgress) {
-                                            scope.launch {
-                                                snapToStreamingBottom()
-                                            }
+                                            requestSnapToStreamingBottom()
                                         }
                                     }
                                 } else {
@@ -663,9 +681,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 modifier = if (loading && isLastTurn) {
                                     Modifier.onSizeChanged {
                                         if (followStreamingBottom && !state.isScrollInProgress) {
-                                            scope.launch {
-                                                snapToStreamingBottom()
-                                            }
+                                            requestSnapToStreamingBottom()
                                         }
                                     }
                                 } else {
@@ -847,7 +863,7 @@ private fun SharedTransitionScope.ChatListPreview(
         // 消息预览
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 120.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 64.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .lastChatBlurSource()

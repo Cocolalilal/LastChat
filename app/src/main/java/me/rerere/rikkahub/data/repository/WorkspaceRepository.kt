@@ -118,7 +118,7 @@ class WorkspaceRepository(
             runInterruptible(Dispatchers.IO) {
                 rootfsInstaller.install(workspace.root, url, onProgress)
                 onProgress(RootfsInstallProgress(stage = RootfsInstallStage.CONFIGURING))
-                bootstrapRootfs(workspace.root)
+                smokeTestRootfs(workspace.root)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
             return true
@@ -213,17 +213,6 @@ class WorkspaceRepository(
         return deleted
     }
 
-    suspend fun moveFile(
-        id: String,
-        source: String,
-        target: String,
-        overwrite: Boolean,
-    ): WorkspaceFileEntry = withContext(Dispatchers.IO) {
-        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        manager.ensureWorkspace(workspace.root)
-        manager.moveFile(workspace.root, source, target, overwrite)
-    }
-
     suspend fun executeCommand(
         id: String,
         command: String,
@@ -287,7 +276,7 @@ class WorkspaceRepository(
         )
     }
 
-    private fun bootstrapRootfs(root: String) {
+    private fun smokeTestRootfs(root: String) {
         val smoke = manager.executeCommand(
             root = root,
             command = "printf '%s' workspace-ready && test -d /workspace",
@@ -296,7 +285,9 @@ class WorkspaceRepository(
         require(smoke.exitCode == 0 && !smoke.timedOut && !smoke.isFatalProotFailure()) {
             "Rootfs smoke test failed: ${smoke.failureText()}"
         }
+    }
 
+    private fun installPythonInternal(root: String) {
         val python = manager.executeCommand(
             root = root,
             command = PYTHON_BOOTSTRAP_COMMAND,
@@ -307,20 +298,44 @@ class WorkspaceRepository(
         }
     }
 
+    suspend fun installPython(id: String): Boolean {
+        val workspace = dao.getById(id) ?: return false
+        runInterruptible(Dispatchers.IO) {
+            installPythonInternal(workspace.root)
+        }
+        return true
+    }
+
+    suspend fun isPythonInstalled(id: String): Boolean {
+        val workspace = dao.getById(id) ?: return false
+        if (!manager.hasRootfs(workspace.root)) return false
+        return runInterruptible(Dispatchers.IO) {
+            val result = manager.executeCommand(
+                root = workspace.root,
+                command = "command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1",
+                timeoutMillis = PYTHON_STATUS_TIMEOUT_MS,
+            )
+            result.exitCode == 0 && !result.timedOut && !result.isFatalProotFailure()
+        }
+    }
+
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val ROOTFS_SMOKE_TIMEOUT_MS = 30_000L
+        private const val PYTHON_STATUS_TIMEOUT_MS = 10_000L
         private const val PYTHON_BOOTSTRAP_TIMEOUT_MS = 10 * 60_000L
         private val PYTHON_BOOTSTRAP_COMMAND = """
             set -e
-            export DEBIAN_FRONTEND=noninteractive
-            if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
-              python3 --version
-              python3 -m pip --version
-              exit 0
+            if command -v apt-get >/dev/null 2>&1; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates python3 python3-pip
+            elif command -v apk >/dev/null 2>&1; then
+              apk add --no-cache ca-certificates python3 py3-pip
+            else
+              echo "Unsupported rootfs package manager: expected apt-get or apk" >&2
+              exit 1
             fi
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates python3 python3-pip
             python3 --version
             python3 -m pip --version
         """.trimIndent()

@@ -72,7 +72,9 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerItem
+import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerTag
+import me.rerere.rikkahub.ui.components.ai.LastChatAssistantPickerSheet
 import kotlin.uuid.Uuid
 
 @Composable
@@ -143,264 +145,54 @@ fun AssistantPickerSheet(
     settings: Settings,
     currentAssistant: Assistant,
     onAssistantSelected: (Assistant) -> Unit,
-    onNavigate: (Assistant) -> Unit = {},  // Called after animation completes
-    onDismiss: () -> Unit
+    onNavigate: (Assistant) -> Unit = {},
+    onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
+    val navController = LocalNavController.current
+    val haptics = rememberPremiumHaptics()
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
-
-    // 标签过滤状态
-    var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
-    
-    // Transition state - which assistant is being switched to (null = not transitioning)
-    var transitioningAssistantId by remember { mutableStateOf<Uuid?>(null) }
-    val isTransitioning = transitioningAssistantId != null
-
-    // 根据选中的标签过滤助手
-    val filteredAssistants = remember(settings.assistants, selectedTagIds) {
-        if (selectedTagIds.isEmpty()) {
-            settings.assistants
-        } else {
-            settings.assistants.filter { assistant ->
-                assistant.tags.containsAll(selectedTagIds)
-            }
+    val noSystemPromptLabel = stringResource(R.string.assistant_page_no_system_prompt)
+    val assistantsById = remember(settings.assistants) {
+        settings.assistants.associateBy { it.id.toString() }
+    }
+    val pickerItems = remember(settings.assistants, defaultAssistantName) {
+        settings.assistants.map { assistant ->
+            LastChatAssistantPickerItem(
+                id = assistant.id.toString(),
+                name = assistant.name.ifEmpty { defaultAssistantName },
+                systemPrompt = assistant.systemPrompt,
+                tagIds = assistant.tags.mapTo(linkedSetOf()) { it.toString() },
+            )
         }
     }
-
-    val isDarkMode = LocalDarkMode.current
-    val haptics = rememberPremiumHaptics()
-    
-    // State to lock the sheet height to its initial size to prevent jumping animations
-    var sheetHeight by remember { mutableStateOf(0.dp) }
-    val density = LocalDensity.current
-    var handleDragAmount by remember { mutableStateOf(0f) }
-    val handleDismissThreshold = with(density) { 48.dp.toPx() }
-
-    ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = false,
-        dragHandle = {
-            IconButton(
-                modifier = Modifier.pointerInput(handleDismissThreshold) {
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            handleDragAmount = 0f
-                        },
-                        onDragEnd = {
-                            if (handleDragAmount > handleDismissThreshold) {
-                                haptics.perform(HapticPattern.Thud)
-                                scope.launch {
-                                    sheetState.hide()
-                                    onDismiss()
-                                }
-                            }
-                            handleDragAmount = 0f
-                        },
-                        onDragCancel = {
-                            handleDragAmount = 0f
-                        },
-                        onVerticalDrag = { _, dragAmount ->
-                            if (dragAmount > 0f) {
-                                handleDragAmount += dragAmount
-                            }
-                        }
-                    )
-                },
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    scope.launch {
-                        sheetState.hide()
-                        onDismiss()
-                    }
-                }
-            ) {
-                Icon(Icons.Rounded.KeyboardArrowDown, null)
+    val pickerTags = remember(settings.assistantTags) {
+        settings.assistantTags.map { tag ->
+            LastChatAssistantPickerTag(id = tag.id.toString(), name = tag.name)
+        }
+    }
+    LastChatAssistantPickerSheet(
+        assistants = pickerItems,
+        currentAssistantId = currentAssistant.id.toString(),
+        title = stringResource(R.string.assistant_page_title),
+        noSystemPromptLabel = noSystemPromptLabel,
+        tags = pickerTags,
+        onAssistantSelected = { id -> assistantsById[id]?.let(onAssistantSelected) },
+        onNavigate = { id -> assistantsById[id]?.let(onNavigate) },
+        onEdit = { id -> navController.navigate(Screen.AssistantDetail(id)) },
+        onDismiss = onDismiss,
+        onPopHaptic = { haptics.perform(HapticPattern.Pop) },
+        onThudHaptic = { haptics.perform(HapticPattern.Thud) },
+        avatar = { item, modifier ->
+            val assistant = assistantsById[item.id]
+            if (assistant != null) {
+                UIAvatar(
+                    name = item.name,
+                    value = assistant.avatar,
+                    modifier = modifier,
+                )
             }
         },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-                .then(
-                    if (sheetHeight > 0.dp) Modifier.heightIn(min = sheetHeight) else Modifier
-                )
-                .onSizeChanged {
-                    if (sheetHeight == 0.dp) {
-                        sheetHeight = with(density) { it.height.toDp() }
-                    }
-                },
-        ) {
-            Text(
-                text = stringResource(R.string.assistant_page_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            // 标签过滤器
-            if (settings.assistantTags.isNotEmpty()) {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
-                ) {
-                    items(settings.assistantTags, key = { tag -> tag.id }) { tag ->
-                        FilterChip(
-                            modifier = Modifier.animateItem(),
-                            onClick = {
-                                selectedTagIds = if (tag.id in selectedTagIds) {
-                                    selectedTagIds - tag.id
-                                } else {
-                                    selectedTagIds + tag.id
-                                }
-                            },
-                            label = { Text(tag.name) },
-                            selected = tag.id in selectedTagIds,
-                            shape = RoundedCornerShape(50),
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // 助手列表
-            val navController = LocalNavController.current
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f, fill = false),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                itemsIndexed(filteredAssistants, key = { _, item -> item.id }) { index, assistant ->
-                    val checked = assistant.id == currentAssistant.id
-                    
-                    // Determine position in the list for corner rounding
-                    val position = when {
-                        filteredAssistants.size == 1 -> "ONLY"
-                        index == 0 -> "FIRST"
-                        index == filteredAssistants.lastIndex -> "LAST"
-                        else -> "MIDDLE"
-                    }
-                    
-                    // Animated corner radius - selected items animate to fully round
-                    val topCorner by animateDpAsState(
-                        targetValue = if (checked) 50.dp else when (position) {
-                            "ONLY", "FIRST" -> 24.dp
-                            else -> 10.dp
-                        },
-                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-                        label = "topCorner"
-                    )
-                    val bottomCorner by animateDpAsState(
-                        targetValue = if (checked) 50.dp else when (position) {
-                            "ONLY", "LAST" -> 24.dp
-                            else -> 10.dp
-                        },
-                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-                        label = "bottomCorner"
-                    )
-                    
-                    val shape = RoundedCornerShape(
-                        topStart = topCorner, topEnd = topCorner,
-                        bottomStart = bottomCorner, bottomEnd = bottomCorner
-                    )
-                    
-                    // Use Row+clip+background pattern like ReasoningPicker
-                    Row(
-                        modifier = Modifier
-                            .animateItem()
-                            .fillMaxWidth()
-                            .clip(shape)
-                            .background(
-                                color = if (checked) MaterialTheme.colorScheme.primaryContainer 
-                                       else if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                            )
-                            .clickable(enabled = !isTransitioning) {
-                                if (!checked) {
-                                    haptics.perform(HapticPattern.Pop)
-                                    transitioningAssistantId = assistant.id
-                                    // Update settings immediately
-                                    onAssistantSelected(assistant)
-                                    // Close panels then navigate
-                                    scope.launch {
-                                        transitioningAssistantId = null
-                                        sheetState.hide() // Animate sheet close
-                                        onNavigate(assistant) // drawer close + navigate
-                                    }
-                                }
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        UIAvatar(
-                            name = assistant.name.ifEmpty { defaultAssistantName },
-                            value = assistant.avatar,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = assistant.name.ifEmpty { defaultAssistantName },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = assistant.systemPrompt.ifBlank { stringResource(R.string.assistant_page_no_system_prompt) },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (checked) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        // Crossfade between edit icon and loading spinner
-                        val showSpinner = transitioningAssistantId == assistant.id
-                        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                            Crossfade(
-                                targetState = showSpinner,
-                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-                                label = "edit_spinner"
-                            ) { transitioning ->
-                                if (transitioning) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp,
-                                        color = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                } else {
-                                    IconButton(
-                                        onClick = {
-                                            if (!isTransitioning) {
-                                                scope.launch {
-                                                    sheetState.hide()
-                                                    onDismiss()
-                                                    navController.navigate(Screen.AssistantDetail(assistant.id.toString()))
-                                                }
-                                            }
-                                        },
-                                        enabled = !isTransitioning
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Edit,
-                                            contentDescription = null,
-                                            tint = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    )
 }
 
 @Composable

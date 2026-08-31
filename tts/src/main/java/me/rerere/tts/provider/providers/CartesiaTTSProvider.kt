@@ -1,9 +1,14 @@
 package me.rerere.tts.provider.providers
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
+import me.rerere.common.http.jsonArrayOrNull
+import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
@@ -13,8 +18,6 @@ import me.rerere.tts.model.TTSModelInfo
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
-import org.json.JSONArray
-import org.json.JSONObject
 
 private const val TAG = "CartesiaTTSProvider"
 
@@ -28,7 +31,7 @@ class CartesiaTTSProvider(
         providerSetting: TTSProviderSetting.Cartesia,
         request: TTSRequest
     ): Flow<AudioChunk> = flow {
-        val outputFormat = JSONObject().apply {
+        val outputFormat = buildJsonObject {
             put("container", providerSetting.outputFormat)
             if (providerSetting.outputFormat == "mp3") {
                 put("sample_rate", 44100)
@@ -39,17 +42,17 @@ class CartesiaTTSProvider(
             }
         }
 
-        val requestBody = JSONObject().apply {
+        val requestBody = buildJsonObject {
             put("model_id", providerSetting.modelId)
             put("transcript", request.text)
-            put("voice", JSONObject().apply {
+            put("voice", buildJsonObject {
                 put("mode", "id")
                 put("id", providerSetting.voiceId)
             })
             put("language", providerSetting.language)
             put("output_format", outputFormat)
-            put("generation_config", JSONObject().apply {
-                put("speed", providerSetting.speed.toDouble())
+            put("generation_config", buildJsonObject {
+                put("speed", providerSetting.speed.toTtsJsonNumber())
                 put("emotion", providerSetting.emotion)
             })
         }
@@ -110,7 +113,7 @@ class CartesiaTTSProvider(
 
     suspend fun listVoices(
         providerSetting: TTSProviderSetting.Cartesia
-    ): List<TTSModelInfo> = withContext(Dispatchers.IO) {
+    ): List<TTSModelInfo> = withContext(me.rerere.tts.provider.ttsIoDispatcher) {
         if (providerSetting.apiKey.isBlank()) return@withContext emptyList()
         runCatching {
             val response = httpClient.execute(
@@ -131,19 +134,17 @@ class CartesiaTTSProvider(
                 return@withContext emptyList()
             }
             val body = response.body.decodeToString()
-            val data = JSONObject(body).optJSONArray("data") as? JSONArray
-            data?.let { arr ->
-                buildList {
-                    for (i in 0 until arr.length()) {
-                        val item = arr.optJSONObject(i) ?: continue
-                        val id = item.optString("id", "")
-                        val name = item.optString("name", id)
-                        if (id.isNotBlank()) {
-                            add(TTSModelInfo(id = id, displayName = name))
-                        }
-                    }
+            ttsJson.parseToJsonElement(body)
+                .jsonObjectOrNull
+                ?.get("data")
+                ?.jsonArrayOrNull
+                .orEmpty()
+                .mapNotNull { element ->
+                    val item = element.jsonObjectOrNull ?: return@mapNotNull null
+                    val id = item["id"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
+                    val name = item["name"]?.jsonPrimitiveOrNull?.contentOrNull.orEmpty().ifBlank { id }
+                    id.takeIf(String::isNotBlank)?.let { TTSModelInfo(id = it, displayName = name) }
                 }
-            } ?: emptyList()
         }.getOrElse { e ->
             PlatformLog.e(TAG, "listVoices error: ${e.message}")
             emptyList()

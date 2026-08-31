@@ -29,43 +29,43 @@ object UnsupportedFileTransformer : InputMessageTransformer {
         val modelSupportsImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         return messages.map { msg ->
-            if (msg.role == me.rerere.ai.core.MessageRole.USER) {
-                msg.copy(parts = msg.parts.map { part ->
-                    when (part) {
-                        is UIMessagePart.Document -> {
-                            // Supported native types (Images/Video/Audio/Text/PDF)
-                            val isNative = part.mime.startsWith("image/") ||
-                                part.mime.startsWith("text/") ||
-                                part.mime.startsWith("video/") ||
-                                part.mime.startsWith("audio/") ||
-                                part.mime == "application/pdf"
+            msg.copy(parts = msg.parts.map { part ->
+                when (part) {
+                    is UIMessagePart.Document -> {
+                        // Supported native types (Images/Video/Audio/Text/PDF)
+                        val isNative = part.mime.startsWith("image/") ||
+                            part.mime.startsWith("text/") ||
+                            part.mime.startsWith("video/") ||
+                            part.mime.startsWith("audio/") ||
+                            part.mime == "application/pdf"
 
-                            if (!isNative && isWorkspaceEnabled) {
+                        if (!isNative) {
+                            if (isWorkspaceEnabled) {
                                 UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - The bound Linux workspace can process this file. Use workspace_shell or workspace_read_file with the original URL/content as needed. URL: ${part.url}]\n")
                             } else {
-                                part
+                                UIMessagePart.Text("\n[Attachment: ${part.fileName} (${part.mime}) - This file format cannot be processed directly by the model. A Linux workspace must be bound to this assistant to extract or process archive and binary files.]\n")
                             }
+                        } else {
+                            part
                         }
-                        is UIMessagePart.Image -> {
-                            if (!modelSupportsImages) {
-                                val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
-                                UIMessagePart.Text(
-                                    buildResidualImageFallbackText(
-                                        fileName = filename,
-                                        sourceUrl = part.url,
-                                        workspaceEnabled = isWorkspaceEnabled,
-                                    )
-                                )
-                            } else {
-                                part
-                            }
-                        }
-                        else -> part
                     }
-                })
-            } else {
-                msg
-            }
+                    is UIMessagePart.Image -> {
+                        if (!modelSupportsImages) {
+                            val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
+                            UIMessagePart.Text(
+                                buildResidualImageFallbackText(
+                                    fileName = filename,
+                                    sourceUrl = part.url,
+                                    workspaceEnabled = isWorkspaceEnabled,
+                                )
+                            )
+                        } else {
+                            part
+                        }
+                    }
+                    else -> part
+                }
+            })
         }
     }
 }

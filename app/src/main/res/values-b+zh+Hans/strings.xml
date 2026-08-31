@@ -7,7 +7,6 @@
   <string name="about_page_version">版本</string>
   <string name="about_page_website">官网</string>
   <string name="add">添加</string>
-  <string name="app_name">LastChat</string>
   <string name="assistant_importer_import_failed">导入失败</string>
   <string name="assistant_importer_import_character">导入角色卡</string>
   <string name="assistant_importer_import_tavern_json">导入酒馆角色卡 (JSON)</string>
@@ -65,6 +64,8 @@
   <string name="assistant_page_local_tools_tts_desc">让助手使用您选择的 TTS 提供商大声朗读文本</string>
   <string name="assistant_page_local_tools_character_questions_title">性格问题</string>
   <string name="assistant_page_local_tools_character_questions_desc">让角色提出澄清问题。</string>
+  <string name="workspace_required_card_title">处理 %1$s 需要绑定 Linux 工作区</string>
+  <string name="workspace_required_card_description">压缩包和二进制文件需要绑定 Linux 工作区才能解压、查看或处理。</string>
   <string name="assistant_page_local_tools_python_internet_title">允许互联网访问</string>
   <string name="assistant_page_local_tools_python_internet_desc">允许 Python 代码发出网络请求</string>
   <string name="assistant_page_manage_memory">管理记忆 (%d条)</string>

@@ -159,29 +159,20 @@ fun ColumnScope.ChatMessageActionButtons(
             val tts = LocalTTSState.current
             val isSpeaking by tts.isSpeaking.collectAsState()
             val isAvailable by tts.isAvailable.collectAsState()
-            Icon(
-                imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
+            LastChatTtsAction(
+                isSpeaking = isSpeaking,
+                isAvailable = isAvailable,
                 contentDescription = stringResource(R.string.tts),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(
-                        enabled = isAvailable,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = LocalIndication.current,
-                        onClick = {
-                            if (!isSpeaking) {
-                                tts.speak(
-                                    text = message.toContentText(),
-                                    overrideSetting = ttsProviderOverride,
-                                )
-                            } else {
-                                tts.stop()
-                            }
-                        }
-                    )
-                    .padding(8.dp)
-                    .size(16.dp),
-                tint = if (isAvailable) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+                onClick = {
+                    if (!isSpeaking) {
+                        tts.speak(
+                            text = message.toContentText(),
+                            overrideSetting = ttsProviderOverride,
+                        )
+                    } else {
+                        tts.stop()
+                    }
+                },
             )
         }
 
@@ -220,12 +211,7 @@ fun ChatMessageActionsSheet(
     onDismissRequest: () -> Unit
 ) {
     val haptics = rememberPremiumHaptics()
-    val isDarkMode = LocalDarkMode.current
-    val groupContainerColor = if (isDarkMode) {
-        androidx.compose.ui.graphics.Color.Black
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
+    val groupContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
         .any { it.text.isNotBlank() }
 

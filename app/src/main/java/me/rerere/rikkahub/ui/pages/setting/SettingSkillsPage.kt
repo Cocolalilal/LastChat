@@ -30,12 +30,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.NoteAdd
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -77,7 +84,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -92,6 +101,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.MaterialIconPickerDialog
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
@@ -140,9 +150,16 @@ fun SettingSkillsPage(
         if (uri == null) return@rememberLauncherForActivityResult
         when (val result = SkillExportImport.importFromUri(context, uri)) {
             is SkillExportImport.ImportResult.Success -> {
-                vm.updateSettings(settings.copy(skills = settings.skills + result.skill))
-                haptics.perform(HapticPattern.Success)
-                toaster.show(context.getString(R.string.skill_import_success, result.skill.name))
+                runCatching { SkillExportImport.installPackage(context, result) }
+                    .onSuccess { installedSkill ->
+                        vm.updateSettings(settings.copy(skills = settings.skills + installedSkill))
+                        haptics.perform(HapticPattern.Success)
+                        toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
+                    }
+                    .onFailure {
+                        haptics.perform(HapticPattern.Error)
+                        toaster.show(it.message ?: "Could not install skill package")
+                    }
             }
 
             is SkillExportImport.ImportResult.Error -> {
@@ -230,7 +247,7 @@ fun SettingSkillsPage(
                     FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
-                            importLauncher.launch(arrayOf("application/json", "text/markdown", "*/*"))
+                            importLauncher.launch(arrayOf("application/json", "text/markdown", "application/zip", "*/*"))
                         },
                         shape = AppShapes.CardLarge,
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -275,13 +292,14 @@ fun SettingSkillsPage(
                 editingSkill = null
             },
             onSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 if (editingSkill == null) {
-                    vm.updateSettings(settings.copy(skills = settings.skills + savedSkill))
+                    vm.updateSettings(settings.copy(skills = settings.skills + persistedSkill))
                 } else {
                     vm.updateSettings(
                         settings.copy(
                             skills = settings.skills.map {
-                                if (it.id == savedSkill.id) savedSkill else it
+                                if (it.id == persistedSkill.id) persistedSkill else it
                             }
                         )
                     )
@@ -289,11 +307,32 @@ fun SettingSkillsPage(
                 showAddDialog = false
                 editingSkill = null
             },
-            onAutoSave = { savedSkill ->
+            onSavePreservingPackage = { savedSkill ->
                 vm.updateSettings(
                     settings.copy(
                         skills = settings.skills.map {
                             if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
+                showAddDialog = false
+                editingSkill = null
+            },
+            onPackageMetadataChanged = { savedSkill ->
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == savedSkill.id) savedSkill else it
+                        }
+                    )
+                )
+            },
+            onAutoSave = { savedSkill ->
+                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
+                vm.updateSettings(
+                    settings.copy(
+                        skills = settings.skills.map {
+                            if (it.id == persistedSkill.id) persistedSkill else it
                         }
                     )
                 )
@@ -710,17 +749,26 @@ fun SkillEditorSheet(
     assistants: List<me.rerere.rikkahub.data.model.Assistant>,
     onDismiss: () -> Unit,
     onSave: (Skill) -> Unit,
+    onSavePreservingPackage: ((Skill) -> Unit)? = null,
+    onPackageMetadataChanged: ((Skill) -> Unit)? = null,
     onAutoSave: ((Skill) -> Unit)? = null,
 ) {
     val isEditing = skill != null
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
 
     var name by remember { mutableStateOf(skill?.name ?: "") }
     var description by remember { mutableStateOf(skill?.description ?: "") }
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
     var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
+    var disableModelInvocation by remember { mutableStateOf(skill?.disableModelInvocation ?: false) }
+    var userInvocable by remember { mutableStateOf(skill?.userInvocable ?: true) }
+    var injectionPosition by remember { mutableStateOf(skill?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) }
+    var depth by remember { mutableStateOf(skill?.depth?.toString() ?: "0") }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
     var showIconPicker by remember { mutableStateOf(false) }
@@ -728,7 +776,38 @@ fun SkillEditorSheet(
     var namePending by remember { mutableStateOf(false) }
     var descriptionPending by remember { mutableStateOf(false) }
     var instructionsPending by remember { mutableStateOf(false) }
+    var packageSkillMetadata by remember(skill?.id) { mutableStateOf(skill) }
+    var packageEntries by remember(skill?.id) { mutableStateOf(emptyList<SkillExportImport.PackageEntry>()) }
+    var editingPackagePath by remember { mutableStateOf<String?>(null) }
+    var editingPackageContent by remember { mutableStateOf("") }
+    var showAddPackageFile by remember { mutableStateOf(false) }
+    var deletePackagePath by remember { mutableStateOf<String?>(null) }
+    var skillMdEditedDirectly by remember { mutableStateOf(false) }
     val isAutoSaving = isEditing && (namePending || descriptionPending || instructionsPending)
+
+    fun refreshPackageFiles(currentSkill: Skill? = packageSkillMetadata ?: skill) {
+        val resolvedSkill = currentSkill ?: return
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { SkillExportImport.listPackageEntries(context, resolvedSkill) }
+            }
+            result.onSuccess { packageEntries = it }
+                .onFailure { toaster.show(it.message ?: "Could not read skill package") }
+        }
+    }
+
+    LaunchedEffect(skill?.id) {
+        val currentSkill = skill ?: return@LaunchedEffect
+        val entries = withContext(Dispatchers.IO) {
+            var currentEntries = SkillExportImport.listPackageEntries(context, currentSkill)
+            if (currentEntries.none { it.relativePath == "SKILL.md" }) {
+                SkillExportImport.syncManagedSkill(context, currentSkill)
+                currentEntries = SkillExportImport.listPackageEntries(context, currentSkill)
+            }
+            currentEntries
+        }
+        packageEntries = entries
+    }
 
     ModalBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -815,6 +894,10 @@ fun SkillEditorSheet(
                                         icon = icon,
                                         instructions = instructions,
                                         alwaysEnabled = alwaysEnabled,
+                                        disableModelInvocation = disableModelInvocation,
+                                        userInvocable = userInvocable,
+                                        injectionPosition = injectionPosition,
+                                        depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                         availableForAllAssistants = availableForAllAssistants,
                                         availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                         updatedAt = System.currentTimeMillis()
@@ -854,6 +937,10 @@ fun SkillEditorSheet(
                                     icon = icon,
                                     instructions = instructions,
                                     alwaysEnabled = alwaysEnabled,
+                                    disableModelInvocation = disableModelInvocation,
+                                    userInvocable = userInvocable,
+                                    injectionPosition = injectionPosition,
+                                    depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                     availableForAllAssistants = availableForAllAssistants,
                                     availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                     updatedAt = System.currentTimeMillis()
@@ -881,6 +968,10 @@ fun SkillEditorSheet(
                                     icon = icon,
                                     instructions = newVal,
                                     alwaysEnabled = alwaysEnabled,
+                                    disableModelInvocation = disableModelInvocation,
+                                    userInvocable = userInvocable,
+                                    injectionPosition = injectionPosition,
+                                    depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                     availableForAllAssistants = availableForAllAssistants,
                                     availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
                                     updatedAt = System.currentTimeMillis()
@@ -897,6 +988,40 @@ fun SkillEditorSheet(
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 20.sp
                         )
+                    )
+                }
+                if (skill != null) {
+                    SkillPackageFilesCard(
+                        skill = packageSkillMetadata ?: skill,
+                        entries = packageEntries,
+                        onAddFile = {
+                            haptics.perform(HapticPattern.Pop)
+                            showAddPackageFile = true
+                        },
+                        onEditFile = { entry ->
+                            haptics.perform(HapticPattern.Tick)
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        SkillExportImport.readPackageTextFile(
+                                            context = context,
+                                            skill = packageSkillMetadata ?: skill,
+                                            relativePath = entry.relativePath,
+                                        )
+                                    }
+                                }
+                                result.onSuccess { content ->
+                                    editingPackageContent = content
+                                    editingPackagePath = entry.relativePath
+                                }.onFailure {
+                                    toaster.show(it.message ?: "This file cannot be edited")
+                                }
+                            }
+                        },
+                        onDeleteFile = { entry ->
+                            haptics.perform(HapticPattern.Tick)
+                            deletePackagePath = entry.relativePath
+                        },
                     )
                 }
                 Card(
@@ -957,6 +1082,56 @@ fun SkillEditorSheet(
                                 )
                             }
                         )
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_disable_model_invocation)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_disable_model_invocation_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = disableModelInvocation,
+                                    onCheckedChange = { disableModelInvocation = it }
+                                )
+                            }
+                        )
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.skills_page_user_invocable)) },
+                            supportingContent = { Text(stringResource(R.string.skills_page_user_invocable_desc)) },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = userInvocable,
+                                    onCheckedChange = { userInvocable = it }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                FormItem(label = { Text(stringResource(R.string.lorebook_entry_injection_position)) }) {
+                    Select(
+                        options = InjectionPosition.entries,
+                        selectedOption = injectionPosition,
+                        onOptionSelected = { injectionPosition = it },
+                        optionToString = { position ->
+                            when (position) {
+                                InjectionPosition.BEFORE_SYSTEM -> stringResource(R.string.injection_position_before_system)
+                                InjectionPosition.AFTER_SYSTEM -> stringResource(R.string.injection_position_after_system)
+                                InjectionPosition.TOP_OF_CHAT -> stringResource(R.string.injection_position_top_of_chat)
+                                InjectionPosition.BEFORE_LATEST -> stringResource(R.string.injection_position_before_latest)
+                                InjectionPosition.AT_DEPTH -> stringResource(R.string.injection_position_at_depth)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (injectionPosition == InjectionPosition.AT_DEPTH) {
+                    FormItem(label = { Text("Depth") }, description = { Text("Messages before the latest message") }) {
+                        OutlinedTextField(
+                            value = depth,
+                            onValueChange = { depth = it.filter(Char::isDigit) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -973,27 +1148,28 @@ fun SkillEditorSheet(
                     }
                     TextButton(
                         onClick = {
-                            val base = skill ?: Skill()
+                            val base = packageSkillMetadata ?: skill ?: Skill()
                             val availableIds = if (availableForAllAssistants) emptySet() else availableAssistantIds
                             val savedSkill = base.copy(
                                 name = name.trim(),
                                 description = description.trim(),
                                 icon = icon,
                                 instructions = instructions,
-                                attachments = emptyList(),
                                 enabled = true,
                                 alwaysEnabled = alwaysEnabled,
+                                disableModelInvocation = disableModelInvocation,
+                                userInvocable = userInvocable,
+                                injectionPosition = injectionPosition,
+                                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                                 availableForAllAssistants = availableForAllAssistants,
                                 availableAssistantIds = availableIds,
-                                autonomousForAllAssistants = true,
-                                autonomousAssistantIds = emptySet(),
-                                injectionPosition = InjectionPosition.AFTER_SYSTEM,
-                                depth = 0,
-                                disableModelInvocation = false,
-                                userInvocable = true,
                                 updatedAt = System.currentTimeMillis()
                             )
-                            onSave(savedSkill)
+                            if (skillMdEditedDirectly && onSavePreservingPackage != null) {
+                                onSavePreservingPackage(savedSkill)
+                            } else {
+                                onSave(savedSkill)
+                            }
                         }
                     ) {
                         Text(
@@ -1008,26 +1184,376 @@ fun SkillEditorSheet(
 
     if (showExportDialog && skill != null) {
         SkillExportDialog(
-            skill = skill.copy(
+            skill = (packageSkillMetadata ?: skill).copy(
                 name = name.trim(),
                 description = description.trim(),
                 icon = icon,
                 instructions = instructions,
-                attachments = emptyList(),
                 enabled = true,
                 alwaysEnabled = alwaysEnabled,
+                disableModelInvocation = disableModelInvocation,
+                userInvocable = userInvocable,
+                injectionPosition = injectionPosition,
+                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 availableForAllAssistants = availableForAllAssistants,
                 availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                autonomousForAllAssistants = true,
-                autonomousAssistantIds = emptySet(),
-                injectionPosition = InjectionPosition.AFTER_SYSTEM,
-                depth = 0,
-                disableModelInvocation = false,
-                userInvocable = true,
             ),
             onDismiss = { showExportDialog = false }
         )
     }
+
+    editingPackagePath?.let { relativePath ->
+        SkillPackageTextEditorDialog(
+            relativePath = relativePath,
+            initialContent = editingPackageContent,
+            onDismiss = { editingPackagePath = null },
+            onSave = { content ->
+                val currentSkill = packageSkillMetadata ?: skill ?: return@SkillPackageTextEditorDialog
+                val parsedSkill = if (relativePath == "SKILL.md") {
+                    when (val parsed = SkillExportImport.importFromString(content)) {
+                        is SkillExportImport.ImportResult.Success -> {
+                            if (parsed.format != "skill_md") {
+                                toaster.show("SKILL.md must use YAML frontmatter and Markdown")
+                                return@SkillPackageTextEditorDialog
+                            }
+                            parsed.skill
+                        }
+                        is SkillExportImport.ImportResult.Error -> {
+                            toaster.show(parsed.message)
+                            return@SkillPackageTextEditorDialog
+                        }
+                    }
+                } else null
+
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            SkillExportImport.savePackageTextFile(
+                                context = context,
+                                skill = currentSkill,
+                                relativePath = relativePath,
+                                content = content,
+                            )
+                        }
+                    }
+                    result.onSuccess {
+                        if (parsedSkill != null) {
+                            val updatedSkill = currentSkill.copy(
+                                name = parsedSkill.name,
+                                description = parsedSkill.description,
+                                instructions = parsedSkill.instructions,
+                                disableModelInvocation = parsedSkill.disableModelInvocation,
+                                userInvocable = parsedSkill.userInvocable,
+                                argumentHint = parsedSkill.argumentHint,
+                                license = parsedSkill.license,
+                                compatibility = parsedSkill.compatibility,
+                                metadata = parsedSkill.metadata,
+                                allowedTools = parsedSkill.allowedTools,
+                                updatedAt = System.currentTimeMillis(),
+                            )
+                            packageSkillMetadata = updatedSkill
+                            name = updatedSkill.name
+                            description = updatedSkill.description
+                            instructions = updatedSkill.instructions
+                            disableModelInvocation = updatedSkill.disableModelInvocation
+                            userInvocable = updatedSkill.userInvocable
+                            skillMdEditedDirectly = true
+                            onPackageMetadataChanged?.invoke(updatedSkill)
+                        }
+                        editingPackagePath = null
+                        haptics.perform(HapticPattern.Success)
+                        refreshPackageFiles(packageSkillMetadata ?: currentSkill)
+                    }.onFailure {
+                        haptics.perform(HapticPattern.Error)
+                        toaster.show(it.message ?: "Could not save skill file")
+                    }
+                }
+            },
+        )
+    }
+
+    if (showAddPackageFile && skill != null) {
+        AddSkillPackageFileDialog(
+            onDismiss = { showAddPackageFile = false },
+            onCreate = { relativePath, content ->
+                val currentSkill = packageSkillMetadata ?: skill
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            require(relativePath != "SKILL.md") { "SKILL.md already exists" }
+                            require(packageEntries.none { it.relativePath == relativePath }) { "A package file already exists at this path" }
+                            SkillExportImport.savePackageTextFile(context, currentSkill, relativePath, content)
+                        }
+                    }
+                    result.onSuccess {
+                        showAddPackageFile = false
+                        haptics.perform(HapticPattern.Success)
+                        refreshPackageFiles(currentSkill)
+                    }.onFailure {
+                        haptics.perform(HapticPattern.Error)
+                        toaster.show(it.message ?: "Could not create skill file")
+                    }
+                }
+            },
+        )
+    }
+
+    deletePackagePath?.let { relativePath ->
+        AlertDialog(
+            onDismissRequest = { deletePackagePath = null },
+            title = { Text("Delete skill file?") },
+            text = { Text(relativePath, fontFamily = FontFamily.Monospace) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val currentSkill = packageSkillMetadata ?: skill ?: return@TextButton
+                        scope.launch {
+                            val deleted = withContext(Dispatchers.IO) {
+                                SkillExportImport.deletePackageFile(context, currentSkill, relativePath)
+                            }
+                            if (deleted) {
+                                haptics.perform(HapticPattern.Success)
+                                refreshPackageFiles(currentSkill)
+                            } else {
+                                haptics.perform(HapticPattern.Error)
+                                toaster.show("Could not delete skill file")
+                            }
+                            deletePackagePath = null
+                        }
+                    }
+                ) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletePackagePath = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SkillPackageFilesCard(
+    skill: Skill,
+    entries: List<SkillExportImport.PackageEntry>,
+    onAddFile: () -> Unit,
+    onEditFile: (SkillExportImport.PackageEntry) -> Unit,
+    onDeleteFile: (SkillExportImport.PackageEntry) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
+        ),
+        shape = AppShapes.CardLarge,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Package files", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "${skill.name.ifBlank { "skill" }}/ · ${entries.count { !it.isDirectory }} files",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TextButton(onClick = onAddFile) {
+                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("New file")
+                }
+            }
+
+            if (entries.isEmpty()) {
+                Text(
+                    "This skill has no package files yet.",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                entries.forEach { entry ->
+                    val depth = entry.relativePath.count { it == '/' }
+                    ListItem(
+                        modifier = Modifier.padding(start = (depth * 14).dp),
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
+                                contentDescription = null,
+                                tint = if (entry.isDirectory) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                entry.name,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        supportingContent = if (!entry.isDirectory) {
+                            {
+                                Text(
+                                    formatSkillFileSize(entry.sizeBytes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else null,
+                        trailingContent = if (!entry.isDirectory) {
+                            {
+                                Row {
+                                    if (entry.isTextEditable) {
+                                        IconButton(onClick = { onEditFile(entry) }) {
+                                            Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.edit))
+                                        }
+                                    }
+                                    if (entry.relativePath != "SKILL.md") {
+                                        IconButton(onClick = { onDeleteFile(entry) }) {
+                                            Icon(
+                                                Icons.Rounded.Delete,
+                                                contentDescription = stringResource(R.string.delete),
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else null,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSkillFileSize(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+    else -> "${bytes / (1024 * 1024)} MB"
+}
+
+@Composable
+private fun SkillPackageTextEditorDialog(
+    relativePath: String,
+    initialContent: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var content by remember(relativePath, initialContent) { mutableStateOf(initialContent) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(relativePath.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    relativePath,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        text = {
+            OutlinedTextField(
+                value = content,
+                onValueChange = { content = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 19.sp,
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(content) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AddSkillPackageFileDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String, String) -> Unit,
+) {
+    var relativePath by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
+    val pathSegments = relativePath.split('/')
+    val pathInvalid = relativePath.isNotBlank() && (
+        relativePath.startsWith('/') ||
+            relativePath.contains('\\') ||
+            pathSegments.any { it.isBlank() || it == "." || it == ".." } ||
+            relativePath == "SKILL.md"
+        )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New package file") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = relativePath,
+                    onValueChange = { relativePath = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Path") },
+                    placeholder = { Text("references/guide.md", fontFamily = FontFamily.Monospace) },
+                    supportingText = if (pathInvalid) {
+                        { Text("Use a relative path without empty, . or .. segments") }
+                    } else null,
+                    isError = pathInvalid,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    label = { Text("Content") },
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(relativePath.trim(), content) },
+                enabled = relativePath.isNotBlank() && !pathInvalid,
+            ) {
+                Text(stringResource(R.string.create))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -1056,6 +1582,23 @@ private fun SkillExportDialog(
                         it.message ?: context.getString(R.string.backup_page_unknown_error)
                     )
                 )
+            }
+        }
+        onDismiss()
+    }
+
+    val skillPackageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(SkillExportImport.exportPackage(context, skill))
+                } ?: error("Could not open export destination")
+            }.onSuccess {
+                toaster.show(context.getString(R.string.skill_export_success))
+            }.onFailure {
+                toaster.show(it.message ?: "Could not export skill package")
             }
         }
         onDismiss()
@@ -1099,6 +1642,22 @@ private fun SkillExportDialog(
                     leadingContent = {
                         Icon(Icons.Rounded.Code, contentDescription = null)
                     }
+                )
+            }
+
+            Card(
+                onClick = { skillPackageLauncher.launch("${skill.name.ifBlank { "skill" }}.zip") },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow
+                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                ),
+                shape = AppShapes.CardLarge
+            ) {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Full skill package (.zip)") },
+                    supportingContent = { Text("Includes SKILL.md, scripts, references, and assets") },
+                    leadingContent = { Icon(Icons.Rounded.Archive, contentDescription = null) }
                 )
             }
         }

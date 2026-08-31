@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -44,6 +46,8 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
@@ -55,6 +59,8 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.koinInject
 
 @Composable
 internal fun SkillsPickerSheet(
@@ -72,6 +78,7 @@ internal fun SkillsPickerSheet(
     val availableSkills = remember(settings.skills) {
         settings.skills
     }
+    val userInvocableSkills = remember(availableSkills) { availableSkills.filter { it.userInvocable } }
     val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
     val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
         settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
@@ -134,20 +141,20 @@ internal fun SkillsPickerSheet(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            if (availableSkills.isEmpty()) {
+            if (userInvocableSkills.isEmpty()) {
                 Text(
                     text = stringResource(R.string.skills_picker_none),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                availableSkills.forEachIndexed { index, skill ->
+                userInvocableSkills.forEachIndexed { index, skill ->
                     val isEnabled = localEnabledIds.contains(skill.id)
 
                     val position = when {
-                        availableSkills.size == 1 -> ItemPosition.ONLY
+                        userInvocableSkills.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
-                        index == availableSkills.lastIndex -> ItemPosition.LAST
+                        index == userInvocableSkills.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
 
@@ -172,7 +179,7 @@ internal fun SkillsPickerSheet(
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                             ),
                             shape = shape
                         ) {
@@ -324,7 +331,7 @@ internal fun LorebooksPickerSheet(
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                             ),
                             shape = shape,
                             onClick = { onNavigateToLorebook(lorebook.id.toString()) }
@@ -428,6 +435,74 @@ internal fun LorebooksPickerSheet(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun PluginsPickerSheet(
+    settings: Settings,
+    assistant: Assistant,
+    onUpdateAssistant: (Assistant) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val mcpManager = koinInject<McpManager>()
+    val syncingStatus by mcpManager.syncingStatus.collectAsStateWithLifecycle()
+    val loading = syncingStatus.values.any { it == McpStatus.Connecting }
+
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.mcp_picker_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (loading) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LinearWavyProgressIndicator()
+                    Text(
+                        text = stringResource(R.string.mcp_picker_syncing),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            McpPicker(
+                assistant = assistant,
+                servers = settings.mcpServers,
+                onUpdateAssistant = onUpdateAssistant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
         }
     }
 }

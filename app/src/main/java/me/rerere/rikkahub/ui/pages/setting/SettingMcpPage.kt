@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,14 +38,17 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SegmentedButton
@@ -53,10 +58,12 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -71,19 +78,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.CommentsDisabled
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.automirrored.rounded.Input
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.Login
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Terminal
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -91,9 +105,17 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
+import me.rerere.rikkahub.data.ai.mcp.McpAuthMode
+import me.rerere.rikkahub.data.ai.mcp.McpConnectionPreset
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthManager
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthStatus
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
+import me.rerere.rikkahub.data.ai.mcp.POPULAR_MCP_CONNECTIONS
+import me.rerere.rikkahub.data.ai.mcp.endpointUrl
+import me.rerere.rikkahub.data.ai.mcp.findMcpConnectionPreset
+import me.rerere.rikkahub.ui.components.ai.McpServerFavicon
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -101,6 +123,7 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -109,6 +132,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.openUrl
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -140,8 +164,36 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var mcpToDelete by remember { mutableStateOf<McpServerConfig?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showConnectionsSheet by remember { mutableStateOf(false) }
+    var setupRequiredPreset by remember { mutableStateOf<McpConnectionPreset?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
+    val oauthManager = koinInject<McpOAuthManager>()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+
+    fun addConnection(preset: McpConnectionPreset) {
+        val existing = mcpConfigs.firstOrNull { it.commonOptions.presetId == preset.id }
+        if (existing != null) {
+            if (preset.authMode == McpAuthMode.OAUTH) oauthManager.startAuthorization(existing)
+            showConnectionsSheet = false
+            return
+        }
+        if (preset.authMode == McpAuthMode.EXTERNAL_OAUTH_SETUP) {
+            showConnectionsSheet = false
+            setupRequiredPreset = preset
+            return
+        }
+        val config = preset.createConfig()
+        vm.updateSettings(
+            settings.copy(mcpServers = listOf(config) + mcpConfigs),
+            afterPersist = if (preset.authMode == McpAuthMode.OAUTH) {
+                { oauthManager.startAuthorization(config) }
+            } else {
+                null
+            },
+        )
+        showConnectionsSheet = false
+    }
     
     Scaffold(
         topBar = {
@@ -150,24 +202,43 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            showImportDialog = true
-                        }
-                    ) {
-                        Icon(Icons.Rounded.FileUpload, null)
-                    }
-                    IconButton(
-                        onClick = {
-                            creationState.open(McpServerConfig.SseTransportServer())
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Add, null)
-                    }
                 }
             )
+        },
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showImportDialog = true
+                        },
+                        shape = AppShapes.CardLarge,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                    }
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showConnectionsSheet = true
+                        },
+                        shape = AppShapes.CardLarge,
+                    ) {
+                        Icon(Icons.Rounded.Add, "Add connection")
+                    }
+                }
+            }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
@@ -176,15 +247,23 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         val scope = rememberCoroutineScope()
         val state = rememberPullToRefreshState()
         val loading = status.values.any { it == McpStatus.Connecting }
-        PullToRefreshBox(
-            isRefreshing = loading,
-            onRefresh = {
-                scope.launch {
-                    mcpManager.syncAll()
-                }
-            },
-            state = state,
-            modifier = Modifier.padding(innerPadding)
+        val canRefresh = lazyListState.firstVisibleItemIndex == 0 &&
+            lazyListState.firstVisibleItemScrollOffset == 0 &&
+            scrollBehavior.state.collapsedFraction == 0f
+        Box(
+            modifier = Modifier
+                .padding(top = innerPadding.calculateTopPadding())
+                .consumeWindowInsets(innerPadding)
+                .pullToRefresh(
+                    state = state,
+                    isRefreshing = loading,
+                    enabled = canRefresh,
+                    onRefresh = {
+                        scope.launch {
+                            mcpManager.syncAll()
+                        }
+                    }
+                )
         ) {
             // Track which item is being dragged and its offset
             var draggingIndex by remember { mutableStateOf(-1) }
@@ -209,8 +288,51 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         .fillMaxSize(),
                     state = lazyListState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(16.dp)
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)
                 ) {
+                    if (mcpConfigs.isEmpty()) {
+                        item(key = "empty") {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (LocalDarkMode.current) {
+                                        MaterialTheme.colorScheme.surfaceContainerLow
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    }
+                                ),
+                                shape = AppShapes.CardLarge
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Extension,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found),
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                     itemsIndexed(mcpConfigs, key = { _, it -> it.id }) { index, mcpConfig ->
                         val position = when {
                             mcpConfigs.size == 1 -> ItemPosition.ONLY
@@ -270,21 +392,26 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                 }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, MaterialTheme.colorScheme.background)
+                            )
+                        )
+                )
             }
 
-            if (mcpConfigs.isEmpty()) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(text = stringResource(R.string.setting_mcp_page_no_mcp_servers_found))
-                    Text(
-                        text = stringResource(R.string.setting_mcp_page_add_one_to_get_started),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
+            PullToRefreshDefaults.Indicator(
+                state = state,
+                isRefreshing = loading,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
         }
     }
     
@@ -330,6 +457,21 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     }
     McpServerConfigModal(creationState)
     McpServerConfigModal(editState)
+    if (showConnectionsSheet) {
+        McpConnectionsSheet(
+            installedPresetIds = mcpConfigs.mapNotNull { it.commonOptions.presetId }.toSet(),
+            onDismiss = { showConnectionsSheet = false },
+            onAddCustom = {
+                showConnectionsSheet = false
+                creationState.open(
+                    McpServerConfig.StreamableHTTPServer(
+                        commonOptions = McpCommonOptions(name = "", authMode = McpAuthMode.CUSTOM_HEADERS)
+                    )
+                )
+            },
+            onSelect = ::addConnection,
+        )
+    }
     if (showImportDialog) {
         McpImportModal(
             onDismiss = { showImportDialog = false },
@@ -347,6 +489,211 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             }
         )
     }
+
+    setupRequiredPreset?.let { preset ->
+        val context = LocalContext.current
+        AlertDialog(
+            onDismissRequest = { setupRequiredPreset = null },
+            icon = { Icon(Icons.Rounded.Info, null) },
+            title = { Text("${preset.name} needs app setup") },
+            text = {
+                Text(
+                    preset.setupNote ?: "This service requires an OAuth application to be registered for LastChat."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        preset.documentationUrl?.let(context::openUrl)
+                        setupRequiredPreset = null
+                    },
+                ) { Text("Open setup guide") }
+            },
+            dismissButton = {
+                TextButton(onClick = { setupRequiredPreset = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun McpConnectionsSheet(
+    installedPresetIds: Set<String>,
+    onDismiss: () -> Unit,
+    onAddCustom: () -> Unit,
+    onSelect: (McpConnectionPreset) -> Unit,
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val haptics = rememberPremiumHaptics()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val isDarkMode = LocalDarkMode.current
+    val titleColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurface
+    val iconColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    val itemTextColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurface
+    val customServerContentColor = if (isDarkMode) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+
+    val filtered = remember(searchQuery) {
+        if (searchQuery.isBlank()) POPULAR_MCP_CONNECTIONS else POPULAR_MCP_CONNECTIONS.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+                it.description.contains(searchQuery, ignoreCase = true) ||
+                it.badge.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) { Icon(Icons.Rounded.KeyboardArrowDown, null, tint = iconColor) }
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                "Add a connection",
+                style = MaterialTheme.typography.headlineSmall,
+                color = titleColor,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                textAlign = TextAlign.Center,
+            )
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.SearchField,
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = iconColor) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, "Clear", tint = iconColor) } }
+                } else null,
+                placeholder = { Text("Search connections", color = if (isDarkMode) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant) },
+                colors = if (isDarkMode) {
+                    OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLeadingIconColor = Color.White,
+                        unfocusedLeadingIconColor = Color.White,
+                        focusedTrailingIconColor = Color.White,
+                        unfocusedTrailingIconColor = Color.White,
+                        focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.5f),
+                    )
+                } else {
+                    OutlinedTextFieldDefaults.colors()
+                },
+            )
+            Spacer(Modifier.height(16.dp))
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                item {
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onAddCustom()
+                        },
+                        shape = AppShapes.CardMedium,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = customServerContentColor,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(40.dp), tint = customServerContentColor)
+                            Text(
+                                "Custom MCP server",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = customServerContentColor,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                itemsIndexed(filtered, key = { _, preset -> preset.id }) { index, preset ->
+                    val installed = preset.id in installedPresetIds
+                    val shape = when {
+                        filtered.size == 1 -> AppShapes.CardMedium
+                        index == 0 -> AppShapes.ListItemFirst
+                        index == filtered.lastIndex -> AppShapes.ListItemLast
+                        else -> AppShapes.ListItemMiddle
+                    }
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onSelect(preset)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = shape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = itemTextColor,
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AutoAIIconWithUrl(
+                                name = preset.name,
+                                customIconUri = preset.iconUri,
+                                modifier = Modifier.size(40.dp),
+                                contentColor = itemTextColor,
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    preset.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = itemTextColor,
+                                )
+                                Text(
+                                    preset.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (preset.authMode != McpAuthMode.NONE) {
+                                        Tag(type = if (preset.authMode == McpAuthMode.OAUTH) TagType.SUCCESS else TagType.DEFAULT) {
+                                            Text(preset.badge)
+                                        }
+                                    }
+                                    if (installed) Tag(type = TagType.INFO) { Text("Added") }
+                                }
+                            }
+                            Icon(
+                                if (installed) Icons.AutoMirrored.Rounded.Login else Icons.Rounded.Add,
+                                contentDescription = null,
+                                tint = iconColor,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -361,7 +708,16 @@ private fun McpServerItem(
     onEdit: (McpServerConfig) -> Unit,
 ) {
     val mcpManager = koinInject<McpManager>()
+    val oauthManager = koinInject<McpOAuthManager>()
     val status by mcpManager.getStatus(item).collectAsStateWithLifecycle(McpStatus.Idle)
+    val oauthStatuses by oauthManager.statuses.collectAsStateWithLifecycle()
+    val oauthStatus = oauthStatuses[item.id] ?: McpOAuthStatus.Idle
+    val preset = remember(item) {
+        findMcpConnectionPreset(item)
+    }
+    val hasOAuthCredentials = remember(oauthStatuses, item.id) {
+        oauthManager.hasCredentials(item.id)
+    }
     val haptics = rememberPremiumHaptics()
     
     PhysicsSwipeToDelete(
@@ -378,11 +734,7 @@ private fun McpServerItem(
         else 
             MaterialTheme.colorScheme.surfaceContainerHigh
         
-        // Disabled cards: transparent background (black in dark mode) with outline
-        val disabledBackground = if (LocalDarkMode.current) 
-            Color.Black 
-        else 
-            MaterialTheme.colorScheme.surface
+        val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
         
         // Grayscale modifier for disabled items
         val saturationMatrix = remember { 
@@ -433,13 +785,25 @@ private fun McpServerItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = grayscaleModifier) {
-                when (status) {
-                    McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
-                    McpStatus.Connecting -> CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp)
+                if (preset != null) {
+                    AutoAIIconWithUrl(
+                        name = preset.name,
+                        customIconUri = preset.iconUri,
+                        modifier = Modifier.size(40.dp),
                     )
-                    McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
-                    is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
+                } else {
+                    McpServerFavicon(
+                        url = item.endpointUrl,
+                        modifier = Modifier.size(40.dp),
+                        fallback = {
+                            when (status) {
+                                McpStatus.Idle -> Icon(Icons.Rounded.Extension, null)
+                                McpStatus.Connecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                McpStatus.Connected -> Icon(Icons.Rounded.Extension, null)
+                                is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
+                            }
+                        }
+                    )
                 }
             }
 
@@ -452,30 +816,69 @@ private fun McpServerItem(
                     style = MaterialTheme.typography.titleMedium,
                 )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                     // Show disabled tag only for disabled items (with gray styling)
                     if (!item.commonOptions.enable) {
                         Tag(type = TagType.DEFAULT) {
-                            Text(stringResource(R.string.setting_provider_page_disabled))
+                            Text(
+                                if (item.commonOptions.authMode == McpAuthMode.OAUTH && !hasOAuthCredentials) {
+                                    "Sign-in required"
+                                } else {
+                                    stringResource(R.string.setting_provider_page_disabled)
+                                }
+                            )
                         }
+                    }
+                    if (oauthStatus == McpOAuthStatus.WaitingForUser) {
+                        Tag(type = TagType.INFO) { Text("Waiting for sign-in") }
+                    }
+                    if (oauthStatus is McpOAuthStatus.Error || status is McpStatus.Error) {
+                        Tag(type = TagType.ERROR) { Text("Connection error") }
                     }
                     Tag(type = TagType.SUCCESS) {
                         when (item) {
                             is McpServerConfig.SseTransportServer -> Text(stringResource(R.string.setting_mcp_transport_sse))
-                            is McpServerConfig.StreamableHTTPServer -> Text(stringResource(R.string.setting_mcp_transport_streamable_http))
+                            is McpServerConfig.StreamableHTTPServer -> Text("HTTP")
                         }
                     }
                 }
+                val currentOAuthStatus = oauthStatus
+                val currentStatus = status
+                val errorMessage = when {
+                    currentOAuthStatus is McpOAuthStatus.Error -> currentOAuthStatus.message
+                    currentStatus is McpStatus.Error -> currentStatus.message
+                    else -> null
+                }
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
-            IconButton(
-                onClick = {
-                    onEdit(item)
+            if (item.commonOptions.authMode == McpAuthMode.OAUTH && !hasOAuthCredentials) {
+                FilledTonalIconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        oauthManager.startAuthorization(item)
+                    }
+                ) {
+                    if (oauthStatus is McpOAuthStatus.Discovering || oauthStatus is McpOAuthStatus.ExchangingCode) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.AutoMirrored.Rounded.Login, "Sign in")
+                    }
                 }
-            ) {
-                Icon(Icons.Rounded.Settings, null)
+            } else {
+                IconButton(onClick = { onEdit(item) }) {
+                    Icon(Icons.Rounded.Settings, null)
+                }
             }
         }
     }

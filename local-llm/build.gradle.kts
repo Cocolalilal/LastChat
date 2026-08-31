@@ -1,0 +1,71 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+android {
+    namespace = "me.rerere.locallm"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 28
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    tasks.withType<KotlinCompile>().configureEach {
+        compilerOptions.optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
+        compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation(project(":common"))
+    implementation(project(":ai"))
+
+    // LiteRT-LM on-device inference engine (Google AI Edge)
+    implementation(libs.litertlm.android)
+    // AI Edge RAG library — on-device text embedding (EmbeddingGemma via GemmaEmbeddingModel).
+    // Native embedding libs are arm64-v8a only; the runtime gates the feature by ABI.
+    implementation(libs.localagents.rag) {
+        exclude(group = "org.json", module = "json")
+    }
+    implementation(libs.protobuf.javalite)
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.android)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+}

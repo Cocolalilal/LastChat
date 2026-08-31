@@ -123,12 +123,16 @@ fun WorkspaceDetailPage(id: String) {
     val state by vm.state.collectAsStateWithLifecycle()
     val installProgress by vm.installProgress.collectAsStateWithLifecycle()
     val installError by vm.installError.collectAsStateWithLifecycle()
+    val pythonInstalling by vm.pythonInstalling.collectAsStateWithLifecycle()
+    val pythonInstalled by vm.pythonInstalled.collectAsStateWithLifecycle()
+    val pythonInstallError by vm.pythonInstallError.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
+    var showPythonInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val runtimeSupport = remember(context.applicationInfo.nativeLibraryDir) {
         workspaceRuntimeSupport(context.applicationInfo.nativeLibraryDir)
@@ -209,6 +213,9 @@ fun WorkspaceDetailPage(id: String) {
                         workspace = state.workspace,
                         installProgress = installProgress,
                         onInstallRootfs = { showInstallDialog = true },
+                        pythonInstalling = pythonInstalling,
+                        pythonInstalled = pythonInstalled,
+                        onInstallPython = { showPythonInstallDialog = true },
                         onRename = vm::rename,
                         onToolApprovalChange = vm::setToolApproval,
                         runtimeSupport = runtimeSupport,
@@ -284,6 +291,46 @@ fun WorkspaceDetailPage(id: String) {
                 },
             )
         }
+    }
+
+    if (showPythonInstallDialog) {
+        InstallPythonDialog(
+            pythonInstalled = pythonInstalled,
+            onDismiss = { showPythonInstallDialog = false },
+            onConfirm = {
+                vm.installPython()
+                showPythonInstallDialog = false
+            },
+        )
+    }
+
+    pythonInstallError?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm::dismissPythonInstallError,
+            title = { Text(stringResource(R.string.workspace_detail_python_install_failed)) },
+            text = {
+                Text(
+                    text = message,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    fontFamily = FontFamily.Monospace,
+                )
+            },
+            confirmButton = {
+                Row {
+                    val context = LocalContext.current
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("LastChat error", message))
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text(stringResource(R.string.copy))
+                    }
+                    TextButton(onClick = vm::dismissPythonInstallError) {
+                        Text(stringResource(R.string.common_confirm))
+                    }
+                }
+            },
+        )
     }
 
     installError?.let { message ->
@@ -429,6 +476,9 @@ private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
+    pythonInstalling: Boolean,
+    pythonInstalled: Boolean,
+    onInstallPython: () -> Unit,
     onRename: (String) -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
     runtimeSupport: WorkspaceRuntimeSupport,
@@ -541,6 +591,33 @@ private fun WorkspaceBasicPage(
 
                     installProgress?.let { progress ->
                         RootfsProgress(progress)
+                    }
+
+                    // Python install button — separate from rootfs install
+                    val pythonButtonText = if (pythonInstalling) {
+                        stringResource(R.string.workspace_detail_python_installing)
+                    } else if (pythonInstalled) {
+                        stringResource(R.string.workspace_detail_reinstall_python)
+                    } else {
+                        stringResource(R.string.workspace_detail_install_python)
+                    }
+                    Button(
+                        onClick = onInstallPython,
+                        enabled = workspace != null && !pythonInstalling && !installing && rootfsReady && runtimeSupport.supported,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.ButtonPill,
+                    ) {
+                        Icon(Icons.Rounded.Code, contentDescription = null)
+                        Text(
+                            text = pythonButtonText,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+
+                    if (pythonInstalling) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
             }
@@ -732,6 +809,45 @@ private fun InstallRootfsDialog(
                 onClick = { onConfirm(url.trim()) },
                 enabled = url.isNotBlank(),
             ) {
+                Text(stringResource(R.string.common_install))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun InstallPythonDialog(
+    pythonInstalled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (pythonInstalled) {
+                        R.string.workspace_detail_reinstall_python
+                    } else {
+                        R.string.workspace_detail_install_python
+                    }
+                )
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.workspace_detail_install_python_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
                 Text(stringResource(R.string.common_install))
             }
         },
@@ -1045,10 +1161,12 @@ private fun defaultRootfsUrl(nativeLibraryDir: String): String {
             ?: Build.SUPPORTED_ABIS.firstOrNull()
             ?: "arm64-v8a"
     }
+    if (abi == "armeabi-v7a" || abi == "armeabi") {
+        return "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armv7/alpine-minirootfs-3.19.9-armv7.tar.gz"
+    }
     val arch = when (abi) {
         "x86_64" -> "amd64"
         "arm64-v8a" -> "arm64"
-        "armeabi-v7a", "armeabi" -> "armhf"
         else -> "arm64"
     }
     return "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-$arch.tar.gz"

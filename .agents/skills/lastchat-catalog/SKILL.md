@@ -176,9 +176,105 @@ Only add extra fields when the model genuinely needs to differ from its matched 
   "provider_ids": ["8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91"],
   "type": "IMAGE",
   "image_generation_method": "diffusion",
-  "input_modalities": ["TEXT"]
+  "input_modalities": ["TEXT"],
+  "output_modalities": ["IMAGE"]
 }
 ```
+
+---
+
+### 5.4 `reasoning_config` — Declare model reasoning mode & UI behavior
+
+Can be set on `model_families`, `versions`, or `model_overrides`:
+
+```json
+{
+  "reasoning_config": {
+    "type": "effort",
+    "supported_levels": ["off", "auto", "low", "medium", "high", "max"]
+  }
+}
+```
+
+- `"binary"`: Models with a simple on/off thinking toggle (e.g. DeepSeek-R1, Grok, Doubao, InternLM). UI renders a clean 2-item toggle (Disabled vs Enabled).
+- `"effort"`: Models with qualitative depth scales (e.g. OpenAI o1/o3/o4/gpt-5.6, Gemini 3). UI displays qualitative options without misleading token numbers.
+- `"budget"`: Models taking token budgets (e.g. Claude 3.7+, Gemini 2.5, DashScope Qwen). Supports `min_tokens`, `max_tokens`, and `preset_tokens`.
+
+### 5.5 `context_window` and `max_images_in_context`
+
+Both fields are optional, but **strongly recommended** for completeness. They can be set at any layer — family, version, or override.
+
+```json
+{
+  "context_window": 1000000,
+  "max_images_in_context": 100
+}
+```
+
+**`context_window`** (integer, in tokens): The maximum input context the model supports.  
+Common correct values by family (as of 2026):
+
+| Family | context_window |
+|---|---|
+| GPT-5.6 Sol/Terra | 1 050 000 |
+| GPT-5.6 Luna | 512 000 |
+| GPT-4o, GPT-4o-mini | 128 000 |
+| o1, o3, o4-mini | 200 000 |
+| Claude 5 (all) | 1 000 000 |
+| Claude 3.7/3.5 Sonnet | 1 000 000 (beta) |
+| Claude 3.5 Haiku | 200 000 |
+| Gemini 1.5 Pro | 2 000 000 |
+| Gemini 2.0/2.5/3.0 | 1 000 000 |
+| Gemma 4 (31B, 26B A4B) | 256 000 |
+| Gemma 4 (E4B, E2B) | 128 000 |
+| Gemma 3 (27B, 12B, 4B) | 128 000 |
+| Gemma 2 (27B, 9B, 2B) | 8 192 |
+| Llama 4 Scout | 10 000 000 |
+| Llama 4 Maverick | 1 000 000 |
+| DeepSeek-V4 Pro/Flash | 1 000 000 (Max output 384k) |
+| DeepSeek-V4 Vision Exp | 1 000 000 (Vision: TEXT+IMAGE) |
+| DeepSeek-VL2 | 128 000 (Vision: TEXT+IMAGE) |
+| DeepSeek-V3, R1 | 128 000 |
+| Mistral Large 2 | 128 000 |
+| Mistral Small 4 | 256 000 |
+| Pixtral 12B / Large | 128 000 |
+| Qwen 3 (3.8-Max, 3.5, 3-VL) | 1 000 000 (Vision: TEXT+IMAGE) |
+| Qwen-Plus, Qwen-Turbo, Qwen-Long | 1 000 000 |
+| Qwen-Max | 262 144 |
+| Qwen 2.5-VL, QvQ-72B | 131 072 (Vision: TEXT+IMAGE) |
+| QwQ-32B, Qwen 2.5 | 131 072 |
+| Grok 3/3-mini | 131 072 |
+| Grok 4 | 256 000 |
+| MiniMax-M3 | 1 000 000 |
+| MiniMax-M2.x | 204 800 |
+| Kimi K3 | 1 000 000 |
+| Kimi K2.5 | 256 000 |
+| Moonshot V1 | 128 000 |
+| Hunyuan-T1, TurboS | 256 000 |
+| StepFun 3.5/3.7 Flash | 256 000 |
+| GLM-5, 5.2 | 1 000 000 |
+| GLM-5V-Turbo, 5.3 Flash | 200 000 |
+
+**`max_images_in_context`** (integer): Maximum images the model can accept in a single request.  
+Only set when the model actually accepts image input. Omit for text-only and embedding models.
+
+| Family | max_images_in_context |
+|---|---|
+| Gemini (all vision) | 3 600 |
+| Claude (all) | 100 |
+| GPT-5.6 Sol/Terra, o3, o4-mini | 50 |
+| GPT-4o | 50 |
+| Gemma 4 / Gemma 3 (vision) | 10 |
+| Llama 4 (multimodal) | 10 |
+| Pixtral Large | 30 |
+| Pixtral 12B | 30 |
+| MiniMax-M3, M2 Vision | 10 |
+| Kimi K3, K2.5 | 10 |
+| GLM-5V, 5.3 Flash | 10 |
+| Qwen VL / 3.8 (vision) | 50 |
+
+> **Tip**: When in doubt about the exact limit, use a conservative lower bound rather than an inflated number. `max_images_in_context` is a UX hint, not enforced at the API call layer.
+
 
 `api_aliases` can list alternate API IDs that map to the same canonical model:
 
@@ -268,8 +364,13 @@ Always use these UUIDs in `provider_ids` arrays:
 | `5e729975-9794-4013-af7e-63a548cf3356` | Alibaba Cloud (DashScope / Qwen) |
 | `d2eb13cb-8c0a-4885-9e74-f4b56c8d5b24` | Volcengine Ark |
 | `bf741ca1-57d6-4444-93ff-18305c43d9b4` | Together AI |
-| `e4fce9f0-b4d2-453f-90b6-e1c5b615269c` | Zhipu AI |
-| `391d9f85-7824-4c19-9697-09b1f2a33e3b` | Anthropic Claude |
+| `d5734028-d39b-4d41-9841-fd648d65440e` | OpenRouter |
+| `1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123` | Anthropic Claude |
+| `5d8c3e12-b147-4977-bc5b-426b68da401f` | GitHub Models |
+| `11c4728d-d349-4328-8d07-28d5d4d5e901` | Cloudflare Workers AI |
+| `f8e32910-c114-411a-b302-18cb92193b3b` | Replicate |
+| `fb74da0c-cf14-45ff-98de-1e3df6a94b3c` | Cerebras |
+| `7a9b0c10-d8f9-467f-94d0-258fe3da49b4` | SambaNova |
 | `ce456892-f6bb-4598-bbb5-2658fe0d2955` | InternLM |
 
 To find a UUID for a provider not listed above, search for `"name": "<ProviderName>"` in

@@ -384,7 +384,13 @@ class WebdavSync(
     private fun addManagedFileEntries(zipOut: ZipOutputStream) {
         BackupArchiveFormat.MANAGED_FILE_DIRS.forEach { dirName ->
             val directory = File(context.filesDir, dirName)
-            enumerateDirectoryEntries(directory, dirName).forEach { entry ->
+            val skip: (String, Boolean) -> Boolean =
+                if (dirName == BackupArchiveFormat.WORKSPACES_DIR) {
+                    { relative, _ -> BackupArchiveFormat.isExcludedWorkspacePath(relative) }
+                } else {
+                    { _, _ -> false }
+                }
+            enumerateDirectoryEntries(directory, dirName, skip).forEach { entry ->
                 try {
                     if (entry.isDirectory) {
                         addDirectoryToZip(zipOut, entry.entryName)
@@ -454,14 +460,67 @@ class WebdavSync(
 
         directoriesToRestore.forEach { dirName ->
             val liveDir = File(context.filesDir, dirName)
+            val stagedDir = File(stagedFilesDir, dirName)
+
+            if (dirName == BackupArchiveFormat.WORKSPACES_DIR) {
+                restoreWorkspacesDir(stagedDir, liveDir)
+                return@forEach
+            }
+
             if (liveDir.exists()) {
                 liveDir.deleteRecursively()
             }
             liveDir.mkdirs()
 
-            val stagedDir = File(stagedFilesDir, dirName)
             if (stagedDir.exists()) {
                 mirrorDirectory(stagedDir, liveDir)
+            }
+        }
+    }
+
+    /**
+     * Restores the workspaces directory without disturbing the on-device Linux rootfs.
+     *
+     * Backups intentionally omit each workspace's reinstallable `linux/` rootfs (and `tmp/`
+     * scratch space), so a plain delete-and-mirror would destroy a perfectly good rootfs and
+     * force a lengthy reinstall on every restore. Instead we replace only the backed-up
+     * subtrees (e.g. `files/`) per workspace and leave the excluded subdirs untouched.
+     * Workspaces that are present in the backup but have no local rootfs are reconciled later
+     * by [WorkspaceRepository.checkIntegrity] (which flags them for reinstall).
+     */
+    private fun restoreWorkspacesDir(stagedDir: File, liveDir: File) {
+        liveDir.mkdirs()
+        if (!stagedDir.exists()) return
+
+        stagedDir.listFiles()?.forEach { stagedChild ->
+            val liveChild = File(liveDir, stagedChild.name)
+            if (stagedChild.isDirectory) {
+                // stagedChild is a workspace root (<id>); replace only its backed-up subtrees,
+                // preserving any live linux/ rootfs and tmp/ scratch space.
+                liveChild.mkdirs()
+                stagedChild.listFiles()?.forEach { stagedSub ->
+                    if (stagedSub.name in BackupArchiveFormat.WORKSPACE_EXCLUDED_SUBDIRS) {
+                        return@forEach
+                    }
+                    val liveSub = File(liveChild, stagedSub.name)
+                    if (liveSub.exists()) {
+                        liveSub.deleteRecursively()
+                    }
+                    if (stagedSub.isDirectory) {
+                        liveSub.mkdirs()
+                        mirrorDirectory(stagedSub, liveSub)
+                    } else {
+                        liveSub.parentFile?.mkdirs()
+                        stagedSub.copyTo(liveSub, overwrite = true)
+                    }
+                }
+            } else {
+                // Stray top-level file directly under workspaces/ (nothing to preserve).
+                if (liveChild.exists()) {
+                    liveChild.deleteRecursively()
+                }
+                liveChild.parentFile?.mkdirs()
+                stagedChild.copyTo(liveChild, overwrite = true)
             }
         }
     }

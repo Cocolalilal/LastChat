@@ -364,6 +364,49 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
+                if (settings.searchServices.isEmpty()) {
+                    item(key = "empty") {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (LocalDarkMode.current) {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                }
+                            ),
+                            shape = AppShapes.CardLarge
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_search_empty_title),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_search_empty_desc),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                 itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
                 val position = when {
                     settings.searchServices.size == 1 -> ItemPosition.ONLY
@@ -449,6 +492,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                     }
+                }
                 }
                 }
             }
@@ -734,6 +778,49 @@ internal fun SearchProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
+            if (settings.searchServices.isEmpty()) {
+                item(key = "empty") {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_search_empty_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_search_empty_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
             itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
                 val position = when {
                     settings.searchServices.size == 1 -> ItemPosition.ONLY
@@ -815,6 +902,7 @@ internal fun SearchProvidersContent(
                         )
                     }
                 }
+            }
             }
         }
 
@@ -1142,7 +1230,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = shape,
-                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1154,12 +1242,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     AutoAIIconWithUrl(
                                         name = preset.name,
                                         customIconUri = catalogSnapshot?.searchProviderIconUri(preset.name),
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier.size(40.dp),
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = preset.name,
-                                            style = MaterialTheme.typography.titleMedium
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                         )
                                         Text(
                                             text = context.getString(preset.descriptionRes),

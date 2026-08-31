@@ -68,6 +68,19 @@ fun ProviderIcon(
     contentColor: Color = LocalContentColor.current,
     padding: Dp = 4.dp,
 ) {
+    // The on-device provider always uses a fixed Material phone glyph with no background.
+    if (provider is ProviderSetting.LiteRtLocal) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.PhoneAndroid,
+                contentDescription = provider.name,
+                tint = contentColor,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        return
+    }
+
     val effectiveContentColor = if (provider.enabled) {
         contentColor
     } else {

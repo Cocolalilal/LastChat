@@ -15,7 +15,7 @@ sealed class AILogging {
     ) : AILogging()
 }
 
-private const val MAX_LOGS = 32
+private const val MAX_LOGS = 10
 
 class AILoggingManager {
     private val logs = MutableStateFlow<List<AILogging>>(emptyList())

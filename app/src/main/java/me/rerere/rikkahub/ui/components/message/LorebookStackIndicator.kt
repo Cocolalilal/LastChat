@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -58,23 +61,30 @@ fun LorebookStackIndicator(
     val bookWidth = 24.dp
     val bookHeight = 32.dp
     val overlap = 14.dp // How much subsequent books are visible (offset amount)
-    val badgeSize = 20.dp
+    val badgeHeight = 20.dp
+    val badgeWidth = when {
+        extraCount <= 0 -> 0.dp
+        extraCount <= 9 -> 20.dp
+        extraCount <= 99 -> 26.dp
+        else -> 32.dp
+    }
     
     // Calculate total container size explicitly to avoid layout issues
     val totalWidth = if (displayEntries.isNotEmpty()) {
         val booksWidth = bookWidth + (overlap * (displayEntries.size - 1))
-        // Badge overlaps by 10dp, so only add 10dp (half badge) for visible part
-        if (extraCount > 0) booksWidth + (badgeSize / 2) else booksWidth
+        if (extraCount > 0) {
+            booksWidth - 10.dp + badgeWidth
+        } else {
+            booksWidth
+        }
     } else {
         0.dp
     }
-
 
     Box(
         modifier = modifier
             .width(totalWidth)
             .height(bookHeight)
-            .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -110,22 +120,29 @@ fun LorebookStackIndicator(
             )
         }
         
-        // "+N" circle badge
+        // "+N" badge (grows into a pill when extraCount >= 10)
         if (extraCount > 0) {
-            // Overlap halfway with the last card for depth (-10.dp = half of 20dp badge)
             val badgeOffset = bookWidth + (overlap * (displayEntries.size - 1)) - 10.dp
             Box(
                 modifier = Modifier
                     .offset(x = badgeOffset)
-                    .size(badgeSize)
+                    .height(badgeHeight)
+                    .defaultMinSize(minWidth = badgeWidth)
+                    .clip(CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape) // Add border for separation
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .padding(horizontal = if (extraCount > 9) 4.dp else 0.dp)
                     .zIndex(10f), // Badge on top
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "+$extraCount",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 9.sp,
+                        lineHeight = 9.sp,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    ),
+                    textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }

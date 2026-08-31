@@ -59,10 +59,12 @@ class AndroidFileStore(
             ?.takeIf { it > 0L }
     }
 
+    override fun localUrl(path: String): String = resolvePath(path).toURI().toString()
+
     private fun resolvePath(path: String): File {
         val root = rootDir.canonicalFile
         val file = File(root, path).canonicalFile
-        if (!file.path.startsWith(root.path)) {
+        if (file != root && !file.path.startsWith(root.path + File.separator)) {
             throw SecurityException("Refusing to access file outside root: $path")
         }
         return file

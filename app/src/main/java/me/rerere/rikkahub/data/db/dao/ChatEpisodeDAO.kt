@@ -27,8 +27,18 @@ interface ChatEpisodeDAO {
     @Query("DELETE FROM ChatEpisodeEntity WHERE assistant_id = :assistantId")
     suspend fun deleteEpisodesOfAssistant(assistantId: String)
 
-    @Query("DELETE FROM ChatEpisodeEntity WHERE assistant_id = :assistantId AND start_time >= :startTime AND end_time <= :endTime")
-    suspend fun deleteEpisodeByTimeRange(assistantId: String, startTime: Long, endTime: Long)
+    @Query(
+        """
+        SELECT id FROM ChatEpisodeEntity
+        WHERE assistant_id = :assistantId
+          AND (conversation_id IS NULL OR TRIM(conversation_id) = '')
+          AND start_time = :conversationStartTime
+        """
+    )
+    suspend fun getLegacyEpisodeIdsForConversation(
+        assistantId: String,
+        conversationStartTime: Long,
+    ): List<Int>
 
     @Query("SELECT COUNT(*) FROM ChatEpisodeEntity")
     suspend fun getCount(): Int
@@ -37,6 +47,9 @@ interface ChatEpisodeDAO {
     fun getCountFlow(): Flow<Int>
     @Query("DELETE FROM chatepisodeentity WHERE conversation_id = :conversationId")
     suspend fun deleteEpisodeByConversationId(conversationId: String): Int
+
+    @Query("SELECT id FROM chatepisodeentity WHERE conversation_id = :conversationId")
+    suspend fun getEpisodeIdsByConversationId(conversationId: String): List<Int>
 
     @Query("SELECT * FROM chatepisodeentity WHERE conversation_id = :conversationId LIMIT 1")
     suspend fun getEpisodeByConversationId(conversationId: String): ChatEpisodeEntity?

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +32,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -99,11 +102,21 @@ fun ContextStackIndicator(
     val bookWidth = 24.dp
     val bookHeight = 32.dp
     val overlap = 14.dp
-    val badgeSize = 20.dp
+    val badgeHeight = 20.dp
+    val badgeWidth = when {
+        extraCount <= 0 -> 0.dp
+        extraCount <= 9 -> 20.dp
+        extraCount <= 99 -> 26.dp
+        else -> 32.dp
+    }
     
     val totalWidth = if (displayItems.isNotEmpty()) {
         val booksWidth = bookWidth + (overlap * (displayItems.size - 1))
-        if (extraCount > 0) booksWidth + (badgeSize / 2) else booksWidth
+        if (extraCount > 0) {
+            booksWidth - 10.dp + badgeWidth
+        } else {
+            booksWidth
+        }
     } else {
         0.dp
     }
@@ -115,7 +128,6 @@ fun ContextStackIndicator(
         modifier = modifier
             .width(totalWidth)
             .height(bookHeight)
-            .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -179,21 +191,29 @@ fun ContextStackIndicator(
             }
         }
         
-        // "+N" circle badge
+        // "+N" badge (grows into a pill when extraCount >= 10)
         if (extraCount > 0) {
             val badgeOffset = bookWidth + (overlap * (displayItems.size - 1)) - 10.dp
             Box(
                 modifier = Modifier
                     .offset(x = badgeOffset)
-                    .size(badgeSize)
+                    .height(badgeHeight)
+                    .defaultMinSize(minWidth = badgeWidth)
+                    .clip(CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .padding(horizontal = if (extraCount > 9) 4.dp else 0.dp)
                     .zIndex(10f),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "+$extraCount",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 9.sp,
+                        lineHeight = 9.sp,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    ),
+                    textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             }

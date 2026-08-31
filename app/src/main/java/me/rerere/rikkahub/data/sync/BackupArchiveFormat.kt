@@ -14,6 +14,15 @@ internal object BackupArchiveFormat {
     const val WAL_ENTRY = "rikka_hub-wal"
     const val SHM_ENTRY = "rikka_hub-shm"
 
+    const val WORKSPACES_DIR = "workspaces"
+
+    /**
+     * Subdirectories of each workspace root that are intentionally excluded from backups:
+     * the on-device Linux rootfs (large and reinstallable, and whose symlinks/permissions
+     * cannot survive a zip round-trip) and its scratch temp space.
+     */
+    val WORKSPACE_EXCLUDED_SUBDIRS = setOf("linux", "tmp")
+
     val MANAGED_FILE_DIRS = listOf(
         "upload",
         "avatars",
@@ -24,7 +33,9 @@ internal object BackupArchiveFormat {
         "chat_files",
         "lorebook_covers",
         "lorebook_attachments",
-        "workspaces",
+        "skills",
+        "tool_outputs",
+        WORKSPACES_DIR,
         "model_catalog",
     )
 
@@ -53,6 +64,15 @@ internal object BackupArchiveFormat {
     fun prefEntryName(storeName: String): String {
         return "$PREFS_DIR/$storeName.json"
     }
+
+    /**
+     * For the [WORKSPACES_DIR] archive tree, decides whether a path relative to the workspaces
+     * root (e.g. `<workspaceId>/linux/...`) should be excluded from the backup.
+     */
+    fun isExcludedWorkspacePath(relativePath: String): Boolean {
+        val parts = relativePath.split('/')
+        return parts.size >= 2 && parts[1] in WORKSPACE_EXCLUDED_SUBDIRS
+    }
 }
 
 @Serializable
@@ -70,27 +90,41 @@ internal data class DirectoryArchiveEntry(
     val isDirectory: Boolean,
 )
 
-internal fun enumerateDirectoryEntries(directory: File, archiveRoot: String): List<DirectoryArchiveEntry> {
+internal fun enumerateDirectoryEntries(
+    directory: File,
+    archiveRoot: String,
+    skip: (relativePath: String, isDirectory: Boolean) -> Boolean = { _, _ -> false },
+): List<DirectoryArchiveEntry> {
     if (!directory.exists()) {
         return emptyList()
     }
     val normalizedRoot = archiveRoot.trim('/').replace('\\', '/')
     return directory.walkTopDown()
-        .filter { it.exists() }
-        .map { file ->
-        val relative = file.relativeTo(directory).invariantSeparatorsPath
-        val entryName = when {
-            relative.isEmpty() && file.isDirectory -> "$normalizedRoot/"
-            relative.isEmpty() -> normalizedRoot
-            file.isDirectory -> "$normalizedRoot/$relative/"
-            else -> "$normalizedRoot/$relative"
+        .onEnter { dir ->
+            // Prevent descending into (and following symlinks within) excluded subtrees, e.g.
+            // the reinstallable workspace Linux rootfs — huge, and its symlinks/permissions
+            // cannot survive a zip round-trip anyway.
+            val relative = dir.relativeTo(directory).invariantSeparatorsPath
+            relative.isEmpty() || !skip(relative, true)
         }
-        DirectoryArchiveEntry(
-            source = file,
-            entryName = entryName,
-            isDirectory = file.isDirectory,
-        )
-    }.toList()
+        .filter { it.exists() }
+        .mapNotNull { file ->
+            val relative = file.relativeTo(directory).invariantSeparatorsPath
+            if (relative.isNotEmpty() && skip(relative, file.isDirectory)) {
+                return@mapNotNull null
+            }
+            val entryName = when {
+                relative.isEmpty() && file.isDirectory -> "$normalizedRoot/"
+                relative.isEmpty() -> normalizedRoot
+                file.isDirectory -> "$normalizedRoot/$relative/"
+                else -> "$normalizedRoot/$relative"
+            }
+            DirectoryArchiveEntry(
+                source = file,
+                entryName = entryName,
+                isDirectory = file.isDirectory,
+            )
+        }.toList()
 }
 
 internal fun safeZipDestination(root: File, entryName: String): File {

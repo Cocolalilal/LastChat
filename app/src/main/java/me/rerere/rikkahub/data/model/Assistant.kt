@@ -90,11 +90,14 @@ data class Assistant(
     val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,
     val materialYouColorIndex: Int = 0, // 0 = auto (default pick), 1-3 = alternative palette colors
+    val customMaterialYouColor: String? = null, // Hex seed used when materialYouColorIndex == -1
     val learningMode: Boolean = false,
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
     val enabledSkillIds: Set<Uuid> = emptySet(), // Skills enabled for this assistant
+    val enableAutomaticSkillInvocation: Boolean = true, // Let the model discover and activate otherwise unselected skills
 
     // Context Management Settings
+    val smartContextManagement: Boolean = true,
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
@@ -197,6 +200,37 @@ data class AssistantRegex(
     val visualOnly: Boolean = false, // 是否仅在视觉上影响
 )
 
+private val regexCacheLock = Any()
+private val compiledRegexCache = object : LinkedHashMap<String, Regex>(128, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Regex>?): Boolean = size > 128
+}
+private val INVALID_REGEX_SENTINEL = Regex("\u0000\u0000\u0000")
+
+internal fun getOrCompileRegex(pattern: String): Regex? {
+    if (pattern.isBlank()) return null
+    synchronized(regexCacheLock) {
+        val cached = compiledRegexCache[pattern]
+        if (cached != null) {
+            return if (cached === INVALID_REGEX_SENTINEL) null else cached
+        }
+    }
+    val compiled = try {
+        Regex(pattern)
+    } catch (_: Exception) {
+        INVALID_REGEX_SENTINEL
+    }
+    synchronized(regexCacheLock) {
+        compiledRegexCache[pattern] = compiled
+    }
+    return if (compiled === INVALID_REGEX_SENTINEL) null else compiled
+}
+
+fun clearCompiledRegexCache() {
+    synchronized(regexCacheLock) {
+        compiledRegexCache.clear()
+    }
+}
+
 fun String.replaceRegexes(
     assistant: Assistant?,
     scope: AssistantAffectScope,
@@ -206,16 +240,17 @@ fun String.replaceRegexes(
     if (assistant.regexes.isEmpty()) return this
     return assistant.regexes.fold(this) { acc, regex ->
         if (regex.enabled && regex.visualOnly == visual && regex.affectingScope.contains(scope)) {
-            try {
-                val result = acc.replace(
-                    regex = Regex(regex.findRegex),
-                    replacement = regex.replaceString,
-                )
-                // println("Regex: ${regex.findRegex} -> ${result}")
-                result
-            } catch (e: Exception) {
-                e.printStackTrace()
-                // 如果正则表达式格式错误，返回原字符串
+            val compiled = getOrCompileRegex(regex.findRegex)
+            if (compiled != null) {
+                try {
+                    acc.replace(
+                        regex = compiled,
+                        replacement = regex.replaceString,
+                    )
+                } catch (e: Exception) {
+                    acc
+                }
+            } else {
                 acc
             }
         } else {

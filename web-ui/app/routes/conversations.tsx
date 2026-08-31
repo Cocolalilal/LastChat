@@ -953,14 +953,6 @@ function ConversationsPageInner() {
     [refreshList],
   );
 
-  const handleConsolidateConversation = React.useCallback(
-    async (conversationId: string) => {
-      await api.post<{ status: string }>(`conversations/${conversationId}/consolidate`);
-      refreshList();
-    },
-    [refreshList],
-  );
-
   const handleRefreshConversationContext = React.useCallback(
     async (conversationId: string) => {
       const result = await api.post<ContextRefreshResponseDto>(
@@ -1129,7 +1121,6 @@ function ConversationsPageInner() {
         onMoveToAssistant={handleMoveConversation}
         onUpdateTitle={handleUpdateConversationTitle}
         onDelete={handleDeleteConversation}
-        onConsolidate={handleConsolidateConversation}
         onRefreshContext={handleRefreshConversationContext}
         onCreateConversation={handleCreateConversation}
         webAuthEnabled={settings?.webServerJwtEnabled === true}

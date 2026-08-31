@@ -21,6 +21,8 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.ReasoningConfig
+import me.rerere.ai.provider.ReasoningModeType
 import me.rerere.ai.provider.ReasoningRequestBehavior
 import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.common.platform.PlatformFileStore
@@ -175,6 +177,9 @@ data class CatalogSetupDefaults(
 
 @Serializable
 enum class CatalogProviderType {
+    @SerialName("codex")
+    CODEX,
+
     @SerialName("openai")
     OPENAI,
 
@@ -204,6 +209,8 @@ data class CatalogModel(
     val abilities: List<ModelAbility> = emptyList(),
     @SerialName("context_window")
     val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("input_cost_per_token")
     val inputCostPerToken: Double? = null,
     @SerialName("output_cost_per_token")
@@ -216,6 +223,8 @@ data class CatalogModel(
     val providerSlug: String? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
+    @SerialName("reasoning_config")
+    val reasoningConfig: CatalogReasoningConfig? = null,
 ) {
     val effectiveFamilyId: String?
         get() = familyId ?: legacyGroupId
@@ -236,10 +245,16 @@ data class CatalogModelFamily(
     @SerialName("output_modalities")
     val outputModalities: List<Modality> = listOf(Modality.TEXT),
     val abilities: List<ModelAbility> = emptyList(),
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
+    @SerialName("reasoning_config")
+    val reasoningConfig: CatalogReasoningConfig? = null,
     val versions: List<CatalogModelVersion> = emptyList(),
 )
 
@@ -258,12 +273,18 @@ data class CatalogModelVersion(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("canonical_model_id")
     val canonicalModelId: String? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
+    @SerialName("reasoning_config")
+    val reasoningConfig: CatalogReasoningConfig? = null,
 )
 
 @Serializable
@@ -281,12 +302,18 @@ data class CatalogModelRule(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("canonical_model_id")
     val canonicalModelId: String? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
+    @SerialName("reasoning_config")
+    val reasoningConfig: CatalogReasoningConfig? = null,
 )
 
 @Serializable
@@ -314,6 +341,10 @@ data class CatalogModelOverride(
     @SerialName("output_modalities")
     val outputModalities: List<Modality>? = null,
     val abilities: List<ModelAbility>? = null,
+    @SerialName("context_window")
+    val contextWindow: Int? = null,
+    @SerialName("max_images_in_context")
+    val maxImagesInContext: Int? = null,
     @SerialName("provider_slug")
     val providerSlug: String? = null,
     @SerialName("input_cost_per_token")
@@ -322,7 +353,35 @@ data class CatalogModelOverride(
     val outputCostPerToken: Double? = null,
     @SerialName("reasoning_behavior")
     val reasoningBehavior: CatalogRequestBehavior? = null,
+    @SerialName("reasoning_config")
+    val reasoningConfig: CatalogReasoningConfig? = null,
 )
+
+@Serializable
+data class CatalogReasoningConfig(
+    val type: ReasoningModeType = ReasoningModeType.EFFORT,
+    @SerialName("supported_levels")
+    val supportedLevels: List<String> = emptyList(),
+    @SerialName("min_tokens")
+    val minTokens: Int = 1024,
+    @SerialName("max_tokens")
+    val maxTokens: Int = 64_000,
+    @SerialName("step_tokens")
+    val stepTokens: Int = 1024,
+    @SerialName("preset_tokens")
+    val presetTokens: List<Int> = listOf(1024, 4096, 16_000, 32_000, 64_000),
+) {
+    fun toReasoningConfig(): ReasoningConfig {
+        return ReasoningConfig(
+            type = type,
+            supportedLevels = supportedLevels,
+            minTokens = minTokens,
+            maxTokens = maxTokens,
+            stepTokens = stepTokens,
+            presetTokens = presetTokens,
+        )
+    }
+}
 
 @Serializable
 data class CatalogRequestBehavior(
@@ -331,6 +390,7 @@ data class CatalogRequestBehavior(
     val low: List<CatalogCustomBody> = emptyList(),
     val medium: List<CatalogCustomBody> = emptyList(),
     val high: List<CatalogCustomBody> = emptyList(),
+    val max: List<CatalogCustomBody> = emptyList(),
 ) {
     fun toReasoningRequestBehavior(): ReasoningRequestBehavior {
         return ReasoningRequestBehavior(
@@ -339,6 +399,7 @@ data class CatalogRequestBehavior(
             low = low.toCustomBodies(),
             medium = medium.toCustomBodies(),
             high = high.toCustomBodies(),
+            max = max.toCustomBodies(),
         )
     }
 }
@@ -368,6 +429,9 @@ data class ModelCatalogEntry(
     val iconUrl: String? = null,
     val providerSlug: String? = null,
     val reasoningBehavior: ReasoningRequestBehavior? = null,
+    val reasoningConfig: ReasoningConfig? = null,
+    val contextWindowTokens: Int? = null,
+    val maxImagesInContext: Int? = null,
 )
 
 data class ModelCatalogSnapshot(
@@ -380,9 +444,13 @@ data class ModelCatalogSnapshot(
     val searchProviders: List<CatalogServiceProvider> = emptyList(),
     val ttsProviders: List<CatalogTTSProvider> = emptyList(),
     val sttProviders: List<CatalogServiceProvider> = emptyList(),
+    val schemaVersion: Int = 1,
+    val updatedAt: String? = null,
 ) {
     val catalog: LastChatCatalog
         get() = LastChatCatalog(
+            schemaVersion = schemaVersion,
+            updatedAt = updatedAt,
             providers = providers,
             modelFamilies = modelFamilies,
             globalRules = globalRules,
@@ -446,6 +514,8 @@ object ModelCatalogParser {
                 iconUrl = family?.icon?.toCatalogIconUrl(),
                 providerSlug = model.providerSlug,
                 reasoningBehavior = model.reasoningBehavior?.toReasoningRequestBehavior(),
+                contextWindowTokens = model.contextWindow?.takeIf { it > 0 },
+                maxImagesInContext = model.maxImagesInContext?.takeIf { it > 0 },
             )
 
             buildList {
@@ -493,6 +563,8 @@ object ModelCatalogParser {
             searchProviders = catalog.searchProviders,
             ttsProviders = catalog.ttsProviders,
             sttProviders = catalog.sttProviders,
+            schemaVersion = catalog.schemaVersion,
+            updatedAt = catalog.updatedAt,
         )
     }
 }
@@ -512,42 +584,31 @@ private fun CatalogModel.toModelOverride(): CatalogModelOverride {
         inputCostPerToken = inputCostPerToken,
         outputCostPerToken = outputCostPerToken,
         reasoningBehavior = reasoningBehavior,
+        contextWindow = contextWindow,
+        maxImagesInContext = maxImagesInContext,
     )
 }
 
 private fun CatalogModelOverride.toCatalogEntry(modelFamilies: List<CatalogModelFamily>): ModelCatalogEntry? {
     val key = id.takeIf { it.isNotBlank() } ?: apiAliases.firstOrNull { it.isNotBlank() } ?: return null
-    val resolvedType = type ?: ModelType.CHAT
-    val inputs = inputModalities ?: listOf(Modality.TEXT)
-    val outputs = outputModalities ?: defaultOutputModalities(resolvedType)
-    val resolvedAbilities = abilities ?: emptyList()
     val fingerprint = ModelCatalogFingerprint(
         modelId = key,
         canonicalHint = canonicalModelId,
         providerHint = null,
         providerSlugHint = providerSlug
     )
+    val builder = ModelCatalogEntryBuilder(key, fingerprint.canonicalModelId)
     val family = modelFamilies.firstOrNull { it.matches(fingerprint) }
-    return ModelCatalogEntry(
-        key = key,
-        canonicalModelId = ModelIdNormalizer.canonicalize(key, canonicalModelId),
-        apiAliases = apiAliases,
-        providerIds = providerIds,
-        modelFamilyId = family?.id,
-        mode = resolvedType.name.lowercase(),
-        supportedModalities = (inputs + outputs).distinct(),
-        inputModalities = inputs,
-        outputModalities = outputs,
-        supportsVision = inputs.contains(Modality.IMAGE),
-        supportsFunctionCalling = resolvedAbilities.contains(ModelAbility.TOOL),
-        supportsReasoning = resolvedAbilities.contains(ModelAbility.REASONING),
-        imageGenerationMethod = imageGenerationMethod,
-        inputCostPerToken = inputCostPerToken,
-        outputCostPerToken = outputCostPerToken,
-        iconUrl = family?.icon?.toCatalogIconUrl(),
-        providerSlug = providerSlug,
-        reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
-    )
+    family?.let { matchedFamily ->
+        builder.modelFamilyId = matchedFamily.id
+        builder.iconUrl = matchedFamily.icon?.toCatalogIconUrl()
+        builder.applyFamily(matchedFamily)
+        matchedFamily.versions
+            .filter { it.matches(fingerprint) }
+            .forEach { builder.applyVersion(it, fingerprint) }
+    }
+    builder.applyOverride(this, fingerprint)
+    return if (builder.hasMatchedRule) builder.build() else null
 }
 
 fun ModelCatalogSnapshot.inferFamilyEntry(
@@ -679,6 +740,9 @@ private class ModelCatalogEntryBuilder(
     var iconUrl: String? = null
     var providerSlug: String? = null
     var reasoningBehavior: CatalogRequestBehavior? = null
+    var reasoningConfig: CatalogReasoningConfig? = null
+    var contextWindow: Int? = null
+    var maxImagesInContext: Int? = null
     var apiAliases: List<String> = emptyList()
     var providerIds: List<String> = emptyList()
     var hasMatchedRule: Boolean = false
@@ -692,6 +756,9 @@ private class ModelCatalogEntryBuilder(
         abilities = family.abilities
         providerSlug = family.providerSlug
         reasoningBehavior = family.reasoningBehavior
+        reasoningConfig = family.reasoningConfig
+        contextWindow = family.contextWindow?.takeIf { it > 0 }
+        maxImagesInContext = family.maxImagesInContext?.takeIf { it > 0 }
     }
 
     fun applyRule(rule: CatalogModelRule, fingerprint: ModelCatalogFingerprint) {
@@ -705,6 +772,9 @@ private class ModelCatalogEntryBuilder(
             providerSlug = rule.providerSlug,
             canonicalModelId = rule.canonicalModelId,
             reasoningBehavior = rule.reasoningBehavior,
+            reasoningConfig = rule.reasoningConfig,
+            contextWindow = rule.contextWindow,
+            maxImagesInContext = rule.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -720,6 +790,9 @@ private class ModelCatalogEntryBuilder(
             providerSlug = version.providerSlug,
             canonicalModelId = version.canonicalModelId,
             reasoningBehavior = version.reasoningBehavior,
+            reasoningConfig = version.reasoningConfig,
+            contextWindow = version.contextWindow,
+            maxImagesInContext = version.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -739,6 +812,9 @@ private class ModelCatalogEntryBuilder(
             providerSlug = override.providerSlug,
             canonicalModelId = override.canonicalModelId,
             reasoningBehavior = override.reasoningBehavior,
+            reasoningConfig = override.reasoningConfig,
+            contextWindow = override.contextWindow,
+            maxImagesInContext = override.maxImagesInContext,
             fingerprint = fingerprint,
         )
     }
@@ -752,6 +828,9 @@ private class ModelCatalogEntryBuilder(
         providerSlug: String?,
         canonicalModelId: String?,
         reasoningBehavior: CatalogRequestBehavior?,
+        reasoningConfig: CatalogReasoningConfig?,
+        contextWindow: Int?,
+        maxImagesInContext: Int?,
         fingerprint: ModelCatalogFingerprint,
     ) {
         type?.let { nextType ->
@@ -767,6 +846,9 @@ private class ModelCatalogEntryBuilder(
         abilities?.let { this.abilities = it }
         providerSlug?.let { this.providerSlug = it }
         reasoningBehavior?.let { this.reasoningBehavior = it }
+        reasoningConfig?.let { this.reasoningConfig = it }
+        contextWindow?.takeIf { it > 0 }?.let { this.contextWindow = it }
+        maxImagesInContext?.takeIf { it > 0 }?.let { this.maxImagesInContext = it }
         canonicalModelId
             ?.takeIf { it.isNotBlank() }
             ?.let { this.canonicalModelId = ModelIdNormalizer.canonicalize(fingerprint.modelId, it) }
@@ -794,6 +876,9 @@ private class ModelCatalogEntryBuilder(
             iconUrl = iconUrl,
             providerSlug = providerSlug,
             reasoningBehavior = reasoningBehavior?.toReasoningRequestBehavior(),
+            reasoningConfig = reasoningConfig?.toReasoningConfig(),
+            contextWindowTokens = contextWindow,
+            maxImagesInContext = maxImagesInContext,
         )
     }
 }
@@ -867,8 +952,28 @@ class ModelCatalogService(
     }
 
     private suspend fun readActiveCatalog(): LoadedCatalog {
-        readDownloadedCatalogOrNull()?.let { return it }
-        return readBundledCatalog()
+        val downloaded = readDownloadedCatalogOrNull()
+        val bundled = readBundledCatalog()
+
+        if (downloaded == null) return bundled
+
+        val downloadedDate = downloaded.snapshot.updatedAt.orEmpty()
+        val bundledDate = bundled.snapshot.updatedAt.orEmpty()
+        val downloadedSchema = downloaded.snapshot.schemaVersion
+        val bundledSchema = bundled.snapshot.schemaVersion
+
+        val bundledIsNewerOrEqual = when {
+            bundledSchema > downloadedSchema -> true
+            bundledSchema < downloadedSchema -> false
+            else -> bundledDate >= downloadedDate
+        }
+
+        return if (bundledIsNewerOrEqual) {
+            runCatching { fileStore.delete(MODEL_CATALOG_FILE_PATH) }
+            bundled
+        } else {
+            downloaded
+        }
     }
 
     private suspend fun readDownloadedCatalogOrNull(): LoadedCatalog? {
@@ -1067,15 +1172,18 @@ private fun String.matchesCatalogPattern(pattern: String): Boolean {
 
 private fun ProviderSetting.catalogBaseUrl(): String {
     return when (this) {
+        is ProviderSetting.Codex -> "https://chatgpt.com/backend-api/codex"
         is ProviderSetting.Claude -> baseUrl
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.OpenAI -> baseUrl
         is ProviderSetting.ComfyUI -> baseUrl
+        is ProviderSetting.LiteRtLocal -> ""
     }
 }
 
 private fun ProviderSetting.catalogProviderTokens(): Set<String> {
     return when (this) {
+        is ProviderSetting.Codex -> setOf("openai")
         is ProviderSetting.Claude -> setOf("anthropic", "claude")
         is ProviderSetting.Google -> {
             if (vertexAI) {
@@ -1095,6 +1203,7 @@ private fun ProviderSetting.catalogProviderTokens(): Set<String> {
         }
 
         is ProviderSetting.ComfyUI -> setOf("comfyui")
+        is ProviderSetting.LiteRtLocal -> emptySet()
     }.map { it.normalizeCatalogToken() }.toSet()
 }
 

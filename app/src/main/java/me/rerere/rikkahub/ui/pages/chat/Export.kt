@@ -27,7 +27,6 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -48,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -115,7 +115,6 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.exportImage
@@ -171,15 +170,10 @@ fun ChatExportSheet(
     val density = LocalDensity.current
     val settings = LocalSettings.current
     val haptics = rememberPremiumHaptics()
-    val isDarkMode = LocalDarkMode.current
     val sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
     val sheetContentColor = MaterialTheme.colorScheme.onSurface
     val sheetSupportingColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val optionContainerColor = if (isDarkMode) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
+    val optionContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     var exportOptions by remember(visible) { mutableStateOf(ChatExportOptions()) }
 
     if (visible) {
@@ -316,15 +310,15 @@ fun ChatExportSheet(
                     )
                 }
 
-                Card(
-                    shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = optionContainerColor,
-                        contentColor = sheetContentColor
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Column {
+                    Surface(
+                        shape = AppShapes.ListItemFirst,
+                        color = optionContainerColor,
+                        contentColor = sheetContentColor,
+                    ) {
                         ListItem(
                             colors = ListItemDefaults.colors(
                                 containerColor = Color.Transparent,
@@ -342,31 +336,37 @@ fun ChatExportSheet(
                                 Text(stringResource(R.string.chat_page_export_tweaks_desc))
                             }
                         )
-                        ExportToggleRow(
-                            title = stringResource(R.string.chat_page_export_include_reasoning),
-                            description = stringResource(R.string.chat_page_export_include_reasoning_desc),
-                            checked = exportOptions.includeReasoning,
-                            onCheckedChange = {
-                                exportOptions = exportOptions.copy(includeReasoning = it)
-                            }
-                        )
-                        ExportToggleRow(
-                            title = stringResource(R.string.chat_page_export_include_tool_calls),
-                            description = stringResource(R.string.chat_page_export_include_tool_calls_desc),
-                            checked = exportOptions.includeToolCalls,
-                            onCheckedChange = {
-                                exportOptions = exportOptions.copy(includeToolCalls = it)
-                            }
-                        )
-                        ExportToggleRow(
-                            title = stringResource(R.string.chat_page_export_include_troubleshooting),
-                            description = stringResource(R.string.chat_page_export_include_troubleshooting_desc),
-                            checked = exportOptions.includeTroubleshooting,
-                            onCheckedChange = {
-                                exportOptions = exportOptions.copy(includeTroubleshooting = it)
-                            }
-                        )
                     }
+                    ExportToggleRow(
+                        title = stringResource(R.string.chat_page_export_include_reasoning),
+                        description = stringResource(R.string.chat_page_export_include_reasoning_desc),
+                        checked = exportOptions.includeReasoning,
+                        onCheckedChange = {
+                            exportOptions = exportOptions.copy(includeReasoning = it)
+                        },
+                        shape = AppShapes.ListItemMiddle,
+                        containerColor = optionContainerColor,
+                    )
+                    ExportToggleRow(
+                        title = stringResource(R.string.chat_page_export_include_tool_calls),
+                        description = stringResource(R.string.chat_page_export_include_tool_calls_desc),
+                        checked = exportOptions.includeToolCalls,
+                        onCheckedChange = {
+                            exportOptions = exportOptions.copy(includeToolCalls = it)
+                        },
+                        shape = AppShapes.ListItemMiddle,
+                        containerColor = optionContainerColor,
+                    )
+                    ExportToggleRow(
+                        title = stringResource(R.string.chat_page_export_include_troubleshooting),
+                        description = stringResource(R.string.chat_page_export_include_troubleshooting_desc),
+                        checked = exportOptions.includeTroubleshooting,
+                        onCheckedChange = {
+                            exportOptions = exportOptions.copy(includeTroubleshooting = it)
+                        },
+                        shape = AppShapes.ListItemLast,
+                        containerColor = optionContainerColor,
+                    )
                 }
             }
         }
@@ -436,23 +436,26 @@ private fun ExportToggleRow(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    shape: Shape,
+    containerColor: Color,
 ) {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
-    ListItem(
-        colors = ListItemDefaults.colors(
-            containerColor = Color.Transparent,
-            headlineColor = MaterialTheme.colorScheme.onSurface,
-            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        headlineContent = { Text(title) },
-        supportingContent = { Text(description) },
-        trailingContent = {
-            HapticSwitch(
-                checked = checked,
-                onCheckedChange = onCheckedChange
-            )
-        }
-    )
+    Surface(shape = shape, color = containerColor) {
+        ListItem(
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                headlineColor = MaterialTheme.colorScheme.onSurface,
+                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            headlineContent = { Text(title) },
+            supportingContent = { Text(description) },
+            trailingContent = {
+                HapticSwitch(
+                    checked = checked,
+                    onCheckedChange = onCheckedChange
+                )
+            }
+        )
+    }
 }
 
 internal fun buildExportTurns(messages: List<UIMessage>): List<ChatExportTurn> {

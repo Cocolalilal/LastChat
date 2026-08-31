@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +74,14 @@ fun ImagePreviewDialog(
                     modifier = Modifier.fillMaxSize(),
                     pagerState = state,
                     imageLoader = { index ->
-                        val painter = rememberAsyncImagePainter(images[index])
+                        val context = LocalContext.current
+                        val request = remember(images[index], context) {
+                            coil3.request.ImageRequest.Builder(context)
+                                .data(images[index])
+                                .size(coil3.size.Dimension(2048), coil3.size.Dimension(2048))
+                                .build()
+                        }
+                        val painter = rememberAsyncImagePainter(request)
                         return@ImagePager Pair(painter, painter.intrinsicSize)
                     },
                 )

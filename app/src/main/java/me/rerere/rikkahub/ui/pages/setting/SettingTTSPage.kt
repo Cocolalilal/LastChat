@@ -233,6 +233,49 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
+                if (settings.ttsProviders.isEmpty()) {
+                    item(key = "empty") {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (LocalDarkMode.current) {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                }
+                            ),
+                            shape = AppShapes.CardLarge
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_tts_page_empty_title),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.setting_tts_page_empty_desc),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                 itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -327,6 +370,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                     }
+                }
                 }
                 }
             }
@@ -568,6 +612,49 @@ internal fun TtsProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
+            if (settings.ttsProviders.isEmpty()) {
+                item(key = "empty") {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (LocalDarkMode.current) {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                        shape = AppShapes.CardLarge
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_tts_page_empty_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.setting_tts_page_empty_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
             itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
                     settings.ttsProviders.size == 1 -> ItemPosition.ONLY
@@ -655,6 +742,7 @@ internal fun TtsProvidersContent(
                             )
                         }
                     }
+                }
                 }
             }
         }
@@ -1230,33 +1318,41 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Surface(
+                Card(
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onAdd(TTSProviderSetting.OpenAI(name = "Custom TTS"))
                         showBottomSheet = false
                     },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    shape = RoundedCornerShape(24.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.onPrimary)
-                        }
-                        Column {
-                            Text(text = "Custom OpenAI-compatible TTS", style = MaterialTheme.typography.titleMedium)
-                            Text(text = "Add any TTS that supports the OpenAI /audio/speech protocol.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Custom OpenAI-compatible TTS",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
 
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
@@ -1305,7 +1401,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = shape,
-                                color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1322,28 +1418,24 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                             Icon(
                                                 imageVector = Icons.Rounded.PhoneAndroid,
                                                 contentDescription = null,
-                                                modifier = Modifier.size(24.dp)
+                                                modifier = Modifier.size(24.dp),
+                                                tint = MaterialTheme.colorScheme.onSurface,
                                             )
                                         }
                                     } else {
                                         AutoAIIconWithUrl(
                                             name = preset.name,
                                             customIconUri = preset.customIconUri,
-                                            modifier = Modifier.size(40.dp)
+                                            modifier = Modifier.size(40.dp),
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
                                         )
                                     }
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = preset.name,
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Text(
-                                            text = preset.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                         )
                                     }
 

@@ -11,14 +11,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -36,14 +32,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,37 +51,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Memory
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ui.Tooltip
+import me.rerere.rikkahub.ui.components.chat.ConversationRowSurface
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerSearch
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
@@ -110,7 +98,8 @@ sealed class ConversationListItem {
 fun ColumnScope.ConversationList(
     current: Conversation,
     conversations: LazyPagingItems<ConversationListItem>,
-    conversationJobs: Collection<Uuid>,
+    conversationJobs: Set<Uuid>,
+    completedGenerationIds: Set<Uuid> = emptySet(),
     recentlyRestoredIds: Set<Uuid> = emptySet(),
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
@@ -121,104 +110,11 @@ fun ColumnScope.ConversationList(
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
-    onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
-    showUnconsolidatedDot: Boolean = false,
-    showConsolidateOption: Boolean = false,
-    quickActions: (@Composable () -> Unit)? = null
+    quickActions: (@Composable () -> Unit)? = null,
+    bottomContent: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val navController = LocalNavController.current
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    val focusRequester = remember { FocusRequester() }
-
-    // Auto-expand when search query is non-empty
-    LaunchedEffect(searchQuery) {
-        if (searchQuery.isNotEmpty()) {
-            onSearchExpandedChange(true)
-        }
-    }
-
-    // Keep a zero-height focus target to prevent auto-focusing the search field
-    // without introducing layout jumps when search enters/leaves expanded state.
-    Box(
-        modifier = Modifier
-            .height(0.dp)
-            .focusable()
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (isSearchExpanded) {
-                IconButton(
-                    onClick = {
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                        onSearchExpandedChange(false)
-                        onSearchQueryChange("")
-                    },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            TextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused && !isSearchExpanded) {
-                            onSearchExpandedChange(true)
-                        }
-                    },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.SearchField,
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-                placeholder = {
-                    Text(stringResource(id = R.string.chat_page_search_placeholder))
-                },
-                singleLine = true
-            )
-        }
-
-        AnimatedVisibility(visible = isSearchExpanded || searchQuery.isNotBlank()) {
-            Text(
-                text = stringResource(R.string.chat_page_search_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = if (isSearchExpanded) 44.dp else 12.dp)
-            )
-        }
-    }
-
-    // Auto-focus search field when expanded
-    LaunchedEffect(isSearchExpanded) {
-        if (isSearchExpanded) {
-            kotlinx.coroutines.delay(100)
-            try { focusRequester.requestFocus() } catch (_: Exception) {}
-        }
-    }
-
-
     Box(modifier = modifier) {
         val listState = rememberLazyListState()
         val canScrollBackward by remember {
@@ -232,7 +128,10 @@ fun ColumnScope.ConversationList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp) // Added padding so it has room
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                top = if (isSearchExpanded || searchQuery.isNotBlank()) 88.dp else 64.dp,
+                bottom = if (bottomContent != null) 58.dp else 8.dp,
+            ),
         ) {
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -312,16 +211,14 @@ fun ColumnScope.ConversationList(
                             conversation = item.conversation,
                             selected = item.conversation.id == current.id,
                             loading = item.conversation.id in conversationJobs,
+                            generationComplete = item.conversation.id in completedGenerationIds,
                             isRecentlyRestored = item.conversation.id in recentlyRestoredIds,
                             onClick = onClick,
                             onDelete = onDelete,
                             onRegenerateTitle = onRegenerateTitle,
                             onEditTitle = onEditTitle,
-                            onConsolidate = onConsolidate,
                             onPin = onPin,
                             searchQuery = searchQuery,
-                            showUnconsolidatedDot = showUnconsolidatedDot,
-                            showConsolidateOption = showConsolidateOption,
                             modifier = Modifier.animateItem(
                                 fadeInSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
                                 fadeOutSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
@@ -340,41 +237,55 @@ fun ColumnScope.ConversationList(
             }
         }
 
-        // Top Fade - only show when can scroll backward
         if (canScrollBackward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .size(32.dp)
+                    .height(112.dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLow,
-                                Color.Transparent
+                            colorStops = arrayOf(
+                                0f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                0.35f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                1f to Color.Transparent,
                             )
                         )
                     )
             )
         }
 
-        // Bottom Fade - only show when can scroll forward
         if (canScrollForward) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .size(32.dp)
+                    .height(96.dp)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.surfaceContainerLow
+                            colorStops = arrayOf(
+                                0f to Color.Transparent,
+                                0.78f to MaterialTheme.colorScheme.surfaceContainerLow,
+                                1f to MaterialTheme.colorScheme.surfaceContainerLow,
                             )
                         )
                     )
             )
         }
+
+        LastChatDrawerSearch(
+            query = searchQuery,
+            onQueryChange = onSearchQueryChange,
+            expanded = isSearchExpanded,
+            onExpandedChange = onSearchExpandedChange,
+            placeholder = stringResource(id = R.string.chat_page_search_placeholder),
+            hint = stringResource(R.string.chat_page_search_hint),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(1f),
+        )
+
+        bottomContent?.invoke(this)
     }
 }
 
@@ -431,20 +342,16 @@ private fun ConversationItem(
     conversation: Conversation,
     selected: Boolean,
     loading: Boolean,
+    generationComplete: Boolean,
     isRecentlyRestored: Boolean = false,
     modifier: Modifier = Modifier,
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onEditTitle: (Conversation, String) -> Unit = { _, _ -> },
-    onConsolidate: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     searchQuery: String = "",
-    showUnconsolidatedDot: Boolean = false,
-    showConsolidateOption: Boolean = false,
     onClick: (Conversation) -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     val haptics = rememberPremiumHaptics()
     val loadingDescription = stringResource(R.string.loading)
 
@@ -462,26 +369,6 @@ private fun ConversationItem(
         }
     }
     
-    // Physics-based press feedback
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
-        label = "conversation_scale"
-    )
-    val pressAlpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "conversation_alpha"
-    )
-    
-    // Combine alphas: restored fade-in * press feedback
-    val combinedAlpha = restoredAlpha * pressAlpha
-    
-    val backgroundColor = if (selected) {
-        lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceContainerLow, 0.8f)
-    } else {
-        Color.Transparent
-    }
     var showDropdownMenu by remember {
         mutableStateOf(false)
     }
@@ -489,27 +376,18 @@ private fun ConversationItem(
     var editedTitle by remember(conversation.id) { mutableStateOf(conversation.title) }
     val messageOnlyMatch = searchQuery.isNotBlank() &&
         !conversation.title.contains(searchQuery, ignoreCase = true)
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = combinedAlpha
-            }
-            .clip(RoundedCornerShape(50f))
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                onClick = {
-                    haptics.perform(HapticPattern.Tick)
-                    onClick(conversation)
-                },
-                onLongClick = {
-                    haptics.perform(HapticPattern.Buildup)
-                    showDropdownMenu = true
-                }
-            )
-            .background(backgroundColor),
+    ConversationRowSurface(
+        selected = selected,
+        restingAlpha = restoredAlpha,
+        modifier = modifier,
+        onClick = {
+            haptics.perform(HapticPattern.Tick)
+            onClick(conversation)
+        },
+        onLongClick = {
+            haptics.perform(HapticPattern.Buildup)
+            showDropdownMenu = true
+        },
     ) {
         Row(
             modifier = Modifier
@@ -549,18 +427,6 @@ private fun ConversationItem(
                 }
             }
             
-            // Unconsolidated Dot — only show for chats that are eligible for consolidation (≥4 nodes)
-            AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated && conversation.messageNodes.size >= 4) {
-                Box(
-                    modifier = Modifier
-                        .padding(end = 4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.error)
-                        .size(6.dp)
-                )
-            }
-
-            // 置顶图标
             AnimatedVisibility(conversation.isPinned) {
                 Icon(
                     imageVector = Icons.Rounded.PushPin,
@@ -570,14 +436,23 @@ private fun ConversationItem(
                 )
             }
             AnimatedVisibility(loading) {
-                Box(
+                LoadingIndicator(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.extendColors.green6)
-                        .size(4.dp)
+                        .padding(start = 8.dp)
+                        .size(18.dp)
                         .semantics {
                             contentDescription = loadingDescription
-                        }
+                        },
+                    color = LocalContentColor.current,
+                )
+            }
+            AnimatedVisibility(!loading && generationComplete) {
+                Box(
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .clip(CircleShape)
+                        .background(LocalContentColor.current)
+                        .size(7.dp)
                 )
             }
             DropdownMenu(
@@ -633,22 +508,6 @@ private fun ConversationItem(
                         Icon(Icons.Rounded.Refresh, null)
                     }
                 )
-
-                if (showConsolidateOption && !conversation.isConsolidated) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(stringResource(id = R.string.chat_page_consolidate))
-                        },
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            onConsolidate(conversation)
-                            showDropdownMenu = false
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Memory, null)
-                        }
-                    )
-                }
 
                 DropdownMenuItem(
                     text = {

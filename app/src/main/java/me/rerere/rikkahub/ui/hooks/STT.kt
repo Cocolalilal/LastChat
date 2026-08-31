@@ -20,6 +20,10 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.Model
 import me.rerere.asr.ASRState
 import me.rerere.asr.providers.OpenAICompatibleASRController
+import me.rerere.asr.local.SherpaModelStore
+import me.rerere.asr.local.SherpaSttRuntime
+import me.rerere.asr.providers.SherpaASRController
+import me.rerere.common.inference.LocalInferenceManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
@@ -30,10 +34,19 @@ fun rememberCustomSttState(): CustomSttState {
     val context = LocalContext.current
     val settingsStore = koinInject<SettingsStore>()
     val httpClient = koinInject<OkHttpClient>()
+    val sherpaStore = koinInject<SherpaModelStore>()
+    val sherpaRuntime = koinInject<SherpaSttRuntime>()
+    val inferenceManager = koinInject<LocalInferenceManager>()
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
     val sttState = remember {
-        CustomSttStateImpl(context.applicationContext, httpClient)
+        CustomSttStateImpl(
+            context.applicationContext,
+            httpClient,
+            sherpaStore,
+            sherpaRuntime,
+            inferenceManager,
+        )
     }
 
     val sttModelId = settings.sttModelId
@@ -71,6 +84,9 @@ interface CustomSttState {
 private class CustomSttStateImpl(
     private val context: Context,
     private val httpClient: OkHttpClient,
+    private val sherpaStore: SherpaModelStore,
+    private val sherpaRuntime: SherpaSttRuntime,
+    private val inferenceManager: LocalInferenceManager,
 ) : CustomSttState {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var controller: ASRController? = null
@@ -142,6 +158,13 @@ private class CustomSttStateImpl(
         if (model.type == ModelType.STT) {
             return when (provider) {
                 is ProviderSetting.OpenAI -> OpenAICompatibleASRController(context, httpClient, provider, model)
+                is ProviderSetting.LiteRtLocal -> SherpaASRController(
+                    context = context,
+                    modelId = model.modelId,
+                    store = sherpaStore,
+                    runtime = sherpaRuntime,
+                    inferenceManager = inferenceManager,
+                )
                 else -> null
             }
         }

@@ -11,6 +11,10 @@ import me.rerere.ai.ui.UIMessage
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
 interface Provider<T : ProviderSetting> {
+    /** True only when [createEmbedding] is implemented by this provider. */
+    val supportsEmbeddings: Boolean
+        get() = false
+
     suspend fun listModels(providerSetting: T): List<Model>
 
     suspend fun getBalance(providerSetting: T): String {
@@ -41,6 +45,16 @@ interface Provider<T : ProviderSetting> {
     ): List<List<Float>> {
         return emptyList()
     }
+
+    /**
+     * Runs the provider's tokenizer against the same request shape used for generation when the
+     * provider exposes a count endpoint. Null means counting is unsupported or unavailable.
+     */
+    suspend fun countInputTokens(
+        providerSetting: T,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Int? = null
 }
 
 @Serializable

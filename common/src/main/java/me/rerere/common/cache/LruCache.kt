@@ -2,6 +2,8 @@ package me.rerere.common.cache
 
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalAtomicApi::class)
 class LruCache<K, V>(
@@ -165,5 +167,6 @@ private data class CacheState<K : Any, V>(
     }
 }
 
-private fun now(): Long = System.currentTimeMillis()
+@OptIn(ExperimentalTime::class)
+private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 

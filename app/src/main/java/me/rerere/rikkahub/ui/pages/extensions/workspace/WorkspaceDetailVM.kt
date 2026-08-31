@@ -18,6 +18,7 @@ import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.workspace.WorkspaceShellStatus
 
 class WorkspaceDetailVM(
     private val id: String,
@@ -34,6 +35,15 @@ class WorkspaceDetailVM(
 
     private val _installError = MutableStateFlow<String?>(null)
     val installError = _installError.asStateFlow()
+
+    private val _pythonInstalling = MutableStateFlow(false)
+    val pythonInstalling = _pythonInstalling.asStateFlow()
+
+    private val _pythonInstalled = MutableStateFlow(false)
+    val pythonInstalled = _pythonInstalled.asStateFlow()
+
+    private val _pythonInstallError = MutableStateFlow<String?>(null)
+    val pythonInstallError = _pythonInstallError.asStateFlow()
 
     init {
         loadWorkspace()
@@ -190,6 +200,7 @@ class WorkspaceDetailVM(
             _installError.value = null
             val workspace = state.value.workspace ?: return@launch
             _installProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
+            _pythonInstalled.value = false
             try {
                 repository.installRootfs(workspace.id, url) { progress ->
                     _installProgress.value = progress
@@ -208,6 +219,28 @@ class WorkspaceDetailVM(
 
     fun dismissInstallError() {
         _installError.value = null
+    }
+
+    fun installPython() {
+        viewModelScope.launch {
+            _pythonInstallError.value = null
+            val workspace = state.value.workspace ?: return@launch
+            _pythonInstalling.value = true
+            try {
+                repository.installPython(workspace.id)
+                _pythonInstalled.value = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (error: Throwable) {
+                _pythonInstallError.value = error.message ?: "Python installation failed"
+            } finally {
+                _pythonInstalling.value = false
+            }
+        }
+    }
+
+    fun dismissPythonInstallError() {
+        _pythonInstallError.value = null
     }
 
     fun executeTerminalCommand(command: String) {
@@ -259,6 +292,11 @@ class WorkspaceDetailVM(
         viewModelScope.launch {
             val workspace = repository.getById(id)
             _state.update { it.copy(workspace = workspace) }
+            _pythonInstalled.value = if (workspace?.shellStatus == WorkspaceShellStatus.READY.name) {
+                runCatching { repository.isPythonInstalled(id) }.getOrDefault(false)
+            } else {
+                false
+            }
         }
     }
 }

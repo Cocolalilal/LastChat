@@ -7,7 +7,6 @@
   <string name="about_page_version">إصدار</string>
   <string name="about_page_website">موقع إلكتروني</string>
   <string name="add">يضيف</string>
-  <string name="app_name">LastChat</string>
   <string name="assistant_importer_import_failed">فشل الاستيراد</string>
   <string name="assistant_importer_import_character">استيراد بطاقة الشخصية</string>
   <string name="assistant_importer_import_tavern_json">استيراد بطاقة الحانة (JSON)</string>
@@ -65,6 +64,8 @@
   <string name="assistant_page_local_tools_tts_desc">اسمح للمساعد بقراءة النص بصوت عالٍ باستخدام موفر تحويل النص إلى كلام (TTS) الذي حددته</string>
   <string name="assistant_page_local_tools_character_questions_title">أسئلة الشخصيات</string>
   <string name="assistant_page_local_tools_character_questions_desc">دع الشخصية تطرح أسئلة توضيحية.</string>
+  <string name="workspace_required_card_title">مطلوب بيئة العمل لـ %1$s</string>
+  <string name="workspace_required_card_description">تتطلب الأرشيفات والملفات الثنائية ربط بيئة عمل Linux لاستخراجها أو معالجتها.</string>
   <string name="assistant_page_local_tools_python_internet_title">السماح بالوصول إلى الإنترنت</string>
   <string name="assistant_page_local_tools_python_internet_desc">السماح لرمز بايثون بتقديم طلبات الشبكة</string>
   <string name="assistant_page_manage_memory">إدارة الذاكرة (%d)</string>

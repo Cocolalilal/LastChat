@@ -50,6 +50,7 @@ fun CropBox(
     containerWidth: Float,
     containerHeight: Float,
     mediaAspectRatio: Float,
+    lockedAspectRatio: Float? = null,
     enabled: Boolean,
     modifier: Modifier = Modifier,
     onAreaChanged: (area: Rect, original: Size) -> Unit,
@@ -78,12 +79,13 @@ fun CropBox(
         )
     }
 
-    var width by rememberSaveable { mutableFloatStateOf(originalWidth) }
-    var height by rememberSaveable { mutableFloatStateOf(originalHeight) }
+    val initialCropSize = fitCropSize(originalWidth, originalHeight, lockedAspectRatio)
+    var width by rememberSaveable { mutableFloatStateOf(initialCropSize.width) }
+    var height by rememberSaveable { mutableFloatStateOf(initialCropSize.height) }
     var top by rememberSaveable { mutableFloatStateOf((containerHeight - height) / 2) }
     var left by rememberSaveable { mutableFloatStateOf((containerWidth - width) / 2) }
 
-    LaunchedEffect(mediaAspectRatio, containerWidth, containerHeight) {
+    LaunchedEffect(mediaAspectRatio, lockedAspectRatio, containerWidth, containerHeight) {
         originalWidth = if (containerAspectRatio > mediaAspectRatio) {
             containerHeight * mediaAspectRatio
         } else {
@@ -95,8 +97,9 @@ fun CropBox(
             containerWidth / mediaAspectRatio
         }
 
-        width = originalWidth
-        height = originalHeight
+        val cropSize = fitCropSize(originalWidth, originalHeight, lockedAspectRatio)
+        width = cropSize.width
+        height = cropSize.height
         top = (containerHeight - height) / 2
         left = (containerWidth - width) / 2
     }
@@ -220,16 +223,17 @@ fun CropBox(
                         strokeWidth = guidelineStrokeWidth
                     )
 
-                    // Corner handles
-                    val arcStrokeWidth = 6.dp.toPx()
-                    drawCornerHandle(left, top, -90f, arcStrokeWidth, selectedArea == SelectedCropArea.TopLeftCorner)
-                    drawCornerHandle(left + width, top, 0f, arcStrokeWidth, selectedArea == SelectedCropArea.TopRightCorner)
-                    drawCornerHandle(left, top + height, 180f, arcStrokeWidth, selectedArea == SelectedCropArea.BottomLeftCorner)
-                    drawCornerHandle(left + width, top + height, 90f, arcStrokeWidth, selectedArea == SelectedCropArea.BottomRightCorner)
+                    if (lockedAspectRatio == null) {
+                        val arcStrokeWidth = 6.dp.toPx()
+                        drawCornerHandle(left, top, -90f, arcStrokeWidth, selectedArea == SelectedCropArea.TopLeftCorner)
+                        drawCornerHandle(left + width, top, 0f, arcStrokeWidth, selectedArea == SelectedCropArea.TopRightCorner)
+                        drawCornerHandle(left, top + height, 180f, arcStrokeWidth, selectedArea == SelectedCropArea.BottomLeftCorner)
+                        drawCornerHandle(left + width, top + height, 90f, arcStrokeWidth, selectedArea == SelectedCropArea.BottomRightCorner)
+                    }
                 }
                 .then(
                     if (enabled) {
-                        Modifier.pointerInput(Unit) {
+                        Modifier.pointerInput(lockedAspectRatio) {
                             val maxTop = (containerHeight - originalHeight) / 2
                             val maxLeft = (containerWidth - originalWidth) / 2
 
@@ -243,9 +247,11 @@ fun CropBox(
 
                                     when {
                                         // Center drag (whole crop box)
-                                        (event.position.y in top + height / 3..top + height * 2 / 3 
-                                            && event.position.x in left + width / 3..left + width * 2 / 3) 
-                                            || selectedArea == SelectedCropArea.Whole -> {
+                                        lockedAspectRatio != null || selectedArea == SelectedCropArea.Whole ||
+                                            (
+                                                event.position.y in top + height / 3..top + height * 2 / 3 &&
+                                                    event.position.x in left + width / 3..left + width * 2 / 3
+                                                ) -> {
                                             if (left + offset.x >= maxLeft && left + offset.x + width <= maxLeft + originalWidth) {
                                                 left += offset.x
                                             }
@@ -385,6 +391,20 @@ fun CropBox(
                     } else Modifier
                 )
         )
+    }
+}
+
+private fun fitCropSize(
+    availableWidth: Float,
+    availableHeight: Float,
+    lockedAspectRatio: Float?
+): Size {
+    val targetRatio = lockedAspectRatio?.takeIf { it.isFinite() && it > 0f }
+        ?: return Size(availableWidth, availableHeight)
+    return if (availableWidth / availableHeight > targetRatio) {
+        Size(width = availableHeight * targetRatio, height = availableHeight)
+    } else {
+        Size(width = availableWidth, height = availableWidth / targetRatio)
     }
 }
 

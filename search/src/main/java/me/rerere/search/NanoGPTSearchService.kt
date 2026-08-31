@@ -95,7 +95,7 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.NanoGPTOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             
@@ -195,7 +195,7 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.NanoGPTOptions
-    ): Result<ScrapedResult> = withContext(Dispatchers.IO) {
+    ): Result<ScrapedResult> = withContext(searchIoDispatcher) {
         runCatching {
             // Support both single url and urls array
             val urls = params["urls"]?.jsonArray?.map { it.jsonPrimitive.content }

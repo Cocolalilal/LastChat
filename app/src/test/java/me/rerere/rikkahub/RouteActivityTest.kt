@@ -171,9 +171,82 @@ class RouteActivityTest {
         )
 
         assertEquals(assistantId, selectedAssistantId)
-        assertFalse(consumedAgain)
+        assertTrue(consumedAgain)
         assertEquals(conversationId, target?.conversationId)
+        assertEquals(ChatPersistenceMode.NORMAL, target?.persistenceMode)
         assertEquals("event-consumed", target?.focusLatestMessageKey)
+    }
+
+    @Test
+    fun resolveSpontaneousNotificationTargetConsumedDraftNowPersistedInDbDoesNotSeedDraftAndReturnsNormal() = runBlocking {
+        val assistantId = Uuid.random()
+        val conversationId = Uuid.random()
+        val consumedDraftTarget = ResolvedSpontaneousChatTarget(
+            conversationId = conversationId,
+            persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
+            assistantId = assistantId,
+        )
+        var selectedAssistantId: Uuid? = null
+        var updatedConsumedTarget: ResolvedSpontaneousChatTarget? = null
+
+        val target = resolveSpontaneousNotificationTarget(
+            data = SpontaneousNotificationData(
+                assistantId = assistantId.toString(),
+                conversationId = null,
+                eventId = "event-draft-persisted",
+                message = "Original notification",
+                relation = SpontaneousMessageRelation.UNRELATED,
+            ),
+            isEventConsumed = { true },
+            getConsumedTarget = { consumedDraftTarget },
+            updateAssistantSelection = { selectedAssistantId = it },
+            hasConversation = { it == conversationId },
+            appendToConversation = { _, _, _ -> error("Should not append") },
+            seedDraftConversation = { _, _, _ -> error("Persisted conversation should never be re-seeded as a draft") },
+            markEventConsumed = { _, target -> updatedConsumedTarget = target },
+        )
+
+        assertEquals(assistantId, selectedAssistantId)
+        assertEquals(conversationId, target?.conversationId)
+        assertEquals(ChatPersistenceMode.NORMAL, target?.persistenceMode)
+        assertEquals(ChatPersistenceMode.NORMAL, updatedConsumedTarget?.persistenceMode)
+        assertEquals("event-draft-persisted", target?.focusLatestMessageKey)
+    }
+
+    @Test
+    fun resolveSpontaneousNotificationTargetConsumedDraftNotYetPersistedReSeedsDraft() = runBlocking {
+        val assistantId = Uuid.random()
+        val conversationId = Uuid.random()
+        val consumedDraftTarget = ResolvedSpontaneousChatTarget(
+            conversationId = conversationId,
+            persistenceMode = ChatPersistenceMode.PERSIST_ON_REPLY,
+            assistantId = assistantId,
+        )
+        var seededConversationId: Uuid? = null
+
+        val target = resolveSpontaneousNotificationTarget(
+            data = SpontaneousNotificationData(
+                assistantId = assistantId.toString(),
+                conversationId = null,
+                eventId = "event-draft-unpersisted",
+                message = "Original notification",
+                relation = SpontaneousMessageRelation.UNRELATED,
+            ),
+            isEventConsumed = { true },
+            getConsumedTarget = { consumedDraftTarget },
+            updateAssistantSelection = { },
+            hasConversation = { false },
+            appendToConversation = { _, _, _ -> error("Should not append") },
+            seedDraftConversation = { _, _, id ->
+                seededConversationId = id
+                id
+            },
+            markEventConsumed = { _, _ -> },
+        )
+
+        assertEquals(conversationId, seededConversationId)
+        assertEquals(conversationId, target?.conversationId)
+        assertEquals(ChatPersistenceMode.PERSIST_ON_REPLY, target?.persistenceMode)
     }
 
     @Test

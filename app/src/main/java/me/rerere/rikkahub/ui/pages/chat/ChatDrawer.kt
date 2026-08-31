@@ -3,14 +3,11 @@ package me.rerere.rikkahub.ui.pages.chat
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.core.net.toUri
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,12 +32,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,22 +47,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -84,6 +79,12 @@ import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.nav.LastChatModalDrawerSheet
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerAction
+import me.rerere.rikkahub.ui.components.nav.LastChatSettingsIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatBarChartIcon
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickAction
+import me.rerere.rikkahub.ui.components.nav.LastChatDrawerQuickActionGroup
 
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -99,6 +100,7 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.utils.Version
 import me.rerere.rikkahub.utils.onSuccess
 import coil3.compose.AsyncImage
+import kotlin.uuid.Uuid
 
 @Composable
 fun ChatDrawerContent(
@@ -121,7 +123,7 @@ fun ChatDrawerContent(
     val currentAssistant = settings.getAssistantById(current.assistantId) ?: settings.getCurrentAssistant()
 
     // Search expansion state - hoisted here so drawer width can animate
-    var isSearchExpanded by remember { mutableStateOf(false) }
+    var isSearchExpanded by remember(vm) { mutableStateOf(false) }
     val drawerWidth by animateDpAsState(
         targetValue = if (isSearchExpanded) expandedWidth else collapsedWidth,
         animationSpec = if (isSearchExpanded) {
@@ -138,6 +140,16 @@ fun ChatDrawerContent(
     val conversationJobs by vm.conversationJobs.collectAsStateWithLifecycle(
         initialValue = emptyMap(),
     )
+    var completedGenerationIds by remember { mutableStateOf(emptySet<Uuid>()) }
+
+    LaunchedEffect(vm) {
+        vm.generationDoneFlow.collect { conversationId ->
+            completedGenerationIds = completedGenerationIds + conversationId
+        }
+    }
+    LaunchedEffect(conversationJobs.keys.toSet()) {
+        completedGenerationIds = completedGenerationIds - conversationJobs.keys
+    }
 
     val recentlyRestoredIds by vm.recentlyRestoredIds.collectAsStateWithLifecycle()
 
@@ -232,133 +244,6 @@ fun ChatDrawerContent(
                 }
             }
 
-            ConversationList(
-                current = current,
-                conversations = conversations,
-                conversationJobs = conversationJobs.keys,
-                recentlyRestoredIds = recentlyRestoredIds,
-                searchQuery = searchQuery,
-                onSearchQueryChange = { vm.updateSearchQuery(it) },
-                isSearchExpanded = isSearchExpanded,
-                onSearchExpandedChange = { isSearchExpanded = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                onClick = {
-                    // Only pass search query if the match was from message content (not title)
-                    // This scrolls to the matching message; for title matches, just open normally
-                    val titleMatches = searchQuery.isNotBlank() && it.title.contains(searchQuery, ignoreCase = true)
-                    navigateToChatPage(navController, it.id, searchQuery = if (titleMatches) null else searchQuery.ifBlank { null })
-                    dismissDrawerAfterSelection()
-                },
-                onRegenerateTitle = {
-                    vm.generateTitle(it, true)
-                },
-                onEditTitle = { conversation, title ->
-                    vm.updateConversationTitle(conversation, title)
-                },
-                onConsolidate = {
-                    vm.consolidateConversation(it)
-                },
-                onDelete = {
-                    vm.deleteConversation(it)
-                    toaster.show(
-                        message = context.getString(R.string.conversation_deleted),
-                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                            label = context.getString(R.string.undo),
-                            onClick = {
-                                vm.undoDeleteConversation(it.id)
-                            }
-                        )
-                    )
-                    if (it.id == current.id) {
-                        navigateToChatPage(navController)
-                        dismissDrawerAfterSelection()
-                    }
-                },
-                onPin = {
-                    vm.updatePinnedStatus(it)
-                },
-                showUnconsolidatedDot = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
-                showConsolidateOption = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
-                // Imagine + Stats buttons (visibility handled by ConversationList)
-                quickActions = {
-                    // Quick Action Buttons (settings-style grouping)
-                    val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .clip(RoundedCornerShape(24.dp)),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val haptics = rememberPremiumHaptics()
-                        // Imagine button
-                        Surface(
-                            onClick = {
-                                haptics.perform(HapticPattern.Tick)
-                                navController.navigate(Screen.ImageGen)
-                                dismissDrawerAfterSelection()
-                            },
-                            color = itemColor,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Image,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = stringResource(R.string.chat_drawer_imagine),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        // Stats button
-                        Surface(
-                            onClick = {
-                                haptics.perform(HapticPattern.Tick)
-                                navController.navigate(Screen.Menu)
-                                dismissDrawerAfterSelection()
-                            },
-                            color = itemColor,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.BarChart,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = stringResource(R.string.menu_statistics_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                    }
-                }
-            }
-                }
-            )
-
             fun navigateToAssistantConversation(assistant: me.rerere.rikkahub.data.model.Assistant) {
                 scope.launch {
                     val draft = inputState.toDraft()
@@ -384,89 +269,180 @@ fun ChatDrawerContent(
             val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
             var showCharacterPicker by remember { mutableStateOf(false) }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-            ) {
-                val actionButtonSize = 42.dp
-                val assistantAvatarSize = 30.dp
-                val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                val haptics = rememberPremiumHaptics()
-                val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
-
-                Surface(
-                    color = itemColor,
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(actionButtonSize)
-                ) {
+            ConversationList(
+                current = current,
+                conversations = conversations,
+                conversationJobs = conversationJobs.keys,
+                completedGenerationIds = completedGenerationIds,
+                recentlyRestoredIds = recentlyRestoredIds,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { vm.updateSearchQuery(it) },
+                isSearchExpanded = isSearchExpanded,
+                onSearchExpandedChange = { isSearchExpanded = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                onClick = {
+                    completedGenerationIds = completedGenerationIds - it.id
+                    // Only pass search query if the match was from message content (not title)
+                    // This scrolls to the matching message; for title matches, just open normally
+                    val selectedSearchQuery = searchQuery.ifBlank { null }
+                    val titleMatches = selectedSearchQuery != null &&
+                        it.title.contains(selectedSearchQuery, ignoreCase = true)
+                    vm.updateSearchQuery("")
+                    isSearchExpanded = false
+                    navigateToChatPage(
+                        navController,
+                        it.id,
+                        searchQuery = if (titleMatches) null else selectedSearchQuery,
+                    )
+                    dismissDrawerAfterSelection()
+                },
+                onRegenerateTitle = {
+                    vm.generateTitle(it, true)
+                },
+                onEditTitle = { conversation, title ->
+                    vm.updateConversationTitle(conversation, title)
+                },
+                onDelete = {
+                    vm.deleteConversation(it)
+                    toaster.show(
+                        message = context.getString(R.string.conversation_deleted),
+                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                            label = context.getString(R.string.undo),
+                            onClick = {
+                                vm.undoDeleteConversation(it.id)
+                            }
+                        )
+                    )
+                    if (it.id == current.id) {
+                        navigateToChatPage(navController)
+                        dismissDrawerAfterSelection()
+                    }
+                },
+                onPin = {
+                    vm.updatePinnedStatus(it)
+                },
+                // Imagine + Stats buttons (visibility handled by ConversationList)
+                quickActions = {
+                    val haptics = rememberPremiumHaptics()
+                    LastChatDrawerQuickActionGroup {
+                        LastChatDrawerQuickAction(
+                            label = stringResource(R.string.chat_drawer_imagine),
+                            onClick = {
+                                navController.navigate(Screen.ImageGen)
+                                dismissDrawerAfterSelection()
+                            },
+                            onHaptic = { haptics.perform(HapticPattern.Tick) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Image,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                        LastChatDrawerQuickAction(
+                            label = stringResource(R.string.menu_statistics_title),
+                            onClick = {
+                                navController.navigate(Screen.Menu)
+                                dismissDrawerAfterSelection()
+                            },
+                            onHaptic = { haptics.perform(HapticPattern.Tick) },
+                            icon = { LastChatBarChartIcon(contentDescription = null) },
+                        )
+                    }
+                },
+                bottomContent = {
                     Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(start = 12.dp, end = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .zIndex(1f),
                     ) {
-                        Box(
+                        val actionButtonSize = 42.dp
+                        val assistantAvatarSize = 30.dp
+                        val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        val haptics = rememberPremiumHaptics()
+                        val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
+
+                        Surface(
+                            color = itemColor,
+                            shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    haptics.perform(HapticPattern.Pop)
-                                    if (settings.assistants.size > 1) {
-                                        showCharacterPicker = true
-                                    }
-                                },
-                            contentAlignment = Alignment.CenterStart
+                                .height(actionButtonSize),
                         ) {
-                            Text(
-                                text = assistantName,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 12.dp, end = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            haptics.perform(HapticPattern.Pop)
+                                            if (settings.assistants.size > 1) {
+                                                showCharacterPicker = true
+                                            }
+                                        },
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    Text(
+                                        text = assistantName,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(assistantAvatarSize)
+                                        .clip(rememberAvatarShape(false))
+                                        .clickable {
+                                            haptics.perform(HapticPattern.Pop)
+                                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                                            dismissDrawerAfterSelection()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    DrawerAvatarVisual(
+                                        name = assistantName,
+                                        avatar = currentAssistant.avatar,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .size(assistantAvatarSize)
-                                .clip(rememberAvatarShape(false))
-                                .clickable {
-                                    haptics.perform(HapticPattern.Pop)
-                                    navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                                    dismissDrawerAfterSelection()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            DrawerAvatarVisual(
-                                name = assistantName,
-                                avatar = currentAssistant.avatar,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                        DrawerAction(
+                            icon = {
+                                LastChatSettingsIcon(contentDescription = null)
+                            },
+                            label = { Text(stringResource(R.string.settings)) },
+                            onClick = {
+                                navController.navigate(Screen.Setting)
+                                dismissDrawerAfterSelection()
+                            },
+                            containerColor = itemColor,
+                            size = actionButtonSize,
+                        )
                     }
-                }
-
-                // Settings icon
-                DrawerAction(
-                    icon = {
-                        Icon(Icons.Rounded.Settings, null)
-                    },
-                    label = { Text(stringResource(R.string.settings)) },
-                    onClick = {
-                        navController.navigate(Screen.Setting)
-                        dismissDrawerAfterSelection()
-                    },
-                    containerColor = itemColor,
-                    size = actionButtonSize
-                )
-            }
+                },
+            )
 
             // Character picker sheet
             if (showCharacterPicker) {
@@ -491,10 +467,8 @@ fun ChatDrawerContent(
     // 昵称编辑对话框
     when (presentation) {
         ChatDrawerPresentation.Modal -> {
-            ModalDrawerSheet(
+            LastChatModalDrawerSheet(
                 modifier = Modifier.widthIn(max = drawerWidth),
-                drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 drawerContent()
             }
@@ -615,7 +589,7 @@ fun CollapsedChatSideRail(
                     size = 48.dp
                 )
                 DrawerAction(
-                    icon = { Icon(Icons.Rounded.BarChart, null) },
+                    icon = { LastChatBarChartIcon(contentDescription = null) },
                     label = { Text(stringResource(R.string.menu_statistics_title)) },
                     onClick = onOpenStatistics,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -646,7 +620,7 @@ fun CollapsedChatSideRail(
             }
 
             DrawerAction(
-                icon = { Icon(Icons.Rounded.Settings, null) },
+                icon = { LastChatSettingsIcon(contentDescription = null) },
                 label = { Text(stringResource(R.string.settings)) },
                 onClick = onOpenSettings,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -666,51 +640,20 @@ private fun DrawerAction(
     shape: Shape = CircleShape,
     size: Dp = 42.dp,
 ) {
-    val containerSize = size
-    val iconSize = 22.dp
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.85f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f,
-            stiffness = 300f
-        ),
-        label = "drawer_scale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f,
-            stiffness = 300f
-        ),
-        label = "drawer_alpha"
-    )
     val haptics = rememberPremiumHaptics()
-    Surface(
-        onClick = {
-            haptics.perform(HapticPattern.Pop)
-            onClick()
-        },
-        modifier = modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            this.alpha = alpha
-        },
-        interactionSource = interactionSource,
-        color = containerColor,
+    LastChatDrawerAction(
+        onClick = onClick,
+        onHaptic = { haptics.perform(HapticPattern.Pop) },
+        modifier = modifier,
+        containerColor = containerColor,
         shape = shape,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        size = size,
     ) {
-        Tooltip(
-            tooltip = {
-               label()
-            }
-        ) {
+        containerSize, iconSize ->
+        Tooltip(tooltip = { label() }) {
             Box(
-                modifier = Modifier
-                    .size(containerSize),
-                contentAlignment = Alignment.Center
+                modifier = Modifier.size(containerSize),
+                contentAlignment = Alignment.Center,
             ) {
                 Box(modifier = Modifier.size(iconSize)) {
                     icon()

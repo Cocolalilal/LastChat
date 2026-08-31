@@ -9,6 +9,7 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
 import androidx.room.migration.Migration
+import androidx.room.DeleteTable
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
@@ -21,6 +22,7 @@ import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.TemporalMemoryDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ChatAttachmentEntity
@@ -30,6 +32,14 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemoryClaimEntity
+import me.rerere.rikkahub.data.db.entity.MemoryClaimFtsEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3Entity
+import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3FtsEntity
+import me.rerere.rikkahub.data.db.entity.MemoryIngestStateEntity
+import me.rerere.rikkahub.data.db.entity.MemoryProjectionEntity
+import me.rerere.rikkahub.data.db.entity.MemorySourceV3Entity
+import me.rerere.rikkahub.data.db.entity.MemorySourceV3FtsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.MessageNode
@@ -44,8 +54,27 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class, UsageStatsEntity::class, ChatAttachmentEntity::class, ConversationAttachmentRefEntity::class, WorkspaceEntity::class],
-    version = 33,
+    entities = [
+        ConversationEntity::class,
+        MemoryEntity::class,
+        GenMediaEntity::class,
+        ChatEpisodeEntity::class,
+        EmbeddingCacheEntity::class,
+        DailyActivityEntity::class,
+        UsageStatsEntity::class,
+        ChatAttachmentEntity::class,
+        ConversationAttachmentRefEntity::class,
+        WorkspaceEntity::class,
+        MemoryClaimEntity::class,
+        MemoryClaimFtsEntity::class,
+        MemoryEpisodeV3Entity::class,
+        MemoryEpisodeV3FtsEntity::class,
+        MemorySourceV3Entity::class,
+        MemorySourceV3FtsEntity::class,
+        MemoryIngestStateEntity::class,
+        MemoryProjectionEntity::class,
+    ],
+    version = 39,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -76,6 +105,12 @@ import kotlinx.serialization.json.put
         // 29->30 is manual migration (MIGRATION_29_30) - adds per-chat lorebook overrides
         // 31->32 is manual migration (MIGRATION_31_32) - adds embedding_blob columns
         // 32->33 is manual migration (MIGRATION_32_33) - adds last_model_id to conversation table
+        AutoMigration(from = 33, to = 35),
+        AutoMigration(from = 34, to = 35, spec = Migration_34_35::class),
+        AutoMigration(from = 35, to = 36),
+        AutoMigration(from = 36, to = 37),
+        AutoMigration(from = 37, to = 38, spec = Migration_37_38::class),
+        AutoMigration(from = 38, to = 39),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -87,6 +122,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationAttachmentRefDao(): ConversationAttachmentRefDao
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun temporalMemoryDao(): TemporalMemoryDao
 
     abstract fun genMediaDao(): GenMediaDAO
 
@@ -602,3 +639,37 @@ val Migration_6_7 = object : Migration(6, 7) {
 
 @DeleteColumn(tableName = "ConversationEntity", columnName = "usage")
 class Migration_8_9 : AutoMigrationSpec
+
+@DeleteTable(tableName = "memory_node")
+@DeleteTable(tableName = "memory_alias")
+@DeleteTable(tableName = "memory_fact")
+@DeleteTable(tableName = "memory_fact_link")
+@DeleteTable(tableName = "memory_episode")
+@DeleteTable(tableName = "memory_mention")
+@DeleteTable(tableName = "memory_frame")
+@DeleteTable(tableName = "memory_provenance")
+@DeleteTable(tableName = "memory_fts")
+@DeleteTable(tableName = "memory_goal")
+@DeleteTable(tableName = "memory_activity")
+@DeleteTable(tableName = "memory_budget_ledger")
+@DeleteTable(tableName = "memory_conversation_state")
+@DeleteTable(tableName = "memory_store_meta")
+@DeleteColumn(tableName = "ConversationEntity", columnName = "extracted_up_to_index")
+class Migration_34_35 : AutoMigrationSpec
+
+@DeleteTable(tableName = "graph_memories")
+@DeleteTable(tableName = "graph_entities")
+@DeleteTable(tableName = "graph_memory_entity_links")
+@DeleteTable(tableName = "graph_memory_sources")
+@DeleteTable(tableName = "graph_memory_history")
+@DeleteTable(tableName = "graph_memory_relations")
+@DeleteTable(tableName = "memory_engine_state")
+@DeleteTable(tableName = "memory_transfer_jobs")
+@DeleteTable(tableName = "memory_transfer_links")
+@DeleteTable(tableName = "memory_transfer_conflicts")
+@DeleteTable(tableName = "memory_activity")
+@DeleteTable(tableName = "memory_suppressions")
+@DeleteTable(tableName = "session_memory_cursors")
+@DeleteTable(tableName = "memory_scope_messages")
+@DeleteTable(tableName = "graph_embedding_cache")
+class Migration_37_38 : AutoMigrationSpec

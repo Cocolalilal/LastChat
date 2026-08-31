@@ -8,7 +8,6 @@ import {
   Check,
   Laptop,
   Languages,
-  Memory,
   Moon,
   MoreHorizontal,
   MoveRight,
@@ -203,7 +202,6 @@ export interface ConversationSidebarProps {
   onMoveToAssistant?: (id: string, assistantId: string) => Promise<void>;
   onUpdateTitle?: (id: string, title: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
-  onConsolidate?: (id: string) => Promise<void>;
   onRefreshContext?: (id: string) => Promise<void>;
   onCreateConversation?: () => void;
   webAuthEnabled?: boolean;
@@ -219,7 +217,6 @@ interface ConversationListRowProps {
   onMoveToAssistant?: (id: string, assistantId: string) => Promise<void>;
   onUpdateTitle?: (id: string, title: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
-  onConsolidate?: (id: string) => Promise<void>;
   onRefreshContext?: (id: string) => Promise<void>;
 }
 
@@ -234,7 +231,6 @@ const ConversationListRow = React.memo(
     onMoveToAssistant,
     onUpdateTitle,
     onDelete,
-    onConsolidate,
     onRefreshContext,
   }: ConversationListRowProps) => {
     const { t } = useTranslation();
@@ -249,10 +245,6 @@ const ConversationListRow = React.memo(
       () => assistants.find((assistant) => assistant.id === conversation.assistantId) ?? null,
       [assistants, conversation.assistantId],
     );
-    const canConsolidate =
-      Boolean(
-        conversationAssistant?.enableMemory && conversationAssistant?.enableMemoryConsolidation,
-      ) && !conversation.isConsolidated;
     const canRefreshContext = Boolean(conversationAssistant) && !conversation.isGenerating;
 
     const hasMenuAction = Boolean(
@@ -261,7 +253,6 @@ const ConversationListRow = React.memo(
       onMoveToAssistant ||
       onUpdateTitle ||
       onDelete ||
-      (onConsolidate && canConsolidate) ||
       (onRefreshContext && canRefreshContext),
     );
 
@@ -308,13 +299,6 @@ const ConversationListRow = React.memo(
                 {conversation.title || t("conversation_sidebar.unnamed_conversation")}
               </span>
               {conversation.isPinned && <Pin className="size-3 text-primary" aria-hidden />}
-              {canConsolidate && (
-                <span
-                  className="inline-block size-2 rounded-full bg-primary"
-                  aria-label={t("conversation_sidebar.unconsolidated")}
-                  title={t("conversation_sidebar.unconsolidated")}
-                />
-              )}
               {conversation.isGenerating && (
                 <span
                   className="inline-block size-2 rounded-full bg-emerald-500"
@@ -475,28 +459,6 @@ const ConversationListRow = React.memo(
                   </DropdownMenuSub>
                 )}
 
-                {onConsolidate && canConsolidate && (
-                  <DropdownMenuItem
-                    disabled={pendingAction !== null}
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      void runAction(
-                        "consolidate",
-                        async () => {
-                          await onConsolidate(conversation.id);
-                        },
-                        {
-                          success: t("conversation_sidebar.consolidate_success"),
-                          error: t("conversation_sidebar.consolidate_failed"),
-                        },
-                      );
-                    }}
-                  >
-                    <Memory className="size-4" />
-                    <span>{t("conversation_sidebar.consolidate")}</span>
-                  </DropdownMenuItem>
-                )}
-
                 {onRefreshContext && canRefreshContext && (
                   <DropdownMenuItem
                     disabled={pendingAction !== null}
@@ -618,7 +580,6 @@ export const ConversationSidebar = React.memo(
     onMoveToAssistant,
     onUpdateTitle,
     onDelete,
-    onConsolidate,
     onRefreshContext,
     onCreateConversation,
     webAuthEnabled = false,
@@ -813,7 +774,6 @@ export const ConversationSidebar = React.memo(
                       onMoveToAssistant={onMoveToAssistant}
                       onUpdateTitle={onUpdateTitle}
                       onDelete={onDelete}
-                      onConsolidate={onConsolidate}
                       onRefreshContext={onRefreshContext}
                     />
                   );

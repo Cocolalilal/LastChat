@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
 
 val LocalHighlighter = compositionLocalOf<Highlighter> { error("No Highlighter provided") }
 
@@ -52,8 +53,7 @@ fun HighlightText(
     val updatedCode by rememberUpdatedState(code)
     val updatedLanguage by rememberUpdatedState(language)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedCode to updatedLanguage }.collect {
-            val (codeSnapshot, languageSnapshot) = it
+        snapshotFlow { updatedCode to updatedLanguage }.collectLatest { (codeSnapshot, languageSnapshot) ->
             tokens = if (codeSnapshot.length <= MAX_CODE_LENGTH) {
                 try {
                     highlighter.highlight(codeSnapshot, languageSnapshot)

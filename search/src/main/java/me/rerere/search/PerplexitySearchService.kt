@@ -38,7 +38,7 @@ object PerplexitySearchService : SearchService<SearchServiceOptions.PerplexityOp
         params: JsonObject,
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.PerplexityOptions
-    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+    ): Result<SearchResult> = withContext(searchIoDispatcher) {
         runCatching {
             if (serviceOptions.apiKey.isBlank()) {
                 error("Perplexity API key is required")

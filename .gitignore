@@ -25,3 +25,6 @@ __pycache__/
 *.jks
 *.keystore
 Thumbs.db
+graphify-out/
+temp_aar/
+.commandcode/taste/workflow/taste.md

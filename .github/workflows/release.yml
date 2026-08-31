@@ -18,6 +18,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: Install web UI dependencies
+        working-directory: web-ui
+        run: npm ci
+
       - name: Gradle cache
         uses: actions/cache@v4
         with:
@@ -47,4 +58,4 @@ jobs:
         if: success()
         with:
           name: artifacts
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/**/*.apk

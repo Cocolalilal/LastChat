@@ -6,6 +6,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -89,6 +90,47 @@ class ProviderSettingsNormalizationTest {
         assertEquals(embeddingModel.id, normalized.embeddingModelId)
         assertEquals(listOf(chatModel.id), normalized.favoriteModels)
         assertTrue(normalized.providers.none { it.name == "On-device" })
+    }
+
+    @Test
+    fun `missing embedding selection becomes explicitly disabled when no embedding model exists`() {
+        val chatModel = Model(
+            id = Uuid.parse("66666666-6666-6666-6666-666666666666"),
+            modelId = "chat-only",
+            type = ModelType.CHAT,
+        )
+        val normalized = Settings(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(chatModel))),
+            embeddingModelId = Uuid.parse("77777777-7777-7777-7777-777777777777"),
+        ).clearMissingModelReferences()
+
+        assertEquals(DISABLED_MODEL_ID, normalized.embeddingModelId)
+    }
+
+    @Test
+    fun `advanced memory normalizes hidden states that disable recall`() {
+        val normalized = Settings(
+            assistants = listOf(
+                Assistant(
+                    enableMemory = false,
+                    useRagMemoryRetrieval = false,
+                    enableMemoryConsolidation = true,
+                    enableRecentChatsReference = false,
+                    ragIncludeCore = false,
+                    ragIncludeEpisodes = false,
+                    ragLimit = 0,
+                    ragSimilarityThreshold = Float.NaN,
+                )
+            )
+        ).normalizeMemorySettings().assistants.single()
+
+        assertTrue(normalized.enableMemory)
+        assertTrue(normalized.useRagMemoryRetrieval)
+        assertTrue(normalized.enableRecentChatsReference)
+        assertTrue(normalized.ragIncludeCore)
+        assertTrue(normalized.ragIncludeEpisodes)
+        assertEquals(1, normalized.ragLimit)
+        assertEquals(0.45f, normalized.ragSimilarityThreshold)
     }
 
 }

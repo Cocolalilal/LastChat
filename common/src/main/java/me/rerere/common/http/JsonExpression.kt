@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.math.round
 
 // Public API
 
@@ -53,6 +54,20 @@ fun isJsonExprValid(input: String): Boolean = parseExpression(input).success
  * @return 作为字符串的评估值。
  */
 fun evaluateJsonExpr(input: String, root: JsonObject): String {
+    if (input.isNotEmpty() && (input[0].isLetter() || input[0] == '_') && input.all { it.isLetterOrDigit() || it == '_' }) {
+        when (val direct = root[input]) {
+            null, is JsonNull -> return ""
+            is JsonPrimitive -> {
+                if (direct.isString) return direct.content
+                val num = direct.doubleOrNull()
+                if (num != null) {
+                    return formatNumber(round(num * 100.0) / 100.0)
+                }
+                return direct.content
+            }
+            is JsonObject, is JsonArray -> return direct.toString()
+        }
+    }
     val lexer = Lexer(input)
     val parser = Parser(lexer)
     val expr = parser.parse()
@@ -353,7 +368,7 @@ private class Evaluator(private val root: JsonObject) {
         return when (elem) {
             is JsonPrimitive -> {
                 if (elem.isString) Value.Str(elem.content)
-                else elem.doubleOrNull()?.let { Value.Num("%.2f".format(it).toDouble()) } ?: Value.Str(elem.content)
+                else elem.doubleOrNull()?.let { Value.Num(round(it * 100.0) / 100.0) } ?: Value.Str(elem.content)
             }
             is JsonObject, is JsonArray -> Value.Str(elem.toString())
         }

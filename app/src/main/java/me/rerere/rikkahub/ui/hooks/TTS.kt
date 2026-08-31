@@ -22,6 +22,7 @@ import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.android.TTSManager
 import me.rerere.tts.controller.TtsController
+import me.rerere.tts.controller.AudioPlayer
 import org.koin.compose.koinInject
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -121,7 +122,7 @@ private class CustomTtsStateImpl(
 ) : CustomTtsState, KoinComponent {
 
     private val ttsManager by inject<TTSManager>()
-    private val controller by lazy { me.rerere.tts.controller.TtsController(context, ttsManager) }
+    private val controller by lazy { TtsController(ttsManager, AudioPlayer(context)) }
 
     private val scope = CoroutineScope(Dispatchers.Main)
     private var currentJob: Job? = null

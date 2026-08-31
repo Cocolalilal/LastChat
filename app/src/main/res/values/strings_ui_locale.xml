@@ -60,7 +60,7 @@
     <string name="assistant_detail_models_desc">Chat model, background model, generation settings</string>
     <string name="assistant_detail_memory_desc">Memory settings, recent chats, RAG</string>
     <string name="assistant_detail_tools_search">Tools &amp; Search</string>
-    <string name="assistant_detail_tools_search_desc">Search providers, local tools, MCP</string>
+    <string name="assistant_detail_tools_search_desc">Search providers, local tools, plugins</string>
     <string name="assistant_detail_ui_customization">UI Customization</string>
     <string name="assistant_detail_ui_customization_desc">Per-character display settings</string>
     <string name="assistant_detail_advanced">Advanced</string>
@@ -221,7 +221,7 @@
     <string name="assistant_tools_prefer_builtin">Prefer Built-in Search</string>
     <string name="assistant_tools_prefer_builtin_desc">Use model\'s native search when available</string>
     <string name="assistant_tools_mcp_enabled_count">%1$d enabled of %2$d</string>
-    <string name="assistant_tools_mcp_select">Select external tool servers</string>
+    <string name="assistant_tools_mcp_select">Choose plugins for this assistant</string>
     <string name="assistant_tools_provider_fallback">Provider %1$d</string>
 
     <!-- UI customization -->
@@ -230,8 +230,8 @@
     <string name="setting_ui_show_avatar_header_global_desc">When disabled, avatar moves to top-right corner</string>
     <string name="setting_ui_move_toolbar_bottom_title">Move Chat Toolbar to Bottom</string>
     <string name="setting_ui_move_toolbar_bottom_desc">Place the chat toolbar below the minimal message input bar</string>
-    <string name="setting_ui_show_character_avatar_title">Show Character Avatar</string>
-    <string name="setting_ui_show_character_avatar_desc">Show the character\'s avatar before messages</string>
+    <string name="setting_ui_show_character_avatar_title">Show Character Avatar and Name</string>
+    <string name="setting_ui_show_character_avatar_desc">Show the character\'s avatar and name before messages</string>
     <string name="setting_ui_show_context_stacks_title">Show Context Stacks</string>
     <string name="setting_ui_show_context_stacks_desc">Show context sources (skills, memories, lorebooks) in message toolbar</string>
     <string name="setting_ui_message_jumper_group">Message Jumper</string>
@@ -321,6 +321,8 @@
 
     <!-- Search settings -->
     <string name="setting_search_delete_service">Are you sure you want to delete this search service?</string>
+    <string name="setting_search_empty_title">No search providers yet</string>
+    <string name="setting_search_empty_desc">Tap + to add a search provider</string>
     <string name="setting_search_service_generic">Search Service</string>
     <string name="setting_search_edit_service">Edit %1$s</string>
     <string name="setting_search_bing_no_config">Bing search doesn\'t require any configuration.</string>

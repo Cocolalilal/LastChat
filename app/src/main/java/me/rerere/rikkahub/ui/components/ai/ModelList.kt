@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
@@ -102,8 +104,12 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.codex.CodexAccountRepository
+import me.rerere.rikkahub.data.codex.CodexTokenStatus
+import me.rerere.rikkahub.data.codex.CodexUsageWindow
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
@@ -112,10 +118,13 @@ import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.extendColors
+import me.rerere.rikkahub.ui.components.settings.LastChatGroupedModelRow
+import me.rerere.rikkahub.ui.components.settings.LastChatModelGroupPosition
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -131,6 +140,7 @@ fun ModelSelector(
     modifier: Modifier = Modifier,
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
+    allowBackendModels: Boolean = false,
     modelFilter: (Model) -> Boolean = { true },
     onClear: (() -> Unit)? = null,
     onSelect: (Model) -> Unit
@@ -138,6 +148,11 @@ fun ModelSelector(
     var popup by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val model = providers.findModelById(modelId ?: Uuid.random())
+    // Backend visibility only applies to chat models. Embedding, STT, and image models are chosen
+    // from feature-specific settings rather than the chat picker.
+    val effectiveModelFilter: (Model) -> Boolean = { m ->
+        (type != ModelType.CHAT || allowBackendModels || !m.backend) && modelFilter(m)
+    }
 
     if (!onlyIcon) {
         Row(
@@ -241,14 +256,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         } else {
                             model.type == type
                         }
-                        isTypeMatch && modelFilter(model)
+                        isTypeMatch && effectiveModelFilter(model)
                     }
                 }
                 ModelList(
                     currentModel = modelId,
                     providers = filteredProviderSettings,
                     modelType = type,
-                    modelFilter = modelFilter,
+                    modelFilter = effectiveModelFilter,
                     onSelect = {
                         onSelect(it)
                         scope.launch {
@@ -504,11 +519,9 @@ internal fun ColumnScope.ModelList(
             ) {
                 if (providers.isEmpty()) {
                     item {
-                        Text(
-                            text = stringResource(R.string.model_list_no_providers),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.extendColors.gray6,
-                            modifier = Modifier.padding(8.dp)
+                        EmptyStateCard(
+                            icon = Icons.Rounded.Cloud,
+                            title = stringResource(R.string.model_list_no_providers),
                         )
                     }
                 }
@@ -601,11 +614,15 @@ internal fun ColumnScope.ModelList(
                             ModelSectionHeader(
                                 title = item.provider.name
                             ) {
-                                ProviderBalanceText(
-                                    providerSetting = item.provider,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                                if (item.provider is ProviderSetting.Codex) {
+                                    CodexUsageLimits(item.provider)
+                                } else {
+                                    ProviderBalanceText(
+                                        providerSetting = item.provider,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                         is ProviderListItem.ModelEntry -> {
@@ -898,89 +915,11 @@ private fun groupItemPosition(index: Int, groupSize: Int): ModelItemPosition = w
     else -> ModelItemPosition.MIDDLE
 }
 
-private data class ModelItemCornerRadii(
-    val topStart: Dp,
-    val topEnd: Dp,
-    val bottomStart: Dp,
-    val bottomEnd: Dp
-)
-
-private fun groupedModelItemCornerRadii(
-    select: Boolean,
-    position: ModelItemPosition
-): ModelItemCornerRadii {
-    if (select) {
-        return ModelItemCornerRadii(
-            topStart = 50.dp,
-            topEnd = 50.dp,
-            bottomStart = 50.dp,
-            bottomEnd = 50.dp
-        )
-    }
-
-    return when (position) {
-        ModelItemPosition.FIRST -> ModelItemCornerRadii(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp
-        )
-        ModelItemPosition.MIDDLE -> ModelItemCornerRadii(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp
-        )
-        ModelItemPosition.LAST -> ModelItemCornerRadii(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp
-        )
-        ModelItemPosition.SINGLE -> ModelItemCornerRadii(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp
-        )
-    }
-}
-
-@Composable
-private fun rememberAnimatedGroupedModelItemShape(
-    select: Boolean,
-    position: ModelItemPosition
-): RoundedCornerShape {
-    val targetCornerRadii = remember(select, position) {
-        groupedModelItemCornerRadii(select = select, position = position)
-    }
-    val topStart by animateDpAsState(
-        targetValue = targetCornerRadii.topStart,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_top_start"
-    )
-    val topEnd by animateDpAsState(
-        targetValue = targetCornerRadii.topEnd,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_top_end"
-    )
-    val bottomStart by animateDpAsState(
-        targetValue = targetCornerRadii.bottomStart,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_bottom_start"
-    )
-    val bottomEnd by animateDpAsState(
-        targetValue = targetCornerRadii.bottomEnd,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "model_item_bottom_end"
-    )
-
-    return RoundedCornerShape(
-        topStart = topStart,
-        topEnd = topEnd,
-        bottomStart = bottomStart,
-        bottomEnd = bottomEnd
-    )
+private fun ModelItemPosition.toSharedPosition(): LastChatModelGroupPosition = when (this) {
+    ModelItemPosition.FIRST -> LastChatModelGroupPosition.First
+    ModelItemPosition.MIDDLE -> LastChatModelGroupPosition.Middle
+    ModelItemPosition.LAST -> LastChatModelGroupPosition.Last
+    ModelItemPosition.SINGLE -> LastChatModelGroupPosition.Single
 }
 
 @Composable
@@ -1008,6 +947,75 @@ private fun ModelSectionHeader(
     }
 }
 
+/** Displays the active Codex account's rolling request limits in the model picker. */
+@Composable
+private fun CodexUsageLimits(provider: ProviderSetting.Codex) {
+    val repository = koinInject<CodexAccountRepository>()
+    val accounts by repository.accounts.collectAsStateWithLifecycle()
+    val account = accounts.singleOrNull()
+    LaunchedEffect(provider.id, account?.id) {
+        account?.let { runCatching { repository.refreshAccount(it.id) } }
+    }
+    if (account?.tokenStatus == CodexTokenStatus.INVALID || account?.usage == null) return
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        account.usage?.primary?.let { window ->
+            CodexUsageLimitIndicator(
+                window = window,
+                fallbackName = stringResource(R.string.codex_five_hour_limit),
+            )
+        }
+        account.usage?.secondary?.let { window ->
+            CodexUsageLimitIndicator(
+                window = window,
+                fallbackName = stringResource(R.string.codex_weekly_limit),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CodexUsageLimitIndicator(
+    window: CodexUsageWindow,
+    fallbackName: String,
+) {
+    val remainingPercent = (100.0 - window.usedPercent).coerceIn(0.0, 100.0)
+    val name = when (window.windowMinutes) {
+        300L -> stringResource(R.string.codex_five_hour_limit)
+        10_080L -> stringResource(R.string.codex_weekly_limit)
+        43_200L -> stringResource(R.string.codex_monthly_limit)
+        null -> fallbackName
+        else -> stringResource(R.string.codex_minute_limit, window.windowMinutes)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        CircularProgressIndicator(
+            progress = { (remainingPercent / 100.0).toFloat() },
+            modifier = Modifier.size(22.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 3.dp,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(
+                    R.string.codex_percent_remaining,
+                    remainingPercent.roundToInt(),
+                ),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ModelItem(
     model: Model,
@@ -1022,84 +1030,52 @@ private fun ModelItem(
     position: ModelItemPosition = ModelItemPosition.SINGLE
 ) {
     val navController = LocalNavController.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val groupedItemShape = rememberAnimatedGroupedModelItemShape(
-        select = select,
-        position = position
-    )
 
     if(inGroup) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = modifier
-                .fillMaxWidth()
-                .clip(groupedItemShape)
-                .background(
-                    color = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
-                )
-                .padding(vertical = 12.dp, horizontal = 16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .combinedClickable(
-                        enabled = true,
-                        onLongClick = {
-                            onDismiss()
-                            navController.navigate(
-                                Screen.SettingProviderDetail(
-                                    providerSetting.id.toString()
-                                )
-                            )
-                        },
-                        onClick = { onSelect(model) },
-                        interactionSource = interactionSource,
-                        indication = LocalIndication.current
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+        LastChatGroupedModelRow(
+            title = model.displayName,
+            selected = select,
+            position = position.toSharedPosition(),
+            onClick = { onSelect(model) },
+            onLongClick = {
+                onDismiss()
+                navController.navigate(Screen.SettingProviderDetail(providerSetting.id.toString()))
+            },
+            modifier = modifier,
+            icon = {
                 ModelIcon(
                     model = model,
                     provider = providerSetting,
                     modifier = Modifier.size(32.dp),
                     color = Color.Transparent,
-                    contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    contentColor = if (select) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
+            },
+            metadata = {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text(
-                        text = model.displayName,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                    )
-
-                    FlowRow(
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        ModelModalityTag(model = model)
-
-                        ModelAbilityTag(model = model)
-                    }
+                    ModelModalityTag(model = model)
+                    ModelAbilityTag(model = model)
                 }
-                tail()
-            }
-            dragHandle?.let { it() }
-        }
+            },
+            tail = tail,
+            dragHandle = dragHandle,
+        )
     } else {
+        val interactionSource = remember { MutableInteractionSource() }
         Card(
             modifier = modifier,
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
             colors = CardDefaults.cardColors(
-                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer else if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = if (select) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             )
         ) {
@@ -1135,7 +1111,7 @@ private fun ModelItem(
                         provider = providerSetting,
                         modifier = Modifier.size(32.dp),
                         color = Color.Transparent,
-                        contentColor = Color.White
+                        contentColor = if (select) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -1169,6 +1145,14 @@ private fun ModelItem(
 
 @Composable
 fun ModelTypeTag(model: Model) {
+    if (model.type == ModelType.CHAT && model.backend) {
+        Tag(
+            type = TagType.INFO
+        ) {
+            Text(text = stringResource(R.string.setting_provider_page_backend_model))
+        }
+        return
+    }
     Tag(
         type = TagType.INFO
     ) {

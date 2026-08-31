@@ -56,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -315,12 +316,17 @@ enum class PillPosition {
 
 private sealed interface SinglePillContentState {
     data class Compact(val state: ActivityState) : SinglePillContentState
-    data class ExpandedReasoning(val state: ActivityState.Reasoning) : SinglePillContentState
+    data class ExpandedReasoning(
+        val state: ActivityState.Reasoning,
+        val durationMs: Long? = null,
+        val isLive: Boolean = true
+    ) : SinglePillContentState
     data class ExpandedTimeline(
         val entries: List<TimelineEntry>,
         val initialRequest: TimelineOpenRequest?,
         val assistantId: String?,
-        val scrollHandoffMode: TimelineScrollHandoffMode
+        val scrollHandoffMode: TimelineScrollHandoffMode,
+        val isLive: Boolean,
     ) : SinglePillContentState
 }
 
@@ -343,6 +349,7 @@ internal fun ActivityPillRow(
     initialTimelineOpenRequest: TimelineOpenRequest? = null,
     assistantId: String? = null,
     timelineScrollHandoffMode: TimelineScrollHandoffMode = TimelineScrollHandoffMode.EdgeGatedToParent,
+    timelineLive: Boolean = false,
     onTimelineDismiss: () -> Unit = { onClick(null) },
     key: Any? = null,
 ) {
@@ -385,6 +392,7 @@ internal fun ActivityPillRow(
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistantId,
                     timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    timelineLive = timelineLive,
                     onTimelineDismiss = onTimelineDismiss,
                     wasCompletedInitially = wasCompletedInitially,
                     key = key
@@ -417,6 +425,7 @@ internal fun ActivityPillRow(
                     initialTimelineOpenRequest = initialTimelineOpenRequest,
                     assistantId = assistantId,
                     timelineScrollHandoffMode = timelineScrollHandoffMode,
+                    timelineLive = timelineLive,
                     onTimelineDismiss = onTimelineDismiss,
                     wasCompletedInitially = wasCompletedInitially,
                     key = key
@@ -442,20 +451,40 @@ private fun AnimatedSinglePill(
     initialTimelineOpenRequest: TimelineOpenRequest?,
     assistantId: String?,
     timelineScrollHandoffMode: TimelineScrollHandoffMode,
+    timelineLive: Boolean,
     onTimelineDismiss: () -> Unit,
     wasCompletedInitially: Boolean,
     key: Any? = null
 ) {
     val isExpandedReasoning = reasoningPreviewEnabled && state is ActivityState.Reasoning && !timelineOpen
     val requestedContentState = if (timelineOpen && timelineEntries.isNotEmpty()) {
-        SinglePillContentState.ExpandedTimeline(
-            entries = timelineEntries,
-            initialRequest = initialTimelineOpenRequest,
-            assistantId = assistantId,
-            scrollHandoffMode = timelineScrollHandoffMode
+        if (timelineEntries.size == 1 && timelineEntries.first() is TimelineEntry.Reasoning) {
+            val reasoningEntry = timelineEntries.first() as TimelineEntry.Reasoning
+            val isLive = timelineLive && reasoningEntry.isInProgress
+            SinglePillContentState.ExpandedReasoning(
+                state = ActivityState.Reasoning(
+                    startTimeMs = System.currentTimeMillis() - (reasoningEntry.durationMs),
+                    title = reasoningEntry.title,
+                    reasoningText = reasoningEntry.content
+                ),
+                durationMs = reasoningEntry.durationMs,
+                isLive = isLive
+            )
+        } else {
+            SinglePillContentState.ExpandedTimeline(
+                entries = timelineEntries,
+                initialRequest = initialTimelineOpenRequest,
+                assistantId = assistantId,
+                scrollHandoffMode = timelineScrollHandoffMode,
+                isLive = timelineLive,
+            )
+        }
+    } else if (isExpandedReasoning && state is ActivityState.Reasoning) {
+        SinglePillContentState.ExpandedReasoning(
+            state = state,
+            durationMs = null,
+            isLive = timelineLive
         )
-    } else if (isExpandedReasoning) {
-        SinglePillContentState.ExpandedReasoning(state as ActivityState.Reasoning)
     } else {
         SinglePillContentState.Compact(state)
     }
@@ -574,14 +603,22 @@ private fun AnimatedSinglePill(
                         initialOpenRequest = targetContentState.initialRequest,
                         assistantId = targetContentState.assistantId,
                         scrollHandoffMode = targetContentState.scrollHandoffMode,
+                        isLive = targetContentState.isLive,
                         onTimelineClick = onTimelineDismiss,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 is SinglePillContentState.ExpandedReasoning -> {
                     ReasoningPreviewCard(
-                        state = (state as? ActivityState.Reasoning) ?: targetContentState.state,
-                        active = surfaceExpanded
+                        state = if (targetContentState.isLive) {
+                            (state as? ActivityState.Reasoning) ?: targetContentState.state
+                        } else {
+                            targetContentState.state
+                        },
+                        active = surfaceExpanded,
+                        isLive = targetContentState.isLive,
+                        durationMs = targetContentState.durationMs,
+                        onHeaderClick = if (timelineOpen) onTimelineDismiss else null
                     )
                 }
                 is SinglePillContentState.Compact -> {
@@ -755,22 +792,33 @@ private fun AnimatedSinglePill(
 private fun ReasoningPreviewCard(
     state: ActivityState.Reasoning,
     active: Boolean,
+    isLive: Boolean = true,
+    durationMs: Long? = null,
+    onHeaderClick: (() -> Unit)? = null
 ) {
-    var elapsedMs by remember { mutableLongStateOf(0L) }
+    var elapsedMs by remember { mutableLongStateOf(durationMs ?: 0L) }
     val scrollState = rememberScrollState()
     var previewAutoFollowPaused by remember(state.startTimeMs) { mutableStateOf(false) }
     var programmaticScrollInProgress by remember { mutableStateOf(false) }
     var previousScrollValue by remember(state.startTimeMs) { mutableIntStateOf(0) }
 
-    LaunchedEffect(state.startTimeMs) {
-        while (isActive) {
-            elapsedMs = System.currentTimeMillis() - state.startTimeMs
-            delay(50)
+    if (isLive) {
+        LaunchedEffect(state.startTimeMs) {
+            while (isActive) {
+                elapsedMs = System.currentTimeMillis() - state.startTimeMs
+                delay(50)
+            }
+        }
+    } else {
+        LaunchedEffect(durationMs) {
+            if (durationMs != null) {
+                elapsedMs = durationMs
+            }
         }
     }
 
-    LaunchedEffect(scrollState, active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(scrollState, active && isLive) {
+        if (!active || !isLive) return@LaunchedEffect
         snapshotFlow {
             Triple(
                 scrollState.value,
@@ -790,8 +838,8 @@ private fun ReasoningPreviewCard(
         }
     }
 
-    LaunchedEffect(scrollState, previewAutoFollowPaused, active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(scrollState, previewAutoFollowPaused, active && isLive) {
+        if (!active || !isLive) return@LaunchedEffect
         snapshotFlow { scrollState.maxValue }.collect { maxValue ->
             if (!previewAutoFollowPaused) {
                 programmaticScrollInProgress = true
@@ -806,8 +854,8 @@ private fun ReasoningPreviewCard(
 
     var streamingLayoutTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(streamingLayoutTick, previewAutoFollowPaused, active) {
-        if (!active || previewAutoFollowPaused) return@LaunchedEffect
+    LaunchedEffect(streamingLayoutTick, previewAutoFollowPaused, active && isLive) {
+        if (!active || !isLive || previewAutoFollowPaused) return@LaunchedEffect
         delay(16)
         programmaticScrollInProgress = true
         try {
@@ -826,6 +874,17 @@ private fun ReasoningPreviewCard(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onHeaderClick != null) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onHeaderClick
+                        )
+                    } else Modifier
+                ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -857,31 +916,51 @@ private fun ReasoningPreviewCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.shimmer(true)
+                    modifier = if (isLive) Modifier.shimmer(true) else Modifier
                 )
             }
-            Text(
-                text = formatDuration(elapsedMs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.shimmer(true)
-            )
+            val formattedDuration = formatDuration(if (isLive) elapsedMs else (durationMs ?: elapsedMs))
+            if (formattedDuration.isNotBlank()) {
+                Text(
+                    text = formattedDuration,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = if (isLive) Modifier.shimmer(true) else Modifier
+                )
+            }
         }
+
+        val canScrollBackward by remember { derivedStateOf { scrollState.canScrollBackward } }
+        val canScrollForward by remember { derivedStateOf { scrollState.canScrollForward } }
+        val topFadeProgress by animateFloatAsState(
+            targetValue = if (canScrollBackward) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+            label = "reasoning_top_fade"
+        )
+        val bottomFadeProgress by animateFloatAsState(
+            targetValue = if (canScrollForward) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+            label = "reasoning_bottom_fade"
+        )
 
         MarkdownBlock(
             content = previewText,
             modifier = Modifier
                 .fillMaxWidth()
-                .fadeEdges(fadeTop = true, fadeBottom = true)
-                .heightIn(max = 120.dp)
+                .fadeEdges(
+                    topProgress = topFadeProgress,
+                    bottomProgress = bottomFadeProgress,
+                    fadeHeight = 64f
+                )
+                .heightIn(max = if (active && isLive && onHeaderClick == null) 120.dp else 280.dp)
                 .verticalScroll(scrollState),
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),
             paragraphSpacing = 8.dp,
-            streamingTextReveal = active,
+            streamingTextReveal = isLive,
             onExpandedStreamingCodeBlockChanged = {
-                streamingLayoutTick++
+                if (isLive) streamingLayoutTick++
             }
         )
     }
@@ -946,7 +1025,7 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
 @Composable
 private fun OcrContent(isLive: Boolean) {
     Icon(
-            imageVector = Icons.Rounded.Image,
+        imageVector = Icons.Rounded.Image,
         contentDescription = null,
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant

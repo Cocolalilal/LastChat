@@ -1,10 +1,61 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.compose)
+}
+
+kotlin {
+    jvmToolchain(17)
+
+    androidTarget {
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
+    }
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+        iosX64(),
+    )
+
+    sourceSets {
+        all {
+            languageSettings.optIn("kotlin.uuid.ExperimentalUuidApi")
+            languageSettings.optIn("kotlin.time.ExperimentalTime")
+            languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi")
+        }
+        commonMain {
+            kotlin.srcDir("src/main/java")
+            kotlin.exclude("me/rerere/tts/provider/android/**")
+            kotlin.exclude("me/rerere/tts/provider/providers/android/**")
+            kotlin.exclude("me/rerere/tts/controller/AudioPlayer.kt")
+            dependencies {
+                api(project(":common"))
+                implementation(libs.kotlinx.serialization.json)
+                implementation(libs.kotlinx.coroutines.core)
+            }
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidMain {
+            kotlin.srcDir("src/main/java")
+            kotlin.include("me/rerere/tts/provider/TtsDispatcher.android.kt")
+            kotlin.include("me/rerere/tts/provider/android/**")
+            kotlin.include("me/rerere/tts/provider/providers/android/**")
+            kotlin.include("me/rerere/tts/controller/AudioPlayer.kt")
+            dependencies {
+                implementation(libs.okhttp)
+                implementation(libs.androidx.media3.exoplayer)
+                implementation(libs.androidx.media3.ui)
+                implementation(libs.androidx.media3.common)
+            }
+        }
+        androidUnitTest {
+            kotlin.srcDir("src/test/java")
+            dependencies { implementation(libs.junit) }
+        }
+    }
 }
 
 android {
@@ -13,59 +64,26 @@ android {
 
     defaultConfig {
         minSdk = 26
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
-
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
-    }
-    buildFeatures {
-        compose = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-    tasks.withType<KotlinCompile>().configureEach {
-        compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
-        compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
-        compilerOptions.optIn.add("androidx.compose.animation.ExperimentalAnimationApi")
-        compilerOptions.optIn.add("androidx.compose.animation.ExperimentalSharedTransitionApi")
-        compilerOptions.optIn.add("androidx.compose.foundation.ExperimentalFoundationApi")
-        compilerOptions.optIn.add("androidx.compose.foundation.layout.ExperimentalLayoutApi")
-        compilerOptions.optIn.add("kotlin.uuid.ExperimentalUuidApi")
-        compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
-        compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
-    }
+    sourceSets.getByName("main").java.setSrcDirs(emptyList<String>())
 }
 
 dependencies {
-    implementation(project(":common"))
-
-    implementation(libs.okhttp)
-
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.core)
-
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.ui)
-    implementation(libs.androidx.media3.common)
-
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.material3)
-
-    testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

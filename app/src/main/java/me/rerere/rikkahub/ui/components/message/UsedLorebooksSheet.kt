@@ -138,11 +138,10 @@ private fun UsedLorebookEntryItem(
     isFirst: Boolean,
     isLast: Boolean
 ) {
-    val isDarkMode = LocalDarkMode.current
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier

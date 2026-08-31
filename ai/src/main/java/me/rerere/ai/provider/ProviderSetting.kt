@@ -254,7 +254,111 @@ sealed class ProviderSetting {
             )
         }
     }
+
+    @Serializable
+    @SerialName("codex")
+    data class Codex(
+        override val id: Uuid = Uuid.random(),
+        override val enabled: Boolean = false,
+        override val name: String = "Codex",
+        override val models: List<Model> = emptyList(),
+        override val proxy: ProviderProxy = ProviderProxy.None,
+        override val balanceOption: BalanceOption = BalanceOption(),
+        override val tags: List<Uuid> = emptyList(),
+        override val customIconUri: String? = null,
+        @Transient override val builtIn: Boolean = false,
+        val customUrl: String = "",
+    ) : ProviderSetting() {
+        override fun addModel(model: Model): ProviderSetting = copy(models = models + model)
+
+        override fun editModel(model: Model): ProviderSetting =
+            copy(models = models.map { if (it.id == model.id) model.copy() else it })
+
+        override fun delModel(model: Model): ProviderSetting =
+            copy(models = models.filter { it.id != model.id })
+
+        override fun moveModel(from: Int, to: Int): ProviderSetting =
+            copy(models = models.toMutableList().apply { add(to, removeAt(from)) })
+
+        override fun copyProvider(
+            id: Uuid,
+            enabled: Boolean,
+            name: String,
+            models: List<Model>,
+            proxy: ProviderProxy,
+            balanceOption: BalanceOption,
+            tags: List<Uuid>,
+            customIconUri: String?,
+            builtIn: Boolean
+        ): ProviderSetting = copy(
+            id = id,
+            enabled = enabled,
+            name = name,
+            models = models,
+            proxy = proxy,
+            balanceOption = balanceOption,
+            tags = tags,
+            customIconUri = customIconUri,
+            builtIn = builtIn
+        )
+    }
+
+    /**
+     * On-device inference via LiteRT-LM. Unlike network providers this has no API key / base URL —
+     * its [models] are the models the user has downloaded onto the device. It is user-managed and
+     * can be reordered or deleted like any other provider; see the app's settings normalization.
+     */
+    @Serializable
+    @SerialName("litert_local")
+    data class LiteRtLocal(
+        override val id: Uuid = LOCAL_PROVIDER_ID,
+        override val enabled: Boolean = true,
+        override val name: String = "Local",
+        override val models: List<Model> = emptyList(),
+        override val proxy: ProviderProxy = ProviderProxy.None,
+        override val balanceOption: BalanceOption = BalanceOption(),
+        override val tags: List<Uuid> = emptyList(),
+        override val customIconUri: String? = null,
+        @Transient override val builtIn: Boolean = true,
+    ) : ProviderSetting() {
+        override fun addModel(model: Model): ProviderSetting = copy(models = models + model)
+
+        override fun editModel(model: Model): ProviderSetting =
+            copy(models = models.map { if (it.id == model.id) model.copy() else it })
+
+        override fun delModel(model: Model): ProviderSetting =
+            copy(models = models.filter { it.id != model.id })
+
+        override fun moveModel(from: Int, to: Int): ProviderSetting =
+            copy(models = models.toMutableList().apply { add(to, removeAt(from)) })
+
+        override fun copyProvider(
+            id: Uuid,
+            enabled: Boolean,
+            name: String,
+            models: List<Model>,
+            proxy: ProviderProxy,
+            balanceOption: BalanceOption,
+            tags: List<Uuid>,
+            customIconUri: String?,
+            builtIn: Boolean,
+        ): ProviderSetting = this.copy(
+            id = id,
+            enabled = enabled,
+            name = name,
+            models = models,
+            proxy = proxy,
+            balanceOption = balanceOption,
+            tags = tags,
+            customIconUri = customIconUri,
+            builtIn = builtIn,
+        )
+    }
+
     companion object {
+        /** Stable id of the single on-device provider. */
+        val LOCAL_PROVIDER_ID: Uuid = Uuid.parse("10ca110c-0ca1-4b0c-a10c-10ca110c10ca")
+
         val Types by lazy {
             listOf(
                 OpenAI::class,

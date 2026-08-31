@@ -28,9 +28,6 @@ interface ChatAttachmentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: ChatAttachmentEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(entities: List<ChatAttachmentEntity>)
-
     @Update
     suspend fun update(entity: ChatAttachmentEntity)
 

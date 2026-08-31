@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.models
 
-import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.common.http.urlPartsOrNull
@@ -27,14 +26,14 @@ fun mergeCatalogIntoSettings(
                 ?.singleOrNull()
             ?: catalogProvidersByName[provider.matchType to provider.name.normalizedCatalogNameKey()]
                 ?.singleOrNull()
-        val withCatalogDefaults = if (catalogProvider != null) {
+        val withCatalogIcon = if (catalogProvider != null) {
             matchedCatalogProviderIds += catalogProvider.id
             provider
-                .withCatalogProviderDefaults(catalogProvider)
+                .withCatalogManagedIcon(catalogProvider)
         } else {
             provider
         }
-        resolver.applyToProvider(withCatalogDefaults)
+        resolver.applyToProvider(withCatalogIcon)
     }
 
     val existingProviderIds = normalizedExisting.map { it.id }.toSet()
@@ -56,20 +55,17 @@ fun mergeCatalogIntoSettings(
     )
 }
 
-private fun ProviderSetting.withCatalogProviderDefaults(
+private fun ProviderSetting.withCatalogManagedIcon(
     catalogProvider: CatalogProvider,
 ): ProviderSetting {
     val catalogIcon = catalogProvider.icon?.toCatalogIconUrl()
     val resolvedIcon = customIconUri.catalogIconDefault(catalogIcon)
     return when (this) {
+        is ProviderSetting.Codex -> copy(
+            customIconUri = resolvedIcon,
+        )
         is ProviderSetting.OpenAI -> copy(
             customIconUri = resolvedIcon,
-            reasoningBehavior = reasoningBehavior
-                ?: catalogProvider.reasoningBehavior?.toReasoningRequestBehavior(),
-            streamOptionsMode = streamOptionsMode.catalogDefault(catalogProvider.streamOptionsMode),
-            imageResponseModalitiesMode = imageResponseModalitiesMode.catalogDefault(catalogProvider.imageResponseModalitiesMode),
-            reasoningContentReplayMode = reasoningContentReplayMode.catalogDefault(catalogProvider.reasoningContentReplayMode),
-            promptCacheMode = promptCacheMode.catalogDefault(catalogProvider.promptCacheMode),
         )
 
         is ProviderSetting.Google -> copy(customIconUri = resolvedIcon)
@@ -77,6 +73,8 @@ private fun ProviderSetting.withCatalogProviderDefaults(
         is ProviderSetting.Claude -> copy(customIconUri = resolvedIcon)
 
         is ProviderSetting.ComfyUI -> copy(customIconUri = resolvedIcon)
+
+        is ProviderSetting.LiteRtLocal -> this // on-device provider is not catalog-managed
     }
 }
 
@@ -84,6 +82,14 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
     val parsedId = uuidOrNull() ?: return null
     val iconUri = icon?.toCatalogIconUrl()
     return when (type) {
+        CatalogProviderType.CODEX -> ProviderSetting.Codex(
+            id = parsedId,
+            name = name,
+            customIconUri = iconUri,
+            builtIn = builtIn,
+            customUrl = baseUrl,
+        )
+
         CatalogProviderType.OPENAI -> ProviderSetting.OpenAI(
             id = parsedId,
             name = name,
@@ -120,27 +126,27 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
     }
 }
 
-private fun OpenAICompatibilityMode.catalogDefault(catalogValue: OpenAICompatibilityMode): OpenAICompatibilityMode {
-    return if (this == OpenAICompatibilityMode.AUTO) catalogValue else this
-}
-
 private val CatalogProvider.matchType: CatalogProviderType
     get() = type
 
 private val ProviderSetting.matchType: CatalogProviderType
     get() = when (this) {
+        is ProviderSetting.Codex -> CatalogProviderType.CODEX
         is ProviderSetting.OpenAI -> CatalogProviderType.OPENAI
         is ProviderSetting.Google -> CatalogProviderType.GOOGLE
         is ProviderSetting.Claude -> CatalogProviderType.CLAUDE
         is ProviderSetting.ComfyUI -> CatalogProviderType.OPENAI
+        is ProviderSetting.LiteRtLocal -> CatalogProviderType.OPENAI
     }
 
 private fun ProviderSetting.baseUrlForCatalogMatch(): String {
     return when (this) {
+        is ProviderSetting.Codex -> "https://chatgpt.com/backend-api/codex"
         is ProviderSetting.OpenAI -> baseUrl
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.Claude -> baseUrl
         is ProviderSetting.ComfyUI -> baseUrl
+        is ProviderSetting.LiteRtLocal -> ""
     }
 }
 

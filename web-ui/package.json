@@ -39,6 +39,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "shiki": "^3.22.0",
+    "@shikijs/engine-javascript": "^3.23.0",
     "sonner": "^2.0.7",
     "streamdown": "^2.2.0",
     "tailwind-merge": "^3.4.0",

@@ -45,6 +45,9 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ReasoningConfig
+import me.rerere.ai.provider.ReasoningModeType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -58,9 +61,55 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material3.IconButton
 
+fun resolveReasoningConfig(model: Model?): ReasoningConfig {
+    val modelConfig = model?.reasoningConfig
+    if (modelConfig != null) return modelConfig
+    val modelId = model?.modelId?.lowercase() ?: ""
+
+    return when {
+        // Claude series -> Budget
+        modelId.contains("claude") -> ReasoningConfig(
+            type = ReasoningModeType.BUDGET,
+            minTokens = 1024,
+            maxTokens = 64_000,
+            presetTokens = listOf(1024, 4096, 8192, 16_000, 32_000, 64_000)
+        )
+        // Gemini 2.5 -> Budget (0..65536)
+        modelId.contains("gemini-2.5") -> ReasoningConfig(
+            type = ReasoningModeType.BUDGET,
+            minTokens = 0,
+            maxTokens = 65_536,
+            presetTokens = listOf(0, 1024, 4096, 8192, 16_000, 32_000)
+        )
+        // DashScope Qwen -> Budget
+        modelId.contains(Regex("qwen.*(max|plus|turbo|3\\.|2\\.5)")) -> ReasoningConfig(
+            type = ReasoningModeType.BUDGET,
+            minTokens = 1024,
+            maxTokens = 32_768,
+            presetTokens = listOf(1024, 4096, 8192, 16_000, 32_000)
+        )
+        // DeepSeek, InternLM, Grok, Doubao Ark, GLM, Hunyuan -> Binary
+        modelId.contains(Regex("deepseek|intern|grok|doubao|glm|hunyuan")) -> ReasoningConfig(
+            type = ReasoningModeType.BINARY,
+            supportedLevels = listOf("off", "auto")
+        )
+        // OpenAI o-series / gpt-5 / Gemini 3 -> Effort
+        modelId.contains(Regex("o[134]|gpt-5|gemini-3")) -> ReasoningConfig(
+            type = ReasoningModeType.EFFORT,
+            supportedLevels = listOf("off", "auto", "low", "medium", "high", "max")
+        )
+        // Default backward compatible effort
+        else -> ReasoningConfig(
+            type = ReasoningModeType.EFFORT,
+            supportedLevels = listOf("off", "auto", "low", "medium", "high")
+        )
+    }
+}
+
 @Composable
 fun ReasoningButton(
     modifier: Modifier = Modifier,
+    model: Model? = null,
     onlyIcon: Boolean = false,
     reasoningTokens: Int,
     shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
@@ -71,6 +120,7 @@ fun ReasoningButton(
 
     if (showReasoningPicker) {
         ReasoningPicker(
+            model = model,
             reasoningTokens = reasoningTokens,
             onDismissRequest = { showReasoningPicker = false },
             onUpdateReasoningTokens = onUpdateReasoningTokens
@@ -109,17 +159,19 @@ fun ReasoningButton(
 
 @Composable
 fun ReasoningPicker(
+    model: Model? = null,
     reasoningTokens: Int,
     onDismissRequest: () -> Unit = {},
     onUpdateReasoningTokens: (Int) -> Unit,
 ) {
+    val config = remember(model) { resolveReasoningConfig(model) }
     val currentLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
     
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = {
             onDismissRequest()
         },
@@ -131,64 +183,166 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 16.dp),
         ) {
-            // Group 1: OFF and AUTO (2 items)
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ReasoningOptionItem(
-                    selected = currentLevel == ReasoningLevel.OFF,
-                    icon = { Icon(Icons.Rounded.LightbulbCircle, null, modifier = Modifier.size(20.dp)) },
-                    title = stringResource(id = R.string.reasoning_off),
-                    subtitle = stringResource(id = R.string.reasoning_off_desc),
-                    onClick = { onUpdateReasoningTokens(0) },
-                    position = ItemPosition.FIRST,
-                    isAmoled = isAmoled
-                )
-                ReasoningOptionItem(
-                    selected = currentLevel == ReasoningLevel.AUTO,
-                    icon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(20.dp)) },
-                    title = stringResource(id = R.string.reasoning_auto),
-                    subtitle = stringResource(id = R.string.reasoning_auto_desc),
-                    onClick = { onUpdateReasoningTokens(-1) },
-                    position = ItemPosition.LAST,
-                    isAmoled = isAmoled
-                )
-            }
-            
-            // Spacer between groups
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Group 2: LOW, MEDIUM, HIGH (3 items)
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ReasoningOptionItem(
-                    selected = currentLevel == ReasoningLevel.LOW,
-                    icon = { Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(20.dp)) },
-                    title = stringResource(id = R.string.reasoning_light),
-                    subtitle = stringResource(id = R.string.reasoning_light_desc),
-                    onClick = { onUpdateReasoningTokens(1024) },
-                    position = ItemPosition.FIRST,
-                    isAmoled = isAmoled
-                )
-                ReasoningOptionItem(
-                    selected = currentLevel == ReasoningLevel.MEDIUM,
-                    icon = { Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(20.dp)) },
-                    title = stringResource(id = R.string.reasoning_medium),
-                    subtitle = stringResource(id = R.string.reasoning_medium_desc),
-                    onClick = { onUpdateReasoningTokens(16_000) },
-                    position = ItemPosition.MIDDLE,
-                    isAmoled = isAmoled
-                )
-                ReasoningOptionItem(
-                    selected = currentLevel == ReasoningLevel.HIGH,
-                    icon = { Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(20.dp)) },
-                    title = stringResource(id = R.string.reasoning_heavy),
-                    subtitle = stringResource(id = R.string.reasoning_heavy_desc),
-                    onClick = { onUpdateReasoningTokens(32_000) },
-                    position = ItemPosition.LAST,
-                    isAmoled = isAmoled
-                )
+            when (config.type) {
+                ReasoningModeType.BINARY -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ReasoningOptionItem(
+                            selected = currentLevel == ReasoningLevel.OFF,
+                            icon = { Icon(Icons.Rounded.LightbulbCircle, null, modifier = Modifier.size(20.dp)) },
+                            title = stringResource(id = R.string.reasoning_off),
+                            subtitle = stringResource(id = R.string.reasoning_off_desc),
+                            onClick = { onUpdateReasoningTokens(0) },
+                            position = ItemPosition.FIRST,
+                            isAmoled = isAmoled
+                        )
+                        ReasoningOptionItem(
+                            selected = currentLevel != ReasoningLevel.OFF,
+                            icon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(20.dp)) },
+                            title = stringResource(id = R.string.reasoning_auto),
+                            subtitle = stringResource(id = R.string.reasoning_auto_desc),
+                            onClick = { onUpdateReasoningTokens(-1) },
+                            position = ItemPosition.LAST,
+                            isAmoled = isAmoled
+                        )
+                    }
+                }
+
+                ReasoningModeType.EFFORT -> {
+                    val supported = config.supportedLevels.ifEmpty { listOf("off", "auto", "low", "medium", "high", "max") }
+                    val showOff = supported.contains("off")
+                    val showAuto = supported.contains("auto")
+
+                    if (showOff || showAuto) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (showOff) {
+                                ReasoningOptionItem(
+                                    selected = currentLevel == ReasoningLevel.OFF,
+                                    icon = { Icon(Icons.Rounded.LightbulbCircle, null, modifier = Modifier.size(20.dp)) },
+                                    title = stringResource(id = R.string.reasoning_off),
+                                    subtitle = stringResource(id = R.string.reasoning_off_desc),
+                                    onClick = { onUpdateReasoningTokens(0) },
+                                    position = if (showAuto) ItemPosition.FIRST else ItemPosition.SINGLE,
+                                    isAmoled = isAmoled
+                                )
+                            }
+                            if (showAuto) {
+                                ReasoningOptionItem(
+                                    selected = currentLevel == ReasoningLevel.AUTO,
+                                    icon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(20.dp)) },
+                                    title = stringResource(id = R.string.reasoning_auto),
+                                    subtitle = stringResource(id = R.string.reasoning_auto_desc),
+                                    onClick = { onUpdateReasoningTokens(-1) },
+                                    position = if (showOff) ItemPosition.LAST else ItemPosition.SINGLE,
+                                    isAmoled = isAmoled
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    data class EffortOption(
+                        val level: ReasoningLevel,
+                        val tokens: Int,
+                        val title: String,
+                        val desc: String,
+                    )
+
+                    val effortOptions = buildList {
+                        if (supported.contains("low")) {
+                            add(EffortOption(ReasoningLevel.LOW, 1024, stringResource(R.string.reasoning_light), stringResource(R.string.reasoning_light_desc)))
+                        }
+                        if (supported.contains("medium")) {
+                            add(EffortOption(ReasoningLevel.MEDIUM, 16_000, stringResource(R.string.reasoning_medium), stringResource(R.string.reasoning_medium_desc)))
+                        }
+                        if (supported.contains("high")) {
+                            add(EffortOption(ReasoningLevel.HIGH, 32_000, stringResource(R.string.reasoning_heavy), stringResource(R.string.reasoning_heavy_desc)))
+                        }
+                        if (supported.contains("max") || supported.contains("xhigh")) {
+                            add(EffortOption(ReasoningLevel.MAX, 64_000, "Max", "Maximum reasoning effort"))
+                        }
+                    }
+
+                    if (effortOptions.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            effortOptions.forEachIndexed { index, option ->
+                                val position = when {
+                                    effortOptions.size == 1 -> ItemPosition.SINGLE
+                                    index == 0 -> ItemPosition.FIRST
+                                    index == effortOptions.size - 1 -> ItemPosition.LAST
+                                    else -> ItemPosition.MIDDLE
+                                }
+                                ReasoningOptionItem(
+                                    selected = currentLevel == option.level,
+                                    icon = { Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(20.dp)) },
+                                    title = option.title,
+                                    subtitle = option.desc,
+                                    onClick = { onUpdateReasoningTokens(option.tokens) },
+                                    position = position,
+                                    isAmoled = isAmoled
+                                )
+                            }
+                        }
+                    }
+                }
+
+                ReasoningModeType.BUDGET -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ReasoningOptionItem(
+                            selected = currentLevel == ReasoningLevel.OFF,
+                            icon = { Icon(Icons.Rounded.LightbulbCircle, null, modifier = Modifier.size(20.dp)) },
+                            title = stringResource(id = R.string.reasoning_off),
+                            subtitle = stringResource(id = R.string.reasoning_off_desc),
+                            onClick = { onUpdateReasoningTokens(0) },
+                            position = if (config.minTokens == 0) ItemPosition.FIRST else ItemPosition.SINGLE,
+                            isAmoled = isAmoled
+                        )
+                        if (config.minTokens == 0) {
+                            ReasoningOptionItem(
+                                selected = currentLevel == ReasoningLevel.AUTO,
+                                icon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(20.dp)) },
+                                title = stringResource(id = R.string.reasoning_auto),
+                                subtitle = stringResource(id = R.string.reasoning_auto_desc),
+                                onClick = { onUpdateReasoningTokens(-1) },
+                                position = ItemPosition.LAST,
+                                isAmoled = isAmoled
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = stringResource(R.string.reasoning_custom),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    val presets = config.presetTokens.filter { it in config.minTokens..config.maxTokens }
+                    if (presets.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            presets.forEachIndexed { index, tokens ->
+                                val isSelected = reasoningTokens == tokens
+                                val position = when {
+                                    presets.size == 1 -> ItemPosition.SINGLE
+                                    index == 0 -> ItemPosition.FIRST
+                                    index == presets.size - 1 -> ItemPosition.LAST
+                                    else -> ItemPosition.MIDDLE
+                                }
+                                val formattedTokens = if (tokens >= 1000) "${tokens / 1000}K tokens" else "$tokens tokens"
+                                ReasoningOptionItem(
+                                    selected = isSelected,
+                                    icon = { Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(20.dp)) },
+                                    title = formattedTokens,
+                                    subtitle = stringResource(R.string.assistant_page_thinking_budget),
+                                    onClick = { onUpdateReasoningTokens(tokens) },
+                                    position = position,
+                                    isAmoled = isAmoled
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -244,7 +398,7 @@ private fun ReasoningOptionItem(
             .fillMaxWidth()
             .clip(itemShape)
             .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
             )
             .clickable {
                 haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
@@ -293,7 +447,7 @@ private fun ReasoningLevelCard(
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
     
-    val defaultContainerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+    val defaultContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val resolvedContainerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else (containerColor ?: defaultContainerColor)
     
     val defaultContentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
