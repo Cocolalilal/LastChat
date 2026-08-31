@@ -63,7 +63,6 @@ class ProviderManager(
             // The on-device provider lives in :local-llm (which depends on :ai), so it can't be
             // constructed here. The app registers it at startup via registerProvider("litert_local", ...).
             is ProviderSetting.LiteRtLocal -> getProvider("litert_local")
-            is ProviderSetting.Codex -> getProvider("codex")
         } as Provider<T>
     }
 }

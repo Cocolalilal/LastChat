@@ -954,7 +954,6 @@ private fun ProviderSetting.toWebProviderDto(
     return WebProviderDto(
         id = id.toString(),
         type = when (this) {
-            is ProviderSetting.Codex -> "codex"
             is ProviderSetting.OpenAI -> "openai"
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"

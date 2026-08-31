@@ -178,10 +178,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
-import me.rerere.rikkahub.ui.pages.setting.components.CodexProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
-import me.rerere.rikkahub.data.codex.CodexAccountRepository
-import me.rerere.rikkahub.data.codex.CodexTokenStatus
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.ImageUtils
@@ -271,17 +268,8 @@ private fun String.normalizeModelMatchToken(): String {
         .replace('.', '-')
 }
 
-private fun ProviderSetting.apiModelCacheKey(
-    codexAccountId: String? = null,
-    codexAuthExpiresAt: Long? = null,
-): String {
+private fun ProviderSetting.apiModelCacheKey(): String {
     return when (this) {
-        is ProviderSetting.Codex -> listOf(
-            "codex",
-            id.toString(),
-            codexAccountId.orEmpty(),
-            codexAuthExpiresAt?.toString().orEmpty(),
-        )
         is ProviderSetting.OpenAI -> listOf(
             "openai",
             id.toString(),
@@ -323,9 +311,8 @@ private fun ProviderSetting.apiModelCacheKey(
     }.joinToString("|")
 }
 
-private fun ProviderSetting.canFetchApiModels(codexAccountAvailable: Boolean = false): Boolean {
+private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
-        is ProviderSetting.Codex -> codexAccountAvailable
         is ProviderSetting.OpenAI -> apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
@@ -388,19 +375,6 @@ private data class ApiModelSource(
 
 @Composable
 private fun rememberApiModelSource(provider: ProviderSetting): ApiModelSource {
-    if (provider is ProviderSetting.Codex) {
-        val repository = koinInject<CodexAccountRepository>()
-        val accounts by repository.accounts.collectAsStateWithLifecycle()
-        val account = accounts.singleOrNull()
-        val canFetch = account != null && account.tokenStatus != CodexTokenStatus.INVALID
-        return ApiModelSource(
-            cacheKey = provider.apiModelCacheKey(
-                codexAccountId = account?.id,
-                codexAuthExpiresAt = account?.expiresAt,
-            ),
-            canFetchModels = provider.canFetchApiModels(canFetch),
-        )
-    }
     return ApiModelSource(
         cacheKey = provider.apiModelCacheKey(),
         canFetchModels = provider.canFetchApiModels(),
@@ -658,29 +632,16 @@ private fun SettingProviderConfigPage(
                     containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             ) {
-                val currentProvider = internalProvider
-                if (currentProvider is ProviderSetting.Codex) {
-                    CodexProviderConfigure(
-                        provider = currentProvider,
-                        showSavingIndicator = isSaving,
-                        onEdit = {
-                            internalProvider = it
-                            // Auto-save immediately
-                            onEdit(it)
-                        }
-                    )
-                } else {
-                    ProviderConfigure(
-                        provider = internalProvider,
-                        modifier = Modifier.padding(16.dp),
-                        showSavingIndicator = isSaving,
-                        onEdit = {
-                            internalProvider = it
-                            // Auto-save immediately
-                            onEdit(it)
-                        }
-                    )
-                }
+                ProviderConfigure(
+                    provider = internalProvider,
+                    modifier = Modifier.padding(16.dp),
+                    showSavingIndicator = isSaving,
+                    onEdit = {
+                        internalProvider = it
+                        // Auto-save immediately
+                        onEdit(it)
+                    }
+                )
             }
             
             // Tags section
@@ -1661,13 +1622,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             ) {
                                 Text(
                                     text = stringResource(
-                                        when {
-                                            parentProvider is ProviderSetting.Codex && !canReload -> {
-                                                R.string.codex_sign_in_to_load_models
-                                            }
-                                            canReload -> R.string.setting_provider_page_no_models_with_api_key
-                                            else -> R.string.setting_provider_page_no_models_no_api_key
-                                        }
+                                        if (canReload) R.string.setting_provider_page_no_models_with_api_key
+                                        else R.string.setting_provider_page_no_models_no_api_key
                                     ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1991,7 +1947,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         item {
                             // Check if provider has an API key
                             val hasApiKey = when (parentProvider) {
-                                is ProviderSetting.Codex -> true
                                 is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
@@ -2144,11 +2099,6 @@ private suspend fun probeModelCapabilities(
     model: Model,
 ): ProbedModelCapabilities? {
     return when (provider) {
-        is ProviderSetting.Codex -> probeModelCapabilities(
-            providerInstance = providerManager.getProviderByType(provider),
-            provider = provider,
-            model = model,
-        )
         is ProviderSetting.OpenAI -> probeModelCapabilities(
             providerInstance = providerManager.getProviderByType(provider),
             provider = provider,
@@ -2375,12 +2325,6 @@ private fun MessageChunk.primaryMessage() = choices.firstOrNull()?.message ?: ch
 
 private fun buildToolProbeCustomBodies(provider: ProviderSetting): List<CustomBody> {
     return when (provider) {
-        is ProviderSetting.Codex -> listOf(
-            CustomBody(
-                key = "tool_choice",
-                value = JsonPrimitive("required"),
-            )
-        )
         is ProviderSetting.OpenAI -> listOf(
             CustomBody(
                 key = "tool_choice",
@@ -3263,18 +3207,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        val currentProvider = internalProvider
-                        if (currentProvider is ProviderSetting.Codex) {
-                            CodexProviderConfigure(
-                                provider = currentProvider,
-                                onEdit = { internalProvider = it }
-                            )
-                        } else {
-                            ProviderConfigure(
-                                provider = internalProvider,
-                                onEdit = { internalProvider = it }
-                            )
-                        }
+                        ProviderConfigure(
+                            provider = internalProvider,
+                            onEdit = { internalProvider = it }
+                        )
                     }
 
                     Row(

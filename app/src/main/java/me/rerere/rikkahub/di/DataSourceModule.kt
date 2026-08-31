@@ -69,11 +69,6 @@ import org.koin.core.qualifier.named
 import org.koin.dsl.module
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import me.rerere.rikkahub.data.codex.CodexAccountRepository
-import me.rerere.rikkahub.data.codex.CodexCredentialStore
-import me.rerere.rikkahub.data.codex.CodexOAuthManager
-import me.rerere.rikkahub.data.codex.CodexProvider
-import me.rerere.rikkahub.data.codex.createCodexDnsResolver
 
 const val SEARCH_PLATFORM_HTTP_CLIENT = "searchPlatformHttpClient"
 private const val MCP_OKHTTP_CLIENT = "mcpOkHttpClient"
@@ -287,35 +282,6 @@ val dataSourceModule = module {
         }
     }
 
-    single<OkHttpClient>(named("codex")) {
-        OkHttpClient.Builder()
-            .connectTimeout(20.seconds)
-            .readTimeout(10.minutes)
-            .writeTimeout(120.seconds)
-            .followSslRedirects(true)
-            .followRedirects(true)
-            .retryOnConnectionFailure(true)
-            .fastFallback(true)
-            .dns(createCodexDnsResolver())
-            .build()
-    }
-
-    single {
-        CodexAccountRepository(
-            store = CodexCredentialStore(context = get(), json = get()),
-            client = get(named("codex")),
-            json = get(),
-        )
-    }
-
-    single {
-        CodexOAuthManager(
-            context = get(),
-            scope = get<me.rerere.rikkahub.AppScope>(),
-            client = get(named("codex")),
-            repository = get(),
-        )
-    }
 
     single<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT)) {
         OkHttpPlatformHttpClient(get<OkHttpClient>(named(MCP_OKHTTP_CLIENT)))
@@ -470,17 +436,6 @@ val dataSourceModule = module {
             registerProvider(
                 me.rerere.locallm.litert.LiteRtProvider.NAME,
                 get<me.rerere.locallm.litert.LiteRtProvider>(),
-            )
-            registerProvider(
-                "codex",
-                CodexProvider(
-                    context = get(),
-                    client = get(named("codex")),
-                    platformClient = get(),
-                    mediaEncoder = AndroidPlatformMediaEncoder(),
-                    repository = get<CodexAccountRepository>(),
-                    json = get(),
-                )
             )
         }
     }

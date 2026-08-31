@@ -15,10 +15,10 @@ import kotlin.uuid.Uuid
 class OnboardingManualProviderTest {
     @Test
     fun configuredProviderInOnboardingIsAlwaysEnabled() {
-        val codexProvider = ProviderSetting.Codex(
+        val testProvider = ProviderSetting.OpenAI(
             id = Uuid.random(),
             enabled = false,
-            name = "Codex",
+            name = "Test Provider",
             models = emptyList(),
         )
 
@@ -36,7 +36,7 @@ class OnboardingManualProviderTest {
             type = ModelType.CHAT,
         )
 
-        val configured = codexProvider.copyProvider(
+        val configured = testProvider.copyProvider(
             enabled = true,
             models = listOf(model1, model2),
         )
