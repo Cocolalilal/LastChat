@@ -37,9 +37,11 @@ import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +64,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
@@ -79,6 +82,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Category
@@ -111,6 +115,29 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PushPin
+import me.rerere.rikkahub.ui.core.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.core.components.chat.ActivityPillRow
+import me.rerere.rikkahub.ui.core.components.chat.ActivityState
+import me.rerere.rikkahub.ui.core.components.chat.ActivityType
+import me.rerere.rikkahub.ui.core.components.chat.TimelineItem
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import me.rerere.lastchat.ios.models.IosBackupItem
+import me.rerere.lastchat.ios.models.IosInjectionPosition
+import me.rerere.lastchat.ios.models.IosLorebook
+import me.rerere.lastchat.ios.models.IosLorebookActivationType
+import me.rerere.lastchat.ios.models.IosLorebookEntry
+import me.rerere.lastchat.ios.models.IosMcpCommonOptions
+import me.rerere.lastchat.ios.models.IosMcpServerConfig
+import me.rerere.lastchat.ios.models.IosMcpTool
+import me.rerere.lastchat.ios.models.IosRestoreResult
+import me.rerere.lastchat.ios.models.IosSkill
+import me.rerere.lastchat.ios.models.IosWebDavBackupItem
+import me.rerere.lastchat.ios.models.IosWebDavConfig
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -131,6 +158,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.platform.PlatformFilePicker
 import me.rerere.common.platform.PlatformAttachmentOpener
@@ -145,6 +173,9 @@ import me.rerere.rikkahub.ui.components.chat.BubbleRole
 import me.rerere.rikkahub.ui.components.chat.ConversationRowSurface
 import me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble
 import me.rerere.rikkahub.ui.components.chat.TypingIndicator
+import me.rerere.rikkahub.ui.components.chat.LastChatMessageTurn
+import me.rerere.rikkahub.ui.components.chat.ToolCallPresentation
+import me.rerere.rikkahub.ui.components.chat.AttachmentPresentation
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAction
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerActionButton
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerDefaultActionContent
@@ -198,6 +229,7 @@ import me.rerere.rikkahub.ui.theme.buildLastChatTypography
 import me.rerere.rikkahub.ui.theme.presetColorScheme
 import me.rerere.rikkahub.ui.theme.rememberLastChatFontFamily
 import me.rerere.rikkahub.ui.theme.withLastChatAmoledSurface
+import me.rerere.rikkahub.ui.components.settings.PresetThemeButtonGroup
 import coil3.compose.AsyncImage
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -212,21 +244,16 @@ private enum class IosSettingsSection(val title: String) {
     Assistant("Assistant"),
     Memory("Memory"),
     Tools("Tools"),
+    PromptInjections("Prompt injections"),
+    Mcp("MCP Servers"),
+    Backup("Backup & restore"),
     Provider("Providers"),
     Models("Default model"),
     Search("Search service"),
     Tts("Text-to-speech"),
     Data("Data"),
     About("About"),
-    Unavailable("Unavailable"),
 }
-
-private data class DisplayMessage(
-    val text: String,
-    val outgoing: Boolean,
-    val position: BubblePosition = BubblePosition.SINGLE,
-    val parts: List<UIMessagePart> = emptyList(),
-)
 
 @Composable
 fun LastChatIosApp(
@@ -275,6 +302,7 @@ fun LastChatIosApp(
                                 onSelectConversation = controller::selectConversation,
                                 onRenameConversation = controller::renameConversation,
                                 onDeleteConversation = controller::deleteConversation,
+                                onTogglePinConversation = controller::togglePinConversation,
                                 onSelectAssistant = controller::selectAssistant,
                                 darkTheme = useDarkTheme,
                                 platformHaptics = platformHaptics,
@@ -310,6 +338,12 @@ fun LastChatIosApp(
                         onRemovePendingAttachment = controller::removePendingAttachment,
                         onSpeak = controller::speak,
                         onStopSpeaking = controller::stopTts,
+                        onRegenerate = controller::regenerate,
+                        onDeleteTurn = controller::deleteTurn,
+                        onForkConversation = controller::forkConversation,
+                        onNewChat = controller::newConversation,
+                        onEditMessage = controller::editMessage,
+                        onToggleSearch = controller::toggleSearch,
                         platformHaptics = platformHaptics,
                         attachmentOpener = attachmentOpener,
                         onOpenMenu = { scope.launch { drawerState.open() } },
@@ -326,6 +360,8 @@ fun LastChatIosApp(
                     onClearSearchApiKey = controller::clearSearchApiKey,
                     onSaveTts = controller::saveTts,
                     onClearTtsApiKey = controller::clearTtsApiKey,
+                    onSpeak = controller::speak,
+                    onStopSpeaking = controller::stopTts,
                     onSaveImageGeneration = controller::saveImageGeneration,
                     onSaveAppearance = controller::saveAppearance,
                     onSaveFontSettings = controller::saveFontSettings,
@@ -341,6 +377,28 @@ fun LastChatIosApp(
                     onDeleteMemory = controller::deleteMemory,
                     onRegenerateMemoryEmbeddings = controller::regenerateMemoryEmbeddings,
                     onSaveLocalTools = controller::saveLocalTools,
+                    onSaveSkill = controller::saveSkill,
+                    onDeleteSkill = controller::deleteSkill,
+                    onToggleSkill = controller::toggleSkill,
+                    onSaveLorebook = controller::saveLorebook,
+                    onDeleteLorebook = controller::deleteLorebook,
+                    onToggleLorebook = controller::toggleLorebook,
+                    onSaveLorebookEntry = controller::saveLorebookEntry,
+                    onDeleteLorebookEntry = controller::deleteLorebookEntry,
+                    onSaveMcpServer = controller::saveMcpServer,
+                    onDeleteMcpServer = controller::deleteMcpServer,
+                    onToggleMcpServer = controller::toggleMcpServer,
+                    onRefreshMcpTools = controller::refreshMcpTools,
+                    onToggleMcpTool = controller::toggleMcpTool,
+                    onUpdateWebDavConfig = controller::updateWebDavConfig,
+                    onTestWebDav = controller::testWebDav,
+                    onListWebDavBackups = controller::listWebDavBackups,
+                    onBackupToWebDav = controller::backupToWebDav,
+                    onRestoreFromWebDav = controller::restoreFromWebDav,
+                    onExportBackup = controller::exportBackupToFile,
+                    onRestorePickedBackup = controller::restoreFromPickedFile,
+                    filePicker = filePicker,
+                    attachmentOpener = attachmentOpener,
                     platformHaptics = platformHaptics,
                     onBack = { route = IosRoute.Chat },
                 )
@@ -366,6 +424,244 @@ fun LastChatIosApp(
     }
 }
 
+private data class IosTurn(
+    val startIndex: Int,
+    val endIndex: Int,
+    val role: MessageRole,
+    val text: String,
+    val toolCalls: List<ToolCallPresentation> = emptyList(),
+    val attachments: List<AttachmentPresentation> = emptyList(),
+    val senderName: String? = null,
+    val avatarUrl: String? = null,
+    val modelName: String? = null,
+    val activityState: ActivityState = ActivityState.Hidden,
+    val timelineItems: List<TimelineItem> = emptyList(),
+)
+
+private fun buildIosTurns(
+    messages: List<UIMessage>,
+    generating: Boolean,
+    assistantName: String,
+    assistantAvatar: String?,
+    modelName: String,
+): List<IosTurn> {
+    if (messages.isEmpty()) return emptyList()
+
+    val turns = mutableListOf<IosTurn>()
+    var i = 0
+    while (i < messages.size) {
+        val currentMsg = messages[i]
+        val isUser = currentMsg.role == MessageRole.USER
+        val isSystem = currentMsg.role == MessageRole.SYSTEM
+
+        if (isUser || isSystem) {
+            val role = if (isSystem) MessageRole.SYSTEM else MessageRole.USER
+            val rawText = currentMsg.toText()
+            val attachments = mutableListOf<AttachmentPresentation>()
+            GENERATED_MARKDOWN_IMAGE_REGEX.findAll(rawText).forEach { match ->
+                attachments.add(AttachmentPresentation(match.groupValues[1], "Image", isImage = true))
+            }
+            currentMsg.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Image -> attachments.add(AttachmentPresentation(part.url, "Image", isImage = true))
+                    is UIMessagePart.Video -> attachments.add(AttachmentPresentation(part.url, "Video", isImage = false))
+                    is UIMessagePart.Audio -> attachments.add(AttachmentPresentation(part.url, "Audio", isImage = false))
+                    is UIMessagePart.Document -> attachments.add(AttachmentPresentation(part.url, part.fileName, isImage = false))
+                    else -> {}
+                }
+            }
+            turns.add(
+                IosTurn(
+                    startIndex = i,
+                    endIndex = i,
+                    role = role,
+                    text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
+                    toolCalls = emptyList(),
+                    attachments = attachments,
+                    senderName = if (isUser) "You" else "System",
+                    avatarUrl = null,
+                    modelName = null,
+                    activityState = ActivityState.Hidden,
+                    timelineItems = emptyList(),
+                )
+            )
+            i++
+        } else {
+            val turnStartIndex = i
+            val turnMessages = mutableListOf<UIMessage>()
+            while (i < messages.size && messages[i].role != MessageRole.USER && messages[i].role != MessageRole.SYSTEM) {
+                turnMessages.add(messages[i])
+                i++
+            }
+            val turnEndIndex = i - 1
+
+            val textBuilder = StringBuilder()
+            val allToolCalls = mutableListOf<UIMessagePart.ToolCall>()
+            val allToolResults = mutableListOf<UIMessagePart.ToolResult>()
+            val attachments = mutableListOf<AttachmentPresentation>()
+            var hasReasoning = false
+            var reasoningSnippet = ""
+
+            for (msg in turnMessages) {
+                val rawMsgText = msg.toText()
+                GENERATED_MARKDOWN_IMAGE_REGEX.findAll(rawMsgText).forEach { match ->
+                    attachments.add(AttachmentPresentation(match.groupValues[1], "Generated Image", isImage = true))
+                }
+                for (part in msg.parts) {
+                    when (part) {
+                        is UIMessagePart.Thinking -> {
+                            if (part.thinking.isNotBlank()) {
+                                hasReasoning = true
+                                reasoningSnippet = part.thinking
+                                textBuilder.append("<think>\n").append(part.thinking).append("\n</think>\n\n")
+                            }
+                        }
+                        is UIMessagePart.Reasoning -> {
+                            if (part.reasoning.isNotBlank()) {
+                                hasReasoning = true
+                                reasoningSnippet = part.reasoning
+                                textBuilder.append("<think>\n").append(part.reasoning).append("\n</think>\n\n")
+                            }
+                        }
+                        is UIMessagePart.Text -> {
+                            textBuilder.append(part.text)
+                        }
+                        is UIMessagePart.ToolCall -> {
+                            allToolCalls.add(part)
+                        }
+                        is UIMessagePart.ToolResult -> {
+                            allToolResults.add(part)
+                        }
+                        is UIMessagePart.Image -> {
+                            attachments.add(AttachmentPresentation(part.url, "Image", isImage = true))
+                        }
+                        is UIMessagePart.Video -> {
+                            attachments.add(AttachmentPresentation(part.url, "Video", isImage = false))
+                        }
+                        is UIMessagePart.Audio -> {
+                            attachments.add(AttachmentPresentation(part.url, "Audio", isImage = false))
+                        }
+                        is UIMessagePart.Document -> {
+                            attachments.add(AttachmentPresentation(part.url, part.fileName, isImage = false))
+                        }
+                        else -> {}
+                    }
+                }
+            }
+
+            val isLastTurn = i >= messages.size
+            val toolCallPresentations = allToolCalls.map { tc ->
+                val matchingResult = allToolResults.firstOrNull { it.toolCallId == tc.toolCallId }
+                    ?: allToolResults.firstOrNull { it.toolName == tc.toolName }
+                val resultText = matchingResult?.content?.toString()
+                val isLoading = isLastTurn && generating && matchingResult == null
+                ToolCallPresentation(
+                    name = tc.toolName,
+                    arguments = tc.arguments,
+                    result = resultText,
+                    isLoading = isLoading,
+                )
+            }
+
+            val timelineList = mutableListOf<TimelineItem>()
+            if (hasReasoning) {
+                timelineList.add(
+                    TimelineItem(
+                        title = "Reasoning",
+                        description = reasoningSnippet.take(150),
+                        type = ActivityType.REASONING,
+                        isCompleted = !isLastTurn || !generating || textBuilder.isNotBlank() || toolCallPresentations.any { it.isLoading },
+                    )
+                )
+            }
+            toolCallPresentations.forEach { tc ->
+                val type = when {
+                    tc.name.contains("search", ignoreCase = true) -> ActivityType.SEARCH
+                    tc.name.contains("memory", ignoreCase = true) -> ActivityType.MEMORY_RECALL
+                    tc.name.startsWith("mcp", ignoreCase = true) -> ActivityType.MCP
+                    else -> ActivityType.TOOL_OTHER
+                }
+                timelineList.add(
+                    TimelineItem(
+                        title = "Tool: ${tc.name}",
+                        description = tc.arguments.take(150),
+                        type = type,
+                        isCompleted = !tc.isLoading,
+                    )
+                )
+            }
+
+            val nowMs = Clock.System.now().toEpochMilliseconds()
+            val activityState: ActivityState = when {
+                isLastTurn && generating -> {
+                    val activeTool = toolCallPresentations.firstOrNull { it.isLoading }
+                    when {
+                        activeTool != null -> {
+                            val toolType = when {
+                                activeTool.name.contains("search", ignoreCase = true) -> ActivityType.SEARCH
+                                activeTool.name.contains("memory", ignoreCase = true) -> ActivityType.MEMORY_RECALL
+                                activeTool.name.startsWith("mcp", ignoreCase = true) -> ActivityType.MCP
+                                else -> ActivityType.TOOL_OTHER
+                            }
+                            ActivityState.ToolUse(
+                                toolName = activeTool.name,
+                                displayName = activeTool.name,
+                                startTimeMs = nowMs,
+                                type = toolType,
+                            )
+                        }
+                        hasReasoning && textBuilder.isBlank() -> {
+                            ActivityState.Reasoning(
+                                startTimeMs = nowMs,
+                                reasoningText = reasoningSnippet,
+                            )
+                        }
+                        textBuilder.isBlank() && toolCallPresentations.isEmpty() -> {
+                            ActivityState.Waiting
+                        }
+                        timelineList.isNotEmpty() -> {
+                            val types = timelineList.map { it.type }.distinct()
+                            if (types.size == 1) {
+                                ActivityState.CompletedSingle(types.first())
+                            } else {
+                                ActivityState.CompletedMultiple(activityTypes = types)
+                            }
+                        }
+                        else -> ActivityState.Hidden
+                    }
+                }
+                timelineList.isNotEmpty() -> {
+                    val types = timelineList.map { it.type }.distinct()
+                    if (types.size == 1) {
+                        ActivityState.CompletedSingle(types.first())
+                    } else {
+                        ActivityState.CompletedMultiple(activityTypes = types)
+                    }
+                }
+                else -> ActivityState.Hidden
+            }
+
+            val cleanedText = textBuilder.toString().replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim()
+            turns.add(
+                IosTurn(
+                    startIndex = turnStartIndex,
+                    endIndex = turnEndIndex,
+                    role = MessageRole.ASSISTANT,
+                    text = cleanedText,
+                    toolCalls = toolCallPresentations,
+                    attachments = attachments,
+                    senderName = assistantName,
+                    avatarUrl = assistantAvatar,
+                    modelName = modelName,
+                    activityState = activityState,
+                    timelineItems = timelineList,
+                )
+            )
+        }
+    }
+    return turns
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatPage(
@@ -377,12 +673,20 @@ private fun ChatPage(
     onRemovePendingAttachment: (String) -> Unit,
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
+    onRegenerate: () -> Unit,
+    onDeleteTurn: (Int, Int) -> Unit,
+    onForkConversation: (Int) -> Unit,
+    onNewChat: () -> Unit,
+    onEditMessage: (Int, String) -> Unit,
+    onToggleSearch: (Boolean) -> Unit,
     platformHaptics: PlatformHaptics,
     attachmentOpener: PlatformAttachmentOpener,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val inputState = remember { TextFieldState() }
+    var editingTurnIndex by remember { mutableStateOf<Int?>(null) }
+    var editingTurnText by remember { mutableStateOf("") }
     val pendingQuestionnaire = state.pendingQuestionnaire
     var questionnaireIndex by remember(pendingQuestionnaire?.toolCallId) { mutableStateOf(0) }
     var questionnaireSelectedOptions by remember(pendingQuestionnaire?.toolCallId) {
@@ -408,32 +712,18 @@ private fun ChatPage(
             state.pendingAttachments.filter { attachment -> attachment.kind == kind }
         }
     }
-    val conversationMessages = state.selectedConversation?.messages.orEmpty()
-        .filter { message ->
-            message.toText().isNotBlank() || message.parts.any {
-                it is UIMessagePart.Image || it is UIMessagePart.Video ||
-                    it is UIMessagePart.Audio || it is UIMessagePart.Document
-            }
-        }
-    val messages = conversationMessages.mapIndexed { index, message ->
-        val rawText = message.toText()
-        val markdownImages = GENERATED_MARKDOWN_IMAGE_REGEX.findAll(rawText).map { match ->
-            UIMessagePart.Image(match.groupValues[1])
-        }.toList()
-        val outgoing = message.role == MessageRole.USER
-        val sameBefore = conversationMessages.getOrNull(index - 1)?.role == message.role
-        val sameAfter = conversationMessages.getOrNull(index + 1)?.role == message.role
-        val position = when {
-            !sameBefore && !sameAfter -> BubblePosition.SINGLE
-            !sameBefore -> BubblePosition.FIRST
-            !sameAfter -> BubblePosition.LAST
-            else -> BubblePosition.MIDDLE
-        }
-        DisplayMessage(
-            text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
-            outgoing = outgoing,
-            position = position,
-            parts = message.parts + markdownImages,
+    val turns = remember(
+        state.selectedConversation?.messages,
+        state.generating,
+        state.assistant.name,
+        state.provider.modelId,
+    ) {
+        buildIosTurns(
+            messages = state.selectedConversation?.messages.orEmpty(),
+            generating = state.generating,
+            assistantName = state.assistant.name,
+            assistantAvatar = null,
+            modelName = state.provider.modelId,
         )
     }
     fun send() {
@@ -454,13 +744,36 @@ private fun ChatPage(
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
         topBar = {
-            TopAppBar(
-                title = { Text(state.assistant.name, fontWeight = FontWeight.SemiBold) },
+            OneUITopAppBar(
+                title = state.assistant.name,
+                subtitle = state.provider.modelId,
                 navigationIcon = {
                     LastChatMenuButton(
                         onClick = onOpenMenu,
                         contentDescription = "Messages",
                     )
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                            onToggleSearch(!state.search.enabled)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = "Toggle search",
+                            tint = if (state.search.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                            onNewChat()
+                        }
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = "New chat")
+                    }
                 },
             )
         },
@@ -553,6 +866,69 @@ private fun ChatPage(
                                     }
                                 }
                             }
+                            // Inline chips for Model and Web Search
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp, top = 6.dp, end = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Surface(
+                                    shape = AppShapes.ButtonPill,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                                    modifier = Modifier.clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        onOpenSettings()
+                                    },
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.AutoAwesome,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Text(
+                                            text = state.provider.modelId,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = AppShapes.ButtonPill,
+                                    color = if (state.search.enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                                    modifier = Modifier.clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        onToggleSearch(!state.search.enabled)
+                                    },
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Search,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp),
+                                            tint = if (state.search.enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            text = if (state.search.enabled) "Search ON" else "Search",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (state.search.enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                             Box(Modifier.fillMaxWidth()) {
                                 TextField(
                                     state = inputState,
@@ -642,45 +1018,89 @@ private fun ChatPage(
             item { Spacer(Modifier.height(8.dp)) }
             if (state.loading) {
                 item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            } else if (messages.isEmpty()) {
+            } else if (turns.isEmpty()) {
                 item {
-                    MessageBubble(
-                        message = DisplayMessage("How can I help?", outgoing = false),
-                        attachmentOpener = attachmentOpener,
-                        platformHaptics = platformHaptics,
-                        isTtsSpeaking = state.ttsSpeaking,
-                        isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
-                        showAssistantBubbles = state.appearance.showAssistantBubbles,
+                    LastChatMessageTurn(
+                        role = MessageRole.ASSISTANT,
+                        text = "How can I help you today?",
+                        senderName = state.assistant.name,
+                        modelName = state.provider.modelId,
                         fontSizeRatio = state.appearance.fontSizeRatio,
-                        rpStyleRules = state.appearance.rpStyleRules,
-                        onSpeak = onSpeak,
-                        onStopSpeaking = onStopSpeaking,
+                        showAssistantBubble = state.appearance.showAssistantBubbles,
+                    )
+                }
+            } else {
+                items(turns, key = { it.startIndex }) { turn ->
+                    LastChatMessageTurn(
+                        role = turn.role,
+                        text = turn.text,
+                        senderName = turn.senderName,
+                        avatarUrl = turn.avatarUrl,
+                        modelName = turn.modelName,
+                        toolCalls = turn.toolCalls,
+                        attachments = turn.attachments,
+                        activityState = turn.activityState,
+                        timelineItems = turn.timelineItems,
+                        onRegenerate = if (turn.role == MessageRole.ASSISTANT) onRegenerate else null,
+                        onEdit = {
+                            editingTurnIndex = turn.startIndex
+                            editingTurnText = turn.text
+                        },
+                        onFork = { onForkConversation(turn.endIndex) },
+                        onDelete = { onDeleteTurn(turn.startIndex, turn.endIndex) },
+                        isSpeakingTts = state.ttsSpeaking,
+                        onToggleTts = if (turn.role == MessageRole.ASSISTANT && state.tts.enabled && state.hasTtsApiKey) {
+                            {
+                                if (state.ttsSpeaking) onStopSpeaking() else onSpeak(turn.text)
+                            }
+                        } else null,
+                        onAttachmentClick = { uri -> attachmentOpener.open(uri) },
+                        fontSizeRatio = state.appearance.fontSizeRatio,
+                        showAssistantBubble = state.appearance.showAssistantBubbles,
                     )
                 }
             }
-            items(messages) { message ->
-                MessageBubble(
-                    message = message,
-                    attachmentOpener = attachmentOpener,
-                    platformHaptics = platformHaptics,
-                    isTtsSpeaking = state.ttsSpeaking,
-                    isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
-                    showAssistantBubbles = state.appearance.showAssistantBubbles,
-                    fontSizeRatio = state.appearance.fontSizeRatio,
-                    rpStyleRules = state.appearance.rpStyleRules,
-                    onSpeak = onSpeak,
-                    onStopSpeaking = onStopSpeaking,
-                )
-            }
-            if (state.generating) item {
-                GroupedMessageBubble(
-                    position = BubblePosition.SINGLE,
-                    role = BubbleRole.ACTIVITY,
-                ) { TypingIndicator() }
+            if (state.generating && (turns.isEmpty() || turns.last().role == MessageRole.USER || (turns.last().text.isBlank() && turns.last().toolCalls.none { it.isLoading } && turns.last().activityState == ActivityState.Hidden))) {
+                item {
+                    GroupedMessageBubble(
+                        position = BubblePosition.SINGLE,
+                        role = BubbleRole.ACTIVITY,
+                    ) { TypingIndicator() }
+                }
             }
             state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+    editingTurnIndex?.let { editIdx ->
+        AlertDialog(
+            onDismissRequest = { editingTurnIndex = null },
+            title = { Text("Edit message") },
+            text = {
+                OutlinedTextField(
+                    value = editingTurnText,
+                    onValueChange = { editingTurnText = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 280.dp),
+                    shape = RoundedCornerShape(16.dp),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onEditMessage(editIdx, editingTurnText)
+                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                        editingTurnIndex = null
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingTurnIndex = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -795,119 +1215,6 @@ private fun IosCharacterQuestionOptionRow(
     }
 }
 
-@Composable
-private fun MessageBubble(
-    message: DisplayMessage,
-    attachmentOpener: PlatformAttachmentOpener,
-    platformHaptics: PlatformHaptics,
-    isTtsSpeaking: Boolean,
-    isTtsAvailable: Boolean,
-    showAssistantBubbles: Boolean,
-    fontSizeRatio: Float,
-    rpStyleRules: List<IosRpStyleRule>,
-    onSpeak: (String) -> Unit,
-    onStopSpeaking: () -> Unit,
-) {
-    val styledText = remember(message.text, rpStyleRules) {
-        buildIosRoleplayText(message.text, rpStyleRules)
-    }
-    val attachments = message.parts.filter { part ->
-        part is UIMessagePart.Image || part is UIMessagePart.Video ||
-            part is UIMessagePart.Audio || part is UIMessagePart.Document
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        if (attachments.isNotEmpty()) {
-            LastChatMessageAttachmentRow(alignEnd = message.outgoing) {
-                items(
-                    items = attachments,
-                    key = { part -> part.hashCode() },
-                ) { part ->
-                    when (part) {
-                        is UIMessagePart.Image -> AsyncImage(
-                            model = part.url,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .clip(MaterialTheme.shapes.medium)
-                                .size(72.dp)
-                                .clickable {
-                                    platformHaptics.perform(PlatformHapticPattern.Pop)
-                                    attachmentOpener.open(part.url)
-                                },
-                        )
-                        is UIMessagePart.Video -> LastChatDocumentAttachmentTile(
-                            fileName = "Video",
-                            modifier = Modifier.size(72.dp),
-                            onClick = {
-                                platformHaptics.perform(PlatformHapticPattern.Pop)
-                                attachmentOpener.open(part.url)
-                            },
-                        )
-                        is UIMessagePart.Audio -> LastChatDocumentAttachmentTile(
-                            fileName = "Audio",
-                            modifier = Modifier.size(72.dp),
-                            onClick = {
-                                platformHaptics.perform(PlatformHapticPattern.Pop)
-                                attachmentOpener.open(part.url)
-                            },
-                        )
-                        is UIMessagePart.Document -> LastChatDocumentAttachmentTile(
-                            fileName = part.fileName,
-                            modifier = Modifier.size(72.dp),
-                            onClick = {
-                                platformHaptics.perform(PlatformHapticPattern.Pop)
-                                attachmentOpener.open(part.url)
-                            },
-                        )
-                        else -> Unit
-                    }
-                }
-            }
-        }
-        if (message.text.isNotBlank()) {
-            if (!message.outgoing && !showAssistantBubbles) {
-                Text(
-                    text = styledText,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
-                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-                )
-            } else {
-                GroupedMessageBubble(
-                    position = message.position,
-                    role = if (message.outgoing) BubbleRole.USER else BubbleRole.ASSISTANT,
-                    modifier = Modifier.fillMaxWidth(0.86f),
-                ) {
-                    Text(
-                        text = styledText,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
-                            lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
-                        ),
-                    )
-                }
-            }
-            if (!message.outgoing) {
-                LastChatTtsAction(
-                    isSpeaking = isTtsSpeaking,
-                    isAvailable = isTtsAvailable,
-                    contentDescription = "Text to speech",
-                    onClick = {
-                        platformHaptics.perform(PlatformHapticPattern.Pop)
-                        if (isTtsSpeaking) onStopSpeaking() else onSpeak(message.text)
-                    },
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MenuPage(
@@ -915,6 +1222,7 @@ private fun MenuPage(
     onSelectConversation: (String) -> Unit,
     onRenameConversation: (String, String) -> Unit,
     onDeleteConversation: (String) -> Unit,
+    onTogglePinConversation: (String) -> Unit,
     onSelectAssistant: (String) -> Unit,
     darkTheme: Boolean,
     platformHaptics: PlatformHaptics,
@@ -935,17 +1243,58 @@ private fun MenuPage(
             }
         }
     }
+    val pinnedConversations = remember(filteredConversations) {
+        filteredConversations.filter { it.isPinned }
+    }
+    val regularConversations = remember(filteredConversations) {
+        filteredConversations.filter { !it.isPinned }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+            // Assistant Time-of-day greeting header
             item {
-                Text(
-                    text = "Chats",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                )
+                val currentHour = remember {
+                    Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
+                }
+                val greetingText = remember(currentHour) {
+                    when (currentHour) {
+                        in 5..7 -> "Good early morning"
+                        in 8..11 -> "Good morning"
+                        in 12..13 -> "Lunch time"
+                        in 14..17 -> "Good afternoon"
+                        in 18..20 -> "Good evening"
+                        in 21..22 -> "Good night"
+                        else -> "Night owl hours"
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IosAssistantAvatar(
+                        name = state.assistant.name,
+                        modifier = Modifier.size(46.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = state.assistant.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = greetingText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             item {
                 LastChatDrawerSearch(
@@ -997,13 +1346,64 @@ private fun MenuPage(
                     }
                 }
             }
-            items(filteredConversations, key = { it.id }) { conversation ->
+            // Pinned Conversations Group
+            if (pinnedConversations.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Pinned",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                items(pinnedConversations, key = { "pinned_" + it.id }) { conversation ->
+                    ConversationListRow(
+                        title = conversation.title,
+                        selected = conversation.id == state.selectedConversationId,
+                        isPinned = true,
+                        platformHaptics = platformHaptics,
+                        onRename = { title -> onRenameConversation(conversation.id, title) },
+                        onDelete = { onDeleteConversation(conversation.id) },
+                        onTogglePin = { onTogglePinConversation(conversation.id) },
+                    ) {
+                        onSelectConversation(conversation.id)
+                        onDismiss()
+                    }
+                }
+                if (regularConversations.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Chats",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+            // Regular Conversations
+            items(regularConversations, key = { it.id }) { conversation ->
                 ConversationListRow(
                     title = conversation.title,
                     selected = conversation.id == state.selectedConversationId,
+                    isPinned = false,
                     platformHaptics = platformHaptics,
                     onRename = { title -> onRenameConversation(conversation.id, title) },
                     onDelete = { onDeleteConversation(conversation.id) },
+                    onTogglePin = { onTogglePinConversation(conversation.id) },
                 ) {
                     onSelectConversation(conversation.id)
                     onDismiss()
@@ -1492,9 +1892,11 @@ private val GENERATED_MARKDOWN_IMAGE_REGEX = Regex("!\\[[^]]*]\\(([^)]+)\\)")
 private fun ConversationListRow(
     title: String,
     selected: Boolean,
+    isPinned: Boolean = false,
     platformHaptics: PlatformHaptics,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
+    onTogglePin: () -> Unit,
     onClick: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1516,6 +1918,7 @@ private fun ConversationListRow(
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = title.ifBlank { "New chat" },
@@ -1524,6 +1927,14 @@ private fun ConversationListRow(
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = if (selected) FontWeight.Bold else null,
                 )
+                if (isPinned) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = "Pinned",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
         DropdownMenu(
@@ -1533,7 +1944,29 @@ private fun ConversationListRow(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             DropdownMenuItem(
+                text = { Text(if (isPinned) "Unpin chat" else "Pin to top") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.PushPin,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = {
+                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                    showMenu = false
+                    onTogglePin()
+                },
+            )
+            DropdownMenuItem(
                 text = { Text("Edit title") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
                 onClick = {
                     platformHaptics.perform(PlatformHapticPattern.Pop)
                     editedTitle = title
@@ -1543,6 +1976,14 @@ private fun ConversationListRow(
             )
             DropdownMenuItem(
                 text = { Text("Delete") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
                 onClick = {
                     platformHaptics.perform(PlatformHapticPattern.Error)
                     showMenu = false
@@ -1603,6 +2044,8 @@ private fun SettingsPage(
     onClearSearchApiKey: () -> Unit,
     onSaveTts: (IosTtsPreferences, String) -> Unit,
     onClearTtsApiKey: () -> Unit,
+    onSpeak: (String) -> Unit,
+    onStopSpeaking: () -> Unit,
     onSaveImageGeneration: (IosImageGenerationPreferences) -> Unit,
     onSaveAppearance: (String, IosColorMode) -> Unit,
     onSaveFontSettings: (Boolean) -> Unit,
@@ -1618,13 +2061,34 @@ private fun SettingsPage(
     onDeleteMemory: (Int) -> Unit,
     onRegenerateMemoryEmbeddings: () -> Unit,
     onSaveLocalTools: (Set<IosLocalToolOption>) -> Unit,
+    onSaveSkill: (IosSkill) -> Unit,
+    onDeleteSkill: (String) -> Unit,
+    onToggleSkill: (String, Boolean) -> Unit,
+    onSaveLorebook: (IosLorebook) -> Unit,
+    onDeleteLorebook: (String) -> Unit,
+    onToggleLorebook: (String, Boolean) -> Unit,
+    onSaveLorebookEntry: (String, IosLorebookEntry) -> Unit,
+    onDeleteLorebookEntry: (String, String) -> Unit,
+    onSaveMcpServer: (IosMcpServerConfig) -> Unit,
+    onDeleteMcpServer: (String) -> Unit,
+    onToggleMcpServer: (String, Boolean) -> Unit,
+    onRefreshMcpTools: suspend (IosMcpServerConfig) -> Result<List<IosMcpTool>>,
+    onToggleMcpTool: (String, String, Boolean) -> Unit,
+    onUpdateWebDavConfig: (IosWebDavConfig) -> Unit,
+    onTestWebDav: suspend (IosWebDavConfig) -> Result<Unit>,
+    onListWebDavBackups: suspend (IosWebDavConfig) -> Result<List<IosWebDavBackupItem>>,
+    onBackupToWebDav: suspend (IosWebDavConfig) -> Result<Unit>,
+    onRestoreFromWebDav: suspend (IosWebDavConfig, String) -> Result<IosRestoreResult>,
+    onExportBackup: suspend () -> Result<PlatformPickedFile>,
+    onRestorePickedBackup: suspend (PlatformPickedFile) -> Result<IosRestoreResult>,
+    filePicker: PlatformFilePicker,
+    attachmentOpener: PlatformAttachmentOpener,
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var section by remember { mutableStateOf(IosSettingsSection.Home) }
     var activeDestinationId by remember { mutableStateOf("") }
-    var unavailableDestinationId by remember { mutableStateOf("") }
-    var unavailableDestinationTitle by remember { mutableStateOf("Unavailable") }
     var showModelPicker by remember { mutableStateOf(false) }
     var modelSearchQuery by remember { mutableStateOf("") }
     var searchProvider by remember(state.search.provider) {
@@ -1682,6 +2146,34 @@ private fun SettingsPage(
     var memorySearch by remember { mutableStateOf("") }
     var editingMemory by remember { mutableStateOf<IosMemoryRecord?>(null) }
     var editingMemoryContent by remember { mutableStateOf("") }
+
+    var promptInjectionTab by remember { mutableStateOf(0) }
+    var showAddSkillDialog by remember { mutableStateOf(false) }
+    var editingSkill by remember { mutableStateOf<IosSkill?>(null) }
+    var showAddLorebookDialog by remember { mutableStateOf(false) }
+    var editingLorebook by remember { mutableStateOf<IosLorebook?>(null) }
+    var expandedLorebookId by remember { mutableStateOf<String?>(null) }
+    var showAddLorebookEntryDialog by remember { mutableStateOf(false) }
+    var editingLorebookEntry by remember { mutableStateOf<Pair<String, IosLorebookEntry?>?>(null) }
+
+    var showAddMcpServerDialog by remember { mutableStateOf(false) }
+    var editingMcpServer by remember { mutableStateOf<IosMcpServerConfig?>(null) }
+    var mcpRefreshingServerId by remember { mutableStateOf<String?>(null) }
+    var mcpStatusMessage by remember { mutableStateOf<String?>(null) }
+
+    var backupTab by remember { mutableStateOf(0) }
+    var webDavUrl by remember(state.webDavConfig.url) { mutableStateOf(state.webDavConfig.url) }
+    var webDavPath by remember(state.webDavConfig.path) { mutableStateOf(state.webDavConfig.path) }
+    var webDavUser by remember(state.webDavConfig.user) { mutableStateOf(state.webDavConfig.user) }
+    var webDavPass by remember(state.webDavConfig.pass) { mutableStateOf(state.webDavConfig.pass) }
+    var webDavStatusMessage by remember { mutableStateOf<String?>(null) }
+    var isTestingWebDav by remember { mutableStateOf(false) }
+    var isBackingUpWebDav by remember { mutableStateOf(false) }
+    var isLoadingRemoteBackups by remember { mutableStateOf(false) }
+    var remoteBackupsList by remember { mutableStateOf<List<IosWebDavBackupItem>>(emptyList()) }
+    var restoreResultDialog by remember { mutableStateOf<IosRestoreResult?>(null) }
+    var isRestoring by remember { mutableStateOf(false) }
+
     fun openSettingsDestination(destinationId: String, title: String) {
         activeDestinationId = destinationId
         when (destinationId) {
@@ -1690,17 +2182,24 @@ private fun SettingsPage(
             "Assistants" -> section = IosSettingsSection.Assistant
             "AssistantMemory" -> section = IosSettingsSection.Memory
             "AssistantTools" -> section = IosSettingsSection.Tools
+            "PromptInjections", "Skills", "Lorebooks" -> {
+                section = IosSettingsSection.PromptInjections
+                if (destinationId == "Lorebooks") promptInjectionTab = 1
+                else if (destinationId == "Skills") promptInjectionTab = 0
+            }
+            "Mcp" -> section = IosSettingsSection.Mcp
+            "Backup", "BackupWebDav", "BackupLocal" -> {
+                section = IosSettingsSection.Backup
+                if (destinationId == "BackupLocal") backupTab = 1
+                else if (destinationId == "BackupWebDav") backupTab = 0
+            }
             "Providers", "ProviderModels" -> section = IosSettingsSection.Provider
             "Models" -> section = IosSettingsSection.Models
             "Search" -> section = IosSettingsSection.Search
             "Tts" -> section = IosSettingsSection.Tts
             "ChatStorage" -> section = IosSettingsSection.Data
             "About" -> section = IosSettingsSection.About
-            else -> {
-                unavailableDestinationId = destinationId
-                unavailableDestinationTitle = title
-                section = IosSettingsSection.Unavailable
-            }
+            else -> {}
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1711,13 +2210,15 @@ private fun SettingsPage(
             IosSettingsSection.Assistant -> activeDestinationId.ifBlank { "Assistants" }
             IosSettingsSection.Memory -> "AssistantMemory"
             IosSettingsSection.Tools -> "AssistantTools"
+            IosSettingsSection.PromptInjections -> if (promptInjectionTab == 1) "Lorebooks" else "Skills"
+            IosSettingsSection.Mcp -> "Mcp"
+            IosSettingsSection.Backup -> if (backupTab == 1) "BackupLocal" else "BackupWebDav"
             IosSettingsSection.Provider -> activeDestinationId.ifBlank { "Providers" }
             IosSettingsSection.Models -> "Models"
             IosSettingsSection.Search -> "Search"
             IosSettingsSection.Tts -> "Tts"
             IosSettingsSection.Data -> activeDestinationId.ifBlank { "ChatStorage" }
             IosSettingsSection.About -> "About"
-            IosSettingsSection.Unavailable -> unavailableDestinationId
             IosSettingsSection.Home -> ""
         }
         val selectedMainId = iosSettingsMainDestination(selectedPaneId)
@@ -1736,7 +2237,7 @@ private fun SettingsPage(
                     onNavigate = { destinationId ->
                         openSettingsDestination(
                             destinationId = destinationId,
-                            title = paneGroups.titleFor(destinationId) ?: "Unavailable",
+                            title = paneGroups.titleFor(destinationId) ?: "",
                         )
                     },
                 )
@@ -1750,9 +2251,7 @@ private fun SettingsPage(
         topBar = { TopAppBar(
             title = {
                 Text(
-                    if (section == IosSettingsSection.Unavailable) {
-                        unavailableDestinationTitle
-                    } else if (
+                    if (
                         section == IosSettingsSection.Appearance &&
                         activeDestinationId == "UiCustomization"
                     ) {
@@ -1846,7 +2345,7 @@ private fun SettingsPage(
                         LastChatSettingGroupItem(
                             title = "Prompt injections",
                             darkTheme = darkTheme,
-                            icon = { Icon(Icons.Rounded.Category, null, Modifier.size(20.dp)) },
+                            icon = { Icon(Icons.Rounded.Extension, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
                             onClick = { openSettingsDestination("PromptInjections", "Prompt injections") },
@@ -1872,48 +2371,24 @@ private fun SettingsPage(
                             onClick = { openSettingsDestination("Providers", "Providers") },
                         )
                         LastChatSettingGroupItem(
-                            title = "MCP",
+                            title = "MCP Servers",
                             darkTheme = darkTheme,
-                            icon = { Icon(Icons.Rounded.Code, null, Modifier.size(20.dp)) },
+                            icon = { Icon(Icons.Rounded.Extension, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { openSettingsDestination("Mcp", "MCP") },
-                        )
-                        LastChatSettingGroupItem(
-                            title = "Web server",
-                            darkTheme = darkTheme,
-                            icon = { Icon(Icons.Rounded.Language, null, Modifier.size(20.dp)) },
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { openSettingsDestination("Web", "Web server") },
-                        )
-                        LastChatSettingGroupItem(
-                            title = "Android integration",
-                            darkTheme = darkTheme,
-                            icon = { Icon(Icons.Rounded.PhoneAndroid, null, Modifier.size(20.dp)) },
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { openSettingsDestination("AndroidIntegration", "Android integration") },
-                        )
-                        LastChatSettingGroupItem(
-                            title = "Workspaces",
-                            darkTheme = darkTheme,
-                            icon = { Icon(Icons.Rounded.Code, null, Modifier.size(20.dp)) },
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { openSettingsDestination("Workspaces", "Workspaces") },
+                            onClick = { openSettingsDestination("Mcp", "MCP Servers") },
                         )
                     }
                 }
                 item {
                     LastChatSettingsGroup(title = "Data settings") {
                         LastChatSettingGroupItem(
-                            title = "Backup",
+                            title = "Data backup",
                             darkTheme = darkTheme,
                             icon = { Icon(Icons.Rounded.CloudUpload, null, Modifier.size(20.dp)) },
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                            onClick = { openSettingsDestination("Backup", "Backup") },
+                            onClick = { openSettingsDestination("Backup", "Data backup") },
                         )
                         LastChatSettingGroupItem(
                             title = "Chat storage",
@@ -2335,6 +2810,608 @@ private fun SettingsPage(
                                 )
                             },
                         )
+                    }
+                }
+            }
+            if (section == IosSettingsSection.PromptInjections) {
+                item {
+                    IosTabRow(
+                        tabs = listOf(
+                            "Skills (${state.skills.size})",
+                            "Lorebooks (${state.lorebooks.size})"
+                        ),
+                        selectedIndex = promptInjectionTab,
+                        onSelect = {
+                            platformHaptics.perform(PlatformHapticPattern.Tick)
+                            promptInjectionTab = it
+                        },
+                    )
+                }
+                if (promptInjectionTab == 0) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Skills",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Button(
+                                onClick = {
+                                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                                    editingSkill = null
+                                    showAddSkillDialog = true
+                                },
+                                shape = AppShapes.ButtonPill,
+                            ) {
+                                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Skill")
+                            }
+                        }
+                    }
+                    if (state.skills.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.CardMedium,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Category,
+                                        null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "No skills configured",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Skills inject specialized system instructions or tool directives into conversations.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(state.skills) { skill ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.CardMedium,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (skill.enabled) MaterialTheme.colorScheme.surfaceContainer
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                skill.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            if (skill.description.isNotBlank()) {
+                                                Text(
+                                                    skill.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        Switch(
+                                            checked = skill.enabled,
+                                            onCheckedChange = { checked ->
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onToggleSkill(skill.id, checked)
+                                            },
+                                        )
+                                    }
+                                    if (skill.instructions.isNotBlank()) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Surface(
+                                            shape = AppShapes.CardSmall,
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(
+                                                skill.instructions,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(8.dp),
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Surface(
+                                            shape = AppShapes.ButtonPill,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                        ) {
+                                            Text(
+                                                skill.injectionPosition.displayName(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            )
+                                        }
+                                        Row {
+                                            IconButton(onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                editingSkill = skill
+                                                showAddSkillDialog = true
+                                            }) {
+                                                Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
+                                            }
+                                            IconButton(onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onDeleteSkill(skill.id)
+                                            }) {
+                                                Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Lorebooks",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Button(
+                                onClick = {
+                                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                                    editingLorebook = null
+                                    showAddLorebookDialog = true
+                                },
+                                shape = AppShapes.ButtonPill,
+                            ) {
+                                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Lorebook")
+                            }
+                        }
+                    }
+                    if (state.lorebooks.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.CardMedium,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Book,
+                                        null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "No lorebooks configured",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Lorebooks automatically inject context when keywords are mentioned in conversation.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(state.lorebooks) { lb ->
+                            val isExpanded = expandedLorebookId == lb.id
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.CardMedium,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (lb.enabled) MaterialTheme.colorScheme.surfaceContainer
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                lb.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            if (lb.description.isNotBlank()) {
+                                                Text(
+                                                    lb.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        Switch(
+                                            checked = lb.enabled,
+                                            onCheckedChange = { checked ->
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onToggleLorebook(lb.id, checked)
+                                            },
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        TextButton(
+                                            onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Tick)
+                                                expandedLorebookId = if (isExpanded) null else lb.id
+                                            },
+                                        ) {
+                                            Text("${lb.entries.size} entries ${if (isExpanded) "▲" else "▼"}")
+                                        }
+                                        Row {
+                                            IconButton(onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                editingLorebookEntry = lb.id to null
+                                                showAddLorebookEntryDialog = true
+                                            }) {
+                                                Icon(Icons.Rounded.Add, "Add entry", Modifier.size(18.dp))
+                                            }
+                                            IconButton(onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                editingLorebook = lb
+                                                showAddLorebookDialog = true
+                                            }) {
+                                                Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
+                                            }
+                                            IconButton(onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onDeleteLorebook(lb.id)
+                                            }) {
+                                                Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                    if (isExpanded) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            lb.entries.forEach { entry ->
+                                                Surface(
+                                                    shape = AppShapes.CardSmall,
+                                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                        ) {
+                                                            Text(
+                                                                entry.name,
+                                                                style = MaterialTheme.typography.labelLarge,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                            )
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                                        editingLorebookEntry = lb.id to entry
+                                                                        showAddLorebookEntryDialog = true
+                                                                    },
+                                                                    modifier = Modifier.size(32.dp),
+                                                                ) {
+                                                                    Icon(Icons.Rounded.Edit, "Edit entry", Modifier.size(16.dp))
+                                                                }
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                                        onDeleteLorebookEntry(lb.id, entry.id)
+                                                                    },
+                                                                    modifier = Modifier.size(32.dp),
+                                                                ) {
+                                                                    Icon(Icons.Rounded.Delete, "Delete entry", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                                                }
+                                                            }
+                                                        }
+                                                        if (entry.keywords.isNotEmpty()) {
+                                                            Text(
+                                                                "Keywords: ${entry.keywords.joinToString(", ")}",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                            )
+                                                        }
+                                                        Text(
+                                                            entry.prompt,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Mcp) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                "MCP Servers",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "Model Context Protocol over SSE & HTTP",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                editingMcpServer = null
+                                showAddMcpServerDialog = true
+                            },
+                            shape = AppShapes.ButtonPill,
+                        ) {
+                            Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Server")
+                        }
+                    }
+                }
+                if (mcpStatusMessage != null) {
+                    item {
+                        Surface(
+                            shape = AppShapes.CardSmall,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                mcpStatusMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
+                    }
+                }
+                if (state.mcpServers.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Extension,
+                                    null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "No MCP servers configured",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Connect remote tool servers using Server-Sent Events (SSE) or Streamable HTTP. Assistants can discover and execute their tools automatically.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(state.mcpServers) { server ->
+                        val isRefreshing = mcpRefreshingServerId == server.id
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (server.commonOptions.enable) MaterialTheme.colorScheme.surfaceContainer
+                                else MaterialTheme.colorScheme.surfaceContainerLow
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                server.commonOptions.name.ifBlank { "MCP Server" },
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Surface(
+                                                shape = AppShapes.ButtonPill,
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                            ) {
+                                                Text(
+                                                    if (server is IosMcpServerConfig.SseTransportServer) "SSE"
+                                                    else "HTTP",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            server.url,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = server.commonOptions.enable,
+                                        onCheckedChange = { checked ->
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            onToggleMcpServer(server.id, checked)
+                                        },
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Tick)
+                                            mcpRefreshingServerId = server.id
+                                            mcpStatusMessage = "Discovering tools from ${server.commonOptions.name}..."
+                                            scope.launch {
+                                                onRefreshMcpTools(server).onSuccess { tools ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Success)
+                                                    mcpStatusMessage = "Discovered ${tools.size} tools from ${server.commonOptions.name}"
+                                                }.onFailure { err ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Error)
+                                                    mcpStatusMessage = "Discovery failed: ${err.message}"
+                                                }
+                                                mcpRefreshingServerId = null
+                                            }
+                                        },
+                                        enabled = !isRefreshing,
+                                        shape = AppShapes.ButtonPill,
+                                    ) {
+                                        if (isRefreshing) {
+                                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                        } else {
+                                            Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text("Discover Tools")
+                                    }
+                                    Row {
+                                        IconButton(onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            editingMcpServer = server
+                                            showAddMcpServerDialog = true
+                                        }) {
+                                            Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
+                                        }
+                                        IconButton(onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            onDeleteMcpServer(server.id)
+                                        }) {
+                                            Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                                if (server.commonOptions.tools.isNotEmpty()) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        "Discovered Tools (${server.commonOptions.tools.size}):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        server.commonOptions.tools.forEach { tool ->
+                                            Surface(
+                                                shape = AppShapes.CardSmall,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            tool.name,
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            fontWeight = FontWeight.Bold,
+                                                        )
+                                                        if (!tool.description.isNullOrBlank()) {
+                                                            Text(
+                                                                tool.description,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 2,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                    }
+                                                    Switch(
+                                                        checked = tool.enable,
+                                                        onCheckedChange = { checked ->
+                                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                            onToggleMcpTool(server.id, tool.name, checked)
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3006,6 +4083,26 @@ private fun SettingsPage(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Save TTS provider") }
+                            if (state.hasTtsApiKey) {
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = {
+                                        if (state.ttsSpeaking) {
+                                            onStopSpeaking()
+                                        } else {
+                                            onSpeak("Hello! This is a test of the text to speech engine.")
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        if (state.ttsSpeaking) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (state.ttsSpeaking) "Stop audition" else "Audition voice")
+                                }
+                            }
                             if (state.hasTtsApiKey && ttsPreferences.type == state.tts.type) {
                                 TextButton(onClick = onClearTtsApiKey) {
                                     Text("Remove saved API key")
@@ -3169,31 +4266,15 @@ private fun SettingsPage(
                                 subtitle = "Theme and system color mode",
                                 darkTheme = darkTheme,
                             ) {
-                                LastChatFormItem(label = { Text("Theme") }) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        listOf(
-                                            "seafoam_mint" to "Seafoam",
-                                            "ocean" to "Ocean",
-                                            "sakura" to "Sakura",
-                                            "spring" to "Spring",
-                                            "autumn" to "Autumn",
-                                            "black" to "Black",
-                                        ).forEach { (id, label) ->
-                                            if (themeId == id) {
-                                                Button(onClick = {}) { Text(label) }
-                                            } else {
-                                                TextButton(onClick = {
-                                                    themeId = id
-                                                    onSaveAppearance(themeId, colorMode)
-                                                }) { Text(label) }
-                                            }
-                                        }
-                                    }
+                                LastChatFormItem(label = { Text("Theme palette") }) {
+                                    PresetThemeButtonGroup(
+                                        selectedThemeId = themeId,
+                                        darkTheme = darkTheme,
+                                        onChangeTheme = { newId ->
+                                            themeId = newId
+                                            onSaveAppearance(themeId, colorMode)
+                                        },
+                                    )
                                 }
                                 LastChatFormItem(label = { Text("Color mode") }) {
                                     Row(
@@ -3252,14 +4333,446 @@ private fun SettingsPage(
                                             steps = 11,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.End,
+                                                ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                                    ) {
+                                                        Text(
+                                                            text = "Sample message preview",
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                                fontSize = MaterialTheme.typography.bodyMedium.fontSize * fontSizeRatio,
+                                                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * fontSizeRatio,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.Start,
+                                                ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+                                                        color = if (showAssistantBubbles) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+                                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                                    ) {
+                                                        Text(
+                                                            text = "The quick brown fox jumps over the lazy dog.",
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                                fontSize = MaterialTheme.typography.bodyMedium.fontSize * fontSizeRatio,
+                                                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * fontSizeRatio,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (section == IosSettingsSection.Backup) {
+                item {
+                    IosTabRow(
+                        tabs = listOf("WebDAV Cloud", "Local File"),
+                        selectedIndex = backupTab,
+                        onSelect = {
+                            platformHaptics.perform(PlatformHapticPattern.Tick)
+                            backupTab = it
+                        },
+                    )
+                }
+                if (backupTab == 0) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    "WebDAV Server Settings",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                OutlinedTextField(
+                                    value = webDavUrl,
+                                    onValueChange = { webDavUrl = it },
+                                    label = { Text("Server URL") },
+                                    placeholder = { Text("https://dav.example.com/") },
+                                    singleLine = true,
+                                    shape = AppShapes.InputField,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                OutlinedTextField(
+                                    value = webDavPath,
+                                    onValueChange = { webDavPath = it },
+                                    label = { Text("Remote Path") },
+                                    placeholder = { Text("LastChat") },
+                                    singleLine = true,
+                                    shape = AppShapes.InputField,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                OutlinedTextField(
+                                    value = webDavUser,
+                                    onValueChange = { webDavUser = it },
+                                    label = { Text("Username") },
+                                    singleLine = true,
+                                    shape = AppShapes.InputField,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                OutlinedTextField(
+                                    value = webDavPass,
+                                    onValueChange = { webDavPass = it },
+                                    label = { Text("Password") },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    shape = AppShapes.InputField,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (webDavStatusMessage != null) {
+                                    Surface(
+                                        shape = AppShapes.CardSmall,
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
                                         Text(
-                                            text = "The quick brown fox jumps over the lazy dog.",
-                                            style = MaterialTheme.typography.bodyLarge.copy(
-                                                fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
-                                                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
-                                            ),
+                                            webDavStatusMessage.orEmpty(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(10.dp),
                                         )
                                     }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Tick)
+                                            val cfg = IosWebDavConfig(
+                                                url = webDavUrl,
+                                                path = webDavPath,
+                                                user = webDavUser,
+                                                pass = webDavPass,
+                                            )
+                                            onUpdateWebDavConfig(cfg)
+                                            isTestingWebDav = true
+                                            webDavStatusMessage = "Testing WebDAV connection..."
+                                            scope.launch {
+                                                onTestWebDav(cfg).onSuccess {
+                                                    platformHaptics.perform(PlatformHapticPattern.Success)
+                                                    webDavStatusMessage = "WebDAV connection successful!"
+                                                }.onFailure { err ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Error)
+                                                    webDavStatusMessage = "Connection failed: ${err.message}"
+                                                }
+                                                isTestingWebDav = false
+                                            }
+                                        },
+                                        enabled = !isTestingWebDav,
+                                        modifier = Modifier.weight(1f),
+                                        shape = AppShapes.ButtonPill,
+                                    ) {
+                                        if (isTestingWebDav) {
+                                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text("Test")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            val cfg = IosWebDavConfig(
+                                                url = webDavUrl,
+                                                path = webDavPath,
+                                                user = webDavUser,
+                                                pass = webDavPass,
+                                            )
+                                            onUpdateWebDavConfig(cfg)
+                                            webDavStatusMessage = "WebDAV configuration saved"
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = AppShapes.ButtonPill,
+                                    ) {
+                                        Text("Save Config")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    "WebDAV Cloud Backups",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Button(
+                                    onClick = {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        val cfg = IosWebDavConfig(
+                                            url = webDavUrl,
+                                            path = webDavPath,
+                                            user = webDavUser,
+                                            pass = webDavPass,
+                                        )
+                                        onUpdateWebDavConfig(cfg)
+                                        isBackingUpWebDav = true
+                                        webDavStatusMessage = "Uploading backup archive to WebDAV..."
+                                        scope.launch {
+                                            onBackupToWebDav(cfg).onSuccess {
+                                                platformHaptics.perform(PlatformHapticPattern.Success)
+                                                webDavStatusMessage = "Backup successfully uploaded to WebDAV!"
+                                                onListWebDavBackups(cfg).getOrNull()?.let { remoteBackupsList = it }
+                                            }.onFailure { err ->
+                                                platformHaptics.perform(PlatformHapticPattern.Error)
+                                                webDavStatusMessage = "Backup failed: ${err.message}"
+                                            }
+                                            isBackingUpWebDav = false
+                                        }
+                                    },
+                                    enabled = !isBackingUpWebDav,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.ButtonPill,
+                                ) {
+                                    if (isBackingUpWebDav) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(6.dp))
+                                    } else {
+                                        Icon(Icons.Rounded.CloudUpload, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    Text("Backup to WebDAV Now")
+                                }
+                                Button(
+                                    onClick = {
+                                        platformHaptics.perform(PlatformHapticPattern.Tick)
+                                        val cfg = IosWebDavConfig(
+                                            url = webDavUrl,
+                                            path = webDavPath,
+                                            user = webDavUser,
+                                            pass = webDavPass,
+                                        )
+                                        isLoadingRemoteBackups = true
+                                        scope.launch {
+                                            onListWebDavBackups(cfg).onSuccess { items ->
+                                                platformHaptics.perform(PlatformHapticPattern.Success)
+                                                remoteBackupsList = items
+                                                webDavStatusMessage = "Found ${items.size} backups on WebDAV"
+                                            }.onFailure { err ->
+                                                platformHaptics.perform(PlatformHapticPattern.Error)
+                                                webDavStatusMessage = "Failed to list backups: ${err.message}"
+                                            }
+                                            isLoadingRemoteBackups = false
+                                        }
+                                    },
+                                    enabled = !isLoadingRemoteBackups,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.ButtonPill,
+                                ) {
+                                    if (isLoadingRemoteBackups) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(6.dp))
+                                    } else {
+                                        Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    Text("Check Remote Backups")
+                                }
+                                if (remoteBackupsList.isNotEmpty()) {
+                                    Text(
+                                        "Remote Backups (${remoteBackupsList.size}):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        remoteBackupsList.forEach { item ->
+                                            Surface(
+                                                shape = AppShapes.CardSmall,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            item.displayName,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
+                                                    }
+                                                    Button(
+                                                        onClick = {
+                                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                            val cfg = IosWebDavConfig(
+                                                                url = webDavUrl,
+                                                                path = webDavPath,
+                                                                user = webDavUser,
+                                                                pass = webDavPass,
+                                                            )
+                                                            isRestoring = true
+                                                            scope.launch {
+                                                                onRestoreFromWebDav(cfg, item.href).onSuccess { res ->
+                                                                    platformHaptics.perform(PlatformHapticPattern.Success)
+                                                                    restoreResultDialog = res
+                                                                }.onFailure { err ->
+                                                                    platformHaptics.perform(PlatformHapticPattern.Error)
+                                                                    webDavStatusMessage = "Restore failed: ${err.message}"
+                                                                }
+                                                                isRestoring = false
+                                                            }
+                                                        },
+                                                        enabled = !isRestoring,
+                                                        shape = AppShapes.ButtonPill,
+                                                    ) {
+                                                        Text("Restore")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Rounded.FileUpload,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "Export Backup Archive",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "Creates a standard .zip backup package containing all conversations, assistants, memories, skills, lorebooks, and provider settings. You can save to iOS Files, AirDrop to a Mac, or restore on Android LastChat.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Button(
+                                    onClick = {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        scope.launch {
+                                            onExportBackup().onSuccess { picked ->
+                                                platformHaptics.perform(PlatformHapticPattern.Success)
+                                                attachmentOpener.open(picked.localUrl)
+                                            }.onFailure { err ->
+                                                platformHaptics.perform(PlatformHapticPattern.Error)
+                                                webDavStatusMessage = "Export failed: ${err.message}"
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.ButtonPill,
+                                ) {
+                                    Icon(Icons.Rounded.FileUpload, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Export Complete Backup")
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Rounded.CloudUpload,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "Restore Backup Archive",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "Select an Android or iOS LastChat backup file (.zip or .json) from your device files to restore chats, assistants, prompt injections, and settings 1:1.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Button(
+                                    onClick = {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        filePicker.pickFile { pickedResult ->
+                                            val picked = pickedResult.getOrNull() ?: return@pickFile
+                                            scope.launch {
+                                                isRestoring = true
+                                                onRestorePickedBackup(picked).onSuccess { res ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Success)
+                                                    restoreResultDialog = res
+                                                }.onFailure { err ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Error)
+                                                    webDavStatusMessage = "Restore failed: ${err.message}"
+                                                }
+                                                isRestoring = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !isRestoring,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.ButtonPill,
+                                ) {
+                                    if (isRestoring) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(6.dp))
+                                    } else {
+                                        Icon(Icons.Rounded.CloudUpload, null, Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    Text("Select File to Restore")
                                 }
                             }
                         }
@@ -3309,32 +4822,6 @@ private fun SettingsPage(
                             platformHaptics.perform(PlatformHapticPattern.Pop)
                         },
                     )
-                }
-            }
-            if (section == IosSettingsSection.Unavailable) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = AppShapes.CardMedium,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        ),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                unavailableDestinationTitle,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                "This settings destination is not available on iOS yet.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -3388,6 +4875,77 @@ private fun SettingsPage(
                     showAddRpStyleRuleDialog = false
                     editingRpStyleRule = null
                 },
+            )
+        }
+        if (showAddSkillDialog || editingSkill != null) {
+            val current = editingSkill
+            IosSkillDialog(
+                skill = current,
+                onDismiss = {
+                    showAddSkillDialog = false
+                    editingSkill = null
+                },
+                onSave = { saved ->
+                    onSaveSkill(saved)
+                    showAddSkillDialog = false
+                    editingSkill = null
+                },
+            )
+        }
+        if (showAddLorebookDialog || editingLorebook != null) {
+            val current = editingLorebook
+            IosLorebookDialog(
+                lorebook = current,
+                onDismiss = {
+                    showAddLorebookDialog = false
+                    editingLorebook = null
+                },
+                onSave = { saved ->
+                    onSaveLorebook(saved)
+                    showAddLorebookDialog = false
+                    editingLorebook = null
+                },
+            )
+        }
+        if (showAddLorebookEntryDialog || editingLorebookEntry != null) {
+            val currentPair = editingLorebookEntry
+            val lorebookId = currentPair?.first ?: expandedLorebookId ?: state.lorebooks.firstOrNull()?.id.orEmpty()
+            val entry = currentPair?.second
+            if (lorebookId.isNotBlank()) {
+                IosLorebookEntryDialog(
+                    entry = entry,
+                    onDismiss = {
+                        showAddLorebookEntryDialog = false
+                        editingLorebookEntry = null
+                    },
+                    onSave = { saved ->
+                        onSaveLorebookEntry(lorebookId, saved)
+                        showAddLorebookEntryDialog = false
+                        editingLorebookEntry = null
+                    },
+                )
+            }
+        }
+        if (showAddMcpServerDialog || editingMcpServer != null) {
+            val current = editingMcpServer
+            IosMcpServerDialog(
+                server = current,
+                onDismiss = {
+                    showAddMcpServerDialog = false
+                    editingMcpServer = null
+                },
+                onSave = { saved ->
+                    onSaveMcpServer(saved)
+                    showAddMcpServerDialog = false
+                    editingMcpServer = null
+                },
+            )
+        }
+        val currentRestoreResult = restoreResultDialog
+        if (currentRestoreResult != null) {
+            IosRestoreResultDialog(
+                result = currentRestoreResult,
+                onDismiss = { restoreResultDialog = null },
             )
         }
         if (showModelPicker) {
@@ -3643,18 +5201,18 @@ private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
         LastChatSettingsPaneEntry("UiCustomization", "UI customization", Icons.Rounded.Brush),
         LastChatSettingsPaneEntry("RpOptimizations", "Roleplay optimizations", Icons.Rounded.AutoAwesome),
     )
+    val promptChildren = listOf(
+        LastChatSettingsPaneEntry("Skills", "Skills", Icons.Rounded.Category),
+        LastChatSettingsPaneEntry("Lorebooks", "Lorebooks", Icons.Rounded.Book),
+    )
     val providerChildren = listOf(
         LastChatSettingsPaneEntry("ProviderModels", "Provider models", Icons.Rounded.Cloud),
         LastChatSettingsPaneEntry("Search", "Search service", Icons.Rounded.Public),
         LastChatSettingsPaneEntry("Tts", "Text-to-speech", Icons.AutoMirrored.Rounded.VolumeUp),
     )
-    val promptChildren = listOf(
-        LastChatSettingsPaneEntry("Skills", "Skills", Icons.Rounded.Code),
-        LastChatSettingsPaneEntry("Lorebooks", "Lorebooks", Icons.Rounded.Folder),
-    )
     val backupChildren = listOf(
         LastChatSettingsPaneEntry("BackupWebDav", "WebDAV backup", Icons.Rounded.CloudUpload),
-        LastChatSettingsPaneEntry("BackupLocal", "Import and export", Icons.Rounded.FileUpload),
+        LastChatSettingsPaneEntry("BackupLocal", "Local file backup", Icons.Rounded.FileUpload),
     )
     return listOf(
         LastChatSettingsPaneGroup(
@@ -3682,17 +5240,14 @@ private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
             entries = listOf(
                 LastChatSettingsPaneEntry("Models", "Default model", Icons.Rounded.AccountTree),
                 LastChatSettingsPaneEntry("Providers", "Providers", Icons.Rounded.Cloud, children = providerChildren),
-                LastChatSettingsPaneEntry("Mcp", "MCP", Icons.Rounded.Code),
-                LastChatSettingsPaneEntry("Web", "Web server", Icons.Rounded.Language),
-                LastChatSettingsPaneEntry("AndroidIntegration", "Android integration", Icons.Rounded.PhoneAndroid),
-                LastChatSettingsPaneEntry("Workspaces", "Workspaces", Icons.Rounded.Code),
+                LastChatSettingsPaneEntry("Mcp", "MCP Servers", Icons.Rounded.Extension),
             ),
         ),
         LastChatSettingsPaneGroup(
             id = "data",
             title = "Data",
             entries = listOf(
-                LastChatSettingsPaneEntry("Backup", "Backup", Icons.Rounded.CloudUpload, children = backupChildren),
+                LastChatSettingsPaneEntry("Backup", "Data backup", Icons.Rounded.CloudUpload, children = backupChildren),
                 LastChatSettingsPaneEntry("ChatStorage", "Chat storage", Icons.Rounded.Storage),
             ),
         ),
@@ -3710,9 +5265,9 @@ private fun iosSettingsMainDestination(destinationId: String): String = when (de
     "AssistantMemory" -> "Assistants"
     "AssistantTools" -> "Assistants"
     "Fonts", "UiCustomization", "RpOptimizations" -> "Display"
-    "ProviderModels", "Search", "Tts" -> "Providers"
     "Skills", "Lorebooks" -> "PromptInjections"
     "BackupWebDav", "BackupLocal" -> "Backup"
+    "ProviderModels", "Search", "Tts" -> "Providers"
     else -> destinationId
 }
 
@@ -3768,3 +5323,551 @@ private fun IosProviderType.defaultModelId(): String = when (this) {
     IosProviderType.GOOGLE -> "gemini-2.5-flash"
     IosProviderType.CLAUDE -> "claude-sonnet-4-5"
 }
+
+@Composable
+private fun IosTabRow(
+    tabs: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = AppShapes.ButtonPill,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            tabs.forEachIndexed { index, title ->
+                val selected = index == selectedIndex
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = AppShapes.ButtonPill,
+                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    onClick = { onSelect(index) },
+                ) {
+                    Box(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosSkillDialog(
+    skill: IosSkill?,
+    onDismiss: () -> Unit,
+    onSave: (IosSkill) -> Unit,
+) {
+    var name by remember(skill?.id) { mutableStateOf(skill?.name.orEmpty()) }
+    var description by remember(skill?.id) { mutableStateOf(skill?.description.orEmpty()) }
+    var instructions by remember(skill?.id) { mutableStateOf(skill?.instructions.orEmpty()) }
+    var injectionPosition by remember(skill?.id) {
+        mutableStateOf(skill?.injectionPosition ?: IosInjectionPosition.AFTER_SYSTEM)
+    }
+    var alwaysEnabled by remember(skill?.id) {
+        mutableStateOf(skill?.alwaysEnabled ?: true)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (skill == null) "New Skill" else "Edit Skill") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = instructions,
+                    onValueChange = { instructions = it },
+                    label = { Text("Prompt instructions") },
+                    minLines = 3,
+                    maxLines = 6,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Injection position",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    IosInjectionPosition.entries.forEach { pos ->
+                        FilterChip(
+                            selected = injectionPosition == pos,
+                            onClick = { injectionPosition = pos },
+                            label = { Text(pos.displayName(), style = MaterialTheme.typography.labelSmall) },
+                            shape = AppShapes.Chip,
+                        )
+                    }
+                }
+                LastChatFormItem(
+                    label = { Text("Always enabled") },
+                    description = { Text("Active in all conversations") },
+                ) {
+                    Switch(
+                        checked = alwaysEnabled,
+                        onCheckedChange = { alwaysEnabled = it },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val base = skill ?: IosSkill()
+                    onSave(
+                        base.copy(
+                            name = name.trim(),
+                            description = description.trim(),
+                            instructions = instructions.trim(),
+                            injectionPosition = injectionPosition,
+                            alwaysEnabled = alwaysEnabled,
+                            enabled = true,
+                            updatedAt = Clock.System.now().toEpochMilliseconds(),
+                        )
+                    )
+                },
+                enabled = name.isNotBlank(),
+                shape = AppShapes.ButtonPill,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun IosLorebookDialog(
+    lorebook: IosLorebook?,
+    onDismiss: () -> Unit,
+    onSave: (IosLorebook) -> Unit,
+) {
+    var name by remember(lorebook?.id) { mutableStateOf(lorebook?.name.orEmpty()) }
+    var description by remember(lorebook?.id) { mutableStateOf(lorebook?.description.orEmpty()) }
+    var author by remember(lorebook?.id) { mutableStateOf(lorebook?.author.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (lorebook == null) "New Lorebook" else "Edit Lorebook") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = author,
+                    onValueChange = { author = it },
+                    label = { Text("Author (optional)") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val base = lorebook ?: IosLorebook()
+                    onSave(
+                        base.copy(
+                            name = name.trim(),
+                            description = description.trim(),
+                            author = author.trim(),
+                            enabled = true,
+                        )
+                    )
+                },
+                enabled = name.isNotBlank(),
+                shape = AppShapes.ButtonPill,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun IosLorebookEntryDialog(
+    entry: IosLorebookEntry?,
+    onDismiss: () -> Unit,
+    onSave: (IosLorebookEntry) -> Unit,
+) {
+    var name by remember(entry?.id) { mutableStateOf(entry?.name.orEmpty()) }
+    var prompt by remember(entry?.id) { mutableStateOf(entry?.prompt.orEmpty()) }
+    var activationType by remember(entry?.id) {
+        mutableStateOf(entry?.activationType ?: IosLorebookActivationType.KEYWORDS)
+    }
+    var keywordsText by remember(entry?.id) {
+        mutableStateOf(entry?.keywords.orEmpty().joinToString(", "))
+    }
+    var injectionPosition by remember(entry?.id) {
+        mutableStateOf(entry?.injectionPosition ?: IosInjectionPosition.AFTER_SYSTEM)
+    }
+    var scanDepth by remember(entry?.id) {
+        mutableStateOf(entry?.scanDepth?.toString() ?: "10")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (entry == null) "New Entry" else "Edit Entry") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = { Text("Content / Prompt") },
+                    minLines = 3,
+                    maxLines = 6,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Activation Trigger",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    IosLorebookActivationType.entries.forEach { type ->
+                        FilterChip(
+                            selected = activationType == type,
+                            onClick = { activationType = type },
+                            label = { Text(type.displayName(), style = MaterialTheme.typography.labelSmall) },
+                            shape = AppShapes.Chip,
+                        )
+                    }
+                }
+                if (activationType == IosLorebookActivationType.KEYWORDS) {
+                    OutlinedTextField(
+                        value = keywordsText,
+                        onValueChange = { keywordsText = it },
+                        label = { Text("Keywords (comma separated)") },
+                        placeholder = { Text("e.g. dragon, magic, sword") },
+                        singleLine = true,
+                        shape = AppShapes.InputField,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = scanDepth,
+                        onValueChange = { scanDepth = it.filter(Char::isDigit) },
+                        label = { Text("Scan Depth (messages)") },
+                        singleLine = true,
+                        shape = AppShapes.InputField,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    "Injection Position",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    IosInjectionPosition.entries.forEach { pos ->
+                        FilterChip(
+                            selected = injectionPosition == pos,
+                            onClick = { injectionPosition = pos },
+                            label = { Text(pos.displayName(), style = MaterialTheme.typography.labelSmall) },
+                            shape = AppShapes.Chip,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val base = entry ?: IosLorebookEntry()
+                    val kw = keywordsText.split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    onSave(
+                        base.copy(
+                            name = name.trim(),
+                            prompt = prompt.trim(),
+                            activationType = activationType,
+                            keywords = kw,
+                            scanDepth = scanDepth.toIntOrNull() ?: 10,
+                            injectionPosition = injectionPosition,
+                            enabled = true,
+                        )
+                    )
+                },
+                enabled = name.isNotBlank(),
+                shape = AppShapes.ButtonPill,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun IosMcpServerDialog(
+    server: IosMcpServerConfig?,
+    onDismiss: () -> Unit,
+    onSave: (IosMcpServerConfig) -> Unit,
+) {
+    var name by remember(server?.id) { mutableStateOf(server?.commonOptions?.name.orEmpty()) }
+    var url by remember(server?.id) { mutableStateOf(server?.url.orEmpty()) }
+    var isStreamableHttp by remember(server?.id) {
+        mutableStateOf(server is IosMcpServerConfig.StreamableHTTPServer)
+    }
+    var headersText by remember(server?.id) {
+        mutableStateOf(
+            server?.commonOptions?.headers.orEmpty()
+                .joinToString("\n") { "${it.first}: ${it.second}" }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (server == null) "New MCP Server" else "Edit MCP Server") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Server Name") },
+                    placeholder = { Text("e.g. My Remote Server") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Endpoint URL") },
+                    placeholder = { Text("https://mcp.example.com/sse") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Transport Protocol",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterChip(
+                        selected = !isStreamableHttp,
+                        onClick = { isStreamableHttp = false },
+                        label = { Text("SSE (Server-Sent Events)", style = MaterialTheme.typography.labelSmall) },
+                        shape = AppShapes.Chip,
+                    )
+                    FilterChip(
+                        selected = isStreamableHttp,
+                        onClick = { isStreamableHttp = true },
+                        label = { Text("Streamable HTTP", style = MaterialTheme.typography.labelSmall) },
+                        shape = AppShapes.Chip,
+                    )
+                }
+                OutlinedTextField(
+                    value = headersText,
+                    onValueChange = { headersText = it },
+                    label = { Text("Custom HTTP Headers (optional)") },
+                    placeholder = { Text("Authorization: Bearer token\nX-Custom-Key: value") },
+                    minLines = 2,
+                    maxLines = 4,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val parsedHeaders = headersText.lines()
+                        .mapNotNull { line ->
+                            val parts = line.split(":", limit = 2)
+                            if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                        }
+                    val common = (server?.commonOptions ?: IosMcpCommonOptions()).copy(
+                        name = name.trim(),
+                        headers = parsedHeaders,
+                        enable = true,
+                    )
+                    val id = server?.id ?: kotlin.uuid.Uuid.random().toString()
+                    val result = if (isStreamableHttp) {
+                        IosMcpServerConfig.StreamableHTTPServer(
+                            id = id,
+                            commonOptions = common,
+                            url = url.trim(),
+                        )
+                    } else {
+                        IosMcpServerConfig.SseTransportServer(
+                            id = id,
+                            commonOptions = common,
+                            url = url.trim(),
+                        )
+                    }
+                    onSave(result)
+                },
+                enabled = name.isNotBlank() && url.isNotBlank(),
+                shape = AppShapes.ButtonPill,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun IosRestoreResultDialog(
+    result: IosRestoreResult,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text("Restore Completed")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    "Successfully imported and synced data:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = AppShapes.CardSmall,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (result.conversationsCount > 0) {
+                            Text("• ${result.conversationsCount} Conversations", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.assistantsCount > 0) {
+                            Text("• ${result.assistantsCount} Assistants", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.providersCount > 0) {
+                            Text("• ${result.providersCount} AI Providers", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.skillsCount > 0) {
+                            Text("• ${result.skillsCount} Skills", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.lorebooksCount > 0) {
+                            Text("• ${result.lorebooksCount} Lorebooks", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.mcpServersCount > 0) {
+                            Text("• ${result.mcpServersCount} MCP Servers", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (result.memoriesCount > 0) {
+                            Text("• ${result.memoriesCount} Memories", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                if (result.notes.isNotEmpty()) {
+                    Text(
+                        "Notes:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    result.notes.forEach { note ->
+                        Text("• $note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = AppShapes.ButtonPill,
+            ) { Text("OK") }
+        },
+    )
+}
+
