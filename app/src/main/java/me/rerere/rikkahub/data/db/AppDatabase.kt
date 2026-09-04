@@ -532,6 +532,13 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: migrate from 32 to 33 success")
             }
         }
+
+        val MIGRATION_40_39 = object : Migration(40, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: downgrade from 40 to 39")
+                db.execSQL("DROP INDEX IF EXISTS index_MemoryEntity_assistant_id")
+            }
+        }
     }
 }
 

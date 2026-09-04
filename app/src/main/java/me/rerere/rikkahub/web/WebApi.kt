@@ -1396,15 +1396,37 @@ internal fun resolveAiIconAssetPath(
     }
     if (explicitMatch != null) return explicitMatch
 
-    // Generic fallback: try first word of the name as an SVG filename.
+    // Generic fallback: try first word of the name as an SVG filename if known in catalog.
     // This handles providers like "NVIDIA NIM" → "nvidia.svg", "Regolo AI" → "regolo.svg"
     return lowerName.split(Regex("""[\s,;_/\\]+"""))
         .firstOrNull { it.length > 1 && it.all { c -> c.isLetterOrDigit() || c == '-' } }
         ?.let { token ->
             val sanitized = token.replace(Regex("[^a-z0-9-]"), "").trim('-')
-            if (sanitized.length > 1) "$sanitized.svg" else null
+            if (sanitized.length > 1 && sanitized in KNOWN_CATALOG_ICON_NAMES) "$sanitized.svg" else null
         }
 }
+
+private val KNOWN_CATALOG_ICON_NAMES = setOf(
+    "ai21", "ai360", "aihubmix", "aiml", "aionlabs", "aistudio", "amazon", "anyscale",
+    "arcee", "atlassian", "baai", "baichuan", "baidu", "bing", "black-forest-labs",
+    "bocha", "brave", "bytedance", "canva", "cerebras", "claude", "cloudflare",
+    "cogito", "cohere-command", "cohere", "cometapi", "comfyui", "command-symbol",
+    "commandcode", "crusoe", "dashscope", "deepinfra", "deepseek", "devin",
+    "elevenlabs", "essential", "exa", "featherless", "figma", "firecrawl",
+    "fireworks", "friendli", "gemini", "gemma", "giteeai", "github", "google",
+    "grok", "groq", "helicone", "heroku", "huggingface", "hyperbolic", "ibm",
+    "inclusionai", "inference", "inflection", "internlm", "jamba", "jina",
+    "lepton", "leptonai", "linear", "linkup", "liquid", "meta", "metaso",
+    "microsoft", "mimo", "minimax", "mistral", "monday", "monsterapi",
+    "moonshot", "nanogpt", "nebius", "neon", "notion", "novita", "nscale",
+    "nvidia", "ollama", "openai", "opencode", "openpipe", "openrouter",
+    "ovhcloud", "perplexity", "poolside", "portkey", "ppio", "predibase",
+    "provider", "qwen", "regolo", "reka", "sambanova", "sao10k", "sarvam",
+    "scaleway", "searxng", "sensenova", "sentry", "siliconflow", "sonar",
+    "spark", "step", "stepfun", "supabase", "tavily", "tencent", "thedrummer",
+    "together", "upstage", "upstash", "vercel", "volcengine", "voyage",
+    "webflow", "writer", "xai", "xiaomi", "yi", "zhipu"
+)
 
 internal fun String.extractCatalogIconFileName(): String? {
     val normalized = trim()

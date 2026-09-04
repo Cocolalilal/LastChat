@@ -17,8 +17,8 @@ class MotionPolicyTest {
     }
 
     @Test
-    fun menuAndSettingUseTopLevelFade() {
-        assertTrue(
+    fun menuAndSettingDoNotUseTopLevelFade() {
+        assertFalse(
             shouldUseTopLevelFade(
                 initialRoute = MENU_ROUTE,
                 targetRoute = SETTING_ROUTE

@@ -40,6 +40,8 @@ class OnboardingVM(
 
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
+    private suspend fun currentSettings(): Settings = settingsStore.settingsFlow.first { !it.init }
+
     fun providerPresets(snapshot: ModelCatalogSnapshot?): List<ProviderPreset> {
         return (snapshot?.toProviderPresets() ?: emptyList())
             .withSpecialProviderPresets()
@@ -49,7 +51,8 @@ class OnboardingVM(
     fun skipSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                settingsStore.update(settings.value.copy(setupCompleted = true))
+                val current = currentSettings()
+                settingsStore.update(current.copy(setupCompleted = true))
             }
             onDone()
         }
@@ -58,7 +61,7 @@ class OnboardingVM(
     fun beginLocalSetup(provider: ProviderSetting.LiteRtLocal, onReady: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val current = settings.value
+                val current = currentSettings()
                 localProviderBeforeSetup = current.providers
                     .filterIsInstance<ProviderSetting.LiteRtLocal>()
                     .firstOrNull()
@@ -77,7 +80,7 @@ class OnboardingVM(
     fun cancelLocalSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val current = settings.value
+                val current = currentSettings()
                 val restoredLocalProvider = localProviderBeforeSetup
                 settingsStore.update(
                     current.copy(
@@ -96,13 +99,13 @@ class OnboardingVM(
             withContext(Dispatchers.IO) {
                 val syncedSettings = withTimeoutOrNull(5_000) {
                     settingsStore.settingsFlow.first { current ->
-                        current.providers
+                        !current.init && current.providers
                             .filterIsInstance<ProviderSetting.LiteRtLocal>()
                             .firstOrNull()
                             ?.models
                             ?.any { it.type == ModelType.CHAT } == true
                     }
-                } ?: settingsStore.settingsFlow.value
+                } ?: currentSettings()
                 val localProvider = syncedSettings.providers
                     .filterIsInstance<ProviderSetting.LiteRtLocal>()
                     .firstOrNull()
@@ -133,13 +136,14 @@ class OnboardingVM(
     fun completeGuided(preset: ProviderPreset, apiKey: String, onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                val current = currentSettings()
                 val keyedProvider = providerWithKey(preset.toProviderSetting(), apiKey)
                 val providerModels = fetchProviderModels(keyedProvider)
                 val setupModels = providerModels.orderedSetupModels(preset.setupModelIds)
                 val configuredProvider = keyedProvider
                     .copyProvider(models = setupModels)
                 val nextSettings = applyDefaults(
-                    settings = settings.value,
+                    settings = current,
                     provider = configuredProvider,
                     defaults = preset.setupDefaults,
                     setupSearchService = preset.setupSearchService,
@@ -163,7 +167,7 @@ class OnboardingVM(
                     enabled = true,
                     models = selectedModels,
                 )
-                val current = settings.value
+                val current = currentSettings()
                 val nextSettings = current.copy(
                     setupCompleted = true,
                     providers = listOf(configuredProvider),

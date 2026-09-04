@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
@@ -307,8 +308,7 @@ class RouteActivity : ComponentActivity() {
     private var pendingConversationId by mutableStateOf<String?>(null)
     private var pendingResolvedSpontaneousTarget by mutableStateOf<ResolvedSpontaneousChatTarget?>(null)
     private var pendingShareIntent by mutableStateOf<ResolvedSharePayload?>(null)
-    private var initialChatScreen by mutableStateOf<Screen.Chat?>(null)
-    private var hasSuccessfulReplyBeforeSetup by mutableStateOf<Boolean?>(null)
+    private var initialScreen by mutableStateOf<Screen?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -316,11 +316,6 @@ class RouteActivity : ComponentActivity() {
             androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
             disableNavigationBarContrast()
             super.onCreate(savedInstanceState)
-            lifecycleScope.launch {
-                hasSuccessfulReplyBeforeSetup = withContext(Dispatchers.IO) {
-                    conversationRepo.hasSuccessfulAssistantReply()
-                }
-            }
             
             // Track app launch and initialize usage stats
             lifecycleScope.launch(Dispatchers.IO) {
@@ -350,27 +345,56 @@ class RouteActivity : ComponentActivity() {
             pendingTextSelection = intent?.readQuickAskContinuationData()
             pendingShareIntent = intent?.readResolvedSharePayload()
             lifecycleScope.launch {
-                // A conversation hand-off from the assistant overlay must select its
-                // character before ChatVM initializes. This also covers the short window
-                // where the in-memory conversation is released while the app task resumes.
-                if (!intentConversationId.isNullOrBlank()) {
-                    intentAssistantId.toUuidOrNull()?.let { assistantId ->
-                        settingsStore.updateAssistant(assistantId)
-                        settingsStore.markAssistantUsed(assistantId)
+                try {
+                    // A conversation hand-off from the assistant overlay must select its
+                    // character before ChatVM initializes. This also covers the short window
+                    // where the in-memory conversation is released while the app task resumes.
+                    if (!intentConversationId.isNullOrBlank()) {
+                        intentAssistantId.toUuidOrNull()?.let { assistantId ->
+                            settingsStore.updateAssistant(assistantId)
+                            settingsStore.markAssistantUsed(assistantId)
+                        }
                     }
+                    val defaultChatScreen = determineInitialChatScreen(
+                        defaultScreen = defaultStartScreen(),
+                        deepLinkedConversationId = intentConversationId,
+                        spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
+                    )
+                    val hasExplicitTarget = !intentConversationId.isNullOrBlank() ||
+                        spontaneousNotification != null ||
+                        pendingTextSelection != null ||
+                        pendingShareIntent != null ||
+                        intentWebServerSettings
+
+                    val resolvedStartScreen: Screen = if (hasExplicitTarget) {
+                        defaultChatScreen
+                    } else {
+                        val settings = settingsStore.settingsFlow.first { !it.init }
+                        if (settings.setupCompleted) {
+                            defaultChatScreen
+                        } else {
+                            val hasConversations = withContext(Dispatchers.IO) {
+                                conversationRepo.hasSuccessfulAssistantReply()
+                            }
+                            if (hasConversations) {
+                                defaultChatScreen
+                            } else {
+                                Screen.Setup
+                            }
+                        }
+                    }
+                    initialScreen = resolvedStartScreen
+                } catch (e: Exception) {
+                    android.util.Log.e(TAG, "Failed to resolve initial screen", e)
+                    initialScreen = defaultStartScreen()
                 }
-                initialChatScreen = determineInitialChatScreen(
-                    defaultScreen = defaultStartScreen(),
-                    deepLinkedConversationId = intentConversationId,
-                    spontaneousTarget = spontaneousNotification?.let { resolveSpontaneousChatTarget(it) },
-                )
             }
 
             setContent {
                 val navStack = rememberNavController()
                 this.navStack = navStack
                 RikkahubTheme {
-                    val startScreen = initialChatScreen
+                    val startScreen = initialScreen
                     if (startScreen == null) {
                         Box(
                             modifier = Modifier
@@ -447,7 +471,7 @@ class RouteActivity : ComponentActivity() {
     private fun navigateToIncomingConversation(conversationIdText: String) {
         conversationIdText.toUuidOrNull()?.let { conversationId ->
             val controller = navStack
-            if (controller == null || initialChatScreen == null) {
+            if (controller == null || initialScreen == null) {
                 // A NavHostController is created before AppRoutes installs its graph. An
                 // incoming intent in that window would make navigate() throw, so defer it
                 // until NotificationHandler is composed with the real chat NavHost.
@@ -674,7 +698,7 @@ class RouteActivity : ComponentActivity() {
             lifecycleScope.launch {
                 resolveSpontaneousChatTarget(notification)?.let { target ->
                     if (navStack == null) {
-                        initialChatScreen = target.toScreen()
+                        initialScreen = target.toScreen()
                     } else {
                         pendingResolvedSpontaneousTarget = target
                     }
@@ -732,7 +756,7 @@ class RouteActivity : ComponentActivity() {
     }
 
     @Composable
-    fun AppRoutes(navBackStack: NavHostController, startDestination: Screen.Chat) {
+    fun AppRoutes(navBackStack: NavHostController, startDestination: Screen) {
         val toastState = rememberAppToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
@@ -796,28 +820,13 @@ class RouteActivity : ComponentActivity() {
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                 TTSController()
-                val shouldShowSetup = !settings.init &&
-                    !settings.setupCompleted &&
-                    hasSuccessfulReplyBeforeSetup == false
-                LaunchedEffect(shouldShowSetup) {
-                    if (shouldShowSetup) {
-                        navBackStack.navigate(Screen.Setup) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    }
-                }
-                val actualStartDestination: Screen = if (shouldShowSetup) {
-                    Screen.Setup
-                } else {
-                    startDestination
-                }
                 val windowSize = currentWindowDpSize()
                 val useWideSettingsLayout = windowSize.width >= 840.dp && windowSize.height >= 600.dp
                 NavHost(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                    startDestination = actualStartDestination,
+                    startDestination = startDestination,
                     navController = navBackStack,
                     enterTransition = {
                         if (
