@@ -8,8 +8,13 @@ import me.rerere.common.crypto.Pkcs8RsaPrivateKey
 import me.rerere.common.platform.PlatformJwtSigner
 import platform.CoreFoundation.CFDataRef
 import platform.CoreFoundation.CFDictionaryRef
+import platform.CoreFoundation.CFRelease
+import platform.Foundation.CFBridgingRelease
+import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
+import platform.Foundation.NSMutableDictionary
 import platform.Foundation.create
+import platform.Foundation.setDictionary
 import platform.Security.SecKeyCreateSignature
 import platform.Security.SecKeyCreateWithData
 import platform.Security.kSecAttrKeyClass
@@ -32,22 +37,39 @@ class IosPlatformJwtSigner : PlatformJwtSigner {
                 .filterNot(Char::isWhitespace),
         )
         val rsaPrivateKey = Pkcs8RsaPrivateKey.extract(pkcs8).toNSData()
-        val attributes = mapOf(
-            kSecAttrKeyType to kSecAttrKeyTypeRSA,
-            kSecAttrKeyClass to kSecAttrKeyClassPrivate,
-        ) as CFDictionaryRef
-        val key = SecKeyCreateWithData(
-            keyData = rsaPrivateKey as CFDataRef,
-            attributes = attributes,
-            error = null,
-        ) ?: error("iOS Security could not import the RSA private key")
-        val signature = SecKeyCreateSignature(
-            key = key,
-            algorithm = kSecKeyAlgorithmRSASignatureMessagePKCS1v15SHA256,
-            dataToSign = data.toNSData() as CFDataRef,
-            error = null,
-        ) ?: error("iOS Security could not create the RS256 signature")
-        return (signature as NSData).toByteArray()
+        val dict = NSMutableDictionary()
+        dict.setDictionary(
+            mapOf(
+                kSecAttrKeyType to kSecAttrKeyTypeRSA,
+                kSecAttrKeyClass to kSecAttrKeyClassPrivate,
+            )
+        )
+        @Suppress("UNCHECKED_CAST")
+        val cfAttributes = CFBridgingRetain(dict) as CFDictionaryRef
+        @Suppress("UNCHECKED_CAST")
+        val cfKeyData = CFBridgingRetain(rsaPrivateKey) as CFDataRef
+        @Suppress("UNCHECKED_CAST")
+        val cfDataToSign = CFBridgingRetain(data.toNSData()) as CFDataRef
+        try {
+            val key = SecKeyCreateWithData(
+                keyData = cfKeyData,
+                attributes = cfAttributes,
+                error = null,
+            ) ?: error("iOS Security could not import the RSA private key")
+            val signature = SecKeyCreateSignature(
+                key = key,
+                algorithm = kSecKeyAlgorithmRSASignatureMessagePKCS1v15SHA256,
+                dataToSign = cfDataToSign,
+                error = null,
+            ) ?: error("iOS Security could not create the RS256 signature")
+            val nsSignature = CFBridgingRelease(signature) as? NSData
+                ?: error("iOS Security signature was not NSData")
+            return nsSignature.toByteArray()
+        } finally {
+            CFRelease(cfAttributes)
+            CFRelease(cfKeyData)
+            CFRelease(cfDataToSign)
+        }
     }
 }
 
