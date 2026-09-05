@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.InputSchema
@@ -50,6 +51,12 @@ import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.SecureSettingsStore
+import me.rerere.lastchat.ios.backup.IOS_BACKUP_MANIFEST_ENTRY
+import me.rerere.lastchat.ios.backup.IOS_BACKUP_SETTINGS_ENTRY
+import me.rerere.lastchat.ios.backup.IosBackupImporter
+import me.rerere.lastchat.ios.backup.IosBackupImportPlan
+import me.rerere.lastchat.ios.backup.IosBackupImportReport
+import me.rerere.lastchat.ios.backup.IosBackupZip
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
@@ -2588,6 +2595,107 @@ class IosAppController(
                 json.encodeToJsonElement(result)
             },
         )
+    }
+
+    /**
+     * Restores the configuration tier of a LastChat Android backup zip: providers,
+     * assistants, appearance, search and TTS settings. Conversations and attachment
+     * files are reported as not yet imported.
+     */
+    internal fun restoreAndroidBackup(storagePath: String, onResult: (Result<IosBackupImportReport>) -> Unit) {
+        scope.launch {
+            onResult(runCatching {
+                val archive = fileStore.readBytes(storagePath)
+                    ?: error("Could not read the selected backup file")
+                restoreAndroidBackupInternal(archive)
+            })
+        }
+    }
+
+    private suspend fun restoreAndroidBackupInternal(archive: ByteArray): IosBackupImportReport {
+        val entries = IosBackupZip.read(
+            archive = archive,
+            wanted = setOf(IOS_BACKUP_SETTINGS_ENTRY, IOS_BACKUP_MANIFEST_ENTRY),
+        ) ?: error("The selected file is not a valid backup archive")
+        val settingsEntry = entries.firstOrNull { it.name == IOS_BACKUP_SETTINGS_ENTRY && it.data != null }
+            ?: error("The archive does not contain settings.json and is not a LastChat backup")
+        val manifest = entries.firstOrNull { it.name == IOS_BACKUP_MANIFEST_ENTRY }
+            ?.data
+            ?.decodeToString()
+            .let { encoded -> IosBackupImporter.parseManifest(encoded) }
+        val settingsData = settingsEntry.data
+            ?: error("settings.json could not be read from the backup")
+        val settings = json.parseToJsonElement(settingsData.decodeToString()) as? JsonObject
+            ?: error("settings.json in the backup is not a JSON object")
+        val plan = IosBackupImporter.buildImportPlan(settings)
+        applyIosBackupImportPlan(plan)
+        val report = plan.toReport(manifest)
+        return report.copy(
+            skipped = buildList {
+                addAll(report.skipped)
+                if (manifest?.includesDatabase == true) {
+                    add("Database (conversations, memories) import is not supported yet")
+                }
+                if (manifest?.includesFiles == true) {
+                    add("Attachment and media files import is not supported yet")
+                }
+            },
+        )
+    }
+
+    private suspend fun applyIosBackupImportPlan(plan: IosBackupImportPlan) {
+        plan.providerCredentials.forEach { credential ->
+            secureStore.writeString(apiKeyName(credential.type), credential.apiKey)
+        }
+        plan.ttsApiKeys.forEach { (type, key) ->
+            if (key.isNotBlank()) secureStore.writeString(ttsApiKeyName(type), key)
+        }
+        plan.searchApiKeys.forEach { (type, key) ->
+            if (key.isNotBlank()) secureStore.writeString(searchApiKeyName(type), key)
+        }
+        val assistantList = plan.assistants.ifEmpty { mutableState.value.assistants }
+        mutableState.update { current ->
+            val configurations = current.providerConfigurations.map { config ->
+                plan.providerCredentials.firstOrNull { it.type == config.type }?.let { credential ->
+                    config.copy(baseUrl = credential.baseUrl, modelId = credential.modelId ?: config.modelId)
+                } ?: config
+            }
+            current.copy(
+                appearance = plan.appearance ?: current.appearance,
+                assistants = assistantList,
+                selectedAssistantId = plan.selectedAssistantId
+                    ?.takeIf { id -> assistantList.any { it.id == id } }
+                    ?: current.selectedAssistantId?.takeIf { id -> assistantList.any { it.id == id } }
+                    ?: assistantList.firstOrNull()?.id,
+                providerConfigurations = configurations,
+                provider = plan.selectedProviderType
+                    ?.let { type -> configurations.firstOrNull { it.type == type } }
+                    ?: current.provider,
+                search = plan.search ?: current.search,
+                tts = plan.tts ?: current.tts,
+            )
+        }
+        persist()
+        val snapshot = mutableState.value
+        val apiKey = secureStore.readString(apiKeyName(snapshot.provider.type)).orEmpty()
+        val searchKeyPresent = hasSearchApiKey(snapshot.search)
+        val ttsKey = secureStore.readString(ttsApiKeyName(snapshot.tts.type)).orEmpty()
+        mutableState.update {
+            it.copy(
+                hasApiKey = apiKey.isNotBlank(),
+                hasSearchApiKey = searchKeyPresent,
+                hasTtsApiKey = ttsKey.isNotBlank(),
+            )
+        }
+        ttsController.setProvider(
+            snapshot.tts.takeIf { it.enabled && ttsKey.isNotBlank() }?.toProviderSetting(ttsKey)
+        )
+        mutableState.value.conversations
+            .filter { conversation ->
+                assistantList.firstOrNull { it.id == conversation.assistantId }?.memoryMode == IosMemoryMode.ADAPTIVE
+            }
+            .forEach { scheduleAdaptiveMemory(it.id) }
+        refreshAdaptiveBackgroundSchedule()
     }
 
     private suspend fun hasSearchApiKey(preferences: IosSearchPreferences): Boolean {

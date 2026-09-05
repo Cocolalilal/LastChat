@@ -136,6 +136,7 @@ import me.rerere.common.platform.PlatformFilePicker
 import me.rerere.common.platform.PlatformAttachmentOpener
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
+import me.rerere.lastchat.ios.backup.IosBackupImportReport
 import me.rerere.common.platform.PlatformHapticPattern
 import me.rerere.common.platform.PlatformHaptics
 import me.rerere.common.calendar.CalendarHeatmapDay
@@ -217,6 +218,7 @@ private enum class IosSettingsSection(val title: String) {
     Search("Search service"),
     Tts("Text-to-speech"),
     Data("Data"),
+    Backup("Backup"),
     About("About"),
     Unavailable("Unavailable"),
 }
@@ -341,6 +343,8 @@ fun LastChatIosApp(
                     onDeleteMemory = controller::deleteMemory,
                     onRegenerateMemoryEmbeddings = controller::regenerateMemoryEmbeddings,
                     onSaveLocalTools = controller::saveLocalTools,
+                    onPickBackupFile = { filePicker.pickFile(it) },
+                    onRestoreBackup = controller::restoreAndroidBackup,
                     platformHaptics = platformHaptics,
                     onBack = { route = IosRoute.Chat },
                 )
@@ -1618,6 +1622,8 @@ private fun SettingsPage(
     onDeleteMemory: (Int) -> Unit,
     onRegenerateMemoryEmbeddings: () -> Unit,
     onSaveLocalTools: (Set<IosLocalToolOption>) -> Unit,
+    onPickBackupFile: ((Result<PlatformPickedFile?>) -> Unit) -> Unit,
+    onRestoreBackup: (String, (Result<IosBackupImportReport>) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
@@ -1682,6 +1688,10 @@ private fun SettingsPage(
     var memorySearch by remember { mutableStateOf("") }
     var editingMemory by remember { mutableStateOf<IosMemoryRecord?>(null) }
     var editingMemoryContent by remember { mutableStateOf("") }
+    var pendingBackupRestorePath by remember { mutableStateOf<String?>(null) }
+    var backupRestoreReport by remember { mutableStateOf<IosBackupImportReport?>(null) }
+    var backupRestoreError by remember { mutableStateOf<String?>(null) }
+    var restoringBackup by remember { mutableStateOf(false) }
     fun openSettingsDestination(destinationId: String, title: String) {
         activeDestinationId = destinationId
         when (destinationId) {
@@ -1695,6 +1705,7 @@ private fun SettingsPage(
             "Search" -> section = IosSettingsSection.Search
             "Tts" -> section = IosSettingsSection.Tts
             "ChatStorage" -> section = IosSettingsSection.Data
+            "Backup", "BackupLocal" -> section = IosSettingsSection.Backup
             "About" -> section = IosSettingsSection.About
             else -> {
                 unavailableDestinationId = destinationId
@@ -1716,6 +1727,7 @@ private fun SettingsPage(
             IosSettingsSection.Search -> "Search"
             IosSettingsSection.Tts -> "Tts"
             IosSettingsSection.Data -> activeDestinationId.ifBlank { "ChatStorage" }
+            IosSettingsSection.Backup -> activeDestinationId.ifBlank { "Backup" }
             IosSettingsSection.About -> "About"
             IosSettingsSection.Unavailable -> unavailableDestinationId
             IosSettingsSection.Home -> ""
@@ -3311,6 +3323,36 @@ private fun SettingsPage(
                     )
                 }
             }
+            if (section == IosSettingsSection.Backup) {
+                item {
+                    LastChatSettingsGroup(
+                        title = "Restore from Android",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Restore backup",
+                            subtitle = "Import providers, assistants, appearance, search and TTS settings from a LastChat Android backup (.zip).",
+                            darkTheme = darkTheme,
+                        ) {
+                            Button(
+                                enabled = !restoringBackup,
+                                shape = AppShapes.ButtonRounded,
+                                onClick = {
+                                    onPickBackupFile { result ->
+                                        val picked = result.getOrNull()
+                                        if (picked != null && !restoringBackup) {
+                                            pendingBackupRestorePath = picked.storagePath
+                                        }
+                                    }
+                                },
+                            ) {
+                                Text(if (restoringBackup) "Restoring…" else "Restore from file")
+                            }
+                        }
+                    }
+                }
+            }
             if (section == IosSettingsSection.Unavailable) {
                 item {
                     Card(
@@ -3337,6 +3379,61 @@ private fun SettingsPage(
                     }
                 }
             }
+        }
+        pendingBackupRestorePath?.let { path ->
+            AlertDialog(
+                onDismissRequest = { pendingBackupRestorePath = null },
+                title = { Text("Restore backup?") },
+                text = {
+                    Text(
+                        "This replaces the current iOS providers, assistants, appearance, search and TTS settings with the backup contents. Conversations on this device are kept.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pendingBackupRestorePath = null
+                            restoringBackup = true
+                            onRestoreBackup(path) { restoreResult ->
+                                restoringBackup = false
+                                restoreResult.fold(
+                                    onSuccess = { backupRestoreReport = it },
+                                    onFailure = { backupRestoreError = it.message ?: "Restore failed" },
+                                )
+                            }
+                        },
+                    ) { Text("Restore") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingBackupRestorePath = null }) { Text("Cancel") }
+                },
+            )
+        }
+        backupRestoreReport?.let { report ->
+            AlertDialog(
+                onDismissRequest = { backupRestoreReport = null },
+                title = { Text("Backup restored") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ReportSection("Imported", report.applied)
+                        ReportSection("Notes", report.warnings)
+                        ReportSection("Not imported yet", report.skipped)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { backupRestoreReport = null }) { Text("OK") }
+                },
+            )
+        }
+        backupRestoreError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { backupRestoreError = null },
+                title = { Text("Restore failed") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { backupRestoreError = null }) { Text("OK") }
+                },
+            )
         }
         editingMemory?.let { memory ->
             AlertDialog(
@@ -3631,6 +3728,24 @@ private fun IosRpStyleRuleDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+@Composable
+private fun ReportSection(title: String, entries: List<String>) {
+    if (entries.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        entries.take(10).forEach { entry ->
+            Text("• $entry", style = MaterialTheme.typography.bodySmall)
+        }
+        if (entries.size > 10) {
+            Text("+${entries.size - 10} more", style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
 
 private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {

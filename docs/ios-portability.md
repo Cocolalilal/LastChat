@@ -364,6 +364,13 @@ shared use by Android.
 
 Current iOS app status:
 
+- Android backup archives can be restored for configuration through
+  Settings → Backup → Restore from file: providers (OpenAI, Google, and
+  Claude best match per type, with API keys moved into Keychain),
+  assistants (memory modes, embedding provider resolution, local tools),
+  appearance, search services, and TTS providers. The restore reports
+  exactly what was imported and what is not yet portable; database
+  (conversations) and managed files are reported as not yet imported;
 - device, Apple Silicon simulator, and Intel simulator Kotlin targets compile;
 - SwiftUI hosts the Compose root controller without rewriting the UI in Swift;
 - UIKit haptics implement the existing shared `PlatformHaptics` contract;
