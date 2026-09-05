@@ -230,15 +230,6 @@ import me.rerere.rikkahub.ui.theme.presetColorScheme
 import me.rerere.rikkahub.ui.theme.rememberLastChatFontFamily
 import me.rerere.rikkahub.ui.theme.withLastChatAmoledSurface
 import me.rerere.rikkahub.ui.components.settings.PresetThemeButtonGroup
-import me.rerere.rikkahub.ui.theme.rememberDefaultGenericalPainter
-import me.rerere.lastchat.ios.ui.chat.ContextMeterAnchor
-import me.rerere.lastchat.ios.ui.chat.IosContextUsage
-import me.rerere.lastchat.ios.ui.chat.NewChatContent
-import me.rerere.lastchat.ios.ui.menu.IosDrawerContent
-import me.rerere.lastchat.ios.ui.assistant.IosAssistantDetailPage
-import me.rerere.lastchat.ios.ui.settings.IosDisplayPage
-import me.rerere.lastchat.ios.ui.settings.IosMcpPage
-import me.rerere.lastchat.ios.ui.settings.IosStoragePage
 import coil3.compose.AsyncImage
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -287,7 +278,7 @@ fun LastChatIosApp(
         lastChatFontFamily
     }
     MaterialTheme(
-        colorScheme = colorScheme.withLastChatAmoledSurface(useDarkTheme && state.appearance.amoledBlack),
+        colorScheme = colorScheme.withLastChatAmoledSurface(useDarkTheme),
         typography = buildLastChatTypography(appFontFamily),
         shapes = Shapes,
     ) {
@@ -763,23 +754,6 @@ private fun ChatPage(
                     )
                 },
                 actions = {
-                    val estimatedTokens = remember(state.selectedConversation?.messages) {
-                        val chars = state.selectedConversation?.messages?.sumOf { msg ->
-                            msg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-                        } ?: 0
-                        (chars / 4).coerceAtLeast(0)
-                    }
-                    val contextUsage = remember(estimatedTokens) {
-                        IosContextUsage(
-                            usedTokens = estimatedTokens,
-                            totalTokens = 128000,
-                            conversationTokens = estimatedTokens,
-                        )
-                    }
-                    ContextMeterAnchor(
-                        usage = contextUsage,
-                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                    )
                     IconButton(
                         onClick = {
                             platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -1046,14 +1020,13 @@ private fun ChatPage(
                 item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             } else if (turns.isEmpty()) {
                 item {
-                    NewChatContent(
-                        assistantName = state.assistant.name,
-                        onTemplateClick = { prompt ->
-                            inputState.setTextAndPlaceCursorAtEnd(prompt)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 40.dp, bottom = 20.dp),
+                    LastChatMessageTurn(
+                        role = MessageRole.ASSISTANT,
+                        text = "How can I help you today?",
+                        senderName = state.assistant.name,
+                        modelName = state.provider.modelId,
+                        fontSizeRatio = state.appearance.fontSizeRatio,
+                        showAssistantBubble = state.appearance.showAssistantBubbles,
                     )
                 }
             } else {
@@ -1258,21 +1231,276 @@ private fun MenuPage(
     onStatistics: () -> Unit,
     onImageGeneration: () -> Unit,
 ) {
-    IosDrawerContent(
-        state = state,
-        onSelectConversation = onSelectConversation,
-        onRenameConversation = onRenameConversation,
-        onDeleteConversation = onDeleteConversation,
-        onTogglePinConversation = onTogglePinConversation,
-        onSelectAssistant = onSelectAssistant,
-        onDismiss = onDismiss,
-        onSettings = onSettings,
-        onStatistics = onStatistics,
-        onImageGeneration = onImageGeneration,
-        onAssistantDetail = onSettings,
-        onHapticPop = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-        onHapticTick = { platformHaptics.perform(PlatformHapticPattern.Tick) },
-    )
+    var searchQuery by remember { mutableStateOf("") }
+    var searchExpanded by remember { mutableStateOf(false) }
+    var showAssistantPicker by remember { mutableStateOf(false) }
+    val filteredConversations = remember(state.conversations, searchQuery) {
+        if (searchQuery.isBlank()) {
+            state.conversations
+        } else {
+            state.conversations.filter { conversation ->
+                conversation.title.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+    val pinnedConversations = remember(filteredConversations) {
+        filteredConversations.filter { it.isPinned }
+    }
+    val regularConversations = remember(filteredConversations) {
+        filteredConversations.filter { !it.isPinned }
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+            // Assistant Time-of-day greeting header
+            item {
+                val currentHour = remember {
+                    Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
+                }
+                val greetingText = remember(currentHour) {
+                    when (currentHour) {
+                        in 5..7 -> "Good early morning"
+                        in 8..11 -> "Good morning"
+                        in 12..13 -> "Lunch time"
+                        in 14..17 -> "Good afternoon"
+                        in 18..20 -> "Good evening"
+                        in 21..22 -> "Good night"
+                        else -> "Night owl hours"
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IosAssistantAvatar(
+                        name = state.assistant.name,
+                        modifier = Modifier.size(46.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = state.assistant.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = greetingText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item {
+                LastChatDrawerSearch(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    expanded = searchExpanded,
+                    onExpandedChange = { searchExpanded = it },
+                    placeholder = "Search conversations",
+                    hint = "Search titles",
+                )
+            }
+            item {
+                AnimatedVisibility(
+                    visible = !searchExpanded,
+                    enter = fadeIn(animationSpec = spring(stiffness = 300f)) +
+                        expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)),
+                    exit = fadeOut(animationSpec = spring(stiffness = 500f)) +
+                        shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f)),
+                ) {
+                    LastChatDrawerQuickActionGroup {
+                        LastChatDrawerQuickAction(
+                            label = "Imagine",
+                            onClick = onImageGeneration,
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Tick) },
+                            icon = { Icon(Icons.Rounded.Image, contentDescription = null) },
+                        )
+                        LastChatDrawerQuickAction(
+                            label = "Statistics",
+                            onClick = onStatistics,
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Tick) },
+                            icon = { LastChatBarChartIcon(contentDescription = null) },
+                        )
+                    }
+                }
+            }
+            if (filteredConversations.isEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        shape = AppShapes.CardSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ) {
+                        Text(
+                            text = "No conversations",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
+                }
+            }
+            // Pinned Conversations Group
+            if (pinnedConversations.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Pinned",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                items(pinnedConversations, key = { "pinned_" + it.id }) { conversation ->
+                    ConversationListRow(
+                        title = conversation.title,
+                        selected = conversation.id == state.selectedConversationId,
+                        isPinned = true,
+                        platformHaptics = platformHaptics,
+                        onRename = { title -> onRenameConversation(conversation.id, title) },
+                        onDelete = { onDeleteConversation(conversation.id) },
+                        onTogglePin = { onTogglePinConversation(conversation.id) },
+                    ) {
+                        onSelectConversation(conversation.id)
+                        onDismiss()
+                    }
+                }
+                if (regularConversations.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Chats",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+            // Regular Conversations
+            items(regularConversations, key = { it.id }) { conversation ->
+                ConversationListRow(
+                    title = conversation.title,
+                    selected = conversation.id == state.selectedConversationId,
+                    isPinned = false,
+                    platformHaptics = platformHaptics,
+                    onRename = { title -> onRenameConversation(conversation.id, title) },
+                    onDelete = { onDeleteConversation(conversation.id) },
+                    onTogglePin = { onTogglePinConversation(conversation.id) },
+                ) {
+                    onSelectConversation(conversation.id)
+                    onDismiss()
+                }
+            }
+            item {
+                val actionButtonSize = 42.dp
+                val assistantAvatarSize = 30.dp
+                val itemColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        color = itemColor,
+                        shape = AppShapes.ButtonPill,
+                        modifier = Modifier.weight(1f).height(actionButtonSize),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(start = 12.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        if (state.assistants.size > 1) showAssistantPicker = true
+                                    },
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    text = state.assistant.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IosAssistantAvatar(
+                                name = state.assistant.name,
+                                modifier = Modifier
+                                    .size(assistantAvatarSize)
+                                    .clickable {
+                                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                                        onSettings()
+                                    },
+                            )
+                        }
+                    }
+                    LastChatDrawerAction(
+                        onClick = onSettings,
+                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                        containerColor = itemColor,
+                        size = actionButtonSize,
+                    ) { containerSize, iconSize ->
+                        LastChatDrawerActionIcon(
+                            containerSize = containerSize,
+                            iconSize = iconSize,
+                            contentDescription = "Settings",
+                        )
+                    }
+                }
+            }
+    }
+    if (showAssistantPicker) {
+        val pickerItems = state.assistants.map { assistant ->
+            LastChatAssistantPickerItem(
+                id = assistant.id,
+                name = assistant.name,
+                systemPrompt = assistant.systemPrompt,
+            )
+        }
+        LastChatAssistantPickerSheet(
+            assistants = pickerItems,
+            currentAssistantId = state.assistant.id,
+            title = "Assistants",
+            noSystemPromptLabel = "No system prompt",
+            onAssistantSelected = onSelectAssistant,
+            onNavigate = {
+                showAssistantPicker = false
+                onDismiss()
+            },
+            onEdit = {
+                showAssistantPicker = false
+                onSettings()
+            },
+            onDismiss = { showAssistantPicker = false },
+            onPopHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+            onThudHaptic = { platformHaptics.perform(PlatformHapticPattern.Thud) },
+            avatar = { item, modifier -> IosAssistantAvatar(item.name, modifier) },
+        )
+    }
 }
 
 @Composable
@@ -1280,28 +1508,18 @@ private fun IosAssistantAvatar(
     name: String,
     modifier: Modifier = Modifier,
 ) {
-    val isGenerical = name.equals("Generical", ignoreCase = true) || name.isBlank() || name.equals("Default", ignoreCase = true)
     Surface(
         modifier = modifier,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
-        if (isGenerical) {
-            androidx.compose.foundation.Image(
-                painter = rememberDefaultGenericalPainter(),
-                contentDescription = name,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = name.firstOrNull()?.uppercase() ?: "A",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
             )
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = name.firstOrNull()?.uppercase() ?: "A",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
         }
     }
 }
@@ -1829,7 +2047,7 @@ private fun SettingsPage(
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
     onSaveImageGeneration: (IosImageGenerationPreferences) -> Unit,
-    onSaveAppearance: (String, IosColorMode, Boolean, Boolean) -> Unit,
+    onSaveAppearance: (String, IosColorMode) -> Unit,
     onSaveFontSettings: (Boolean) -> Unit,
     onSaveUiCustomization: (Boolean, Float) -> Unit,
     onSaveRpStyleRules: (List<IosRpStyleRule>) -> Unit,
@@ -2197,19 +2415,79 @@ private fun SettingsPage(
             }
             if (section == IosSettingsSection.Assistant) {
                 item {
-                    IosAssistantDetailPage(
-                        state = state,
-                        darkTheme = darkTheme,
-                        onSaveAssistant = onSaveAssistant,
-                        onNewAssistant = onNewAssistant,
-                        onSelectAssistant = onSelectAssistant,
-                        onDeleteAssistant = onDeleteAssistant,
-                        onNavigateToMemory = { openSettingsDestination("AssistantMemory", "Memory") },
-                        onNavigateToTools = { openSettingsDestination("AssistantTools", "Tools") },
-                        onNavigateToModels = { openSettingsDestination("Models", "Models") },
-                        onBack = { section = IosSettingsSection.Home },
-                        onHapticPop = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                    )
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Assistant",
+                            subtitle = "Profile and system instructions",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(label = { Text("Profile") }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    state.assistants.forEach { assistant ->
+                                        if (assistant.id == state.selectedAssistantId) {
+                                            Button(onClick = {}) { Text(assistant.name) }
+                                        } else {
+                                            TextButton(onClick = { onSelectAssistant(assistant.id) }) {
+                                                Text(assistant.name)
+                                            }
+                                        }
+                                    }
+                                    TextButton(onClick = onNewAssistant) { Text("New assistant") }
+                                }
+                            }
+                            LastChatFormItem(label = { Text("Name") }) {
+                                OutlinedTextField(
+                                    value = assistantName,
+                                    onValueChange = { assistantName = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    singleLine = true,
+                                )
+                            }
+                            LastChatFormItem(label = { Text("System prompt") }) {
+                                OutlinedTextField(
+                                    value = systemPrompt,
+                                    onValueChange = { systemPrompt = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = AppShapes.InputField,
+                                    minLines = 3,
+                                    maxLines = 8,
+                                )
+                            }
+                            Button(
+                                onClick = { onSaveAssistant(assistantName, systemPrompt) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save assistant") }
+                            TextButton(
+                                onClick = { openSettingsDestination("AssistantMemory", "Memory") },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Memory, null, Modifier.size(18.dp))
+                                Text("Manage memory")
+                            }
+                            TextButton(
+                                onClick = { openSettingsDestination("AssistantTools", "Tools") },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Extension, null, Modifier.size(18.dp))
+                                Text("Manage tools")
+                            }
+                            if (state.assistants.size > 1) {
+                                TextButton(onClick = { onDeleteAssistant(state.assistant.id) }) {
+                                    Text("Delete assistant")
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (section == IosSettingsSection.Memory) {
@@ -2900,18 +3178,241 @@ private fun SettingsPage(
             }
             if (section == IosSettingsSection.Mcp) {
                 item {
-                    IosMcpPage(
-                        servers = state.mcpServers,
-                        onSaveMcpServer = onSaveMcpServer,
-                        onDeleteMcpServer = onDeleteMcpServer,
-                        onToggleMcpServer = onToggleMcpServer,
-                        onRefreshMcpTools = onRefreshMcpTools,
-                        onToggleMcpTool = onToggleMcpTool,
-                        onHapticPop = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                        onHapticTick = { platformHaptics.perform(PlatformHapticPattern.Tick) },
-                        onHapticSuccess = { platformHaptics.perform(PlatformHapticPattern.Success) },
-                        onHapticError = { platformHaptics.perform(PlatformHapticPattern.Error) },
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                "MCP Servers",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "Model Context Protocol over SSE & HTTP",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                editingMcpServer = null
+                                showAddMcpServerDialog = true
+                            },
+                            shape = AppShapes.ButtonPill,
+                        ) {
+                            Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Server")
+                        }
+                    }
+                }
+                if (mcpStatusMessage != null) {
+                    item {
+                        Surface(
+                            shape = AppShapes.CardSmall,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                mcpStatusMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
+                    }
+                }
+                if (state.mcpServers.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Extension,
+                                    null,
+                                    modifier = Modifier.size(40.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "No MCP servers configured",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Connect remote tool servers using Server-Sent Events (SSE) or Streamable HTTP. Assistants can discover and execute their tools automatically.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(state.mcpServers) { server ->
+                        val isRefreshing = mcpRefreshingServerId == server.id
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = AppShapes.CardMedium,
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (server.commonOptions.enable) MaterialTheme.colorScheme.surfaceContainer
+                                else MaterialTheme.colorScheme.surfaceContainerLow
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                server.commonOptions.name.ifBlank { "MCP Server" },
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Surface(
+                                                shape = AppShapes.ButtonPill,
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                            ) {
+                                                Text(
+                                                    if (server is IosMcpServerConfig.SseTransportServer) "SSE"
+                                                    else "HTTP",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            server.url,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = server.commonOptions.enable,
+                                        onCheckedChange = { checked ->
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            onToggleMcpServer(server.id, checked)
+                                        },
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Tick)
+                                            mcpRefreshingServerId = server.id
+                                            mcpStatusMessage = "Discovering tools from ${server.commonOptions.name}..."
+                                            scope.launch {
+                                                onRefreshMcpTools(server).onSuccess { tools ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Success)
+                                                    mcpStatusMessage = "Discovered ${tools.size} tools from ${server.commonOptions.name}"
+                                                }.onFailure { err ->
+                                                    platformHaptics.perform(PlatformHapticPattern.Error)
+                                                    mcpStatusMessage = "Discovery failed: ${err.message}"
+                                                }
+                                                mcpRefreshingServerId = null
+                                            }
+                                        },
+                                        enabled = !isRefreshing,
+                                        shape = AppShapes.ButtonPill,
+                                    ) {
+                                        if (isRefreshing) {
+                                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                        } else {
+                                            Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text("Discover Tools")
+                                    }
+                                    Row {
+                                        IconButton(onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            editingMcpServer = server
+                                            showAddMcpServerDialog = true
+                                        }) {
+                                            Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
+                                        }
+                                        IconButton(onClick = {
+                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                            onDeleteMcpServer(server.id)
+                                        }) {
+                                            Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                                if (server.commonOptions.tools.isNotEmpty()) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        "Discovered Tools (${server.commonOptions.tools.size}):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        server.commonOptions.tools.forEach { tool ->
+                                            Surface(
+                                                shape = AppShapes.CardSmall,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            tool.name,
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            fontWeight = FontWeight.Bold,
+                                                        )
+                                                        if (!tool.description.isNullOrBlank()) {
+                                                            Text(
+                                                                tool.description,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                maxLines = 2,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                    }
+                                                    Switch(
+                                                        checked = tool.enable,
+                                                        onCheckedChange = { checked ->
+                                                            platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                            onToggleMcpTool(server.id, tool.name, checked)
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (section == IosSettingsSection.Models) {
@@ -3613,14 +4114,279 @@ private fun SettingsPage(
             }
             if (section == IosSettingsSection.Appearance) {
                 item {
-                    IosDisplayPage(
-                        appearance = state.appearance,
-                        darkTheme = darkTheme,
-                        onSaveAppearance = onSaveAppearance,
-                        onSaveFontSettings = onSaveFontSettings,
-                        onSaveUiCustomization = onSaveUiCustomization,
-                        onHapticPop = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                    )
+                    LastChatSettingsGroup(
+                        title = "Configuration",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        if (activeDestinationId == "Fonts") {
+                            LastChatSettingGroupInputItem(
+                                title = "General",
+                                subtitle = "Choose the app-wide typeface",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(
+                                    label = { Text("Use phone system font") },
+                                    description = {
+                                        Text("Use the native iOS system font throughout LastChat")
+                                    },
+                                    tail = {
+                                        Switch(
+                                            checked = usePhoneSystemFont,
+                                            onCheckedChange = { enabled ->
+                                                usePhoneSystemFont = enabled
+                                                onSaveFontSettings(enabled)
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                            LastChatSettingGroupInputItem(
+                                title = "App font",
+                                subtitle = if (usePhoneSystemFont) {
+                                    "iOS system font"
+                                } else {
+                                    "Google Sans Flex · Material 3 Expressive"
+                                },
+                                darkTheme = darkTheme,
+                            ) {
+                                Text(
+                                    "LastChat",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                )
+                                Text(
+                                    "The quick brown fox jumps over the lazy dog.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    "0123456789  !?  Aa Bb Cc",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            LastChatSettingGroupInputItem(
+                                title = "Code blocks",
+                                subtitle = "Native monospace font",
+                                darkTheme = darkTheme,
+                            ) {
+                                Text(
+                                    "fun main() = println(\"LastChat\")",
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        } else if (activeDestinationId == "RpOptimizations") {
+                            LastChatSettingGroupInputItem(
+                                title = "Custom text styling",
+                                subtitle = "Color roleplay and Markdown patterns in chat",
+                                darkTheme = darkTheme,
+                            ) {
+                                Text(
+                                    "Supported: * italic, ** bold, ~~ strikethrough, ` inline code, " +
+                                        "# through ###### headings, > blockquotes, and custom paired delimiters.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Button(
+                                    onClick = { showAddRpStyleRuleDialog = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Add rule")
+                                }
+                            }
+                            if (rpStyleRules.isEmpty()) {
+                                LastChatSettingGroupInputItem(
+                                    title = "No style rules",
+                                    subtitle = "Add a rule to color matching chat text",
+                                    darkTheme = darkTheme,
+                                ) {}
+                            } else {
+                                rpStyleRules.forEach { rule ->
+                                    val previewColor =
+                                        iosColorFromHex(rule.colorHex)
+                                            ?: MaterialTheme.colorScheme.onSurface
+                                    LastChatSettingGroupInputItem(
+                                        title = "Pattern ${rule.pattern}",
+                                        subtitle = rule.colorHex,
+                                        darkTheme = darkTheme,
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { editingRpStyleRule = rule },
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Box(
+                                                Modifier
+                                                    .size(20.dp)
+                                                    .clip(CircleShape)
+                                                    .background(previewColor)
+                                            )
+                                            Text(
+                                                "${rule.pattern}Example text${rule.pattern}",
+                                                color = previewColor,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    rpStyleRules =
+                                                        rpStyleRules.filterNot { it.id == rule.id }
+                                                    onSaveRpStyleRules(rpStyleRules)
+                                                }
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Delete,
+                                                    contentDescription = "Delete",
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                )
+                                            }
+                                            Switch(
+                                                checked = rule.enabled,
+                                                onCheckedChange = { enabled ->
+                                                    rpStyleRules = rpStyleRules.map {
+                                                        if (it.id == rule.id) {
+                                                            it.copy(enabled = enabled)
+                                                        } else {
+                                                            it
+                                                        }
+                                                    }
+                                                    onSaveRpStyleRules(rpStyleRules)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (activeDestinationId != "UiCustomization") {
+                            LastChatSettingGroupInputItem(
+                                title = "Appearance",
+                                subtitle = "Theme and system color mode",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(label = { Text("Theme palette") }) {
+                                    PresetThemeButtonGroup(
+                                        selectedThemeId = themeId,
+                                        darkTheme = darkTheme,
+                                        onChangeTheme = { newId ->
+                                            themeId = newId
+                                            onSaveAppearance(themeId, colorMode)
+                                        },
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Color mode") }) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        IosColorMode.entries.forEach { mode ->
+                                            val label = mode.name.lowercase().replaceFirstChar {
+                                                it.uppercase()
+                                            }
+                                            if (colorMode == mode) {
+                                                Button(onClick = {}) { Text(label) }
+                                            } else {
+                                                TextButton(onClick = {
+                                                    colorMode = mode
+                                                    onSaveAppearance(themeId, colorMode)
+                                                }) { Text(label) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            LastChatSettingGroupInputItem(
+                                title = "UI customization",
+                                subtitle = "Chat presentation and content scale",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(
+                                    label = { Text("Assistant message bubbles") },
+                                    description = { Text("Show a filled surface behind assistant messages") },
+                                    tail = {
+                                        Switch(
+                                            checked = showAssistantBubbles,
+                                            onCheckedChange = { enabled ->
+                                                showAssistantBubbles = enabled
+                                                onSaveUiCustomization(enabled, fontSizeRatio)
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Chat font size") },
+                                    description = { Text("${(fontSizeRatio * 100).toInt()}%") },
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Slider(
+                                            value = fontSizeRatio,
+                                            onValueChange = { fontSizeRatio = it },
+                                            onValueChangeFinished = {
+                                                onSaveUiCustomization(showAssistantBubbles, fontSizeRatio)
+                                            },
+                                            valueRange = 0.5f..2f,
+                                            steps = 11,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.End,
+                                                ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                                    ) {
+                                                        Text(
+                                                            text = "Sample message preview",
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                                fontSize = MaterialTheme.typography.bodyMedium.fontSize * fontSizeRatio,
+                                                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * fontSizeRatio,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.Start,
+                                                ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+                                                        color = if (showAssistantBubbles) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+                                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                                    ) {
+                                                        Text(
+                                                            text = "The quick brown fox jumps over the lazy dog.",
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                                fontSize = MaterialTheme.typography.bodyMedium.fontSize * fontSizeRatio,
+                                                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * fontSizeRatio,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (section == IosSettingsSection.Backup) {
@@ -4015,13 +4781,24 @@ private fun SettingsPage(
             }
             if (section == IosSettingsSection.Data) {
                 item {
-                    IosStoragePage(
-                        state = state,
-                        darkTheme = darkTheme,
-                        onBack = { section = IosSettingsSection.Home },
-                        onHapticPop = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                        onHapticThud = { platformHaptics.perform(PlatformHapticPattern.Thud) },
-                    )
+                    LastChatSettingsGroup(
+                        title = "Storage",
+                        horizontalPadding = 0.dp,
+                        titleStartPadding = 0.dp,
+                    ) {
+                        LastChatSettingGroupInputItem(
+                            title = "Data",
+                            subtitle = "Conversations are stored in the iOS app container",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("App data") },
+                                description = {
+                                    Text("Provider credentials are stored separately in Keychain")
+                                },
+                            )
+                        }
+                    }
                 }
             }
             if (section == IosSettingsSection.About) {

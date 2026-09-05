@@ -15,9 +15,6 @@ val prepareSharedResources by tasks.registering(Sync::class) {
     from(rootProject.file("app/src/main/res/mipmap-xxxhdpi/ic_launcher_lastchat_foreground.png")) {
         into("drawable")
     }
-    from(rootProject.file("app/src/main/res/drawable/default_generical_pfp.jpg")) {
-        into("drawable")
-    }
     into(generatedComposeResources)
 }
 
@@ -123,7 +120,6 @@ kotlin {
 }
 
 compose.resources {
-    publicResClass = true
     packageOfResClass = "me.rerere.rikkahub.ui.core.generated.resources"
     customDirectory(
         sourceSetName = "commonMain",
