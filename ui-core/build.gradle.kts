@@ -20,7 +20,6 @@ val prepareSharedResources by tasks.registering(Sync::class) {
 
 val generatedPresetSources = layout.buildDirectory.dir("generated/presetSources")
 val presetSourceFiles = linkedMapOf(
-    "ios" to rootProject.file("app/src/main/java/me/rerere/rikkahub/ui/theme/presets/IosTheme.kt"),
     "ocean" to rootProject.file("app/src/main/java/me/rerere/rikkahub/ui/theme/presets/OceanTheme.kt"),
     "spring" to rootProject.file("app/src/main/java/me/rerere/rikkahub/ui/theme/presets/SpringTheme.kt"),
     "autumn" to rootProject.file("app/src/main/java/me/rerere/rikkahub/ui/theme/presets/AutumnTheme.kt"),
@@ -99,10 +98,6 @@ kotlin {
 
     sourceSets.commonMain.dependencies {
         implementation(project(":shared"))
-        api(project(":ai"))
-        api(project(":common"))
-        api(libs.jetbrains.markdown)
-        implementation(libs.coil.compose)
         api(compose.runtime)
         api(compose.foundation)
         api(compose.ui)

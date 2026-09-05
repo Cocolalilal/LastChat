@@ -24,10 +24,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
@@ -74,8 +70,6 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
-import me.rerere.lastchat.ios.models.*
-import me.rerere.lastchat.ios.backup.IosBackupManager
 
 @Serializable
 enum class IosProviderType { OPENAI, GOOGLE, CLAUDE }
@@ -92,7 +86,7 @@ enum class IosColorMode { SYSTEM, LIGHT, DARK }
 
 @Serializable
 data class IosAppearancePreferences(
-    val themeId: String = "ios",
+    val themeId: String = "seafoam_mint",
     val colorMode: IosColorMode = IosColorMode.SYSTEM,
     val usePhoneSystemFont: Boolean = false,
     val showAssistantBubbles: Boolean = true,
@@ -219,7 +213,6 @@ data class IosConversation(
     val messages: List<UIMessage> = emptyList(),
     val updatedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
     val memoryLastMessageId: String? = null,
-    val isPinned: Boolean = false,
 )
 
 @Serializable
@@ -283,10 +276,6 @@ data class IosAppState(
     val hasTtsApiKey: Boolean = false,
     val ttsSpeaking: Boolean = false,
     val ttsPlaybackState: PlaybackState = PlaybackState(),
-    val skills: List<IosSkill> = emptyList(),
-    val lorebooks: List<IosLorebook> = emptyList(),
-    val mcpServers: List<IosMcpServerConfig> = emptyList(),
-    val webDavConfig: IosWebDavConfig = IosWebDavConfig(),
     val error: String? = null,
 ) {
     val selectedConversation: IosConversation?
@@ -399,10 +388,6 @@ class IosAppController(
                 selectedAssistantId = restoredAssistantId,
                 search = stored?.search ?: IosSearchPreferences(),
                 memories = stored?.memories.orEmpty(),
-                skills = stored?.skills.orEmpty(),
-                lorebooks = stored?.lorebooks.orEmpty(),
-                mcpServers = stored?.mcpServers.orEmpty(),
-                webDavConfig = stored?.webDavConfig ?: IosWebDavConfig(),
                 tts = ttsPreferences,
                 imageGeneration = stored?.imageGeneration ?: IosImageGenerationPreferences(),
                 generatedImages = stored?.generatedImages.orEmpty(),
@@ -534,13 +519,6 @@ class IosAppController(
         persistAsync()
     }
 
-    fun togglePinConversation(id: String) {
-        updateConversation(id) { conversation ->
-            conversation.copy(isPinned = !conversation.isPinned)
-        }
-        persistAsync()
-    }
-
     fun deleteConversation(id: String) {
         adaptiveMemoryJobs.remove(id)?.cancel()
         mutableState.value.pendingQuestionnaire?.takeIf { it.conversationId == id }?.let { pending ->
@@ -659,15 +637,6 @@ class IosAppController(
             }
             persist()
         }
-    }
-
-    fun toggleSearch(enabled: Boolean) {
-        saveSearch(
-            provider = mutableState.value.search.provider,
-            enabled = enabled,
-            resultSize = mutableState.value.search.resultSize,
-            apiKey = "",
-        )
     }
 
     fun clearSearchApiKey() {
@@ -1196,30 +1165,14 @@ class IosAppController(
                 memories = selectedMemories,
                 includeToolGuide = snapshot.assistant.memoryMode != IosMemoryMode.OFF,
             )
-            val injections = resolvePromptInjections(
-                assistant = snapshot.assistant,
-                skills = snapshot.skills,
-                lorebooks = snapshot.lorebooks,
-                recentMessages = conversation.messages + userMessage,
-            )
-            val beforeSystem = injections[IosInjectionPosition.BEFORE_SYSTEM].orEmpty().joinToString("\n\n")
-            val afterSystem = injections[IosInjectionPosition.AFTER_SYSTEM].orEmpty().joinToString("\n\n")
-            val afterMemory = injections[IosInjectionPosition.AFTER_MEMORY].orEmpty().joinToString("\n\n")
-            val beforeMessages = injections[IosInjectionPosition.BEFORE_MESSAGES].orEmpty().joinToString("\n\n")
-
             val stableSystemPrompt = buildList {
-                if (beforeSystem.isNotBlank()) add(beforeSystem)
                 snapshot.assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
-                if (afterSystem.isNotBlank()) add(afterSystem)
                 if (snapshot.assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) {
                     add(memoryPrompt)
                 }
-                if (afterMemory.isNotBlank()) add(afterMemory)
             }.joinToString("\n\n")
-            val systemMessages = buildList {
-                if (stableSystemPrompt.isNotBlank()) add(UIMessage.system(stableSystemPrompt))
-                if (beforeMessages.isNotBlank()) add(UIMessage.system(beforeMessages))
-            }
+            val systemMessages = stableSystemPrompt.takeIf(String::isNotBlank)
+                ?.let { listOf(UIMessage.system(it)) }.orEmpty()
             val requestUserMessage = if (
                 snapshot.assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
                 snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE
@@ -1235,8 +1188,7 @@ class IosAppController(
             try {
                 val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
                     buildMemoryTools(snapshot.assistant) +
-                    buildLocalTools(snapshot.assistant, conversation.id) +
-                    buildMcpTools(snapshot.mcpServers)
+                    buildLocalTools(snapshot.assistant, conversation.id)
                 val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, requestMessages) }.trim()
                 val providerRequestMessages = systemMessages +
                     toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
@@ -1273,70 +1225,6 @@ class IosAppController(
                 generationJob = null
             }
         }
-    }
-
-    fun deleteTurn(turnStartIndex: Int, turnEndIndex: Int) {
-        val conversation = mutableState.value.selectedConversation ?: return
-        updateConversation(conversation.id) { current ->
-            val newMessages = current.messages.toMutableList()
-            val validEnd = turnEndIndex.coerceAtMost(newMessages.lastIndex)
-            if (turnStartIndex in newMessages.indices && turnStartIndex <= validEnd) {
-                for (i in validEnd downTo turnStartIndex) {
-                    if (i in newMessages.indices) newMessages.removeAt(i)
-                }
-            }
-            current.copy(messages = newMessages)
-        }
-        scope.launch { persist() }
-    }
-
-    fun editMessage(index: Int, newText: String) {
-        val conversation = mutableState.value.selectedConversation ?: return
-        updateConversation(conversation.id) { current ->
-            val newMessages = current.messages.toMutableList()
-            if (index in newMessages.indices) {
-                val msg = newMessages[index]
-                val newParts = msg.parts.map { part ->
-                    if (part is UIMessagePart.Text) UIMessagePart.Text(newText) else part
-                }
-                newMessages[index] = msg.copy(parts = newParts)
-            }
-            current.copy(messages = newMessages)
-        }
-        scope.launch { persist() }
-    }
-
-    fun forkConversation(upToMessageIndex: Int) {
-        val snapshot = mutableState.value
-        val conversation = snapshot.selectedConversation ?: return
-        val forkMessages = conversation.messages.take((upToMessageIndex + 1).coerceAtMost(conversation.messages.size))
-        val newConv = IosConversation(
-            id = Uuid.random().toString(),
-            assistantId = conversation.assistantId,
-            title = "Fork: ${conversation.title}",
-            messages = forkMessages,
-        )
-        mutableState.update {
-            it.copy(
-                conversations = listOf(newConv) + it.conversations,
-                selectedConversationId = newConv.id,
-            )
-        }
-        scope.launch { persist() }
-    }
-
-    fun regenerate() {
-        val snapshot = mutableState.value
-        val conversation = snapshot.selectedConversation ?: return
-        if (snapshot.generating) return
-        val lastAssistantIdx = conversation.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
-        if (lastAssistantIdx == -1) return
-        val userPrompt = conversation.messages.take(lastAssistantIdx).lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty()
-        updateConversation(conversation.id) { current ->
-            current.copy(messages = current.messages.take(lastAssistantIdx))
-        }
-        scope.launch { persist() }
-        send(userPrompt)
     }
 
     private fun updateConversation(id: String, transform: (IosConversation) -> IosConversation) {
@@ -2707,324 +2595,6 @@ class IosAppController(
         return secureStore.readString(searchApiKeyName(preferences.provider)).isNullOrBlank().not()
     }
 
-    // Skills Management
-    fun saveSkill(skill: IosSkill) {
-        mutableState.update { current ->
-            val index = current.skills.indexOfFirst { it.id == skill.id }
-            val updated = if (index >= 0) {
-                current.skills.toMutableList().apply { set(index, skill) }
-            } else {
-                current.skills + skill
-            }
-            current.copy(skills = updated)
-        }
-        persistAsync()
-    }
-
-    fun deleteSkill(id: String) {
-        mutableState.update { current ->
-            current.copy(skills = current.skills.filterNot { it.id == id })
-        }
-        persistAsync()
-    }
-
-    fun toggleSkill(id: String, enabled: Boolean) {
-        mutableState.update { current ->
-            current.copy(skills = current.skills.map { if (it.id == id) it.copy(enabled = enabled) else it })
-        }
-        persistAsync()
-    }
-
-    // Lorebooks Management
-    fun saveLorebook(lorebook: IosLorebook) {
-        mutableState.update { current ->
-            val index = current.lorebooks.indexOfFirst { it.id == lorebook.id }
-            val updated = if (index >= 0) {
-                current.lorebooks.toMutableList().apply { set(index, lorebook) }
-            } else {
-                current.lorebooks + lorebook
-            }
-            current.copy(lorebooks = updated)
-        }
-        persistAsync()
-    }
-
-    fun deleteLorebook(id: String) {
-        mutableState.update { current ->
-            current.copy(lorebooks = current.lorebooks.filterNot { it.id == id })
-        }
-        persistAsync()
-    }
-
-    fun toggleLorebook(id: String, enabled: Boolean) {
-        mutableState.update { current ->
-            current.copy(lorebooks = current.lorebooks.map { if (it.id == id) it.copy(enabled = enabled) else it })
-        }
-        persistAsync()
-    }
-
-    fun saveLorebookEntry(lorebookId: String, entry: IosLorebookEntry) {
-        mutableState.update { current ->
-            val updated = current.lorebooks.map { lb ->
-                if (lb.id == lorebookId) {
-                    val eIndex = lb.entries.indexOfFirst { it.id == entry.id }
-                    val newEntries = if (eIndex >= 0) {
-                        lb.entries.toMutableList().apply { set(eIndex, entry) }
-                    } else {
-                        lb.entries + entry
-                    }
-                    lb.copy(entries = newEntries)
-                } else lb
-            }
-            current.copy(lorebooks = updated)
-        }
-        persistAsync()
-    }
-
-    fun deleteLorebookEntry(lorebookId: String, entryId: String) {
-        mutableState.update { current ->
-            val updated = current.lorebooks.map { lb ->
-                if (lb.id == lorebookId) {
-                    lb.copy(entries = lb.entries.filterNot { it.id == entryId })
-                } else lb
-            }
-            current.copy(lorebooks = updated)
-        }
-        persistAsync()
-    }
-
-    // MCP Management
-    fun saveMcpServer(server: IosMcpServerConfig) {
-        mutableState.update { current ->
-            val index = current.mcpServers.indexOfFirst { it.id == server.id }
-            val updated = if (index >= 0) {
-                current.mcpServers.toMutableList().apply { set(index, server) }
-            } else {
-                current.mcpServers + server
-            }
-            current.copy(mcpServers = updated)
-        }
-        persistAsync()
-    }
-
-    fun deleteMcpServer(id: String) {
-        mutableState.update { current ->
-            current.copy(mcpServers = current.mcpServers.filterNot { it.id == id })
-        }
-        persistAsync()
-    }
-
-    fun toggleMcpServer(id: String, enabled: Boolean) {
-        mutableState.update { current ->
-            current.copy(mcpServers = current.mcpServers.map {
-                if (it.id == id) it.clone(commonOptions = it.commonOptions.copy(enable = enabled)) else it
-            })
-        }
-        persistAsync()
-    }
-
-    suspend fun refreshMcpTools(server: IosMcpServerConfig): Result<List<IosMcpTool>> = runCatching {
-        val payload = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", Uuid.random().toString())
-            put("method", "tools/list")
-            put("params", buildJsonObject {})
-        }
-        val headers = (server.commonOptions.headers + listOf("Content-Type" to "application/json")).toMap()
-        val response = httpClient.execute(
-            PlatformHttpRequest(
-                method = "POST",
-                url = server.url,
-                headers = headers,
-                body = payload.toString().encodeToByteArray(),
-            )
-        )
-        val jsonRoot = json.parseToJsonElement(response.body.decodeToString()).jsonObject
-        val resultObj = jsonRoot["result"]?.jsonObject
-        val toolsArray = resultObj?.get("tools")?.jsonArray
-        val discovered: List<IosMcpTool> = toolsArray?.mapNotNull { elem ->
-            val obj = elem.jsonObject
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val desc = obj["description"]?.jsonPrimitive?.contentOrNull
-            IosMcpTool(enable = true, name = name, description = desc, inputSchema = obj["inputSchema"])
-        }.orEmpty()
-        val updated = server.clone(
-            commonOptions = server.commonOptions.copy(tools = discovered)
-        )
-        saveMcpServer(updated)
-        discovered
-    }
-
-    fun toggleMcpTool(serverId: String, toolName: String, enabled: Boolean) {
-        mutableState.update { current ->
-            val updated = current.mcpServers.map { server ->
-                if (server.id == serverId) {
-                    val newTools = server.commonOptions.tools.map { t ->
-                        if (t.name == toolName) t.copy(enable = enabled) else t
-                    }
-                    server.clone(commonOptions = server.commonOptions.copy(tools = newTools))
-                } else server
-            }
-            current.copy(mcpServers = updated)
-        }
-        persistAsync()
-    }
-
-    // WebDAV and Backups
-    fun updateWebDavConfig(config: IosWebDavConfig) {
-        mutableState.update { it.copy(webDavConfig = config) }
-        persistAsync()
-    }
-
-    suspend fun testWebDav(config: IosWebDavConfig = mutableState.value.webDavConfig): Result<Unit> =
-        IosBackupManager.testWebDav(httpClient, config)
-
-    suspend fun listWebDavBackups(config: IosWebDavConfig = mutableState.value.webDavConfig): Result<List<IosWebDavBackupItem>> =
-        IosBackupManager.listWebDavBackups(httpClient, config)
-
-    suspend fun backupToWebDav(config: IosWebDavConfig = mutableState.value.webDavConfig): Result<Unit> =
-        IosBackupManager.backupToWebDav(httpClient, config, mutableState.value)
-
-    suspend fun restoreFromWebDav(config: IosWebDavConfig, href: String): Result<IosRestoreResult> = runCatching {
-        val (newState, result) = IosBackupManager.restoreFromWebDav(httpClient, config, href, mutableState.value).getOrThrow()
-        mutableState.value = newState
-        persist()
-        result
-    }
-
-    fun exportBackupArchive(): ByteArray =
-        IosBackupManager.createBackupArchive(mutableState.value)
-
-    suspend fun restoreBackupArchive(bytes: ByteArray): Result<IosRestoreResult> = runCatching {
-        val (newState, result) = IosBackupManager.restore(bytes, mutableState.value)
-        mutableState.value = newState
-        persist()
-        result
-    }
-
-    suspend fun restoreFromPickedFile(picked: PlatformPickedFile): Result<IosRestoreResult> {
-        val bytes = fileStore.readBytes(picked.storagePath)
-            ?: return Result.failure(IllegalStateException("Could not read backup file"))
-        return restoreBackupArchive(bytes)
-    }
-
-    suspend fun exportBackupToFile(): Result<PlatformPickedFile> = runCatching {
-        val bytes = exportBackupArchive()
-        val name = "LastChat_backup_${Clock.System.now().toEpochMilliseconds()}.zip"
-        val path = "backups/$name"
-        fileStore.writeBytes(path, bytes)
-        val localUrl = fileStore.localUrl(path) ?: ""
-        PlatformPickedFile(
-            storagePath = path,
-            localUrl = localUrl,
-            displayName = name,
-            mimeType = "application/zip",
-            kind = PlatformPickedFileKind.Document,
-        )
-    }
-
-    private fun resolvePromptInjections(
-        assistant: IosAssistantPreferences,
-        skills: List<IosSkill>,
-        lorebooks: List<IosLorebook>,
-        recentMessages: List<UIMessage>,
-    ): Map<IosInjectionPosition, List<String>> {
-        val map = mutableMapOf<IosInjectionPosition, MutableList<String>>()
-
-        // Skills
-        skills.filter { it.enabled && (it.alwaysEnabled || it.availableForAllAssistants || it.availableAssistantIds.contains(assistant.id)) }
-            .forEach { skill ->
-                if (skill.instructions.isNotBlank()) {
-                    map.getOrPut(skill.injectionPosition) { mutableListOf() }.add(skill.instructions)
-                }
-            }
-
-        // Lorebooks
-        lorebooks.filter { it.enabled }.forEach { lb ->
-            lb.entries.filter { it.enabled }.forEach { entry ->
-                if (entry.prompt.isBlank()) return@forEach
-                val triggered = when (entry.activationType) {
-                    IosLorebookActivationType.ALWAYS -> true
-                    IosLorebookActivationType.KEYWORDS -> {
-                        val messagesToScan = recentMessages.takeLast(entry.scanDepth).joinToString(" ") { it.toContentText() }
-                        entry.keywords.any { kw ->
-                            if (kw.isBlank()) false
-                            else if (entry.useRegex) {
-                                runCatching {
-                                    Regex(kw, if (entry.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE))
-                                        .containsMatchIn(messagesToScan)
-                                }.getOrDefault(false)
-                            } else {
-                                messagesToScan.contains(kw, ignoreCase = !entry.caseSensitive)
-                            }
-                        }
-                    }
-                    IosLorebookActivationType.RAG -> false
-                }
-                if (triggered) {
-                    map.getOrPut(entry.injectionPosition) { mutableListOf() }.add(entry.prompt)
-                }
-            }
-        }
-        return map
-    }
-
-    private suspend fun buildMcpTools(servers: List<IosMcpServerConfig>): List<Tool> {
-        return servers.filter { it.commonOptions.enable }.flatMap { server ->
-            server.commonOptions.tools.filter { it.enable }.map { mcpTool ->
-                Tool(
-                    name = mcpTool.name,
-                    description = mcpTool.description ?: "MCP Tool: ${mcpTool.name}",
-                    parameters = {
-                        mcpTool.inputSchema?.let { schemaElement ->
-                            runCatching {
-                                json.decodeFromJsonElement(InputSchema.serializer(), schemaElement)
-                            }.getOrNull()
-                        } ?: InputSchema.Obj(properties = buildJsonObject {}, required = emptyList())
-                    },
-                    execute = { arguments ->
-                        executeMcpToolCall(server, mcpTool.name, arguments)
-                    }
-                )
-            }
-        }
-    }
-
-    private suspend fun executeMcpToolCall(
-        server: IosMcpServerConfig,
-        toolName: String,
-        arguments: JsonElement,
-    ): JsonElement {
-        val payload = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", Uuid.random().toString())
-            put("method", "tools/call")
-            put("params", buildJsonObject {
-                put("name", toolName)
-                put("arguments", arguments)
-            })
-        }
-        val headers = (server.commonOptions.headers + listOf("Content-Type" to "application/json")).toMap()
-        val response = httpClient.execute(
-            PlatformHttpRequest(
-                method = "POST",
-                url = server.url,
-                headers = headers,
-                body = payload.toString().encodeToByteArray(),
-            )
-        )
-        val respText = response.body.decodeToString()
-        return runCatching {
-            val root = json.parseToJsonElement(respText).jsonObject
-            root["result"] ?: root
-        }.getOrElse {
-            buildJsonObject {
-                put("status", response.statusCode)
-                put("output", respText)
-            }
-        }
-    }
-
     private fun persistAsync() {
         scope.launch { persist() }
     }
@@ -3041,10 +2611,6 @@ class IosAppController(
             selectedAssistantId = snapshot.selectedAssistantId,
             search = snapshot.search,
             memories = snapshot.memories,
-            skills = snapshot.skills,
-            lorebooks = snapshot.lorebooks,
-            mcpServers = snapshot.mcpServers,
-            webDavConfig = snapshot.webDavConfig,
             tts = snapshot.tts,
             imageGeneration = snapshot.imageGeneration,
             generatedImages = snapshot.generatedImages,
@@ -3174,10 +2740,6 @@ private data class IosStoredState(
     val selectedAssistantId: String? = null,
     val search: IosSearchPreferences = IosSearchPreferences(),
     val memories: List<IosMemoryRecord> = emptyList(),
-    val skills: List<IosSkill> = emptyList(),
-    val lorebooks: List<IosLorebook> = emptyList(),
-    val mcpServers: List<IosMcpServerConfig> = emptyList(),
-    val webDavConfig: IosWebDavConfig = IosWebDavConfig(),
     val tts: IosTtsPreferences = IosTtsPreferences(),
     val imageGeneration: IosImageGenerationPreferences = IosImageGenerationPreferences(),
     val generatedImages: List<IosGeneratedImage> = emptyList(),

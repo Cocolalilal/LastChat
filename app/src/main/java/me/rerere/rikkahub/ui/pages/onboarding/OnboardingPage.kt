@@ -153,8 +153,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
 
     fun finishToChat() {
         navController.navigate(Screen.Chat(Uuid.random().toString())) {
-            popUpTo<Screen.Setup> { inclusive = true }
-            launchSingleTop = true
+            popUpTo(0) { inclusive = true }
         }
     }
 
@@ -192,7 +191,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
         }
     }
 
-    BackHandler(enabled = pageHistory.size > 1) {
+    BackHandler(enabled = true) {
         handleBack()
     }
 
@@ -606,22 +605,20 @@ private fun IntroRipple(progress: Float) {
         colors.forEachIndexed { index, color ->
             val localProgress = (progress - index * 0.06f).coerceIn(0f, 1f)
             val visibleAlpha = if (localProgress <= 0.01f) 0f else (1f - localProgress).coerceIn(0f, 1f)
-            if (visibleAlpha > 0.01f) {
-                Box(
-                    modifier = Modifier
-                        .size((72 + index * 18).dp)
-                        .graphicsLayer {
-                            scaleX = 0.72f + localProgress * (3.8f + index * 0.55f)
-                            scaleY = 0.34f + localProgress * (1.28f + index * 0.22f)
-                            rotationZ = (index * 17f) - 12f + localProgress * (8f - index * 3f)
-                            alpha = visibleAlpha * (0.28f - index * 0.035f)
-                            translationY = (34 + index * 3).dp.toPx()
-                        }
-                        .blur((12 + index * 4).dp)
-                        .clip(RoundedCornerShape(percent = 46 - index * 5))
-                        .background(color)
-                )
-            }
+            Box(
+                modifier = Modifier
+                    .size((72 + index * 18).dp)
+                    .graphicsLayer {
+                        scaleX = 0.72f + localProgress * (3.8f + index * 0.55f)
+                        scaleY = 0.34f + localProgress * (1.28f + index * 0.22f)
+                        rotationZ = (index * 17f) - 12f + localProgress * (8f - index * 3f)
+                        alpha = visibleAlpha * (0.28f - index * 0.035f)
+                        translationY = (34 + index * 3).dp.toPx()
+                    }
+                    .blur((18 + index * 5).dp)
+                    .clip(RoundedCornerShape(percent = 46 - index * 5))
+                    .background(color)
+            )
         }
     }
 }

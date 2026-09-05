@@ -83,14 +83,6 @@ esac
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
 
-
-if [ -z "" ] && [ -d "/Volumes/SamsungSSD/toolchains/jdk-17/Contents/Home" ]; then
-    JAVA_HOME="/Volumes/SamsungSSD/toolchains/jdk-17/Contents/Home"
-fi
-if [ -d "/Volumes/SamsungSSD/toolchains/node-v22/bin" ]; then
-    export PATH="/Volumes/SamsungSSD/toolchains/node-v22/bin:$PATH"
-fi
-
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
     if [ -x "$JAVA_HOME/jre/sh/java" ] ; then

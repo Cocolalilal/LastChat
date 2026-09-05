@@ -50,9 +50,11 @@ private final class ScheduledMessageBackgroundTasks {
         MainViewControllerKt.InstallIosScheduledMessageBackgroundScheduler(
             schedule: { [weak self] epochMs in
                 self?.schedule(earliestBeginEpochMs: epochMs.int64Value)
+                return KotlinUnit()
             },
             cancel: { [weak self] in
                 self?.cancel()
+                return KotlinUnit()
             }
         )
     }
@@ -87,6 +89,7 @@ private final class ScheduledMessageBackgroundTasks {
         task.expirationHandler = { finish(false) }
         MainViewControllerKt.RunIosScheduledMessageBackgroundMaintenance { success in
             finish(success.boolValue)
+            return KotlinUnit()
         }
     }
 }
@@ -106,9 +109,11 @@ private final class AdaptiveMemoryBackgroundTasks {
         MainViewControllerKt.InstallIosAdaptiveMemoryBackgroundScheduler(
             schedule: { [weak self] epochMs in
                 self?.schedule(earliestBeginEpochMs: epochMs.int64Value)
+                return KotlinUnit()
             },
             cancel: { [weak self] in
                 self?.cancel()
+                return KotlinUnit()
             }
         )
     }
@@ -143,6 +148,7 @@ private final class AdaptiveMemoryBackgroundTasks {
         task.expirationHandler = { finish(false) }
         MainViewControllerKt.RunIosAdaptiveMemoryBackgroundMaintenance { success in
             finish(success.boolValue)
+            return KotlinUnit()
         }
     }
 }

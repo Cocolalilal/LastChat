@@ -22,8 +22,6 @@
     <string>34</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>CADisableMinimumFrameDurationOnPhone</key>
-    <true/>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
         <string>lastchat.rikkafork.cocolal.ios.memory.refresh</string>

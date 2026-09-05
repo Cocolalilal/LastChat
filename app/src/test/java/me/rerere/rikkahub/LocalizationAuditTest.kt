@@ -49,6 +49,9 @@ class LocalizationAuditTest {
             }
 
         val failures = buildList {
+            if (missingKeys.isNotEmpty()) {
+                add("Missing keys (${missingKeys.size}): ${missingKeys.joinToString(", ")}")
+            }
             if (placeholderMismatches.isNotEmpty()) {
                 add(
                     "Placeholder mismatches (${placeholderMismatches.size}): ${
