@@ -94,6 +94,8 @@ enum class IosColorMode { SYSTEM, LIGHT, DARK }
 data class IosAppearancePreferences(
     val themeId: String = "ios",
     val colorMode: IosColorMode = IosColorMode.SYSTEM,
+    val amoledBlack: Boolean = false,
+    val useDynamicColor: Boolean = false,
     val usePhoneSystemFont: Boolean = false,
     val showAssistantBubbles: Boolean = true,
     val fontSizeRatio: Float = 1.0f,
@@ -111,8 +113,8 @@ data class IosRpStyleRule(
 @Serializable
 data class IosAssistantPreferences(
     val id: String = Uuid.random().toString(),
-    val name: String = "Assistant",
-    val systemPrompt: String = "",
+    val name: String = "Generical",
+    val systemPrompt: String = "You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one.",
     val memoryMode: IosMemoryMode = IosMemoryMode.OFF,
     val embeddingProviderType: IosProviderType = IosProviderType.OPENAI,
     val embeddingModelId: String = "text-embedding-3-small",
@@ -821,12 +823,19 @@ class IosAppController(
     fun fastForwardTts(ms: Long = 5_000L) = ttsController.fastForward(ms)
     fun setTtsSpeed(speed: Float) = ttsController.setSpeed(speed)
 
-    fun saveAppearance(themeId: String, colorMode: IosColorMode) {
+    fun saveAppearance(
+        themeId: String,
+        colorMode: IosColorMode,
+        amoledBlack: Boolean = false,
+        useDynamicColor: Boolean = false,
+    ) {
         mutableState.update {
             it.copy(
                 appearance = it.appearance.copy(
                     themeId = themeId,
                     colorMode = colorMode,
+                    amoledBlack = amoledBlack,
+                    useDynamicColor = useDynamicColor,
                 )
             )
         }
