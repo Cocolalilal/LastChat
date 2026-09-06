@@ -23,9 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.data.model.versionSelectionIndices
-import me.rerere.rikkahub.data.model.versionSelectionPosition
+import me.rerere.ai.ui.MessageNode
+import me.rerere.ai.ui.versionSelectionIndices
+import me.rerere.ai.ui.versionSelectionPosition
 
 @Composable
 fun ChatMessageBranchSelector(

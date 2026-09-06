@@ -43,6 +43,10 @@ import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.MessageNode
+import me.rerere.ai.ui.currentVersionMessages
+import me.rerere.ai.ui.mergeCurrentVersionMessages
+import me.rerere.ai.ui.toMessageNode
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.common.platform.PlatformFileStore
@@ -217,10 +221,49 @@ data class IosConversation(
     val id: String = Uuid.random().toString(),
     val assistantId: String? = null,
     val title: String = "New chat",
+    /** Legacy flat storage; kept so pre-branching state files decode, then migrated into messageNodes. */
     val messages: List<UIMessage> = emptyList(),
+    val messageNodes: List<MessageNode> = emptyList(),
     val updatedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
     val memoryLastMessageId: String? = null,
-)
+) {
+    /** The visible message path, resolved with the same version-selection semantics as Android. */
+    val currentMessages: List<UIMessage>
+        get() = if (messageNodes.isEmpty()) messages else messageNodes.currentVersionMessages()
+
+    fun migratedToNodes(): IosConversation = copy(
+        messages = emptyList(),
+        messageNodes = messageNodes.ifEmpty { messages.map { it.toMessageNode() } },
+    )
+
+    fun merged(messages: List<UIMessage>): IosConversation = copy(
+        messages = emptyList(),
+        messageNodes = messageNodes.mergeCurrentVersionMessages(messages),
+    )
+
+    fun withoutTrailingBlankAssistant(): IosConversation {
+        val nodes = messageNodes.toMutableList()
+        val lastNode = nodes.lastOrNull() ?: return this
+        val current = lastNode.currentMessage
+        // A blank assistant snapshot is the streaming placeholder; keep tool-call turns intact
+        if (lastNode.role != MessageRole.ASSISTANT || current.toText().isNotBlank() || current.getToolCalls().isNotEmpty()) {
+            return this
+        }
+        return when {
+            lastNode.messages.size == 1 -> copy(messages = emptyList(), messageNodes = nodes.dropLast(1))
+            else -> {
+                val fallback = lastNode.messages.indexOfLast {
+                    it.toText().isNotBlank() && it.getToolCalls().isEmpty()
+                }
+                if (fallback == -1) {
+                    copy(messages = emptyList(), messageNodes = nodes.dropLast(1))
+                } else {
+                    copy(messages = emptyList(), messageNodes = nodes.dropLast(1) + lastNode.copy(selectIndex = fallback))
+                }
+            }
+        }
+    }
+}
 
 @Serializable
 data class IosScheduledMessage(
@@ -362,11 +405,10 @@ class IosAppController(
             val conversations = stored?.conversations.orEmpty()
                 .ifEmpty { listOf(IosConversation(assistantId = selectedAssistantId)) }
                 .map { conversation ->
-                    if (conversation.assistantId == null) {
+                    val withAssistant = if (conversation.assistantId == null) {
                         conversation.copy(assistantId = selectedAssistantId)
-                    } else {
-                        conversation
-                    }
+                    } else conversation
+                    withAssistant.migratedToNodes()
                 }
             val selectedConversationId = stored?.selectedConversationId
                 ?.takeIf { selected -> conversations.any { it.id == selected } }
@@ -1153,11 +1195,10 @@ class IosAppController(
             val assistantMessage = UIMessage.assistant("")
             updateConversation(conversation.id) { current ->
                 current.copy(
-                    title = if (current.messages.isEmpty()) {
+                    title = if (current.currentMessages.isEmpty()) {
                         prompt.ifBlank { snapshot.pendingAttachments.first().displayName }.take(48)
                     } else current.title,
-                    messages = current.messages + userMessage + assistantMessage,
-                )
+                ).merged(current.currentMessages + userMessage + assistantMessage)
             }
             mutableState.update {
                 it.copy(generating = true, pendingAttachments = emptyList(), error = null)
@@ -1190,7 +1231,7 @@ class IosAppController(
                     },
                 )
             } else userMessage
-            val requestMessages = systemMessages + conversation.messages + requestUserMessage
+            val requestMessages = systemMessages + conversation.currentMessages + requestUserMessage
             var generationSucceeded = false
             try {
                 val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
@@ -1211,12 +1252,7 @@ class IosAppController(
                 generationSucceeded = true
             } catch (cancellation: CancellationException) {
                 updateConversation(conversation.id) { current ->
-                    val last = current.messages.lastOrNull()
-                    if (last?.role == MessageRole.ASSISTANT && last.toText().isBlank()) {
-                        current.copy(messages = current.messages.dropLast(1))
-                    } else {
-                        current
-                    }
+                    current.withoutTrailingBlankAssistant()
                 }
                 throw cancellation
             } catch (failure: Throwable) {
@@ -1244,6 +1280,133 @@ class IosAppController(
         }
     }
 
+    fun updateNodeSelection(conversationId: String, nodeId: String, selectIndex: Int) {
+        updateConversation(conversationId) { current ->
+            current.copy(
+                messages = emptyList(),
+                messageNodes = current.messageNodes.map { node ->
+                    if (node.id.toString() == nodeId) node.copy(selectIndex = selectIndex) else node
+                },
+            )
+        }
+    }
+
+    /**
+     * Regenerates the trailing assistant turn: appends a tagged placeholder version to the
+     * first assistant node of the turn and re-runs the tool loop. The shared version-selection
+     * resolution then shows only the new version while old snapshots stay selectable.
+     */
+    fun regenerateResponse(conversationId: String) {
+        val snapshot = mutableState.value
+        if (snapshot.generating) return
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId } ?: return
+        val preferences = snapshot.provider
+        val nodes = conversation.messageNodes
+        val lastUserIndex = nodes.indexOfLast { it.role == MessageRole.USER }
+        if (lastUserIndex == -1 || lastUserIndex == nodes.lastIndex) return
+        val turnStart = lastUserIndex + 1
+        val firstAssistantOfTurn = nodes.drop(turnStart)
+            .indexOfFirst { it.role == MessageRole.ASSISTANT }
+            .takeIf { it >= 0 }
+            ?.plus(turnStart)
+            ?: return
+        generationJob = scope.launch {
+            val apiKey = secureStore.readString(apiKeyName(preferences.type))
+            if (apiKey.isNullOrBlank()) {
+                mutableState.update { it.copy(error = "Configure an API key in Settings first.") }
+                generationJob = null
+                return@launch
+            }
+            val tag = Uuid.random().toString()
+            updateConversation(conversationId) { current ->
+                val currentNodes = current.messageNodes.toMutableList()
+                val node = currentNodes.getOrNull(firstAssistantOfTurn)
+                    ?: return@updateConversation current
+                val placeholder = UIMessage.assistant("").copy(versionTag = tag)
+                currentNodes[firstAssistantOfTurn] = node.copy(
+                    messages = node.messages + placeholder,
+                    selectIndex = node.messages.size,
+                )
+                current.copy(messages = emptyList(), messageNodes = currentNodes)
+            }
+            mutableState.update { it.copy(generating = true, error = null) }
+            persist()
+            var generationSucceeded = false
+            try {
+                val history = mutableState.value.conversations
+                    .firstOrNull { it.id == conversationId }
+                    ?.messageNodes.orEmpty()
+                    .take(lastUserIndex + 1)
+                    .currentVersionMessages()
+                val assistant = snapshot.assistant
+                val prompt = history.lastOrNull { it.role == MessageRole.USER }
+                    ?.toText().orEmpty()
+                val selectedMemories = runCatching {
+                    selectMemories(assistant, prompt)
+                }.getOrElse { emptyList() }
+                val memoryPrompt = buildMemoryPrompt(
+                    memories = selectedMemories,
+                    includeToolGuide = assistant.memoryMode != IosMemoryMode.OFF,
+                )
+                val systemMessages = buildList {
+                    assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
+                    if (assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) {
+                        add(memoryPrompt)
+                    }
+                }.joinToString("\n\n")
+                    .takeIf(String::isNotBlank)
+                    ?.let { listOf(UIMessage.system(it)) }.orEmpty()
+                val requestMessages = if (
+                    assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
+                    assistant.memoryMode == IosMemoryMode.ADAPTIVE
+                ) {
+                    history.mapIndexed { index, message ->
+                        if (index == history.lastIndex && message.role == MessageRole.USER) {
+                            message.copy(
+                                parts = if (memoryPrompt.isBlank()) message.parts else {
+                                    listOf(UIMessagePart.Text("<system>\n$memoryPrompt\n</system>\n\n")) + message.parts
+                                },
+                            )
+                        } else message
+                    }
+                } else history
+                val model = Model(modelId = preferences.modelId, displayName = preferences.modelId)
+                val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
+                    buildMemoryTools(assistant) +
+                    buildLocalTools(assistant, conversationId)
+                val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, requestMessages) }.trim()
+                val providerRequestMessages = systemMessages +
+                    toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
+                    requestMessages
+                runProviderToolLoop(
+                    preferences,
+                    apiKey,
+                    model,
+                    conversationId,
+                    tools,
+                    providerRequestMessages,
+                )
+                generationSucceeded = true
+            } catch (cancellation: CancellationException) {
+                updateConversation(conversationId) { current ->
+                    current.withoutTrailingBlankAssistant()
+                }
+                throw cancellation
+            } catch (failure: Throwable) {
+                mutableState.update {
+                    it.copy(error = failure.message ?: "Generation failed")
+                }
+            } finally {
+                mutableState.update { it.copy(generating = false) }
+                persist()
+                if (generationSucceeded && snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE) {
+                    scheduleAdaptiveMemory(conversationId)
+                }
+                generationJob = null
+            }
+        }
+    }
+
     private suspend fun runProviderToolLoop(
         preferences: IosProviderPreferences,
         apiKey: String,
@@ -1258,10 +1421,10 @@ class IosAppController(
         while (true) {
             providerFlow(preferences, apiKey, model, providerMessages, tools).collect { chunk ->
                 updateConversation(conversationId) { current ->
-                    val currentMessages = current.messages
+                    val currentMessages = current.currentMessages
                     val last = currentMessages.lastOrNull()
-                    if (last?.role != MessageRole.ASSISTANT) current else current.copy(
-                        messages = currentMessages.dropLast(1) + (last + chunk),
+                    if (last?.role != MessageRole.ASSISTANT) current else current.merged(
+                        currentMessages.dropLast(1) + (last + chunk),
                     )
                 }
                 val now = Clock.System.now().toEpochMilliseconds()
@@ -1272,7 +1435,7 @@ class IosAppController(
             }
             val assistantResponse = mutableState.value.conversations
                 .firstOrNull { it.id == conversationId }
-                ?.messages
+                ?.currentMessages
                 ?.lastOrNull()
                 ?: break
             val toolCalls = assistantResponse.getToolCalls()
@@ -1302,7 +1465,7 @@ class IosAppController(
             }
             val toolMessage = UIMessage(role = MessageRole.TOOL, parts = results)
             updateConversation(conversationId) { current ->
-                current.copy(messages = current.messages + toolMessage + UIMessage.assistant(""))
+                current.merged(current.currentMessages + toolMessage + UIMessage.assistant(""))
             }
             providerMessages = providerMessages + assistantResponse + toolMessage
             persist()
@@ -1434,14 +1597,14 @@ class IosAppController(
             return@withLock
         }
 
-        val history = conversation.messages
+        val history = conversation.currentMessages
             .asSequence()
             .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
             .filter { it.toContentText().isNotBlank() }
             .toList()
             .takeLast(10)
             .joinToString("\n") { message -> "${message.role.name}: ${message.toContentText()}" }
-        val lastUserText = conversation.messages.lastOrNull { it.role == MessageRole.USER }
+        val lastUserText = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }
             ?.toContentText().orEmpty()
         val memoryContext = if (lastUserText.isBlank()) {
             "None"
@@ -1532,7 +1695,7 @@ class IosAppController(
         val snapshot = mutableState.value
         val conversation = snapshot.conversations.firstOrNull { it.id == pending.conversationId } ?: return
         val assistant = snapshot.assistants.firstOrNull { it.id == conversation.assistantId } ?: return
-        val toolCall = conversation.messages.asSequence()
+        val toolCall = conversation.currentMessages.asSequence()
             .flatMap { it.getToolCalls().asSequence() }
             .firstOrNull { it.toolCallId == pending.toolCallId && it.toolName == "ask_user" }
             ?: return
@@ -1551,7 +1714,7 @@ class IosAppController(
             ),
         )
         updateConversation(conversation.id) { current ->
-            current.copy(messages = current.messages + toolMessage + UIMessage.assistant(""))
+            current.merged(current.currentMessages + toolMessage + UIMessage.assistant(""))
         }
         mutableState.update { it.copy(generating = true, pendingQuestionnaire = null, error = null) }
         persist()
@@ -1565,7 +1728,7 @@ class IosAppController(
                 val systemMessages = assistant.systemPrompt.takeIf(String::isNotBlank)
                     ?.let { listOf(UIMessage.system(it)) }.orEmpty()
                 val storedMessages = mutableState.value.conversations
-                    .first { it.id == conversation.id }.messages.dropLast(1)
+                    .first { it.id == conversation.id }.currentMessages.dropLast(1)
                 val model = Model(preferences.modelId, preferences.modelId)
                 val toolGuide = tools.joinToString("\n") {
                     it.systemPrompt(model, systemMessages + storedMessages)
@@ -1594,7 +1757,7 @@ class IosAppController(
     }
 
     private fun pendingAdaptiveMessages(conversation: IosConversation): List<UIMessage> {
-        val messages = conversation.messages.filter { message ->
+        val messages = conversation.currentMessages.filter { message ->
             (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
                 message.toContentText().isNotBlank()
         }

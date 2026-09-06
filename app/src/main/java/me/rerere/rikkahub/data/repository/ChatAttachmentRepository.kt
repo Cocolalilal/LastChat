@@ -33,7 +33,7 @@ import me.rerere.rikkahub.data.model.ChatAttachmentOcrStatus
 import me.rerere.rikkahub.data.model.ChatAttachmentState
 import me.rerere.rikkahub.data.model.ChatStorageSettings
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.data.model.buildChatAttachmentMetadata
 import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
 import me.rerere.rikkahub.data.model.chatAttachmentId

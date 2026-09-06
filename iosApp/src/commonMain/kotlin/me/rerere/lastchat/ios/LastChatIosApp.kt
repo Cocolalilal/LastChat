@@ -82,8 +82,11 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
@@ -131,7 +134,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.versionSelectionIndices
+import me.rerere.ai.ui.versionSelectionPosition
 import me.rerere.common.platform.PlatformFilePicker
 import me.rerere.common.platform.PlatformAttachmentOpener
 import me.rerere.common.platform.PlatformPickedFile
@@ -228,6 +234,8 @@ private data class DisplayMessage(
     val outgoing: Boolean,
     val position: BubblePosition = BubblePosition.SINGLE,
     val parts: List<UIMessagePart> = emptyList(),
+    val branchNode: MessageNode? = null,
+    val canRegenerate: Boolean = false,
 )
 
 @Composable
@@ -316,6 +324,12 @@ fun LastChatIosApp(
                         attachmentOpener = attachmentOpener,
                         onOpenMenu = { scope.launch { drawerState.open() } },
                         onOpenSettings = { route = IosRoute.Settings },
+                        onSelectVersion = { nodeId, index ->
+                            state.selectedConversationId?.let { id ->
+                                controller.updateNodeSelection(id, nodeId, index)
+                            }
+                        },
+                        onRegenerate = { state.selectedConversationId?.let(controller::regenerateResponse) },
                     )
                 }
                 IosRoute.Settings -> SettingsPage(
@@ -385,6 +399,8 @@ private fun ChatPage(
     attachmentOpener: PlatformAttachmentOpener,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSelectVersion: (String, Int) -> Unit,
+    onRegenerate: () -> Unit,
 ) {
     val inputState = remember { TextFieldState() }
     val pendingQuestionnaire = state.pendingQuestionnaire
@@ -412,13 +428,20 @@ private fun ChatPage(
             state.pendingAttachments.filter { attachment -> attachment.kind == kind }
         }
     }
-    val conversationMessages = state.selectedConversation?.messages.orEmpty()
+    val conversationMessages = state.selectedConversation?.currentMessages.orEmpty()
         .filter { message ->
             message.toText().isNotBlank() || message.parts.any {
                 it is UIMessagePart.Image || it is UIMessagePart.Video ||
                     it is UIMessagePart.Audio || it is UIMessagePart.Document
             }
         }
+    val branchNodesByMessageId = remember(state.selectedConversation?.messageNodes) {
+        val nodesByMessageId = mutableMapOf<String, MessageNode>()
+        state.selectedConversation?.messageNodes?.forEach { node ->
+            node.messages.forEach { message -> nodesByMessageId[message.id.toString()] = node }
+        }
+        nodesByMessageId
+    }
     val messages = conversationMessages.mapIndexed { index, message ->
         val rawText = message.toText()
         val markdownImages = GENERATED_MARKDOWN_IMAGE_REGEX.findAll(rawText).map { match ->
@@ -433,11 +456,15 @@ private fun ChatPage(
             !sameAfter -> BubblePosition.LAST
             else -> BubblePosition.MIDDLE
         }
+        val node = branchNodesByMessageId[message.id.toString()]
         DisplayMessage(
             text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
             outgoing = outgoing,
             position = position,
             parts = message.parts + markdownImages,
+            branchNode = if (!outgoing) node else null,
+            canRegenerate = !outgoing && !state.generating &&
+                index == conversationMessages.lastIndex && node != null,
         )
     }
     fun send() {
@@ -663,18 +690,31 @@ private fun ChatPage(
                 }
             }
             items(messages) { message ->
-                MessageBubble(
-                    message = message,
-                    attachmentOpener = attachmentOpener,
-                    platformHaptics = platformHaptics,
-                    isTtsSpeaking = state.ttsSpeaking,
-                    isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
-                    showAssistantBubbles = state.appearance.showAssistantBubbles,
-                    fontSizeRatio = state.appearance.fontSizeRatio,
-                    rpStyleRules = state.appearance.rpStyleRules,
-                    onSpeak = onSpeak,
-                    onStopSpeaking = onStopSpeaking,
-                )
+                Column {
+                    message.branchNode?.let { node ->
+                        if (node.versionSelectionIndices().size > 1 || message.canRegenerate) {
+                            IosMessageBranchControls(
+                                node = node,
+                                canRegenerate = message.canRegenerate,
+                                platformHaptics = platformHaptics,
+                                onSelect = { index -> onSelectVersion(node.id.toString(), index) },
+                                onRegenerate = onRegenerate,
+                            )
+                        }
+                    }
+                    MessageBubble(
+                        message = message,
+                        attachmentOpener = attachmentOpener,
+                        platformHaptics = platformHaptics,
+                        isTtsSpeaking = state.ttsSpeaking,
+                        isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
+                        showAssistantBubbles = state.appearance.showAssistantBubbles,
+                        fontSizeRatio = state.appearance.fontSizeRatio,
+                        rpStyleRules = state.appearance.rpStyleRules,
+                        onSpeak = onSpeak,
+                        onStopSpeaking = onStopSpeaking,
+                    )
+                }
             }
             if (state.generating) item {
                 GroupedMessageBubble(
@@ -1353,7 +1393,7 @@ private fun StatisticsPage(
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
-    val messages = state.conversations.flatMap { it.messages }
+    val messages = state.conversations.flatMap { it.currentMessages }
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val heatmapData = remember(messages) {
         messages
@@ -3728,6 +3768,73 @@ private fun IosRpStyleRuleDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+@Composable
+private fun IosMessageBranchControls(
+    node: MessageNode,
+    canRegenerate: Boolean,
+    platformHaptics: PlatformHaptics,
+    onSelect: (Int) -> Unit,
+    onRegenerate: () -> Unit,
+) {
+    val versionIndices = remember(node.messages) { node.versionSelectionIndices() }
+    val position = remember(node.messages, node.selectIndex) { node.versionSelectionPosition() }
+    if (versionIndices.size <= 1 && !canRegenerate) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (versionIndices.size > 1 && position >= 0) {
+            val canGoPrev = position > 0
+            val canGoNext = position < versionIndices.lastIndex
+            IconButton(
+                onClick = {
+                    versionIndices.getOrNull(position - 1)?.let(onSelect)
+                    platformHaptics.perform(PlatformHapticPattern.Tick)
+                },
+                enabled = canGoPrev,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.ChevronLeft,
+                    contentDescription = "Previous version",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Text("${position + 1}/${versionIndices.size}", style = MaterialTheme.typography.bodySmall)
+            IconButton(
+                onClick = {
+                    versionIndices.getOrNull(position + 1)?.let(onSelect)
+                    platformHaptics.perform(PlatformHapticPattern.Tick)
+                },
+                enabled = canGoNext,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = "Next version",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        if (canRegenerate) {
+            IconButton(
+                onClick = {
+                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                    onRegenerate()
+                },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = "Regenerate",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable

@@ -42,7 +42,7 @@ import me.rerere.rikkahub.data.db.entity.MemorySourceV3Entity
 import me.rerere.rikkahub.data.db.entity.MemorySourceV3FtsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject

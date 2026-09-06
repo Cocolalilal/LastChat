@@ -618,10 +618,10 @@ class RouteActivity : ComponentActivity() {
                         // Append to existing conversation
                         val updatedMessages = targetConvo.messageNodes.toMutableList()
                         if (userMessage != null) {
-                            updatedMessages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                            updatedMessages.add(me.rerere.ai.ui.MessageNode.of(userMessage))
                         }
                         if (assistantMessage != null) {
-                            updatedMessages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                            updatedMessages.add(me.rerere.ai.ui.MessageNode.of(assistantMessage))
                         }
                         val updated = targetConvo.copy(messageNodes = updatedMessages)
                         chatService.saveConversation(targetConvo.id, updated)
@@ -629,12 +629,12 @@ class RouteActivity : ComponentActivity() {
                     } else {
                         // No existing conversation — create a new one
                         val conversationId = Uuid.random()
-                        val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
+                        val messages = mutableListOf<me.rerere.ai.ui.MessageNode>()
                         if (userMessage != null) {
-                            messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                            messages.add(me.rerere.ai.ui.MessageNode.of(userMessage))
                         }
                         if (assistantMessage != null) {
-                            messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                            messages.add(me.rerere.ai.ui.MessageNode.of(assistantMessage))
                         }
                         if (messages.isNotEmpty()) {
                             val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
