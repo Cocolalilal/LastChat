@@ -3,9 +3,11 @@ package me.rerere.lastchat.ios
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
+import me.rerere.lastchat.ios.backup.IosBackupDataImporter
 
 class IosConversationBranchingTest {
     @Test
@@ -176,5 +178,95 @@ class IosConversationBranchingTest {
         assertEquals("Chat", fork.title)
         assertEquals(conversation.assistantId, fork.assistantId)
         assertEquals(listOf("Hi", "Answer"), fork.currentMessages.map { it.toText() })
+    }
+
+    @Test
+    fun mapConversationRowDecodesAndroidNodesJson() {
+        val warnings = mutableListOf<String>()
+        val conversation = IosBackupDataImporter.mapConversationRow(
+            row = mapOf(
+                "id" to "99999999-9999-9999-9999-999999999999",
+                "assistant_id" to "88888888-8888-8888-8888-888888888888",
+                "title" to "Backed up chat",
+                "nodes" to """
+                    [
+                      {"messages":[{"role":"USER","parts":[{"type":"text","text":"Hi"}],"id":"11111111-2222-3333-4444-555555555555","createdAt":0}]},
+                      {"messages":[{"role":"ASSISTANT","parts":[{"type":"text","text":"Hello"}],"id":"22222222-3333-4444-5555-666666666666","createdAt":0}]}
+                    ]
+                """.trimIndent(),
+                "update_at" to "1700000100000",
+                "is_pinned" to "1",
+            ),
+            warnings = warnings,
+        )
+
+        assertNotNull(conversation)
+        assertEquals("Backed up chat", conversation.title)
+        assertTrue(conversation.isPinned)
+        assertEquals(2, conversation.messageNodes.size)
+        assertEquals(
+            listOf("Hi", "Hello"),
+            conversation.currentMessages.map { it.toText() },
+        )
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test
+    fun mapConversationRowReportsUnparsableNodes() {
+        val warnings = mutableListOf<String>()
+        val conversation = IosBackupDataImporter.mapConversationRow(
+            row = mapOf(
+                "id" to "99999999-9999-9999-9999-999999999999",
+                "nodes" to "not-json",
+            ),
+            warnings = warnings,
+        )
+
+        assertNull(conversation)
+        assertEquals(1, warnings.size)
+    }
+
+    @Test
+    fun mapMemoryRowImportsContentWithoutEmbeddings() {
+        val memory = IosBackupDataImporter.mapMemoryRow(
+            mapOf(
+                "id" to "42",
+                "assistant_id" to "88888888-8888-8888-8888-888888888888",
+                "content" to "User likes tea",
+                "type" to "0",
+                "created_at" to "1700000000000",
+            ),
+        )
+
+        assertNotNull(memory)
+        assertEquals(42, memory.id)
+        assertEquals("User likes tea", memory.content)
+        assertEquals(0, memory.type)
+        assertNull(memory.embeddings)
+        assertNull(memory.embeddingModelId)
+    }
+
+    @Test
+    fun androidAttachmentRemapResolvesStagedManagedFiles() {
+        val staged = mutableMapOf<String, String>()
+        val remap = { url: String ->
+            IosBackupDataImporter.androidAttachmentRemap(url) { storagePath ->
+                staged[storagePath]
+            }
+        }
+        staged["upload/photo.jpg"] = "file:///container/upload/photo.jpg"
+        staged["images/pic name.png"] = "file:///container/images/pic name.png"
+
+        assertEquals(
+            "file:///container/upload/photo.jpg",
+            remap("file:///data/user/0/me.rerere.rikkahub/files/upload/photo.jpg"),
+        )
+        assertEquals(
+            "file:///container/images/pic name.png",
+            remap("file:///data/user/0/me.rerere.rikkahub/files/images/pic%20name.png"),
+        )
+        assertNull(remap("https://example.com/image.png"))
+        assertNull(remap("file:///data/user/0/me.rerere.rikkahub/files/workspaces/root/file.txt"))
+        assertNull(remap("file:///data/user/0/me.rerere.rikkahub/files/upload/missing.jpg"))
     }
 }

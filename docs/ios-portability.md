@@ -377,9 +377,16 @@ Current iOS app status:
   Settings → Backup → Restore from file: providers (OpenAI, Google, and
   Claude best match per type, with API keys moved into Keychain),
   assistants (memory modes, embedding provider resolution, local tools),
-  appearance, search services, and TTS providers. The restore reports
-  exactly what was imported and what is not yet portable; database
-  (conversations) and managed files are reported as not yet imported;
+  appearance, search services, and TTS providers. When the backup
+  includes the database, conversations are imported losslessly into the
+  shared MessageNode model (including message versions) together with
+  memories and the managed attachment/media files, whose URLs are
+  remapped to the iOS container; a pure-Kotlin read-only SQLite file
+  reader (table B-trees, records, overflow chains, rowid aliases)
+  parses the backup database with no platform dependency. Memory
+  embeddings are re-computed on iOS, and usage statistics plus
+  memory-system internals (episodes, claims) are reported as not
+  imported;
 - device, Apple Silicon simulator, and Intel simulator Kotlin targets compile;
 - SwiftUI hosts the Compose root controller without rewriting the UI in Swift;
 - UIKit haptics implement the existing shared `PlatformHaptics` contract;

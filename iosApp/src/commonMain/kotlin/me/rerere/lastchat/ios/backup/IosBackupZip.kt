@@ -25,11 +25,13 @@ internal object IosBackupZip {
     private const val METHOD_STORE = 0
     private const val METHOD_DEFLATE = 8
 
-    /** Returns null when the archive is not a readable zip file. */
+    /** Returns null when the archive is not a readable zip file. Entries match [wanted]
+     *  exactly or [namePredicate] when provided. */
     fun read(
         archive: ByteArray,
         wanted: Set<String>,
         maxEntryBytes: Int = 64 * 1024 * 1024,
+        namePredicate: ((String) -> Boolean)? = null,
     ): List<IosZipEntry>? {
         val eocd = findEndOfCentralDirectory(archive) ?: return null
         val entryCount = readU16(archive, eocd + 10)
@@ -56,7 +58,10 @@ internal object IosBackupZip {
                 .decodeToString()
                 .replace('\\', '/')
                 .trimStart('/')
-            if (name in wanted && !name.endsWith("/") && uncompressedSize <= maxEntryBytes.toLong()) {
+            if ((name in wanted || namePredicate?.invoke(name) == true) &&
+                !name.endsWith("/") &&
+                uncompressedSize <= maxEntryBytes.toLong()
+            ) {
                 val data = extractEntry(
                     archive = archive,
                     localOffset = localOffset,

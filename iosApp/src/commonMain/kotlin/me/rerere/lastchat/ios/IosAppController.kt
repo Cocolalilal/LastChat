@@ -57,10 +57,14 @@ import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.SecureSettingsStore
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_MANIFEST_ENTRY
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_SETTINGS_ENTRY
+import me.rerere.lastchat.ios.backup.IosBackupDataImporter
 import me.rerere.lastchat.ios.backup.IosBackupImporter
 import me.rerere.lastchat.ios.backup.IosBackupImportPlan
 import me.rerere.lastchat.ios.backup.IosBackupImportReport
+import me.rerere.lastchat.ios.backup.IosBackupManifest
 import me.rerere.lastchat.ios.backup.IosBackupZip
+import me.rerere.lastchat.ios.backup.IosSqliteFile
+import me.rerere.lastchat.ios.backup.IosZipEntry
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
@@ -224,6 +228,7 @@ data class IosConversation(
     /** Legacy flat storage; kept so pre-branching state files decode, then migrated into messageNodes. */
     val messages: List<UIMessage> = emptyList(),
     val messageNodes: List<MessageNode> = emptyList(),
+    val isPinned: Boolean = false,
     val updatedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
     val memoryLastMessageId: String? = null,
 ) {
@@ -2807,7 +2812,15 @@ class IosAppController(
     private suspend fun restoreAndroidBackupInternal(archive: ByteArray): IosBackupImportReport {
         val entries = IosBackupZip.read(
             archive = archive,
-            wanted = setOf(IOS_BACKUP_SETTINGS_ENTRY, IOS_BACKUP_MANIFEST_ENTRY),
+            wanted = setOf(
+                IOS_BACKUP_SETTINGS_ENTRY,
+                IOS_BACKUP_MANIFEST_ENTRY,
+            ) + IOS_BACKUP_DATABASE_ENTRIES,
+            maxEntryBytes = DATA_RESTORE_MAX_ENTRY_BYTES,
+            namePredicate = { name ->
+                val dir = name.substringBefore('/')
+                dir in IosBackupDataImporter.FILE_DIRS && name.substringAfter('/', "").isNotEmpty()
+            },
         ) ?: error("The selected file is not a valid backup archive")
         val settingsEntry = entries.firstOrNull { it.name == IOS_BACKUP_SETTINGS_ENTRY && it.data != null }
             ?: error("The archive does not contain settings.json and is not a LastChat backup")
@@ -2822,17 +2835,97 @@ class IosAppController(
         val plan = IosBackupImporter.buildImportPlan(settings)
         applyIosBackupImportPlan(plan)
         val report = plan.toReport(manifest)
+        val (dataApplied, dataSkipped) = restoreAndroidBackupData(entries, manifest)
         return report.copy(
-            skipped = buildList {
-                addAll(report.skipped)
-                if (manifest?.includesDatabase == true) {
-                    add("Database (conversations, memories) import is not supported yet")
-                }
-                if (manifest?.includesFiles == true) {
-                    add("Attachment and media files import is not supported yet")
-                }
-            },
+            applied = report.applied + dataApplied,
+            skipped = report.skipped + dataSkipped,
         )
+    }
+
+    /** Imports the database tier of the backup: conversations, memories, and managed
+     *  attachment/media files. Returns applied lines and honest skip notes. */
+    private suspend fun restoreAndroidBackupData(
+        entries: List<IosZipEntry>,
+        manifest: IosBackupManifest?,
+    ): Pair<List<String>, List<String>> {
+        if (manifest?.includesDatabase != true) return emptyList<String>() to emptyList()
+        val databaseEntry = entries.firstOrNull {
+            it.name in IOS_BACKUP_DATABASE_ENTRIES && it.data != null && it.data.isNotEmpty()
+        }
+        val databaseData = databaseEntry?.data
+        if (databaseData == null || databaseData.isEmpty()) {
+            return emptyList<String>() to listOf(
+                "Backup manifest lists a database but it was not found in the archive",
+            )
+        }
+
+        val warnings = mutableListOf<String>()
+        val conversations = mutableListOf<IosConversation>()
+        val memories = mutableListOf<IosMemoryRecord>()
+        runCatching {
+            val database = IosSqliteFile(databaseData)
+            database.readTable(IosBackupDataImporter.CONVERSATIONS_TABLE) { row ->
+                IosBackupDataImporter.mapConversationRow(row, warnings)?.let(conversations::add)
+            }
+            database.readTable(IosBackupDataImporter.MEMORIES_TABLE) { row ->
+                IosBackupDataImporter.mapMemoryRow(row)?.let(memories::add)
+            }
+        }.getOrElse {
+            return emptyList<String>() to listOf(
+                "The backup database could not be read as a SQLite database",
+            )
+        }
+
+        var extractedFiles = 0
+        entries.forEach { entry ->
+            val data = entry.data ?: return@forEach
+            val dir = entry.name.substringBefore('/')
+            if (dir in IosBackupDataImporter.FILE_DIRS && entry.name.substringAfter('/', "").isNotEmpty()) {
+                fileStore.writeBytes(entry.name, data)
+                extractedFiles++
+            }
+        }
+
+        val remapped = conversations.map { conversation ->
+            IosBackupDataImporter.withRemappedAttachmentUrls(conversation) { url ->
+                IosBackupDataImporter.androidAttachmentRemap(url) { storagePath ->
+                    fileStore.localUrl(storagePath)
+                }
+            }
+        }
+
+        mutableState.update { current ->
+            val importedConversations = remapped.ifEmpty {
+                listOf(IosConversation(assistantId = current.selectedAssistantId))
+            }
+            current.copy(
+                conversations = importedConversations,
+                selectedConversationId = importedConversations
+                    .maxByOrNull { it.updatedAtEpochMs }?.id,
+                memories = memories,
+            )
+        }
+        persist()
+
+        val applied = mutableListOf<String>()
+        if (conversations.isNotEmpty()) {
+            applied += "Database: imported ${conversations.size} conversations (including message versions)"
+        }
+        if (memories.isNotEmpty()) {
+            applied += "Database: imported ${memories.size} memories"
+        }
+        if (extractedFiles > 0) {
+            applied += "Files: extracted $extractedFiles attachment/media files"
+        }
+        val skipped = buildList {
+            addAll(warnings)
+            if (conversations.isEmpty()) {
+                add("The backup database contained no readable conversations")
+            }
+            add("Memory embeddings are re-computed on iOS (Android stores them in a different format)")
+            add("Usage statistics, daily activity, and memory-system internals (episodes, claims) are not imported")
+        }
+        return applied to skipped
     }
 
     private suspend fun applyIosBackupImportPlan(plan: IosBackupImportPlan) {
@@ -2933,6 +3026,8 @@ class IosAppController(
         const val STATE_PATH = "state/ios-app.json"
         const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
         const val MAX_TOOL_STEPS = 256
+        const val DATA_RESTORE_MAX_ENTRY_BYTES = 256 * 1024 * 1024
+        val IOS_BACKUP_DATABASE_ENTRIES = listOf("rikka_hub.db", "rikka_hub")
         const val ADAPTIVE_MEMORY_MESSAGE_THRESHOLD = 8
         const val ADAPTIVE_MEMORY_INACTIVITY_MS = 10 * 60 * 1_000L
         const val MAX_PENDING_MEMORY_MESSAGES = 20
