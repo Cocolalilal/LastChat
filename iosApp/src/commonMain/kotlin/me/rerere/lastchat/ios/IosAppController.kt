@@ -1291,6 +1291,35 @@ class IosAppController(
         }
     }
 
+    /** Branches the node containing [messageId] with a new version carrying the edited parts. */
+    fun editMessage(conversationId: String, messageId: String, parts: List<UIMessagePart>) {
+        if (parts.isEmpty()) return
+        updateConversation(conversationId) { current ->
+            current.withEditedMessage(messageId, parts)
+        }
+        persistAsync()
+    }
+
+    fun deleteMessage(conversationId: String, messageId: String) {
+        updateConversation(conversationId) { current ->
+            current.withDeletedMessage(messageId)
+        }
+        persistAsync()
+    }
+
+    fun forkConversation(conversationId: String, messageId: String) {
+        val conversation = mutableState.value.conversations
+            .firstOrNull { it.id == conversationId } ?: return
+        val fork = buildIosForkConversation(conversation, messageId) ?: return
+        mutableState.update { current ->
+            current.copy(
+                conversations = current.conversations + fork,
+                selectedConversationId = fork.id,
+            )
+        }
+        persistAsync()
+    }
+
     /**
      * Regenerates the trailing assistant turn: appends a tagged placeholder version to the
      * first assistant node of the turn and re-runs the tool loop. The shared version-selection
@@ -2998,6 +3027,149 @@ internal fun buildAskUserAnswerPayload(
         }
     }))
     put("dismissed", dismissed)
+}
+
+/** Branches the node containing [messageId] with a new version carrying the edited parts,
+ *  mirroring Android ChatService.editMessage. */
+internal fun IosConversation.withEditedMessage(
+    messageId: String,
+    parts: List<UIMessagePart>,
+): IosConversation = copy(
+    messages = emptyList(),
+    messageNodes = messageNodes.map { node ->
+        val original = node.messages.find { it.id.toString() == messageId } ?: return@map node
+        node.copy(
+            messages = node.messages + UIMessage(
+                role = original.role,
+                parts = parts,
+                versionTag = original.versionTag,
+            ),
+            selectIndex = node.messages.size,
+        )
+    },
+)
+
+/** Mirrors Android ChatService.deleteMessage: user messages truncate, assistant/tool
+ *  messages remove themselves plus the adjacent tool-call/result chain. */
+internal fun IosConversation.withDeletedMessage(messageId: String): IosConversation {
+    val message = messageNodes
+        .flatMap { it.messages }
+        .firstOrNull { it.id.toString() == messageId }
+        ?: return this
+    val nodes = messageNodes
+
+    if (message.role == MessageRole.USER) {
+        val nodeIndex = nodes.indexOfFirst { it.messages.any { it.id.toString() == messageId } }
+        if (nodeIndex == -1) return this
+        val node = nodes[nodeIndex]
+        return if (node.messages.size > 1) {
+            val remaining = node.messages.filter { it.id.toString() != messageId }
+            val updatedNode = node.copy(
+                messages = remaining,
+                selectIndex = if (node.selectIndex >= remaining.size) remaining.lastIndex else node.selectIndex,
+            )
+            copy(
+                messages = emptyList(),
+                messageNodes = nodes.subList(0, nodeIndex) + listOf(updatedNode),
+            )
+        } else {
+            copy(messages = emptyList(), messageNodes = nodes.subList(0, nodeIndex))
+        }
+    }
+
+    val currentMessages = currentMessages
+    val viewIndex = currentMessages.indexOfFirst { it.id.toString() == messageId }
+    val related = if (viewIndex == -1) {
+        emptyList()
+    } else {
+        buildList {
+            for (i in viewIndex - 1 downTo 0) {
+                val candidate = currentMessages[i]
+                if (candidate.getToolCalls().isNotEmpty() || candidate.getToolResults().isNotEmpty()) {
+                    add(candidate)
+                } else break
+            }
+            for (i in viewIndex + 1 until currentMessages.size) {
+                val candidate = currentMessages[i]
+                if (candidate.getToolCalls().isNotEmpty() || candidate.getToolResults().isNotEmpty()) {
+                    add(candidate)
+                } else break
+            }
+        }
+    }
+    var result = withDeletedNodeMessage(message)
+    related.forEach { relatedMessage ->
+        val target = result.messageNodes
+            .flatMap { it.messages }
+            .firstOrNull { it.id == relatedMessage.id }
+            ?: return@forEach
+        result = result.withDeletedNodeMessage(target)
+    }
+    return result
+}
+
+/** Mirrors Android ChatService.deleteMessageInternal. */
+private fun IosConversation.withDeletedNodeMessage(message: UIMessage): IosConversation {
+    val nodeIndex = messageNodes
+        .indexOfFirst { it.messages.any { it.id == message.id } }
+    if (nodeIndex == -1) return this
+    val nodes = messageNodes
+    val node = nodes[nodeIndex]
+    val deleteVersionTag = message.versionTag
+    val turnStartIndex = nodes.subList(0, nodeIndex + 1)
+        .indexOfLast { it.role == MessageRole.USER } + 1
+    val turnEndIndex = nodes.subList(nodeIndex, nodes.size)
+        .indexOfFirst { it.role == MessageRole.USER }
+        .let { if (it == -1) nodes.size else nodeIndex + it }
+
+    val updatedNodes = if (node.messages.size == 1 && deleteVersionTag == null) {
+        nodes.filterIndexed { index, _ -> index != nodeIndex }
+    } else {
+        nodes.mapIndexedNotNull { index, messageNode ->
+            val canDeleteByVersionTag = deleteVersionTag != null &&
+                index in turnStartIndex until turnEndIndex &&
+                messageNode.role != MessageRole.USER
+            val remaining = messageNode.messages.filter { currentMessage ->
+                if (canDeleteByVersionTag && currentMessage.versionTag == deleteVersionTag) {
+                    false
+                } else {
+                    currentMessage.id != message.id
+                }
+            }
+            if (remaining.isEmpty()) {
+                null
+            } else {
+                messageNode.copy(
+                    messages = remaining,
+                    selectIndex = if (messageNode.selectIndex >= remaining.size) {
+                        remaining.lastIndex
+                    } else {
+                        messageNode.selectIndex
+                    },
+                )
+            }
+        }
+    }
+    return copy(messages = emptyList(), messageNodes = updatedNodes)
+}
+
+/** Mirrors Android buildForkConversationSnapshot: copies nodes up to and including the
+ *  target message's node into a new conversation. Attachment URLs are shared, which is
+ *  safe because iOS never garbage-collects attachment files. */
+internal fun buildIosForkConversation(
+    conversation: IosConversation,
+    messageId: String,
+): IosConversation? {
+    val targetIndex = conversation.messageNodes
+        .indexOfFirst { it.messages.any { it.id.toString() == messageId } }
+    if (targetIndex == -1) return null
+    return IosConversation(
+        assistantId = conversation.assistantId,
+        title = conversation.title,
+        messageNodes = conversation.messageNodes.subList(0, targetIndex + 1).map { node ->
+            node.copy(id = Uuid.random())
+        },
+    )
 }
 
 @Serializable

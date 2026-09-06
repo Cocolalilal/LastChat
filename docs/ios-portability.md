@@ -367,9 +367,12 @@ Current iOS app status:
 - Conversations use Android's `MessageNode` branching model. The node
   layer (`MessageNode`, version-tag turn resolution, and the message
   merge) is source-shared with Android from `:ai`, the iOS state file
-  migrates legacy flat conversations on load, the chat shows the same
-  version selector, and the trailing assistant turn can be regenerated
-  into a selectable new version;
+  migrates legacy flat conversations on load, and the chat renders the
+  same per-message action row as Android: copy, regenerate, edit
+  (branching the node like ChatService.editMessage), fork-from-message,
+  and delete (user messages truncate, assistant messages remove their
+  adjacent tool-call chain like ChatService.deleteMessage), plus the
+  version selector for multi-version nodes;
 - Android backup archives can be restored for configuration through
   Settings → Backup → Restore from file: providers (OpenAI, Google, and
   Claude best match per type, with API keys moved into Keychain),

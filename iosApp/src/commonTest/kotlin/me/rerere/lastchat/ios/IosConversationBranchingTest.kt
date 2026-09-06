@@ -2,6 +2,7 @@ package me.rerere.lastchat.ios
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
@@ -77,5 +78,103 @@ class IosConversationBranchingTest {
         )
 
         assertEquals(listOf("Hi", "Regenerated"), conversation.currentMessages.map { it.toText() })
+    }
+
+    @Test
+    fun withEditedMessageBranchesNodeAndKeepsVersionTag() {
+        val user = UIMessage.user("Original question")
+        val assistant = UIMessage.assistant("Answer")
+        val conversation = IosConversation(
+            messageNodes = listOf(MessageNode.of(user), MessageNode.of(assistant)),
+        )
+
+        val edited = conversation.withEditedMessage(
+            user.id.toString(),
+            listOf(me.rerere.ai.ui.UIMessagePart.Text("Edited question")),
+        )
+
+        val userNode = edited.messageNodes[0]
+        assertEquals(2, userNode.messages.size)
+        assertEquals(1, userNode.selectIndex)
+        assertEquals("Edited question", userNode.currentMessage.toText())
+        assertEquals(1, edited.messageNodes[1].messages.size)
+        assertEquals(listOf("Edited question", "Answer"), edited.currentMessages.map { it.toText() })
+    }
+
+    @Test
+    fun withDeletedMessageTruncatesFromUserNode() {
+        val user1 = UIMessage.user("First")
+        val user2 = UIMessage.user("Second")
+        val conversation = IosConversation(
+            messageNodes = listOf(
+                MessageNode.of(user1),
+                MessageNode.of(UIMessage.assistant("A")),
+                MessageNode.of(user2),
+                MessageNode.of(UIMessage.assistant("B")),
+            ),
+        )
+
+        val deleted = conversation.withDeletedMessage(user1.id.toString())
+
+        assertTrue(deleted.messageNodes.isEmpty())
+    }
+
+    @Test
+    fun withDeletedMessageRemovesRelatedToolChainForAssistantMessage() {
+        val user = UIMessage.user("Hi")
+        val assistantWithCall = UIMessage.assistant("").copy(
+            parts = listOf(
+                me.rerere.ai.ui.UIMessagePart.ToolCall(
+                    toolCallId = "call-1", toolName = "search_web", arguments = "{}",
+                ),
+            ),
+        )
+        val toolResult = UIMessage(
+            role = me.rerere.ai.core.MessageRole.TOOL,
+            parts = listOf(
+                me.rerere.ai.ui.UIMessagePart.ToolResult(
+                    toolCallId = "call-1",
+                    toolName = "search_web",
+                    content = kotlinx.serialization.json.JsonPrimitive("{}"),
+                    arguments = kotlinx.serialization.json.JsonPrimitive("{}"),
+                ),
+            ),
+        )
+        val assistantFinal = UIMessage.assistant("Done")
+        val conversation = IosConversation(
+            messageNodes = listOf(
+                MessageNode.of(user),
+                MessageNode.of(assistantWithCall),
+                MessageNode.of(toolResult),
+                MessageNode.of(assistantFinal),
+            ),
+        )
+
+        val deleted = conversation.withDeletedMessage(assistantFinal.id.toString())
+
+        assertEquals(1, deleted.messageNodes.size)
+        assertEquals("Hi", deleted.currentMessages.single().toText())
+    }
+
+    @Test
+    fun buildIosForkConversationCopiesNodesUpToMessage() {
+        val user = UIMessage.user("Hi")
+        val assistant = UIMessage.assistant("Answer")
+        val after = UIMessage.user("More")
+        val conversation = IosConversation(
+            title = "Chat",
+            messageNodes = listOf(
+                MessageNode.of(user),
+                MessageNode.of(assistant),
+                MessageNode.of(after),
+            ),
+        )
+
+        val fork = assertNotNull(buildIosForkConversation(conversation, assistant.id.toString()))
+
+        assertTrue(fork.id != conversation.id)
+        assertEquals("Chat", fork.title)
+        assertEquals(conversation.assistantId, fork.assistantId)
+        assertEquals(listOf("Hi", "Answer"), fork.currentMessages.map { it.toText() })
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -78,6 +79,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -85,6 +87,9 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.FileUpload
@@ -138,6 +143,10 @@ import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.versionSelectionIndices
 import me.rerere.ai.ui.versionSelectionPosition
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.vector.ImageVector
 import me.rerere.common.platform.PlatformFilePicker
 import me.rerere.common.platform.PlatformAttachmentOpener
 import me.rerere.common.platform.PlatformPickedFile
@@ -234,6 +243,7 @@ private data class DisplayMessage(
     val outgoing: Boolean,
     val position: BubblePosition = BubblePosition.SINGLE,
     val parts: List<UIMessagePart> = emptyList(),
+    val messageId: String? = null,
     val branchNode: MessageNode? = null,
     val canRegenerate: Boolean = false,
 )
@@ -330,6 +340,21 @@ fun LastChatIosApp(
                             }
                         },
                         onRegenerate = { state.selectedConversationId?.let(controller::regenerateResponse) },
+                        onEditMessage = { messageId, parts ->
+                            state.selectedConversationId?.let { id ->
+                                controller.editMessage(id, messageId, parts)
+                            }
+                        },
+                        onDeleteMessage = { messageId ->
+                            state.selectedConversationId?.let { id ->
+                                controller.deleteMessage(id, messageId)
+                            }
+                        },
+                        onForkMessage = { messageId ->
+                            state.selectedConversationId?.let { id ->
+                                controller.forkConversation(id, messageId)
+                            }
+                        },
                     )
                 }
                 IosRoute.Settings -> SettingsPage(
@@ -401,8 +426,14 @@ private fun ChatPage(
     onOpenSettings: () -> Unit,
     onSelectVersion: (String, Int) -> Unit,
     onRegenerate: () -> Unit,
+    onEditMessage: (String, List<UIMessagePart>) -> Unit,
+    onDeleteMessage: (String) -> Unit,
+    onForkMessage: (String) -> Unit,
 ) {
     val inputState = remember { TextFieldState() }
+    val clipboard = LocalClipboardManager.current
+    var editingMessageId by remember { mutableStateOf<String?>(null) }
+    var editingText by remember { mutableStateOf("") }
     val pendingQuestionnaire = state.pendingQuestionnaire
     var questionnaireIndex by remember(pendingQuestionnaire?.toolCallId) { mutableStateOf(0) }
     var questionnaireSelectedOptions by remember(pendingQuestionnaire?.toolCallId) {
@@ -462,6 +493,7 @@ private fun ChatPage(
             outgoing = outgoing,
             position = position,
             parts = message.parts + markdownImages,
+            messageId = message.id.toString(),
             branchNode = if (!outgoing) node else null,
             canRegenerate = !outgoing && !state.generating &&
                 index == conversationMessages.lastIndex && node != null,
@@ -691,17 +723,6 @@ private fun ChatPage(
             }
             items(messages) { message ->
                 Column {
-                    message.branchNode?.let { node ->
-                        if (node.versionSelectionIndices().size > 1 || message.canRegenerate) {
-                            IosMessageBranchControls(
-                                node = node,
-                                canRegenerate = message.canRegenerate,
-                                platformHaptics = platformHaptics,
-                                onSelect = { index -> onSelectVersion(node.id.toString(), index) },
-                                onRegenerate = onRegenerate,
-                            )
-                        }
-                    }
                     MessageBubble(
                         message = message,
                         attachmentOpener = attachmentOpener,
@@ -714,6 +735,25 @@ private fun ChatPage(
                         onSpeak = onSpeak,
                         onStopSpeaking = onStopSpeaking,
                     )
+                    IosMessageActionsRow(
+                        message = message,
+                        clipboard = clipboard,
+                        platformHaptics = platformHaptics,
+                        onEdit = {
+                            message.messageId?.let { id ->
+                                editingMessageId = id
+                                editingText = message.text
+                            }
+                        },
+                        onDelete = { message.messageId?.let(onDeleteMessage) },
+                        onFork = { message.messageId?.let(onForkMessage) },
+                        onSelect = { index ->
+                            message.branchNode?.let { node ->
+                                onSelectVersion(node.id.toString(), index)
+                            }
+                        },
+                        onRegenerate = onRegenerate,
+                    )
                 }
             }
             if (state.generating) item {
@@ -725,6 +765,40 @@ private fun ChatPage(
             state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+    editingMessageId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { editingMessageId = null },
+            title = { Text("Edit message") },
+            text = {
+                TextField(
+                    value = editingText,
+                    onValueChange = { editingText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val parts = buildList {
+                            add(UIMessagePart.Text(editingText))
+                            state.selectedConversation?.messageNodes
+                                ?.flatMap { it.messages }
+                                ?.firstOrNull { it.id.toString() == id }
+                                ?.parts
+                                ?.filter { it !is UIMessagePart.Text }
+                                ?.let { addAll(it) }
+                        }
+                        onEditMessage(id, parts)
+                        editingMessageId = null
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMessageId = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -3771,69 +3845,113 @@ private fun IosRpStyleRuleDialog(
 }
 
 @Composable
-private fun IosMessageBranchControls(
-    node: MessageNode,
-    canRegenerate: Boolean,
+private fun IosMessageActionsRow(
+    message: DisplayMessage,
+    clipboard: ClipboardManager,
     platformHaptics: PlatformHaptics,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onFork: () -> Unit,
     onSelect: (Int) -> Unit,
     onRegenerate: () -> Unit,
 ) {
-    val versionIndices = remember(node.messages) { node.versionSelectionIndices() }
-    val position = remember(node.messages, node.selectIndex) { node.versionSelectionPosition() }
-    if (versionIndices.size <= 1 && !canRegenerate) return
+    val node = message.branchNode
+    val versionIndices = node?.let { it.versionSelectionIndices() }.orEmpty()
+    val position = node?.let { it.versionSelectionPosition() } ?: -1
     Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        if (versionIndices.size > 1 && position >= 0) {
-            val canGoPrev = position > 0
-            val canGoNext = position < versionIndices.lastIndex
-            IconButton(
-                onClick = {
-                    versionIndices.getOrNull(position - 1)?.let(onSelect)
-                    platformHaptics.perform(PlatformHapticPattern.Tick)
-                },
-                enabled = canGoPrev,
-                modifier = Modifier.size(28.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.ChevronLeft,
-                    contentDescription = "Previous version",
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Text("${position + 1}/${versionIndices.size}", style = MaterialTheme.typography.bodySmall)
-            IconButton(
-                onClick = {
-                    versionIndices.getOrNull(position + 1)?.let(onSelect)
-                    platformHaptics.perform(PlatformHapticPattern.Tick)
-                },
-                enabled = canGoNext,
-                modifier = Modifier.size(28.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    contentDescription = "Next version",
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        if (canRegenerate) {
-            IconButton(
+        ActionIcon(
+            icon = Icons.Rounded.ContentCopy,
+            contentDescription = "Copy",
+            onClick = {
+                clipboard.setText(AnnotatedString(message.text))
+                platformHaptics.perform(PlatformHapticPattern.Tick)
+            },
+        )
+        if (message.canRegenerate) {
+            ActionIcon(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Regenerate",
                 onClick = {
                     platformHaptics.perform(PlatformHapticPattern.Pop)
                     onRegenerate()
                 },
-                modifier = Modifier.size(28.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.Refresh,
-                    contentDescription = "Regenerate",
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            )
         }
+        if (message.messageId != null) {
+            ActionIcon(
+                icon = Icons.Rounded.Edit,
+                contentDescription = "Edit",
+                onClick = {
+                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                    onEdit()
+                },
+            )
+            ActionIcon(
+                icon = Icons.AutoMirrored.Rounded.CallSplit,
+                contentDescription = "Fork from here",
+                onClick = {
+                    platformHaptics.perform(PlatformHapticPattern.Pop)
+                    onFork()
+                },
+            )
+            ActionIcon(
+                icon = Icons.Rounded.Delete,
+                contentDescription = "Delete",
+                onClick = {
+                    platformHaptics.perform(PlatformHapticPattern.Thud)
+                    onDelete()
+                },
+            )
+        }
+        if (node != null && versionIndices.size > 1 && position >= 0) {
+            Spacer(Modifier.width(4.dp))
+            val canGoPrev = position > 0
+            val canGoNext = position < versionIndices.lastIndex
+            ActionIcon(
+                icon = Icons.Rounded.ChevronLeft,
+                contentDescription = "Previous version",
+                enabled = canGoPrev,
+                onClick = {
+                    versionIndices.getOrNull(position - 1)?.let(onSelect)
+                    platformHaptics.perform(PlatformHapticPattern.Tick)
+                },
+            )
+            Text("${position + 1}/${versionIndices.size}", style = MaterialTheme.typography.bodySmall)
+            ActionIcon(
+                icon = Icons.Rounded.ChevronRight,
+                contentDescription = "Next version",
+                enabled = canGoNext,
+                onClick = {
+                    versionIndices.getOrNull(position + 1)?.let(onSelect)
+                    platformHaptics.perform(PlatformHapticPattern.Tick)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(28.dp)) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(16.dp),
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            },
+        )
     }
 }
 
