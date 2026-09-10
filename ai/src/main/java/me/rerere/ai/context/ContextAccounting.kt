@@ -490,6 +490,7 @@ fun List<UIMessage>.compactToTokenBudget(model: Model, budget: Int): List<UIMess
     while (characterLimit >= 64 && ContextTokenEstimator.messagesTokens(result, model) > budget) {
         val limit = characterLimit
         result = result.map { message ->
+            if (message.role == me.rerere.ai.core.MessageRole.SYSTEM) return@map message
             message.copy(parts = message.parts.map { part ->
                 when (part) {
                     is UIMessagePart.Text -> part.copy(text = compactText(part.text, limit))
@@ -532,8 +533,12 @@ private fun compactText(value: String, maxCharacters: Int): String {
     return value.take(prefix) + marker + value.takeLast(available - prefix)
 }
 
-fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 }
+fun smartInputBudget(
+    model: Model,
+    requestedOutputTokens: Int?,
+    customLimitTokens: Int? = null,
+): Int? {
+    val window = customLimitTokens?.takeIf { it > 0 } ?: model.contextWindowTokens?.takeIf { it > 0 }
     val independentInputLimit = model.maxInputTokens?.takeIf { it > 0 }
     if (window == null && independentInputLimit == null) return null
     val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
@@ -551,6 +556,21 @@ fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
         .coerceAtMost((rawInputCeiling / 4).coerceAtLeast(1))
         .coerceAtMost((rawInputCeiling - 1).coerceAtLeast(0))
     return (rawInputCeiling - safetyMargin).coerceAtLeast(0)
+}
+
+/**
+ * Calculates the absolute minimum safe floor for a custom context limit slider.
+ * Prevents setting impossible limits that starve system prompts, tools, or responses.
+ */
+fun calculateMinSafeFloorTokens(
+    model: Model,
+    systemPromptTokens: Int = 0,
+    toolDefinitionTokens: Int = 0,
+    requestedOutputTokens: Int? = null,
+): Int {
+    val reserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: 1_024
+    val fixed = (systemPromptTokens + toolDefinitionTokens + reserve).coerceAtLeast(0)
+    return maxOf(1_500, fixed + 512)
 }
 
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */

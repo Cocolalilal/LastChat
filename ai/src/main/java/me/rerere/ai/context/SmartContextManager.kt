@@ -18,19 +18,23 @@ fun smartFitContext(
     messageBudgetTokens: Int,
 ): List<UIMessage> {
     val budget = messageBudgetTokens.coerceAtLeast(1)
-    val imageLimit = adaptiveImageLimit(model, budget)
+    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget)
+    val imageLimit = plan.imageLimit
 
     var candidate = limitImages(messages, imageLimit)
     val initialTokens = ContextTokenEstimator.messagesTokens(candidate, model)
     if (initialTokens <= budget) return candidate
 
-    val pressure = initialTokens.toDouble() / budget
-    candidate = compactLowValuePayloads(candidate, aggressive = pressure >= 1.25)
+    candidate = compactLowValuePayloads(
+        candidate,
+        aggressive = plan.pressureTier >= ContextPressureTier.HIGH,
+        receiptify = plan.receiptifyHistoricalTools,
+    )
     if (ContextTokenEstimator.messagesTokens(candidate, model) <= budget) return candidate
 
     val preparedSystem = candidate.filter { it.role == MessageRole.SYSTEM }
     val preparedConversation = candidate.filterNot { it.role == MessageRole.SYSTEM }
-    val minimumRecentCount = minOf(4, preparedConversation.size).coerceAtLeast(1)
+    val minimumRecentCount = minOf(plan.protectedRecentTurns * 2, preparedConversation.size).coerceAtLeast(1)
     val fitted = (preparedConversation.size downTo minimumRecentCount)
         .asSequence()
         .map { size -> preparedSystem + preparedConversation.limitContext(size) }
@@ -68,12 +72,20 @@ fun smartPrepareHistory(
 ): List<UIMessage> {
     if (messages.isEmpty()) return messages
     val budget = availableBudgetTokens.coerceAtLeast(1)
-    val limitedImages = limitImages(messages, adaptiveImageLimit(model, budget))
-    val pressure = ContextTokenEstimator.messagesTokens(limitedImages, model).toDouble() / budget
+    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget)
+    val limitedImages = limitImages(messages, plan.imageLimit)
     return when {
-        pressure < 0.72 -> limitedImages
-        pressure < 1.0 -> compactLowValuePayloads(limitedImages, aggressive = false)
-        else -> compactLowValuePayloads(limitedImages, aggressive = true)
+        plan.pressureTier < ContextPressureTier.NORMAL -> limitedImages
+        plan.pressureTier < ContextPressureTier.HIGH -> compactLowValuePayloads(
+            limitedImages,
+            aggressive = false,
+            receiptify = plan.receiptifyHistoricalTools,
+        )
+        else -> compactLowValuePayloads(
+            limitedImages,
+            aggressive = true,
+            receiptify = plan.receiptifyHistoricalTools,
+        )
     }
 }
 
@@ -93,6 +105,7 @@ fun adaptiveImageLimit(model: Model, inputBudgetTokens: Int): Int {
 private fun compactLowValuePayloads(
     messages: List<UIMessage>,
     aggressive: Boolean,
+    receiptify: Boolean = true,
 ): List<UIMessage> {
     val protectedStart = (messages.size - if (aggressive) 4 else 6).coerceAtLeast(0)
     val lastToolResultIndex = messages.indexOfLast { message ->
@@ -105,11 +118,24 @@ private fun compactLowValuePayloads(
                 is UIMessagePart.ToolResult -> {
                     val isSearch = part.toolName.contains("search", ignoreCase = true)
                     if (aggressive || isSearch || index != lastToolResultIndex) {
+                        val toolName = part.toolName.ifBlank { "tool" }
+                        val receiptText = if (receiptify) {
+                            val rawContent = part.content.toString().trim()
+                            val preview = if (rawContent.length > 96) {
+                                rawContent.take(93).trimEnd() + "…"
+                            } else {
+                                rawContent
+                            }
+                            if (preview.isNotBlank() && !preview.startsWith("[")) {
+                                "[Completed $toolName: $preview]"
+                            } else {
+                                "[Older $toolName result compacted; call/result relationship retained]"
+                            }
+                        } else {
+                            "[Older $toolName result compacted; the call/result relationship is retained]"
+                        }
                         part.copy(
-                            content = JsonPrimitive(
-                                "[Older ${part.toolName.ifBlank { "tool" }} result compacted; " +
-                                    "the call/result relationship is retained]"
-                            ),
+                            content = JsonPrimitive(receiptText),
                             arguments = if (aggressive) JsonPrimitive("{}") else part.arguments,
                         )
                     } else part

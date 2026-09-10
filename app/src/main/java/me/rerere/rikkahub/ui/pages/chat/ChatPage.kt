@@ -49,8 +49,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.AlertDialog
@@ -112,6 +114,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
@@ -134,6 +137,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.context.ContextCountConfidence
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.calculateMinSafeFloorTokens
 import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.context.probableTemporaryTokenReserve
 import me.rerere.ai.context.smartFitContext
@@ -143,6 +147,9 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import kotlin.math.roundToInt
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -2036,6 +2043,12 @@ private fun ChatPageContent(
                         activity = contextManagementActivity,
                         placement = toolbarPlacement,
                         popupScale = popupScale,
+                        model = currentChatModel,
+                        onUpdateModelLimit = { newLimit ->
+                            currentChatModel?.let { model ->
+                                vm.updateModelContextLimit(model.id, newLimit)
+                            }
+                        },
                         onDismissRequest = { showContextUsagePopup = false },
                     )
                 }
@@ -3401,6 +3414,8 @@ private fun ContextUsageOverlay(
     activity: ContextManagementActivity?,
     placement: ChatToolbarPlacement,
     popupScale: Float,
+    model: Model? = null,
+    onUpdateModelLimit: ((Int?) -> Unit)? = null,
     onDismissRequest: () -> Unit,
 ) {
     BackHandler(onBack = onDismissRequest)
@@ -3450,7 +3465,12 @@ private fun ContextUsageOverlay(
                     onClick = {},
                 )
         ) {
-            ContextUsagePopupContent(usage, activity)
+            ContextUsagePopupContent(
+                usage = usage,
+                activity = activity,
+                model = model,
+                onUpdateModelLimit = onUpdateModelLimit,
+            )
         }
     }
 }
@@ -3583,6 +3603,8 @@ private fun ContextMeterButton(
 private fun ContextUsagePopupContent(
     usage: ContextUsageBreakdown,
     activity: ContextManagementActivity?,
+    model: Model? = null,
+    onUpdateModelLimit: ((Int?) -> Unit)? = null,
 ) {
     val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
     val animatedUsed by animateIntAsState(usage.usedTokens, tokenAnimation, label = "context_used_tokens")
@@ -3598,6 +3620,33 @@ private fun ContextUsagePopupContent(
     val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
     val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
     val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
+
+    val haptics = rememberPremiumHaptics()
+    var isEditingLimit by remember { mutableStateOf(false) }
+    val maxCapacityTokens = model?.contextCapacityTokens ?: usage.totalTokens
+    val isCustomLimitActive = model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
+
+    val minSafeFloorTokens = remember(model, usage) {
+        if (model != null) {
+            calculateMinSafeFloorTokens(
+                model = model,
+                systemPromptTokens = usage.systemPromptTokens,
+                toolDefinitionTokens = usage.toolDefinitionTokens,
+            )
+        } else {
+            1_500
+        }
+    }
+
+    var draggedTokens by remember(usage.totalTokens, maxCapacityTokens) {
+        mutableStateOf(usage.totalTokens.coerceIn(minSafeFloorTokens, maxCapacityTokens))
+    }
+    LaunchedEffect(usage.totalTokens, maxCapacityTokens, isEditingLimit) {
+        if (!isEditingLimit) {
+            draggedTokens = usage.totalTokens.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+        }
+    }
+
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val categoryColors = if (isDark) {
         listOf(
@@ -3624,54 +3673,226 @@ private fun ContextUsagePopupContent(
         Triple(stringResource(R.string.context_meter_media), animatedMedia, categoryColors[8]),
     ).filter { it.second > 0 }
     val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-    val animatedAvailable = (animatedTotal - animatedUsed - animatedReserved).coerceAtLeast(0)
-    val remainingPercent = if (animatedTotal <= 0) 100 else
-        ((animatedAvailable.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
+
+    val activeBudgetCeiling = if (isEditingLimit) draggedTokens else animatedTotal
+    val liveBudget = if (model != null && isEditingLimit) {
+        smartInputBudget(model, null, customLimitTokens = activeBudgetCeiling) ?: activeBudgetCeiling
+    } else {
+        activeBudgetCeiling
+    }
+    val liveReserve = (activeBudgetCeiling - liveBudget).coerceAtLeast(0)
+    val effectiveReserved = if (isEditingLimit) liveReserve else animatedReserved
+    val effectiveAvailable = (activeBudgetCeiling - animatedUsed - effectiveReserved).coerceAtLeast(0)
+    val remainingPercent = if (activeBudgetCeiling <= 0) 100 else
+        ((effectiveAvailable.toFloat() / activeBudgetCeiling) * 100).toInt().coerceIn(0, 100)
+
     Column(
         modifier = Modifier.padding(20.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(
-                    R.string.context_meter_used,
-                    compactTokenCount(animatedUsed),
-                    compactTokenCount(animatedTotal),
-                ),
-                style = MaterialTheme.typography.titleMedium,
+            AnimatedContent(
+                targetState = isEditingLimit,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
                 modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(R.string.context_meter_remaining, remainingPercent),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                label = "context_meter_header_text",
+            ) { editing ->
+                if (editing) {
+                    Text(
+                        text = "Target Limit: ${compactTokenCount(draggedTokens)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(
+                            R.string.context_meter_used,
+                            compactTokenCount(animatedUsed),
+                            compactTokenCount(animatedTotal),
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            }
+            AnimatedContent(
+                targetState = isEditingLimit,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                label = "context_meter_sub_text",
+            ) { editing ->
+                if (editing) {
+                    Text(
+                        text = "Floor: ${compactTokenCount(minSafeFloorTokens)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.context_meter_remaining, remainingPercent),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         ) {
-            segments.forEach { (_, value, color) ->
-                Spacer(
-                    Modifier
-                        .weight(value.toFloat().coerceAtLeast(1f))
-                        .fillMaxHeight()
-                        .background(color),
-                )
+            var barWidthPx by remember { mutableFloatStateOf(1f) }
+            val zoomFraction by animateFloatAsState(
+                targetValue = if (isEditingLimit && maxCapacityTokens > 0) {
+                    (draggedTokens.toFloat() / maxCapacityTokens).coerceIn(0.01f, 1f)
+                } else 1f,
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
+                label = "context_limit_zoom",
+            )
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(14.dp)
+                    .onGloballyPositioned { coordinates ->
+                        barWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
+                    }
+                    .then(
+                        if (isEditingLimit) {
+                            Modifier.pointerInput(minSafeFloorTokens, maxCapacityTokens) {
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Selection)
+                                        val fraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                                        val computed = (fraction * maxCapacityTokens).roundToInt()
+                                        draggedTokens = computed.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val fraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
+                                        val computed = (fraction * maxCapacityTokens).roundToInt()
+                                        val clamped = computed.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+                                        if (clamped != draggedTokens) {
+                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
+                                            draggedTokens = clamped
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                    },
+                                )
+                            }
+                        } else Modifier
+                    ),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                // Background Track
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                ) {
+                    // Active content segments
+                    Row(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(zoomFraction)
+                            .clip(RoundedCornerShape(999.dp)),
+                    ) {
+                        segments.forEach { (_, value, color) ->
+                            Spacer(
+                                Modifier
+                                    .weight(value.toFloat().coerceAtLeast(1f))
+                                    .fillMaxHeight()
+                                    .background(color),
+                            )
+                        }
+                        if (effectiveAvailable > 0) {
+                            Spacer(Modifier.weight(effectiveAvailable.toFloat()).fillMaxHeight())
+                        }
+                        if (effectiveReserved > 0) {
+                            Spacer(
+                                Modifier
+                                    .weight(effectiveReserved.toFloat())
+                                    .fillMaxHeight()
+                                    .background(reserveColor),
+                            )
+                        }
+                    }
+
+                    // Ignored / Darkened Region on the right in Edit Mode
+                    if (isEditingLimit && zoomFraction < 0.999f) {
+                        val ignoredColor = if (isDark) Color(0xFF070709) else Color(0xFF18181E)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(1f - zoomFraction)
+                                .align(Alignment.CenterEnd)
+                                .background(ignoredColor)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(topEnd = 999.dp, bottomEnd = 999.dp),
+                                ),
+                        )
+                    }
+                }
+
+                // Draggable thumb indicator (when in edit mode)
+                if (isEditingLimit) {
+                    val density = LocalDensity.current
+                    val thumbOffset = ((zoomFraction * barWidthPx) - with(density) { 3.dp.toPx() }).coerceAtLeast(0f)
+                    Box(
+                        modifier = Modifier
+                            .offset { androidx.compose.ui.unit.IntOffset(thumbOffset.roundToInt(), 0) }
+                            .width(6.dp)
+                            .height(18.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .border(1.dp, MaterialTheme.colorScheme.onPrimary, RoundedCornerShape(999.dp)),
+                    )
+                }
             }
-            if (animatedAvailable > 0) {
-                Spacer(Modifier.weight(animatedAvailable.toFloat()).fillMaxHeight())
-            }
-            if (animatedReserved > 0) {
-                Spacer(
-                    Modifier
-                        .weight(animatedReserved.toFloat())
-                        .fillMaxHeight()
-                        .background(reserveColor)
-                )
+
+            // The Pencil / Close button at the end of the context bar
+            IconButton(
+                onClick = {
+                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                    if (isEditingLimit) {
+                        val newLimit = if (draggedTokens >= maxCapacityTokens) null else draggedTokens
+                        onUpdateModelLimit?.invoke(newLimit)
+                        isEditingLimit = false
+                    } else {
+                        isEditingLimit = true
+                    }
+                },
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(
+                        color = when {
+                            isEditingLimit -> MaterialTheme.colorScheme.surfaceContainerHighest
+                            isCustomLimitActive -> MaterialTheme.colorScheme.primaryContainer
+                            else -> Color.Transparent
+                        },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    ),
+            ) {
+                AnimatedContent(
+                    targetState = isEditingLimit,
+                    transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                    label = "context_limit_edit_toggle",
+                ) { editing ->
+                    Icon(
+                        imageVector = if (editing) androidx.compose.material.icons.Icons.Rounded.Close else androidx.compose.material.icons.Icons.Rounded.Edit,
+                        contentDescription = if (editing) "Commit" else "Edit context limit",
+                        modifier = Modifier.size(15.dp),
+                        tint = when {
+                            editing -> MaterialTheme.colorScheme.onSurface
+                            isCustomLimitActive -> MaterialTheme.colorScheme.onPrimaryContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
         FlowRow(

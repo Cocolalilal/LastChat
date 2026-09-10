@@ -363,6 +363,27 @@ class ChatVM(
         )
     }
 
+    // 更新模型上下文限制
+    fun updateModelContextLimit(modelId: kotlin.uuid.Uuid, customLimitTokens: Int?) {
+        viewModelScope.launch {
+            settingsStore.update { current ->
+                val updatedProviders = current.providers.map { provider ->
+                    if (provider.models.any { it.id == modelId }) {
+                        val targetModel = provider.models.first { it.id == modelId }
+                        val updatedModel = targetModel.copy(
+                            contextWindowTokens = customLimitTokens,
+                            contextLimitSource = if (customLimitTokens != null) me.rerere.ai.provider.ContextLimitSource.MANUAL else null,
+                        )
+                        provider.editModel(updatedModel)
+                    } else {
+                        provider
+                    }
+                }
+                current.copy(providers = updatedProviders)
+            }
+        }
+    }
+
     fun setSelectedAssistant(assistantId: Uuid) {
         viewModelScope.launch {
             settingsStore.updateAssistant(assistantId)
