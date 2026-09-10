@@ -35,20 +35,14 @@ internal data class IosBackupManifest(
     val sharedPrefsStores: List<String> = emptyList(),
 )
 
-/** Credential for one of the iOS chat provider slots, sourced from an Android provider. */
-internal data class IosProviderCredential(
-    val type: IosProviderType,
-    val baseUrl: String,
-    val modelId: String?,
-    val apiKey: String,
-)
-
+/** A provider sourced from an Android backup; secrets go to per-provider Keychain entries. */
 internal data class IosBackupImportPlan(
     val appearance: IosAppearancePreferences? = null,
     val assistants: List<IosAssistantPreferences> = emptyList(),
     val selectedAssistantId: String? = null,
-    val providerCredentials: List<IosProviderCredential> = emptyList(),
-    val selectedProviderType: IosProviderType? = null,
+    val providers: List<ProviderSetting> = emptyList(),
+    val providerApiKeys: Map<String, String> = emptyMap(),
+    val selectedChatModelId: String? = null,
     val search: IosSearchPreferences? = null,
     val searchApiKeys: Map<IosSearchProviderType, String> = emptyMap(),
     val tts: IosTtsPreferences? = null,
@@ -104,18 +98,21 @@ internal object IosBackupImporter {
             warnings += "Chat model: the Android selection could not be matched on iOS; kept the iOS default"
         }
 
+        val providerImport = buildProviderImport(
+            providers = providers,
+            selectedChatModelId = selectedChatModelId,
+            applied = applied,
+            warnings = warnings,
+            skipped = skipped,
+        )
+
         return IosBackupImportPlan(
             appearance = mapAppearance(settings, warnings),
             assistants = mapAssistants(settings, providers, warnings, skipped),
             selectedAssistantId = settings.string("assistantId")?.takeIf(String::isNotBlank),
-            providerCredentials = buildProviderCredentials(
-                providers = providers,
-                selectedChatModelId = selectedChatModelId,
-                applied = applied,
-                warnings = warnings,
-                skipped = skipped,
-            ),
-            selectedProviderType = selectedModel?.first,
+            providers = providerImport.providers,
+            providerApiKeys = providerImport.apiKeys,
+            selectedChatModelId = selectedChatModelId?.toString(),
             search = mapSearch(settings, searchServices, applied, warnings, skipped),
             searchApiKeys = collectSearchApiKeys(searchServices),
             tts = mapTts(settings, ttsProviders, applied, warnings, skipped),
@@ -171,57 +168,46 @@ internal object IosBackupImporter {
         }
     }
 
-    private fun buildProviderCredentials(
+    private data class ProviderImport(
+        val providers: List<ProviderSetting>,
+        val apiKeys: Map<String, String>,
+    )
+
+    /** Imports every iOS-capable provider with its models preserved, keys going to
+     *  per-provider Keychain entries. Unsupported provider types are reported. */
+    private fun buildProviderImport(
         providers: List<ProviderSetting>,
         selectedChatModelId: Uuid?,
         applied: MutableList<String>,
         warnings: MutableList<String>,
         skipped: MutableList<String>,
-    ): List<IosProviderCredential> = IosProviderType.entries.mapNotNull { type ->
-        val candidates = providers.filter { provider ->
-            chatProviderType(provider) == type && provider.enabled
-        }
-        candidates.filterIsInstance<ProviderSetting.Google>()
-            .filter { it.vertexAI }
-            .forEach { provider ->
-                skipped += "Google provider \"${provider.name}\" uses Vertex AI (not supported on iOS yet)"
+    ): ProviderImport {
+        val usable = mutableListOf<ProviderSetting>()
+        val apiKeys = mutableMapOf<String, String>()
+        var importedKeys = 0
+        providers.forEach { provider ->
+            val type = chatProviderType(provider)
+            when {
+                type == null -> skipped += "Provider \"${provider.name}\" is not supported on iOS"
+                !provider.enabled -> skipped += "Provider \"${provider.name}\" is disabled on Android and was skipped"
+                provider is ProviderSetting.Google && provider.vertexAI ->
+                    skipped += "Google provider \"${provider.name}\" uses Vertex AI (not supported on iOS yet)"
+                else -> {
+                    usable += provider
+                    val apiKey = providerApiKey(provider)
+                    if (apiKey.isNotBlank()) {
+                        apiKeys[provider.id.toString()] = apiKey
+                        importedKeys++
+                    } else {
+                        warnings += "Provider \"${provider.name}\": the backup did not contain an API key"
+                    }
+                }
             }
-        val usable = candidates.filterNot { provider ->
-            provider is ProviderSetting.Google && provider.vertexAI
         }
-        val selected = usable.firstOrNull { provider ->
-            selectedChatModelId != null && provider.models.any { it.id == selectedChatModelId }
-        } ?: usable.firstOrNull() ?: return@mapNotNull null
-        val extraCount = usable.size - 1
-        if (extraCount > 0) {
-            skipped += "$extraCount additional ${type.name.lowercase()} provider(s) (iOS supports one per type for now)"
+        if (usable.isNotEmpty()) {
+            applied += "Providers: imported ${usable.size} providers ($importedKeys with API keys)"
         }
-        val selectedModelId = selectedChatModelId
-            ?.takeIf { uuid -> selected.models.any { it.id == uuid } }
-            ?.let { uuid -> selected.models.first { it.id == uuid }.modelId }
-            ?: selected.models.firstOrNull { it.type == ModelType.CHAT }?.modelId
-        val apiKey = when (selected) {
-            is ProviderSetting.OpenAI -> selected.apiKey
-            is ProviderSetting.Google -> selected.apiKey
-            is ProviderSetting.Claude -> selected.apiKey
-            else -> ""
-        }
-        applied += "Provider ${type.name.lowercase()}: imported \"${selected.name}\"" +
-            if (apiKey.isNotBlank()) " with API key" else ""
-        if (apiKey.isBlank()) {
-            warnings += "Provider ${type.name.lowercase()}: the backup did not contain an API key for \"${selected.name}\""
-        }
-        IosProviderCredential(
-            type = type,
-            baseUrl = when (selected) {
-                is ProviderSetting.OpenAI -> selected.baseUrl
-                is ProviderSetting.Google -> selected.baseUrl
-                is ProviderSetting.Claude -> selected.baseUrl
-                else -> ""
-            },
-            modelId = selectedModelId,
-            apiKey = apiKey,
-        )
+        return ProviderImport(usable, apiKeys)
     }
 
     private fun mapAssistants(
@@ -253,6 +239,10 @@ internal object IosBackupImporter {
             else -> IosMemoryMode.BASIC
         }
         val embeddingModelId = element.string("embeddingModelId")
+        val embeddingUuid = embeddingModelId?.let(::parseUuid)
+        val embeddingProvider = embeddingUuid
+            ?.takeIf { memoryMode != IosMemoryMode.OFF }
+            ?.let { uuid -> providers.firstOrNull { provider -> provider.models.any { it.id == uuid } } }
         val embedding = embeddingModelId
             ?.takeIf { memoryMode != IosMemoryMode.OFF }
             ?.let { rawId -> resolveModel(providers, parseUuid(rawId)) }
@@ -277,6 +267,7 @@ internal object IosBackupImporter {
             name = name,
             systemPrompt = element.string("systemPrompt").orEmpty(),
             memoryMode = memoryMode,
+            embeddingProviderId = embeddingProvider?.id?.toString(),
             embeddingProviderType = embedding?.first ?: IosProviderType.OPENAI,
             embeddingModelId = embedding?.second ?: "text-embedding-3-small",
             ragSimilarityThreshold = element.float("ragSimilarityThreshold") ?: 0.45f,
@@ -452,6 +443,13 @@ internal object IosBackupImporter {
         is ProviderSetting.Google -> IosProviderType.GOOGLE
         is ProviderSetting.Claude -> IosProviderType.CLAUDE
         else -> null
+    }
+
+    private fun providerApiKey(provider: ProviderSetting): String = when (provider) {
+        is ProviderSetting.OpenAI -> provider.apiKey
+        is ProviderSetting.Google -> provider.apiKey
+        is ProviderSetting.Claude -> provider.apiKey
+        else -> ""
     }
 
     private fun resolveModel(

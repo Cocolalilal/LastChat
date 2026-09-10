@@ -29,7 +29,17 @@ internal fun selectSmartMemoryContext(
     contextPriority: ContextPriority,
     episodeGroup: (Long) -> String,
 ): MemoryContextSelection {
-    if (candidates.isEmpty()) return MemoryContextSelection(emptyList(), "", 0, 0)
+    if (candidates.isEmpty()) {
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup)
+        if (toolPrompt.isBlank()) return MemoryContextSelection(emptyList(), "", 0, 0)
+        val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
+        val remaining = (inputBudgetTokens - requiredContextTokens).coerceAtLeast(0)
+        return if (toolTokens <= remaining) {
+            MemoryContextSelection(emptyList(), toolPrompt, toolTokens, 0)
+        } else {
+            MemoryContextSelection(emptyList(), "", 0, 0)
+        }
+    }
 
     val remaining = (inputBudgetTokens - requiredContextTokens).coerceAtLeast(0)
     val protectedHistory = historyMessages.limitContext(minOf(4, historyMessages.size))
@@ -59,6 +69,16 @@ internal fun selectSmartMemoryContext(
             renderedTokens = proposedTokens
         }
     }
+
+    if (rendered.isEmpty() && ModelAbility.TOOL in model.abilities) {
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup)
+        val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
+        if (toolTokens <= allocation) {
+            rendered = toolPrompt
+            renderedTokens = toolTokens
+        }
+    }
+
     return MemoryContextSelection(selected, rendered, renderedTokens, allocation)
 }
 
@@ -68,35 +88,41 @@ internal fun renderMemoryContextPrompt(
     memories: List<AssistantMemory>,
     episodeGroup: (Long) -> String,
 ): String {
-    if (memories.isEmpty()) return ""
+    val hasToolAbility = ModelAbility.TOOL in model.abilities
+    if (memories.isEmpty() && !hasToolAbility) return ""
+
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     return buildString {
-        append("## Memories\n")
-        append("These are memories that you can reference in future conversations.\n")
-        if (coreMemories.isNotEmpty()) {
-            append("### Core Memories\n")
-            coreMemories.forEach { memory ->
-                append("- [ID: ${memory.id}] ${memory.content}\n")
+        if (memories.isNotEmpty()) {
+            append("## Memories\n")
+            append("These are memories that you can reference in future conversations.\n")
+            if (coreMemories.isNotEmpty()) {
+                append("### Core Memories\n")
+                coreMemories.forEach { memory ->
+                    append("- [ID: ${memory.id}] ${memory.content}\n")
+                }
+            }
+            if (episodicMemories.isNotEmpty()) {
+                append("### Episodic Memories\n")
+                val grouped = episodicMemories.groupBy { memory -> episodeGroup(memory.timestamp) }
+                listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
+                    grouped[group].orEmpty()
+                        .sortedByDescending { it.timestamp }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { groupMemories ->
+                            append("#### $group\n")
+                            groupMemories.forEach { memory -> append("- ${memory.content}\n") }
+                        }
+                }
             }
         }
-        if (episodicMemories.isNotEmpty()) {
-            append("### Episodic Memories\n")
-            val grouped = episodicMemories.groupBy { memory -> episodeGroup(memory.timestamp) }
-            listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
-                grouped[group].orEmpty()
-                    .sortedByDescending { it.timestamp }
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { groupMemories ->
-                        append("#### $group\n")
-                        groupMemories.forEach { memory -> append("- ${memory.content}\n") }
-                    }
+        if (hasToolAbility) {
+            if (memories.isNotEmpty()) {
+                append("\n\n")
             }
-        }
-        if (ModelAbility.TOOL in model.abilities) {
             append(
                 """
-
                 ## Memory Tool
                 You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
                 Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.

@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -139,6 +140,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.versionSelectionIndices
@@ -361,6 +364,11 @@ fun LastChatIosApp(
                     state = state,
                     darkTheme = useDarkTheme,
                     onSaveProvider = controller::saveProvider,
+                    onAddProvider = controller::addProvider,
+                    onDeleteProvider = controller::deleteProvider,
+                    onAddModel = controller::addModelToProvider,
+                    onRemoveModel = controller::removeModelFromProvider,
+                    onClearProviderApiKey = controller::clearProviderApiKey,
                     onClearApiKey = controller::clearApiKey,
                     onSelectDefaultModel = controller::selectDefaultModel,
                     onSaveSearch = controller::saveSearch,
@@ -684,7 +692,7 @@ private fun ChatPage(
                                     content = { currentAction ->
                                         LastChatComposerDefaultActionContent(currentAction) {
                                             Text(
-                                                text = state.provider.modelId.firstOrNull()?.uppercase() ?: "M",
+                                                text = state.selectedChatModel?.second?.modelId?.firstOrNull()?.uppercase() ?: "M",
                                                 style = MaterialTheme.typography.labelLarge,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -1262,7 +1270,8 @@ private fun IosImageGenerationPage(
     var count by remember { mutableStateOf(1) }
     var inputImage by remember { mutableStateOf<PlatformPickedFile?>(null) }
     val supportsInputImage = state.imageGeneration.method == ImageGenerationMethod.MULTIMODAL &&
-        state.imageGeneration.providerType != IosImageProviderType.COMFY_UI
+        state.providers.firstOrNull { it.id.toString() == state.imageGeneration.providerId }
+            ?.let { it is ProviderSetting.ComfyUI } != true
     val images = state.generatedImages.asReversed()
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
@@ -1714,9 +1723,14 @@ private fun MenuCard(title: String, subtitle: String, onClick: () -> Unit) {
 private fun SettingsPage(
     state: IosAppState,
     darkTheme: Boolean,
-    onSaveProvider: (IosProviderType, String, String, String) -> Unit,
+    onSaveProvider: (String, String, String, String) -> Unit,
+    onAddProvider: (String, IosProviderType) -> Unit,
+    onDeleteProvider: (String) -> Unit,
+    onAddModel: (String, String) -> Unit,
+    onRemoveModel: (String, String) -> Unit,
+    onClearProviderApiKey: (String) -> Unit,
     onClearApiKey: () -> Unit,
-    onSelectDefaultModel: (IosProviderType, String) -> Unit,
+    onSelectDefaultModel: (String, String) -> Unit,
     onSaveSearch: (IosSearchProviderType, Boolean, Int, String) -> Unit,
     onClearSearchApiKey: () -> Unit,
     onSaveTts: (IosTtsPreferences, String) -> Unit,
@@ -1730,7 +1744,7 @@ private fun SettingsPage(
     onNewAssistant: () -> Unit,
     onSelectAssistant: (String) -> Unit,
     onDeleteAssistant: (String) -> Unit,
-    onSaveMemorySettings: (IosMemoryMode, IosProviderType, String, Float, Int) -> Unit,
+    onSaveMemorySettings: (IosMemoryMode, String?, String, Float, Int) -> Unit,
     onAddMemory: (String) -> Unit,
     onUpdateMemory: (Int, String) -> Unit,
     onDeleteMemory: (Int) -> Unit,
@@ -1761,10 +1775,14 @@ private fun SettingsPage(
     var imageGeneration by remember(state.imageGeneration) { mutableStateOf(state.imageGeneration) }
     var ttsApiKey by remember { mutableStateOf("") }
     var ttsSpeed by remember(state.tts.speed) { mutableStateOf(state.tts.speed.toString()) }
-    var providerType by remember(state.provider.type) { mutableStateOf(state.provider.type) }
-    var baseUrl by remember(state.provider.baseUrl) { mutableStateOf(state.provider.baseUrl) }
-    var modelId by remember(state.provider.modelId) { mutableStateOf(state.provider.modelId) }
-    var apiKey by remember { mutableStateOf("") }
+    var selectedProviderId by remember { mutableStateOf<String?>(null) }
+    var providerName by remember { mutableStateOf("") }
+    var providerBaseUrl by remember { mutableStateOf("") }
+    var providerApiKey by remember { mutableStateOf("") }
+    var newModelId by remember { mutableStateOf("") }
+    var showAddProvider by remember { mutableStateOf(false) }
+    var newProviderName by remember { mutableStateOf("") }
+    var newProviderType by remember { mutableStateOf(IosProviderType.OPENAI) }
     var themeId by remember(state.appearance.themeId) { mutableStateOf(state.appearance.themeId) }
     var colorMode by remember(state.appearance.colorMode) { mutableStateOf(state.appearance.colorMode) }
     var usePhoneSystemFont by remember(state.appearance.usePhoneSystemFont) {
@@ -1784,8 +1802,8 @@ private fun SettingsPage(
     var assistantName by remember(state.assistant.name) { mutableStateOf(state.assistant.name) }
     var systemPrompt by remember(state.assistant.systemPrompt) { mutableStateOf(state.assistant.systemPrompt) }
     var memoryMode by remember(state.assistant.memoryMode) { mutableStateOf(state.assistant.memoryMode) }
-    var embeddingProviderType by remember(state.assistant.embeddingProviderType) {
-        mutableStateOf(state.assistant.embeddingProviderType)
+    var embeddingProviderId by remember(state.assistant.embeddingProviderId) {
+        mutableStateOf(state.assistant.embeddingProviderId)
     }
     var embeddingModelId by remember(state.assistant.embeddingModelId) {
         mutableStateOf(state.assistant.embeddingModelId)
@@ -2208,19 +2226,38 @@ private fun SettingsPage(
                                 darkTheme = darkTheme,
                             ) {
                                 LastChatFormItem(label = { Text("Embedding provider") }) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf(IosProviderType.OPENAI, IosProviderType.GOOGLE).forEach { type ->
-                                            if (embeddingProviderType == type) {
-                                                Button(onClick = {}) { Text(type.displayName()) }
-                                            } else {
-                                                TextButton(onClick = {
-                                                    embeddingProviderType = type
-                                                    embeddingModelId = if (type == IosProviderType.OPENAI) {
-                                                        "text-embedding-3-small"
-                                                    } else {
-                                                        "text-embedding-004"
-                                                    }
-                                                }) { Text(type.displayName()) }
+                                    val embeddableProviders = state.providers.filter { provider ->
+                                        chatProviderType(provider) == IosProviderType.OPENAI ||
+                                            chatProviderType(provider) == IosProviderType.GOOGLE
+                                    }
+                                    if (embeddableProviders.isEmpty()) {
+                                        Text(
+                                            "Add an OpenAI or Google provider in Settings → Providers first",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    } else {
+                                        Row(
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            embeddableProviders.forEach { provider ->
+                                                val id = provider.id.toString()
+                                                val selected = embeddingProviderId == id
+                                                if (selected) {
+                                                    Button(onClick = {}) { Text(provider.name) }
+                                                } else {
+                                                    TextButton(onClick = {
+                                                        embeddingProviderId = id
+                                                        embeddingModelId = if (
+                                                            chatProviderType(provider) == IosProviderType.OPENAI
+                                                        ) {
+                                                            "text-embedding-3-small"
+                                                        } else {
+                                                            "text-embedding-004"
+                                                        }
+                                                    }) { Text(provider.name) }
+                                                }
                                             }
                                         }
                                     }
@@ -2269,7 +2306,7 @@ private fun SettingsPage(
                         onClick = {
                             onSaveMemorySettings(
                                 memoryMode,
-                                embeddingProviderType,
+                                embeddingProviderId,
                                 embeddingModelId,
                                 memoryThreshold.toFloatOrNull() ?: 0.45f,
                                 memoryLimit.toIntOrNull() ?: 10,
@@ -2471,6 +2508,7 @@ private fun SettingsPage(
                         horizontalPadding = 0.dp,
                         titleStartPadding = 0.dp,
                     ) {
+                        val selectedModel = state.selectedChatModel?.second
                         LastChatModelFeatureCard(
                             darkTheme = darkTheme,
                             icon = { Icon(Icons.AutoMirrored.Rounded.Chat, null) },
@@ -2486,14 +2524,13 @@ private fun SettingsPage(
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text(
-                                                    state.provider.modelId.firstOrNull()
-                                                        ?.uppercase() ?: "M",
+                                                    selectedModel?.modelId?.firstOrNull()?.uppercase() ?: "M",
                                                     style = MaterialTheme.typography.labelMedium,
                                                 )
                                             }
                                         }
                                         Text(
-                                            state.provider.modelId,
+                                            selectedModel?.displayName?.ifBlank { selectedModel.modelId } ?: "Select model",
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             style = MaterialTheme.typography.bodySmall,
@@ -2519,46 +2556,59 @@ private fun SettingsPage(
                                     )
                                 },
                             )
+                            val imageProviders = state.providers.filter {
+                                it is ProviderSetting.OpenAI || it is ProviderSetting.Google || it is ProviderSetting.ComfyUI
+                            }
                             LastChatFormItem(
                                 label = { Text("Provider") },
                                 description = {
+                                    val selectedProvider = imageProviders.firstOrNull { it.id.toString() == imageGeneration.providerId }
                                     Text(
-                                        if (imageGeneration.providerType == IosImageProviderType.COMFY_UI) {
-                                            "Runs the imported API workflow on your ComfyUI server"
+                                        if (selectedProvider is ProviderSetting.ComfyUI) {
+                                            "Runs the configured API workflow on your ComfyUI server"
                                         } else {
-                                            "Uses the provider endpoint and Keychain key configured above"
+                                            "Uses the provider endpoint and Keychain key configured in Providers"
                                         }
                                     )
                                 },
                             ) {
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    IosImageProviderType.entries.forEach { type ->
-                                        if (imageGeneration.providerType == type) {
-                                            Button(onClick = {}) { Text(type.displayName()) }
-                                        } else {
-                                            TextButton(onClick = {
-                                                imageGeneration = imageGeneration.copy(
-                                                    providerType = type,
-                                                    modelId = when (type) {
-                                                        IosImageProviderType.OPENAI -> "gpt-image-1"
-                                                        IosImageProviderType.GOOGLE -> "imagen-3.0-generate-002"
-                                                        IosImageProviderType.COMFY_UI -> "model.safetensors"
-                                                    },
-                                                    method = if (type == IosImageProviderType.COMFY_UI) {
-                                                        ImageGenerationMethod.DIFFUSION
-                                                    } else {
-                                                        imageGeneration.method
-                                                    },
-                                                )
-                                            }) { Text(type.displayName()) }
+                                if (imageProviders.isEmpty()) {
+                                    Text(
+                                        "Add an OpenAI, Google, or ComfyUI provider in Settings → Providers first",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        imageProviders.forEach { provider ->
+                                            val id = provider.id.toString()
+                                            val selected = imageGeneration.providerId == id
+                                            if (selected) {
+                                                Button(onClick = {}) { Text(provider.name) }
+                                            } else {
+                                                TextButton(onClick = {
+                                                    val isComfy = provider is ProviderSetting.ComfyUI
+                                                    val isGoogle = provider is ProviderSetting.Google
+                                                    imageGeneration = imageGeneration.copy(
+                                                        providerId = id,
+                                                        modelId = when {
+                                                            isComfy -> "model.safetensors"
+                                                            isGoogle -> "imagen-3.0-generate-002"
+                                                            else -> "gpt-image-1"
+                                                        },
+                                                        method = if (isComfy) ImageGenerationMethod.DIFFUSION else imageGeneration.method,
+                                                    )
+                                                }) { Text(provider.name) }
+                                            }
                                         }
                                     }
                                 }
                             }
-                            if (imageGeneration.providerType != IosImageProviderType.COMFY_UI) {
+                            val selectedProvider = imageProviders.firstOrNull { it.id.toString() == imageGeneration.providerId }
+                            if (selectedProvider !is ProviderSetting.ComfyUI) {
                                 LastChatFormItem(
                                     label = { Text("Generation method") },
                                     description = {
@@ -2579,15 +2629,14 @@ private fun SettingsPage(
                                                 }
                                             } else {
                                                 TextButton(onClick = {
+                                                    val isGoogle = selectedProvider is ProviderSetting.Google
                                                     imageGeneration = imageGeneration.copy(
                                                         method = method,
                                                         modelId = when {
-                                                            method == ImageGenerationMethod.MULTIMODAL &&
-                                                                imageGeneration.providerType == IosImageProviderType.GOOGLE ->
+                                                            method == ImageGenerationMethod.MULTIMODAL && isGoogle ->
                                                                 "gemini-2.0-flash-preview-image-generation"
                                                             method == ImageGenerationMethod.MULTIMODAL -> "gpt-4o"
-                                                            imageGeneration.providerType == IosImageProviderType.GOOGLE ->
-                                                                "imagen-3.0-generate-002"
+                                                            isGoogle -> "imagen-3.0-generate-002"
                                                             else -> "gpt-image-1"
                                                         },
                                                     )
@@ -2608,100 +2657,6 @@ private fun SettingsPage(
                                     singleLine = true,
                                 )
                             }
-                            if (imageGeneration.providerType == IosImageProviderType.COMFY_UI) {
-                                LastChatFormItem(label = { Text("Base URL") }) {
-                                    OutlinedTextField(
-                                        value = imageGeneration.comfyUi.baseUrl,
-                                        onValueChange = { value ->
-                                            imageGeneration = imageGeneration.copy(
-                                                comfyUi = imageGeneration.comfyUi.copy(baseUrl = value)
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = AppShapes.InputField,
-                                        singleLine = true,
-                                    )
-                                }
-                                LastChatFormItem(
-                                    label = { Text("API workflow JSON") },
-                                    description = { Text("Export the workflow in ComfyUI's API format") },
-                                ) {
-                                    OutlinedTextField(
-                                        value = imageGeneration.comfyUi.workflowJson,
-                                        onValueChange = { value ->
-                                            imageGeneration = imageGeneration.copy(
-                                                comfyUi = imageGeneration.comfyUi.copy(workflowJson = value)
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = AppShapes.InputField,
-                                        minLines = 6,
-                                        maxLines = 14,
-                                    )
-                                }
-                                LastChatFormItem(
-                                    label = { Text("Prompt node") },
-                                    description = { Text("May be blank when the workflow has one detectable text node") },
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        OutlinedTextField(
-                                            value = imageGeneration.comfyUi.promptNodeId,
-                                            onValueChange = { value ->
-                                                imageGeneration = imageGeneration.copy(
-                                                    comfyUi = imageGeneration.comfyUi.copy(promptNodeId = value)
-                                                )
-                                            },
-                                            label = { Text("Node ID") },
-                                            modifier = Modifier.weight(1f),
-                                            shape = AppShapes.InputField,
-                                            singleLine = true,
-                                        )
-                                        OutlinedTextField(
-                                            value = imageGeneration.comfyUi.promptInputName,
-                                            onValueChange = { value ->
-                                                imageGeneration = imageGeneration.copy(
-                                                    comfyUi = imageGeneration.comfyUi.copy(promptInputName = value)
-                                                )
-                                            },
-                                            label = { Text("Input") },
-                                            modifier = Modifier.weight(1f),
-                                            shape = AppShapes.InputField,
-                                            singleLine = true,
-                                        )
-                                    }
-                                }
-                                LastChatFormItem(
-                                    label = { Text("Checkpoint node") },
-                                    description = { Text("May be blank when the workflow has one detectable loader node") },
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        OutlinedTextField(
-                                            value = imageGeneration.comfyUi.modelNodeId,
-                                            onValueChange = { value ->
-                                                imageGeneration = imageGeneration.copy(
-                                                    comfyUi = imageGeneration.comfyUi.copy(modelNodeId = value)
-                                                )
-                                            },
-                                            label = { Text("Node ID") },
-                                            modifier = Modifier.weight(1f),
-                                            shape = AppShapes.InputField,
-                                            singleLine = true,
-                                        )
-                                        OutlinedTextField(
-                                            value = imageGeneration.comfyUi.modelInputName,
-                                            onValueChange = { value ->
-                                                imageGeneration = imageGeneration.copy(
-                                                    comfyUi = imageGeneration.comfyUi.copy(modelInputName = value)
-                                                )
-                                            },
-                                            label = { Text("Input") },
-                                            modifier = Modifier.weight(1f),
-                                            shape = AppShapes.InputField,
-                                            singleLine = true,
-                                        )
-                                    }
-                                }
-                            }
                             Button(
                                 onClick = { onSaveImageGeneration(imageGeneration) },
                                 modifier = Modifier.fillMaxWidth(),
@@ -2711,93 +2666,205 @@ private fun SettingsPage(
                 }
             }
             if (section == IosSettingsSection.Provider) {
-                item {
-                    LastChatSettingsGroup(
-                        title = "Configuration",
-                        horizontalPadding = 0.dp,
-                        titleStartPadding = 0.dp,
-                    ) {
-                        LastChatSettingGroupInputItem(
-                            title = providerType.displayName(),
-                            subtitle = "Provider endpoint, model, and secure credentials",
-                            darkTheme = darkTheme,
+                val editingProvider = state.providers.firstOrNull {
+                    it.id.toString() == selectedProviderId
+                }
+                if (editingProvider == null) {
+                    item {
+                        LastChatSettingsGroup(
+                            title = "Providers",
+                            horizontalPadding = 0.dp,
+                            titleStartPadding = 0.dp,
                         ) {
-                            LastChatFormItem(label = { Text("Provider type") }) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    IosProviderType.entries.forEach { type ->
-                                        if (type == providerType) {
-                                            Button(onClick = {}) { Text(type.displayName()) }
-                                        } else {
-                                            TextButton(onClick = {
-                                                providerType = type
-                                                val saved = state.providerConfigurations.firstOrNull {
-                                                    it.type == type
-                                                }
-                                                baseUrl = saved?.baseUrl ?: type.defaultBaseUrl()
-                                                modelId = saved?.modelId ?: type.defaultModelId()
-                                                apiKey = ""
-                                            }) { Text(type.displayName()) }
+                            state.providers.forEach { provider ->
+                                LastChatSettingGroupItem(
+                                    title = provider.name,
+                                    darkTheme = darkTheme,
+                                    icon = { Icon(Icons.Rounded.Cloud, null, Modifier.size(20.dp)) },
+                                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                    onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                    onClick = {
+                                        selectedProviderId = provider.id.toString()
+                                        providerName = provider.name
+                                        when (provider) {
+                                            is ProviderSetting.OpenAI -> providerBaseUrl = provider.baseUrl
+                                            is ProviderSetting.Google -> providerBaseUrl = provider.baseUrl
+                                            is ProviderSetting.Claude -> providerBaseUrl = provider.baseUrl
+                                            else -> providerBaseUrl = ""
                                         }
+                                        providerApiKey = ""
+                                        newModelId = ""
+                                    },
+                                )
+                            }
+                            LastChatSettingGroupItem(
+                                title = "Add provider",
+                                darkTheme = darkTheme,
+                                icon = { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                onClick = {
+                                    newProviderName = ""
+                                    newProviderType = IosProviderType.OPENAI
+                                    showAddProvider = true
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    item {
+                        LastChatSettingsGroup(
+                            title = "Provider settings",
+                            horizontalPadding = 0.dp,
+                            titleStartPadding = 0.dp,
+                        ) {
+                            LastChatSettingGroupInputItem(
+                                title = editingProvider.name,
+                                subtitle = "Endpoint and credentials for this provider",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(label = { Text("Name") }) {
+                                    OutlinedTextField(
+                                        value = providerName,
+                                        onValueChange = { providerName = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                if (editingProvider !is ProviderSetting.ComfyUI) {
+                                    LastChatFormItem(label = { Text("Base URL") }) {
+                                        OutlinedTextField(
+                                            value = providerBaseUrl,
+                                            onValueChange = { providerBaseUrl = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                        )
+                                    }
+                                    LastChatFormItem(
+                                        label = { Text("API key (saved in Keychain)") },
+                                        description = { Text("Leave blank to keep the current key") },
+                                    ) {
+                                        OutlinedTextField(
+                                            value = providerApiKey,
+                                            onValueChange = { providerApiKey = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                        )
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        onSaveProvider(
+                                            editingProvider.id.toString(),
+                                            providerName,
+                                            providerBaseUrl,
+                                            providerApiKey,
+                                        )
+                                        providerApiKey = ""
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Save provider") }
+
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    TextButton(onClick = { selectedProviderId = null }) {
+                                        Text("Back to providers")
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            val idToDelete = editingProvider.id.toString()
+                                            selectedProviderId = null
+                                            onDeleteProvider(idToDelete)
+                                        },
+                                        colors = ButtonDefaults.textButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.error,
+                                        ),
+                                    ) {
+                                        Text("Delete provider")
                                     }
                                 }
                             }
-                            LastChatFormItem(label = { Text("Base URL") }) {
-                                OutlinedTextField(
-                                    value = baseUrl,
-                                    onValueChange = { baseUrl = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = AppShapes.InputField,
-                                    singleLine = true,
-                                )
-                            }
-                            LastChatFormItem(label = { Text("Model ID") }) {
-                                OutlinedTextField(
-                                    value = modelId,
-                                    onValueChange = { modelId = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = AppShapes.InputField,
-                                    singleLine = true,
-                                )
-                            }
-                            LastChatFormItem(
-                                label = {
-                                    Text(
-                                        if (state.hasApiKey && providerType == state.provider.type) {
-                                            "API key (saved in Keychain)"
-                                        } else {
-                                            "API key"
-                                        }
-                                    )
-                                },
-                                description = {
-                                    if (state.hasApiKey && providerType == state.provider.type) {
-                                        Text("Leave blank to keep the current key")
-                                    }
-                                },
+                        }
+                    }
+                    item {
+                        LastChatSettingsGroup(
+                            title = "Models",
+                            horizontalPadding = 0.dp,
+                            titleStartPadding = 0.dp,
+                        ) {
+                            LastChatSettingGroupInputItem(
+                                title = "Configured models",
+                                subtitle = "Models available from this provider",
+                                darkTheme = darkTheme,
                             ) {
-                                OutlinedTextField(
-                                    value = apiKey,
-                                    onValueChange = { apiKey = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = AppShapes.InputField,
-                                    singleLine = true,
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    onSaveProvider(providerType, baseUrl, modelId, apiKey)
-                                    apiKey = ""
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Save provider") }
-                            if (state.hasApiKey && providerType == state.provider.type) {
-                                TextButton(onClick = onClearApiKey) {
-                                    Text("Remove saved API key")
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (editingProvider.models.isEmpty()) {
+                                        Text(
+                                            "No models configured for this provider yet.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    } else {
+                                        editingProvider.models.forEach { model ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(
+                                                        model.displayName.ifBlank { model.modelId },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                    )
+                                                    if (model.displayName.isNotBlank() && model.displayName != model.modelId) {
+                                                        Text(
+                                                            model.modelId,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                    }
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        onRemoveModel(editingProvider.id.toString(), model.id.toString())
+                                                    },
+                                                ) {
+                                                    Icon(Icons.Rounded.Delete, "Remove model")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        OutlinedTextField(
+                                            value = newModelId,
+                                            onValueChange = { newModelId = it },
+                                            placeholder = { Text("Model ID (e.g. gpt-4o)") },
+                                            modifier = Modifier.weight(1f),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                if (newModelId.isNotBlank()) {
+                                                    onAddModel(editingProvider.id.toString(), newModelId.trim())
+                                                    newModelId = ""
+                                                }
+                                            },
+                                        ) {
+                                            Icon(Icons.Rounded.Add, "Add model")
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3579,6 +3646,51 @@ private fun SettingsPage(
                 },
             )
         }
+        if (showAddProvider) {
+            AlertDialog(
+                onDismissRequest = { showAddProvider = false },
+                title = { Text("Add Provider") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newProviderName,
+                            onValueChange = { newProviderName = it },
+                            label = { Text("Provider Name") },
+                            shape = AppShapes.InputField,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text("Type", style = MaterialTheme.typography.labelMedium)
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            IosProviderType.entries.forEach { type ->
+                                if (newProviderType == type) {
+                                    Button(onClick = {}) { Text(type.displayName()) }
+                                } else {
+                                    TextButton(onClick = { newProviderType = type }) { Text(type.displayName()) }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (newProviderName.isNotBlank()) {
+                                onAddProvider(newProviderName.trim(), newProviderType)
+                                showAddProvider = false
+                                newProviderName = ""
+                            }
+                        },
+                    ) { Text("Add") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddProvider = false }) { Text("Cancel") }
+                },
+            )
+        }
         if (showAddRpStyleRuleDialog || editingRpStyleRule != null) {
             val existingRule = editingRpStyleRule
             IosRpStyleRuleDialog(
@@ -3603,10 +3715,17 @@ private fun SettingsPage(
         }
         if (showModelPicker) {
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            val visibleConfigurations = state.providerConfigurations.filter { configuration ->
-                modelSearchQuery.isBlank() ||
-                    configuration.modelId.contains(modelSearchQuery, ignoreCase = true) ||
-                    configuration.type.displayName().contains(modelSearchQuery, ignoreCase = true)
+            val selectedChatModel = state.selectedChatModel
+            val visibleProviders = state.providers.mapNotNull { provider ->
+                val matchingModels = provider.models.filter { model ->
+                    model.type == ModelType.CHAT && (
+                        modelSearchQuery.isBlank() ||
+                            model.modelId.contains(modelSearchQuery, ignoreCase = true) ||
+                            model.displayName.contains(modelSearchQuery, ignoreCase = true) ||
+                            provider.name.contains(modelSearchQuery, ignoreCase = true)
+                    )
+                }
+                if (matchingModels.isEmpty()) null else provider to matchingModels
             }
             ModalBottomSheet(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -3634,34 +3753,30 @@ private fun SettingsPage(
                     )
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = 16.dp,
-                            end = 16.dp,
-                            bottom = 32.dp,
-                        ),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        visibleConfigurations.forEach { configuration ->
-                            item("model-provider-${configuration.type}") {
+                        visibleProviders.forEach { (provider, models) ->
+                            item("model-provider-${provider.id}") {
                                 Text(
-                                    configuration.type.displayName(),
+                                    provider.name,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.fillMaxWidth()
-                                        .padding(top = 12.dp, bottom = 4.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                                 )
                             }
-                            item("model-${configuration.type}-${configuration.modelId}") {
+                            items(models, key = { "model-${provider.id}-${it.id}" }) { model ->
+                                val selected = selectedChatModel?.first?.id == provider.id &&
+                                    selectedChatModel?.second?.id == model.id
                                 LastChatGroupedModelRow(
-                                    title = configuration.modelId,
-                                    selected = configuration.type == state.provider.type &&
-                                        configuration.modelId == state.provider.modelId,
+                                    title = model.displayName.ifBlank { model.modelId },
+                                    selected = selected,
                                     position = LastChatModelGroupPosition.Single,
                                     onClick = {
                                         platformHaptics.perform(PlatformHapticPattern.Pop)
                                         onSelectDefaultModel(
-                                            configuration.type,
-                                            configuration.modelId,
+                                            provider.id.toString(),
+                                            model.modelId,
                                         )
                                         showModelPicker = false
                                     },
@@ -3673,19 +3788,11 @@ private fun SettingsPage(
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text(
-                                                    configuration.type.displayName()
-                                                        .first().uppercase(),
+                                                    provider.name.firstOrNull()?.uppercase() ?: "P",
                                                     style = MaterialTheme.typography.titleSmall,
                                                 )
                                             }
                                         }
-                                    },
-                                    metadata = {
-                                        Text(
-                                            configuration.type.displayName(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
                                     },
                                 )
                             }

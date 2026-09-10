@@ -315,7 +315,27 @@ enum class PillPosition {
 }
 
 private sealed interface SinglePillContentState {
-    data class Compact(val state: ActivityState) : SinglePillContentState
+    class Compact(val state: ActivityState) : SinglePillContentState {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Compact) return false
+            val s1 = this.state
+            val s2 = other.state
+            if (s1 === s2) return true
+            if (s1 is ActivityState.Reasoning && s2 is ActivityState.Reasoning) {
+                return s1.startTimeMs == s2.startTimeMs && s1.title == s2.title
+            }
+            return s1 == s2
+        }
+
+        override fun hashCode(): Int {
+            return if (state is ActivityState.Reasoning) {
+                31 * state.startTimeMs.hashCode() + (state.title?.hashCode() ?: 0)
+            } else {
+                state.hashCode()
+            }
+        }
+    }
     data class ExpandedReasoning(
         val state: ActivityState.Reasoning,
         val durationMs: Long? = null,

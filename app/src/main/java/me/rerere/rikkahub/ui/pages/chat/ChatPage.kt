@@ -462,9 +462,11 @@ private val chatTopToolbarFadeHeight = 96.dp
 private val chatBottomToolbarTopFadeHeight = 36.dp
 
 private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
-    return conversation.currentMessages.lastOrNull { message ->
-        message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
-    }
+    return conversation.messageNodes.asReversed().asSequence()
+        .map { it.currentMessage }
+        .firstOrNull { message ->
+            message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
+        }
 }
 
 private fun speakablePrefixLength(text: String, final: Boolean): Int {
@@ -524,8 +526,19 @@ private fun ChatTtsAutoplayEffect(
     var spokenLength by remember(conversation.id) { mutableStateOf(0) }
     var wasGenerating by remember(conversation.id) { mutableStateOf(false) }
 
-    LaunchedEffect(conversation.id, conversation.currentMessages, loadingJob, mode, provider) {
-        if (mode == TtsAutoplayMode.OFF || provider == null) return@LaunchedEffect
+    // Avoid passing the full conversation.currentMessages list to LaunchedEffect,
+    // which triggers a deep O(N) List.equals comparison across 200k tokens on every chunk.
+    val ttsEnabled = mode != TtsAutoplayMode.OFF && provider != null
+    val speechTriggerKey = if (!ttsEnabled) {
+        null
+    } else if (mode == TtsAutoplayMode.AFTER_GENERATION) {
+        loadingJob == null
+    } else {
+        latestAssistantSpeechMessage(conversation)?.let { it.id to it.toContentText().length }
+    }
+
+    LaunchedEffect(conversation.id, speechTriggerKey, mode, provider) {
+        if (!ttsEnabled) return@LaunchedEffect
         if (loadingJob == null) {
             if (!wasGenerating) return@LaunchedEffect
             wasGenerating = false
@@ -1199,6 +1212,7 @@ private fun ChatPageContent(
         persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
+        isGenerating = isGenerating,
     )
 
     LaunchedEffect(contextMeterUsage) {
@@ -3051,9 +3065,20 @@ private fun rememberContextMeterUsage(
     persistenceMode: ChatPersistenceMode,
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
+    isGenerating: Boolean = false,
 ): ContextUsageBreakdown? {
     if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
+    var lastStableUsage by remember(conversation.id) { mutableStateOf<ContextUsageBreakdown?>(null) }
+    val hasPendingInput = pendingParts.any { part ->
+        part !is UIMessagePart.Text || part.text.isNotBlank()
+    }
+    // During active generation streaming, avoid recomputing 200k+ token breakdowns on the UI thread 40 times/sec.
+    // requestUsage contains the exact context breakdown computed at request start.
+    if (isGenerating && !hasPendingInput) {
+        if (requestUsage != null) return requestUsage
+        if (lastStableUsage != null) return lastStableUsage
+    }
     val smartActive = assistant.smartContextManagement && (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
     val messages = effectiveHistoryForContext(
@@ -3065,9 +3090,6 @@ private fun rememberContextMeterUsage(
         truncateIndex = conversation.truncateIndex,
         manualHistoryLimit = assistant.maxHistoryMessages,
     )
-    val hasPendingInput = pendingParts.any { part ->
-        part !is UIMessagePart.Text || part.text.isNotBlank()
-    }
     val memoryContextEnabled = assistant.enableMemory && persistenceMode == ChatPersistenceMode.NORMAL
     val eligibleMemoryCandidates = remember(memoryCandidates, assistant, memoryContextEnabled) {
         if (!memoryContextEnabled) {
@@ -3352,7 +3374,7 @@ private fun rememberContextMeterUsage(
     } else {
         messages
     }
-    return ContextTokenEstimator.breakdown(
+    val computedBreakdown = ContextTokenEstimator.breakdown(
         messages = messagesToCount,
         model = activeModel,
         systemPromptText = systemPromptText,
@@ -3369,6 +3391,8 @@ private fun rememberContextMeterUsage(
         usableInputTokens = effectiveSmartInputBudget,
         sourceKey = sourceKey,
     )
+    lastStableUsage = computedBreakdown
+    return computedBreakdown
 }
 
 @Composable

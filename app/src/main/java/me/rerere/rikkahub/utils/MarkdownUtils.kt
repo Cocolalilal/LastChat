@@ -9,6 +9,9 @@ private val REGEX_ITALIC = Regex("\\*([^*]+?)\\*")
 private val REGEX_UNDERLINE_DOUBLE = Regex("__([^_]+?)__")
 private val REGEX_UNDERLINE_SINGLE = Regex("_([^_]+?)_")
 private val REGEX_STRIKETHROUGH = Regex("~~([^~]+?)~~")
+private val REGEX_HIGHLIGHT = Regex("==([^=]+?)==|<mark>(.*?)</mark>")
+private val REGEX_UNDERLINE_PLUS = Regex("\\+\\+([^+]+?)\\+\\+")
+private val REGEX_HTML_FORMATTING_TAG = Regex("(?i)</?(?:u|ins|mark|b|strong|i|em|s|del|strike|sub|sup|small|code|span|font)(?:\\s+[^>]*)?>")
 private val REGEX_HEADING = Regex("(?m)^#+\\s*")
 private val REGEX_LIST_BULLET = Regex("(?m)^\\s*[-*+]\\s+")
 private val REGEX_LIST_NUMBERED = Regex("(?m)^\\s*\\d+\\.\\s+")
@@ -34,6 +37,12 @@ fun String.stripMarkdown(): String {
         .replace(REGEX_UNDERLINE_SINGLE, "$1")
         // 移除删除线
         .replace(REGEX_STRIKETHROUGH, "$1")
+        // 移除高亮 (==...== 和 <mark>...</mark>)
+        .replace(REGEX_HIGHLIGHT) { it.groupValues[1].ifEmpty { it.groupValues[2] } }
+        // 移除加号下划线 (++...++)
+        .replace(REGEX_UNDERLINE_PLUS, "$1")
+        // 移除行内HTML格式化标签
+        .replace(REGEX_HTML_FORMATTING_TAG, "")
         // 移除标题标记 (多行模式)
         .replace(REGEX_HEADING, "")
         // 移除列表标记 (多行模式)

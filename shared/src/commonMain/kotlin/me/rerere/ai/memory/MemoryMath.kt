@@ -2,7 +2,7 @@ package me.rerere.ai.memory
 
 import kotlin.math.sqrt
 
-private val NON_WORD_REGEX = Regex("\\W+")
+private val NON_WORD_REGEX = Regex("[^\\p{L}\\p{N}]+")
 private val SENTENCE_SPLIT_REGEX = Regex("(?<=[.!?\n])\\s+")
 
 object MemoryVectorMath {

@@ -30,6 +30,14 @@ class MemoryMathTest {
     }
 
     @Test
+    fun keywordScoreHandlesNonAsciiAndAccentedTerms() {
+        val scoreCjk = MemoryVectorMath.keywordScore("喜欢", "用户喜欢喝茶")
+        assertEquals(1f, scoreCjk)
+        val scoreAccented = MemoryVectorMath.keywordScore("München", "Julian lebt in München")
+        assertEquals(1f, scoreAccented)
+    }
+
+    @Test
     fun lexicalEvidenceSurvivesAWeakButAvailableVector() {
         assertTrue(MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 1f, threshold = 0.45f))
         assertTrue(!MemoryVectorMath.passesRecallThreshold(score = 0.18f, keywordScore = 0.2f, threshold = 0.45f))

@@ -124,6 +124,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
+private const val STREAMING_UI_UPDATE_INTERVAL_MS = 25L
 private const val AUTO_RESUME_MAX_RETRIES = 3
 private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
 private const val SMART_CONTEXT_OVERFLOW_RETRIES = 6
@@ -171,43 +172,83 @@ internal fun shouldPreserveInMemoryConversation(
 }
 
 internal fun normalizeConversation(conversation: Conversation): Conversation {
-    val sanitizedNodes = conversation.messageNodes.mapNotNull { node ->
-        val messages = node.messages.filterNot { message -> message.isEmptyOcrPlaceholder() }
-        if (messages.isEmpty()) {
-            null
-        } else {
-            val selectedId = node.messages.getOrNull(node.selectIndex)?.id
-            val selectedIndex = selectedId
-                ?.let { id -> messages.indexOfFirst { message -> message.id == id } }
-                ?.takeIf { it >= 0 }
-                ?: node.selectIndex.coerceIn(0, messages.lastIndex)
-            node.copy(
-                messages = messages,
-                selectIndex = selectedIndex,
-            )
+    if (conversation.messageNodes.isEmpty()) return conversation
+
+    // Quick pass to see if any node contains empty OCR placeholders or invalid selectIndex
+    var needsSanitization = false
+    for (node in conversation.messageNodes) {
+        if (node.messages.any { it.isEmptyOcrPlaceholder() } || node.selectIndex !in node.messages.indices) {
+            needsSanitization = true
+            break
         }
     }
 
-    if (sanitizedNodes.isEmpty()) {
-        return conversation.copy(messageNodes = emptyList())
+    val sanitizedNodes: List<MessageNode> = if (!needsSanitization) {
+        conversation.messageNodes
+    } else {
+        var hasChanges = false
+        val result = ArrayList<MessageNode>(conversation.messageNodes.size)
+        for (node in conversation.messageNodes) {
+            val hasPlaceholder = node.messages.any { it.isEmptyOcrPlaceholder() }
+            if (!hasPlaceholder && node.selectIndex in node.messages.indices) {
+                result.add(node)
+                continue
+            }
+            hasChanges = true
+            val messages = node.messages.filterNot { message -> message.isEmptyOcrPlaceholder() }
+            if (messages.isNotEmpty()) {
+                val selectedId = node.messages.getOrNull(node.selectIndex)?.id
+                val selectedIndex = selectedId
+                    ?.let { id -> messages.indexOfFirst { message -> message.id == id } }
+                    ?.takeIf { it >= 0 }
+                    ?: node.selectIndex.coerceIn(0, messages.lastIndex)
+                result.add(
+                    node.copy(
+                        messages = messages,
+                        selectIndex = selectedIndex,
+                    )
+                )
+            }
+        }
+        if (!hasChanges) conversation.messageNodes else result
     }
 
-    val normalizedNodes = sanitizedNodes.toMutableList()
+    if (sanitizedNodes.isEmpty()) {
+        return if (conversation.messageNodes.isEmpty()) conversation else conversation.copy(messageNodes = emptyList())
+    }
+
+    var normalizedNodes: MutableList<MessageNode>? = null
     var index = 0
-    while (index < normalizedNodes.size) {
-        if (normalizedNodes[index].role == MessageRole.USER) {
+    while (index < sanitizedNodes.size) {
+        if (sanitizedNodes[index].role == MessageRole.USER) {
             index++
             continue
         }
 
         val turnStart = index
-        while (index < normalizedNodes.size && normalizedNodes[index].role != MessageRole.USER) {
+        while (index < sanitizedNodes.size && sanitizedNodes[index].role != MessageRole.USER) {
             index++
         }
-        repairAssistantTurnSelections(normalizedNodes, turnStart, index)
+        val turnNodes = (normalizedNodes ?: sanitizedNodes).subList(turnStart, index)
+        val selectedTag = chooseAssistantTurnVersionTag(turnNodes)
+        for (turnIndex in turnStart until index) {
+            val currentList = normalizedNodes ?: sanitizedNodes
+            val node = currentList[turnIndex]
+            val bestIndex = findBestMessageIndex(node, selectedTag)
+            if (node.selectIndex != bestIndex) {
+                if (normalizedNodes == null) {
+                    normalizedNodes = sanitizedNodes.toMutableList()
+                }
+                normalizedNodes[turnIndex] = node.copy(selectIndex = bestIndex)
+            }
+        }
     }
 
-    return conversation.copy(messageNodes = normalizedNodes)
+    return when {
+        normalizedNodes != null -> conversation.copy(messageNodes = normalizedNodes)
+        sanitizedNodes !== conversation.messageNodes -> conversation.copy(messageNodes = sanitizedNodes)
+        else -> conversation
+    }
 }
 
 private fun UIMessage.isEmptyOcrPlaceholder(): Boolean {
@@ -370,7 +411,10 @@ private fun repairAssistantTurnSelections(
     val selectedTag = chooseAssistantTurnVersionTag(turnNodes)
     for (index in turnStart until turnEndExclusive) {
         val node = nodes[index]
-        nodes[index] = node.copy(selectIndex = findBestMessageIndex(node, selectedTag))
+        val bestIndex = findBestMessageIndex(node, selectedTag)
+        if (node.selectIndex != bestIndex) {
+            nodes[index] = node.copy(selectIndex = bestIndex)
+        }
     }
 }
 
@@ -1505,6 +1549,8 @@ class ChatService(
         // Set on first token arrival to exclude TTFT (time to first token) from the calculation
         var firstTokenTime: Long? = null
         var lastStreamingPersistMs = 0L
+        var lastStreamingUiUpdateMs = 0L
+        var latestStreamingConversation: Conversation? = null
         var autoResumeAttempts = 0
         var contextOverflowAttempts = 0
         var contextBudgetScale = 1.0
@@ -1634,7 +1680,7 @@ class ChatService(
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
                 // 可能被取消了，或者意外结束，兜底更新
-                val currentConversation = getConversationFlow(conversationId).value
+                val currentConversation = latestStreamingConversation ?: getConversationFlow(conversationId).value
                 val regenerationLastNodeIndex = assistantRegeneration?.let { regeneration ->
                     val turnEndIndex = currentConversation.messageNodes
                         .subList(regeneration.turnStartNodeIndex, currentConversation.messageNodes.size)
@@ -1699,13 +1745,14 @@ class ChatService(
                 }
             }.collect { chunk ->
                 // Set first token time on first chunk arrival (excludes TTFT from tok/s)
-                if (firstTokenTime == null) {
+                val isFirstTokenArrival = firstTokenTime == null
+                if (isFirstTokenArrival) {
                     firstTokenTime = System.currentTimeMillis()
                 }
                 
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val currentConversation = getConversationFlow(conversationId).value
+                        val currentConversation = latestStreamingConversation ?: getConversationFlow(conversationId).value
                         val updatedConversation = if (assistantRegeneration != null) {
                             mergeRegeneratedAssistantTurn(
                                 conversation = currentConversation,
@@ -1716,9 +1763,19 @@ class ChatService(
                         } else {
                             currentConversation.updateCurrentMessages(chunk.messages)
                         }.copy(updateAt = Instant.now())
-                        updateConversation(conversationId, updatedConversation)
+                        latestStreamingConversation = updatedConversation
 
                         val nowMs = System.currentTimeMillis()
+                        val hasPendingApproval = updatedConversation.hasPendingToolApprovals()
+                        val hasNewToolCall = chunk.messages.lastOrNull()?.getToolCalls()?.isNotEmpty() == true
+                        val shouldUpdateUi = isFirstTokenArrival || hasPendingApproval || hasNewToolCall ||
+                            (nowMs - lastStreamingUiUpdateMs >= STREAMING_UI_UPDATE_INTERVAL_MS)
+
+                        if (shouldUpdateUi) {
+                            updateConversation(conversationId, updatedConversation)
+                            lastStreamingUiUpdateMs = nowMs
+                        }
+
                         if (
                             getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL &&
                             shouldPersistStreamingCheckpoint(
@@ -1916,47 +1973,6 @@ class ChatService(
         }.withUniqueToolNames()
     }
 
-    private fun createLookAtScreenTool(model: Model): Tool = Tool(
-        name = "look_at_screen",
-        description = "Look at a screenshot of the user's current screen, captured when the " +
-            "assistant was summoned. Use this when you need visual context about what the user " +
-            "is looking at.",
-        parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
-        approvalMode = ToolApprovalMode.Auto,
-        execute = {
-            AssistScreenHolder.notifyScreenRead()
-            val dataUrl = AssistScreenHolder.dataUrlOrNull()
-            if (dataUrl.isNullOrBlank()) {
-                buildJsonObject {
-                    put("note", JsonPrimitive("No screenshot is available."))
-                }
-            } else if (model.inputModalities.contains(Modality.IMAGE)) {
-                // Vision model: hand the image over as a follow-up USER message (providers can't
-                // carry images inside a tool result — doing so 400s).
-                buildJsonObject {
-                    put("note", JsonPrimitive("Screenshot of the user's screen is attached below."))
-                    put(
-                        TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
-                        JsonArray(listOf(JsonPrimitive(dataUrl))),
-                    )
-                }
-            } else {
-                // Non-vision model: OCR fallback.
-                val ocrText = runCatching {
-                    OcrTransformer.performOcr(UIMessagePart.Image(url = dataUrl))
-                }.getOrNull()
-                buildJsonObject {
-                    put("type", JsonPrimitive("ocr_text"))
-                    if (ocrText.isNullOrBlank()) {
-                        put("text", JsonPrimitive(""))
-                        put("note", JsonPrimitive("OCR could not extract text from the screenshot."))
-                    } else {
-                        put("text", JsonPrimitive(ocrText))
-                    }
-                }
-            }
-        },
-    )
 
     private suspend fun createToolApprovalResolution(
         toolCall: UIMessagePart.ToolCall,
@@ -2948,6 +2964,70 @@ class ChatService(
         )
     }
 }
+
+internal fun createLookAtScreenTool(model: Model): Tool = Tool(
+    name = "look_at_screen",
+    description = "Inspect the screenshot of the user's active screen captured when the assistant was summoned. " +
+        "Call this tool proactively whenever the user's query lacks sufficient context, contains ambiguous references " +
+        "(such as 'this', 'that', 'here', 'it', 'what happened', 'why is this failing'), asks about an error, message, " +
+        "image, app, UI, or webpage, or whenever seeing what is currently on screen would help answer accurately. " +
+        "Do NOT ask the user to explain what they are looking at or wait for them to explicitly ask to look at the screen—call this tool first.",
+    parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+    approvalMode = ToolApprovalMode.Auto,
+    systemPrompt = { _, messages ->
+        val hasScreenInContext = messages.any { msg ->
+            msg.getToolCalls().any { it.toolName == "look_at_screen" }
+        }
+        buildString {
+            appendLine("## Tool: look_at_screen")
+            appendLine("A screenshot of the user's screen was captured when the assistant was summoned and is available via `look_at_screen`.")
+            appendLine()
+            appendLine("### Proactive Screen Inspection Guidelines:")
+            appendLine("- You are a digital assistant invoked directly over the user's active screen. Users frequently speak with assumed visual context, expecting you to see what is on their screen without having to explicitly say 'look at my screen' or 'check this screenshot'.")
+            appendLine("- **Ambiguous or Missing Context**: If the user's message is vague, underspecified, or lacks full context (e.g., 'What does this mean?', 'How do I fix this?', 'Can you explain this?', 'Is this safe?', 'What should I do?'), DO NOT ask the user for clarification or guess blindly. Proactively call `look_at_screen` first to inspect their screen and discover the context.")
+            appendLine("- **Deictic and Contextual References**: Immediately call `look_at_screen` when the user refers to pronouns or on-screen elements like 'this', 'that', 'here', 'the error', 'this message', 'this post', 'the article', 'this code', 'the price', or the current app/page.")
+            appendLine("- **Character Persona Integration**: Regardless of your persona or character role, always perform this tool call first in the background to gather necessary context. Once you have the visual context, seamlessly incorporate it and respond in your established character tone and personality. Do NOT break character to say you cannot see the screen or ask the user to describe what is visible when this tool is available.")
+            if (hasScreenInContext) {
+                appendLine("- **Current Status**: A screenshot has already been inspected in earlier turns of this conversation. Only call `look_at_screen` again if you need to re-verify the summon-time screen.")
+            } else {
+                appendLine("- **Current Status**: The summon-time screenshot has not been inspected yet in this conversation. When in doubt, call `look_at_screen`.")
+            }
+        }
+    },
+    execute = {
+        AssistScreenHolder.notifyScreenRead()
+        val dataUrl = AssistScreenHolder.dataUrlOrNull()
+        if (dataUrl.isNullOrBlank()) {
+            buildJsonObject {
+                put("note", JsonPrimitive("No screenshot is available."))
+            }
+        } else if (model.inputModalities.contains(Modality.IMAGE)) {
+            // Vision model: hand the image over as a follow-up USER message (providers can't
+            // carry images inside a tool result — doing so 400s).
+            buildJsonObject {
+                put("note", JsonPrimitive("Screenshot of the user's screen is attached below."))
+                put(
+                    TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                    JsonArray(listOf(JsonPrimitive(dataUrl))),
+                )
+            }
+        } else {
+            // Non-vision model: OCR fallback.
+            val ocrText = runCatching {
+                OcrTransformer.performOcr(UIMessagePart.Image(url = dataUrl))
+            }.getOrNull()
+            buildJsonObject {
+                put("type", JsonPrimitive("ocr_text"))
+                if (ocrText.isNullOrBlank()) {
+                    put("text", JsonPrimitive(""))
+                    put("note", JsonPrimitive("OCR could not extract text from the screenshot."))
+                } else {
+                    put("text", JsonPrimitive(ocrText))
+                }
+            }
+        }
+    },
+)
 
 internal fun List<Tool>.withUniqueToolNames(): List<Tool> {
     val occurrences = mutableMapOf<String, Int>()

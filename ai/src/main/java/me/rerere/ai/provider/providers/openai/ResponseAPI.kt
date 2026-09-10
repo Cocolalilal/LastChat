@@ -47,6 +47,7 @@ import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.common.platform.PlatformMediaEncoder
 import kotlin.time.Clock
+import kotlin.uuid.Uuid
 
 private const val TAG = "ResponseAPI"
 
@@ -74,7 +75,7 @@ class ResponseAPI(
                 method = "POST",
                 url = "${providerSetting.baseUrl}/responses",
                 headers = params.customHeaders.toHeaderMap()
-                    .withReferHeaders(providerSetting.baseUrl)
+                    .withReferHeaders(providerSetting.baseUrl, params.sessionId)
                     .withAuthAndJson(providerSetting.apiKey),
                 body = encodedRequestBody.encodeToByteArray(),
                 mediaType = "application/json",
@@ -109,7 +110,7 @@ class ResponseAPI(
             method = "POST",
             url = "${providerSetting.baseUrl}/responses",
             headers = params.customHeaders.toHeaderMap()
-                .withReferHeaders(providerSetting.baseUrl)
+                .withReferHeaders(providerSetting.baseUrl, params.sessionId)
                 .withAuthAndJson(providerSetting.apiKey),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
@@ -688,8 +689,12 @@ private fun Map<String, String>.withAuthAndJson(apiKey: String): Map<String, Str
     )
 }
 
-private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (baseUrl.urlHostOrNull()) {
+private fun Map<String, String>.withReferHeaders(
+    baseUrl: String,
+    sessionId: String? = null,
+): Map<String, String> {
+    val host = baseUrl.urlHostOrNull()?.lowercase()
+    var headers = when (host) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",
@@ -697,6 +702,13 @@ private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, S
         )
         else -> this
     }
+    if (host == "opencode.ai" || host?.endsWith(".opencode.ai") == true) {
+        if (headers.keys.none { it.equals("x-opencode-session", ignoreCase = true) }) {
+            val session = sessionId?.trim()?.takeIf { it.isNotEmpty() } ?: Uuid.random().toString()
+            headers = headers + ("x-opencode-session" to session)
+        }
+    }
+    return headers
 }
 
 private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {

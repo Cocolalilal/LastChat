@@ -46,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,6 +117,7 @@ import me.rerere.ai.core.MessageRole as AIMessageRole
  * Represents a group of consecutive messages from the same role.
  * For assistant messages, this groups all consecutive assistant nodes together.
  */
+@Immutable
 data class MessageTurnGroup(
     val nodes: List<MessageNode>,
     val role: MessageRole
@@ -218,7 +220,9 @@ data class MessageTurnGroup(
  * Group consecutive messages by role into MessageTurnGroups.
  * TOOL messages are treated as part of the ASSISTANT turn (they're tool results).
  */
-fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
+fun List<MessageNode>.groupIntoTurns(
+    previousGroups: List<MessageTurnGroup>? = null
+): List<MessageTurnGroup> {
     if (isEmpty()) return emptyList()
     
     val groups = mutableListOf<MessageTurnGroup>()
@@ -231,6 +235,24 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         MessageRole.TOOL -> MessageRole.ASSISTANT
         else -> role
     }
+
+    fun finishCurrentGroup() {
+        if (currentGroup.isNotEmpty() && currentGroupRole != null) {
+            val role = currentGroupRole!!
+            val groupIdx = groups.size
+            val prev = previousGroups?.getOrNull(groupIdx)
+            if (prev != null &&
+                prev.role == role &&
+                prev.nodes.size == currentGroup.size &&
+                prev.nodes.indices.all { i -> prev.nodes[i] === currentGroup[i] }
+            ) {
+                groups.add(prev)
+            } else {
+                groups.add(MessageTurnGroup(currentGroup.toList(), role))
+            }
+            currentGroup = mutableListOf()
+        }
+    }
     
     forEach { node ->
         val nodeRole = node.currentMessage.role
@@ -238,16 +260,13 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         
         // Start a new group if logical role changes
         if (currentGroup.isNotEmpty() && (logicalRole != currentGroupRole || node.forceTurnBreakBefore)) {
-            groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
-            currentGroup = mutableListOf()
+            finishCurrentGroup()
         }
         currentGroup.add(node)
         currentGroupRole = logicalRole
     }
     
-    if (currentGroup.isNotEmpty() && currentGroupRole != null) {
-        groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
-    }
+    finishCurrentGroup()
     
     return groups
 }
@@ -297,7 +316,10 @@ private fun JsonElement.lightSignature(depth: Int = 0): Int {
     }
 }
 
-private fun MessageTurnGroup.activityStateSignature(loading: Boolean): Long {
+private fun MessageTurnGroup.activityStateSignature(
+    loading: Boolean,
+    includeReasoningText: Boolean = false,
+): Long {
     var hash = SIGNATURE_OFFSET
         .mix(role.hashCode())
         .mix(activeVersionTag.hashCode())
@@ -327,15 +349,21 @@ private fun MessageTurnGroup.activityStateSignature(loading: Boolean): Long {
             hash = when (part) {
                 is UIMessagePart.Text -> hash
                     .mix(1)
-                    .mix(part.text.length)
                     .mix(if (part.text.isBlank()) 1 else 0)
 
-                is UIMessagePart.Reasoning -> hash
-                    .mix(2)
-                    .mix(part.reasoning.length)
-                    .mix(part.createdAt.toEpochMilliseconds())
-                    .mix(part.finishedAt?.toEpochMilliseconds() ?: -1L)
-                    .mix(sampledStringHash(part.title))
+                is UIMessagePart.Reasoning -> {
+                    hash = hash
+                        .mix(2)
+                        .mix(part.createdAt.toEpochMilliseconds())
+                        .mix(part.finishedAt?.toEpochMilliseconds() ?: -1L)
+                        .mix(sampledStringHash(part.title))
+                    if (includeReasoningText) {
+                        hash = hash.mix(part.reasoning.length)
+                    } else {
+                        hash = hash.mix(if (part.reasoning.isBlank()) 1 else 0)
+                    }
+                    hash
+                }
 
                 is UIMessagePart.ToolCall -> hash
                     .mix(3)
@@ -359,7 +387,7 @@ private fun MessageTurnGroup.activityStateSignature(loading: Boolean): Long {
 }
 
 private fun MessageTurnGroup.timelineEntriesSignature(loading: Boolean): Long {
-    var hash = activityStateSignature(loading)
+    var hash = activityStateSignature(loading, includeReasoningText = true)
 
     filteredNodes.forEach { node ->
         node.currentMessage.parts.forEach { part ->
@@ -1007,7 +1035,10 @@ fun ChatMessageTurn(
     // remember keys; using MessageTurnGroup or MessageNode keys can structurally
     // compare large JsonElement tool payloads on the UI thread.
     val isTimelineLive = loading && isLastTurn
-    val activitySignature = group.activityStateSignature(isTimelineLive)
+    val activitySignature = group.activityStateSignature(
+        loading = isTimelineLive,
+        includeReasoningText = effectiveDisplay.reasoningPreviewEnabled
+    )
     val activityState = remember(activitySignature) {
         deriveActivityState(
             parts = group.allParts,

@@ -62,6 +62,33 @@ function preProcess(content: string): string {
     return `$$${group1}$$`;
   });
 
+  // Find all protected blocks (code and math)
+  const protectedRanges: { start: number; end: number }[] = [...codeBlocks];
+  const mathBlockRegex = /\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$/g;
+  while ((match = mathBlockRegex.exec(result)) !== null) {
+    protectedRanges.push({ start: match.index, end: match.index + match[0].length });
+  }
+
+  const isProtected = (start: number, end: number): boolean => {
+    return protectedRanges.some((range) => (start >= range.start && start < range.end) || (end > range.start && end <= range.end));
+  };
+
+  // Replace ==highlight== to <mark>highlight</mark>, skip code & math
+  result = result.replace(/(?<![=\\])==(?![=\s])([^=\n]+?)(?<![\s=\\])==(?!=)/g, (match, group1, offset) => {
+    if (isProtected(offset, offset + match.length)) {
+      return match;
+    }
+    return `<mark>${group1}</mark>`;
+  });
+
+  // Replace ++underline++ to <u>underline</u>, skip code & math
+  result = result.replace(/(?<![\+\\])\+\+(?![\+\s])([^\+\n]+?)(?<![\s\+\\])\+\+(?!\+)/g, (match, group1, offset) => {
+    if (isProtected(offset, offset + match.length)) {
+      return match;
+    }
+    return `<u>${group1}</u>`;
+  });
+
   return result;
 }
 
@@ -246,6 +273,14 @@ export default function Markdown({
             del: ({ children, style, ...props }: any) => {
               const color = getRuleColor("~~");
               return <del style={color ? { ...style, color } : style} {...props}>{children}</del>;
+            },
+            mark: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("==") || getRuleColor("<mark>");
+              return <mark style={color ? { ...style, color, backgroundColor: `${color}33` } : style} {...props}>{children}</mark>;
+            },
+            u: ({ children, style, ...props }: any) => {
+              const color = getRuleColor("++") || getRuleColor("<u>");
+              return <u style={color ? { ...style, color } : style} {...props}>{children}</u>;
             },
             code: MarkdownCode as never,
             a: ({ href, children, ...props }) => {

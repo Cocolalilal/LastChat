@@ -62,18 +62,13 @@ class IosBackupImportTest {
         val settings = AndroidFixtures.settingsJson()
         val plan = IosBackupImporter.buildImportPlan(settings)
 
-        assertEquals(IosProviderType.OPENAI, plan.selectedProviderType)
-        assertEquals(2, plan.providerCredentials.size)
+        assertEquals(3, plan.providers.size)
+        assertEquals(3, plan.providerApiKeys.size)
+        assertEquals("sk-test", plan.providerApiKeys[AndroidFixtures.OPENAI_PROVIDER_ID])
+        assertEquals("sk-or", plan.providerApiKeys[AndroidFixtures.OPENROUTER_PROVIDER_ID])
+        assertEquals("g-key", plan.providerApiKeys[AndroidFixtures.GOOGLE_PROVIDER_ID])
+        assertEquals(AndroidFixtures.CHAT_MODEL_ID, plan.selectedChatModelId)
 
-        val openai = plan.providerCredentials.first { it.type == IosProviderType.OPENAI }
-        assertEquals("https://api.openai.com/v1", openai.baseUrl)
-        assertEquals("gpt-4.1-mini", openai.modelId)
-        assertEquals("sk-test", openai.apiKey)
-
-        val google = plan.providerCredentials.first { it.type == IosProviderType.GOOGLE }
-        assertEquals("g-key", google.apiKey)
-
-        assertContains(plan.skipped.first { "additional openai" in it }, "1 additional openai provider")
         assertContains(plan.skipped.first { "Vertex AI" in it }, "Vertex")
 
         assertEquals(2, plan.assistants.size)
@@ -81,7 +76,7 @@ class IosBackupImportTest {
         assertEquals("33333333-3333-3333-3333-333333333333", nova.id)
         assertEquals("You are Nova", nova.systemPrompt)
         assertEquals(IosMemoryMode.SEARCHABLE, nova.memoryMode)
-        assertEquals(IosProviderType.OPENAI, nova.embeddingProviderType)
+        assertEquals(AndroidFixtures.OPENAI_PROVIDER_ID, nova.embeddingProviderId)
         assertEquals("text-embedding-3-small", nova.embeddingModelId)
         assertEquals(0.6f, nova.ragSimilarityThreshold)
         assertEquals(7, nova.ragLimit)

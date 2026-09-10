@@ -168,17 +168,19 @@ class MemoryRepository(
         val cached = embeddingCacheDAO.getEmbedding(memoryId, memoryType, modelId)
         val cachedVectors = cached?.let { decodeEmbeddings(it.embedding, it.embeddingBlob) }
         if (cachedVectors != null) {
-            val normalizedBlob = cachedVectors.toByteArray()
             embeddingCache[cacheKey] = cachedVectors
-            embeddingCacheDAO.insertEmbedding(
-                EmbeddingCacheEntity(
-                    memoryId = memoryId,
-                    memoryType = memoryType,
-                    modelId = modelId,
-                    embedding = "",
-                    embeddingBlob = normalizedBlob,
+            if (cached.embeddingBlob == null || !cached.embedding.isNullOrBlank()) {
+                val normalizedBlob = cachedVectors.toByteArray()
+                embeddingCacheDAO.insertEmbedding(
+                    EmbeddingCacheEntity(
+                        memoryId = memoryId,
+                        memoryType = memoryType,
+                        modelId = modelId,
+                        embedding = "",
+                        embeddingBlob = normalizedBlob,
+                    )
                 )
-            )
+            }
             return cachedVectors
         }
         return null
@@ -250,6 +252,10 @@ class MemoryRepository(
         }
         removeCachedEmbeddings(episodeIds, MemoryType.EPISODIC)
         return episodeIds.size
+    }
+
+    fun invalidateEmbeddingCache(memoryId: Int, memoryType: Int) {
+        removeCachedEmbeddings(listOf(memoryId), memoryType)
     }
 
     private fun removeCachedEmbeddings(ids: Collection<Int>, memoryType: Int) {
@@ -409,15 +415,18 @@ class MemoryRepository(
             content = content,
             type = MemoryType.CORE,
             hasEmbedding = embeddingResult != null,
-            embeddingModelId = embeddingResult?.modelId
+            embeddingModelId = embeddingResult?.modelId,
+            timestamp = entity.createdAt,
         )
     }
 
     suspend fun deleteMemory(id: Int) {
         if (id < 0) error("Cannot delete episodic memories via tool — they are auto-managed")
-        memoryDAO.deleteMemory(id)
-        embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
-        embeddingCache.keys.removeAll { it.startsWith("${MemoryType.CORE}:$id:") }
+        database.withTransaction {
+            memoryDAO.deleteMemory(id)
+            embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
+        }
+        removeCachedEmbeddings(listOf(id), MemoryType.CORE)
     }
 
     /**
@@ -501,8 +510,8 @@ class MemoryRepository(
             null
         }
 
-        // Fetch a reasonable number of candidates (limit * 20, max 1000) to avoid OOM
-        val fetchLimit = (safeLimit * 20).coerceAtMost(1000)
+        // Fetch a reasonable number of candidates to avoid OOM while ensuring strong recall
+        val fetchLimit = (safeLimit * 50).coerceIn(500, 1000)
 
         // Get both core memories and episodes with limit
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistantLimited(assistantId, fetchLimit) else emptyList()
@@ -582,14 +591,20 @@ class MemoryRepository(
         // Combine and sort by score
         val allScored = (memoryScores + episodeScores).sortedByDescending { it.second }
         
-        // Update lastAccessedAt for retrieved memories
-        allScored.take(safeLimit).forEach { (item, _, isMemory) ->
-            if (isMemory) {
-                val memory = item as MemoryEntity
-                memoryDAO.updateMemory(memory.copy(lastAccessedAt = System.currentTimeMillis()))
-            } else {
-                val episode = item as ChatEpisodeEntity
-                chatEpisodeDAO.insertEpisode(episode.copy(lastAccessedAt = System.currentTimeMillis()))
+        // Update lastAccessedAt for retrieved memories in a single transaction
+        val retrieved = allScored.take(safeLimit)
+        if (retrieved.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            database.withTransaction {
+                retrieved.forEach { (item, _, isMemory) ->
+                    if (isMemory) {
+                        val memory = item as MemoryEntity
+                        memoryDAO.updateMemory(memory.copy(lastAccessedAt = now))
+                    } else {
+                        val episode = item as ChatEpisodeEntity
+                        chatEpisodeDAO.insertEpisode(episode.copy(lastAccessedAt = now))
+                    }
+                }
             }
         }
         

@@ -123,11 +123,13 @@ data class IosAssistantPreferences(
     val name: String = "Assistant",
     val systemPrompt: String = "",
     val memoryMode: IosMemoryMode = IosMemoryMode.OFF,
-    val embeddingProviderType: IosProviderType = IosProviderType.OPENAI,
+    val embeddingProviderId: String? = null,
     val embeddingModelId: String = "text-embedding-3-small",
     val ragSimilarityThreshold: Float = 0.45f,
     val ragLimit: Int = 10,
     val localTools: Set<IosLocalToolOption> = emptySet(),
+    /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
+    val embeddingProviderType: IosProviderType? = null,
 )
 
 @Serializable
@@ -192,24 +194,13 @@ data class IosTtsPreferences(
 @Serializable
 data class IosImageGenerationPreferences(
     val enabled: Boolean = false,
-    val providerType: IosImageProviderType = IosImageProviderType.OPENAI,
+    val providerId: String? = null,
     val modelId: String = "gpt-image-1",
     val method: ImageGenerationMethod = ImageGenerationMethod.DIFFUSION,
-    val comfyUi: IosComfyUiPreferences = IosComfyUiPreferences(),
 )
 
 @Serializable
 enum class IosImageProviderType { OPENAI, GOOGLE, COMFY_UI }
-
-@Serializable
-data class IosComfyUiPreferences(
-    val baseUrl: String = "http://127.0.0.1:8188",
-    val workflowJson: String = "",
-    val promptNodeId: String = "",
-    val promptInputName: String = "text",
-    val modelNodeId: String = "",
-    val modelInputName: String = "ckpt_name",
-)
 
 @Serializable
 data class IosGeneratedImage(
@@ -311,8 +302,8 @@ data class IosAppState(
     val generating: Boolean = false,
     val conversations: List<IosConversation> = emptyList(),
     val selectedConversationId: String? = null,
-    val provider: IosProviderPreferences = IosProviderPreferences(),
-    val providerConfigurations: List<IosProviderPreferences> = listOf(IosProviderPreferences()),
+    val providers: List<ProviderSetting> = emptyList(),
+    val selectedChatModelId: String? = null,
     val appearance: IosAppearancePreferences = IosAppearancePreferences(),
     val assistants: List<IosAssistantPreferences> = listOf(IosAssistantPreferences(id = "default")),
     val selectedAssistantId: String? = "default",
@@ -341,6 +332,41 @@ data class IosAppState(
             ?: IosAssistantPreferences(id = "default")
     val assistantMemories: List<IosMemoryRecord>
         get() = memories.filter { it.assistantId == assistant.id && (it.active || it.type == 1) }
+
+    /** The selected chat model paired with its provider, resolved like Android's chatModelId. */
+    val selectedChatModel: Pair<ProviderSetting, Model>?
+        get() = findProviderModel(providers, selectedChatModelId)
+}
+
+/** Resolves a model reference (`Model.id` string) against the provider list. */
+internal fun findProviderModel(
+    providers: List<ProviderSetting>,
+    modelRef: String?,
+): Pair<ProviderSetting, Model>? {
+    if (modelRef == null) return null
+    providers.forEach { provider ->
+        val model = provider.models.firstOrNull { it.id.toString() == modelRef } ?: return@forEach
+        return provider to model
+    }
+    return null
+}
+
+/** The iOS-supported chat provider kind of a shared ProviderSetting, or null when the
+ *  provider type cannot be used on iOS (LiteRT local, etc.). */
+internal fun chatProviderType(provider: ProviderSetting): IosProviderType? = when (provider) {
+    is ProviderSetting.OpenAI -> IosProviderType.OPENAI
+    is ProviderSetting.Google -> IosProviderType.GOOGLE
+    is ProviderSetting.Claude -> IosProviderType.CLAUDE
+    else -> null
+}
+
+/** Swaps in the request-time API key and single model snapshot. */
+internal fun ProviderSetting.withApiKey(apiKey: String, model: Model): ProviderSetting = when (this) {
+    is ProviderSetting.OpenAI -> copy(apiKey = apiKey, models = listOf(model))
+    is ProviderSetting.Google -> copy(apiKey = apiKey, models = listOf(model))
+    is ProviderSetting.Claude -> copy(apiKey = apiKey, models = listOf(model))
+    is ProviderSetting.ComfyUI -> this
+    else -> this
 }
 
 /**
@@ -402,8 +428,25 @@ class IosAppController(
             val stored = fileStore.readBytes(STATE_PATH)?.decodeToString()?.let { encoded ->
                 runCatching { json.decodeFromString<IosStoredState>(encoded) }.getOrNull()
             }
+            val legacyProviders = stored?.providerConfigurations.orEmpty().mapNotNull { config ->
+                migrateLegacyProvider(config)
+            }
+            val providers = stored?.providers.orEmpty().ifEmpty { legacyProviders }
+            val selectedChatModelId = stored?.selectedChatModelId
+                ?: providers.firstNotNullOfOrNull { provider ->
+                    provider.models.firstOrNull { it.type == ModelType.CHAT }?.id?.toString()
+                }
             val legacyAssistant = stored?.assistant ?: IosAssistantPreferences()
             val assistants = stored?.assistants.orEmpty().ifEmpty { listOf(legacyAssistant) }
+                .map { assistant ->
+                    if (assistant.embeddingProviderId == null && assistant.embeddingProviderType != null) {
+                        assistant.copy(
+                            embeddingProviderId = providers.firstOrNull { provider ->
+                                chatProviderType(provider) == assistant.embeddingProviderType
+                            }?.id?.toString(),
+                        )
+                    } else assistant
+                }
             val selectedAssistantId = stored?.selectedAssistantId
                 ?.takeIf { selected -> assistants.any { it.id == selected } }
                 ?: assistants.first().id
@@ -423,20 +466,16 @@ class IosAppController(
                 ?.assistantId
                 ?.takeIf { id -> assistants.any { it.id == id } }
                 ?: selectedAssistantId
-            val selectedProvider = stored?.provider ?: IosProviderPreferences()
-            val providerConfigurations = IosProviderType.entries.map { type ->
-                stored?.providerConfigurations.orEmpty().firstOrNull { it.type == type }
-                    ?: selectedProvider.takeIf { it.type == type }
-                    ?: defaultProviderPreferences(type)
-            }
+            val selectedModel = findProviderModel(providers, selectedChatModelId)
+            val selectedProviderId = selectedModel?.first?.id?.toString()
             val ttsPreferences = stored?.tts ?: IosTtsPreferences()
             val ttsApiKey = secureStore.readString(ttsApiKeyName(ttsPreferences.type)).orEmpty()
             mutableState.value = IosAppState(
                 loading = false,
                 conversations = conversations,
                 selectedConversationId = selectedConversationId,
-                provider = selectedProvider,
-                providerConfigurations = providerConfigurations,
+                providers = providers,
+                selectedChatModelId = selectedChatModelId,
                 appearance = stored?.appearance ?: IosAppearancePreferences(),
                 assistants = assistants,
                 selectedAssistantId = restoredAssistantId,
@@ -460,8 +499,9 @@ class IosAppController(
                         )
                     }
                 },
-                hasApiKey = secureStore.readString(apiKeyName(stored?.provider?.type ?: IosProviderType.OPENAI))
-                    .isNullOrBlank().not(),
+                hasApiKey = selectedProviderId?.let { providerId ->
+                    secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not()
+                } ?: false,
                 hasSearchApiKey = hasSearchApiKey(stored?.search ?: IosSearchPreferences()),
                 hasTtsApiKey = ttsApiKey.isNotBlank(),
             )
@@ -488,6 +528,36 @@ class IosAppController(
         scheduleAdaptiveBackground = schedule
         cancelAdaptiveBackground = cancel
         refreshAdaptiveBackgroundSchedule()
+    }
+
+    /** Converts a legacy per-type provider configuration into a shared ProviderSetting,
+     *  moving its Keychain entry to the new provider-scoped key. */
+    private suspend fun migrateLegacyProvider(config: IosProviderPreferences): ProviderSetting? {
+        val providerId = Uuid.random().toString()
+        val legacyKey = secureStore.readString(legacyApiKeyName(config.type)).orEmpty()
+        if (legacyKey.isNotBlank()) secureStore.writeString(apiKeyName(providerId), legacyKey)
+        val model = Model(
+            modelId = config.modelId,
+            displayName = config.modelId,
+            type = ModelType.CHAT,
+        )
+        return when (config.type) {
+            IosProviderType.OPENAI -> ProviderSetting.OpenAI(
+                name = "OpenAI compatible",
+                baseUrl = config.baseUrl,
+                models = listOf(model),
+            )
+            IosProviderType.GOOGLE -> ProviderSetting.Google(
+                name = "Google",
+                baseUrl = config.baseUrl,
+                models = listOf(model),
+            )
+            IosProviderType.CLAUDE -> ProviderSetting.Claude(
+                name = "Claude",
+                baseUrl = config.baseUrl,
+                models = listOf(model),
+            )
+        }
     }
 
     fun runAdaptiveBackgroundMaintenance(completion: (Boolean) -> Unit) {
@@ -606,58 +676,107 @@ class IosAppController(
         refreshScheduledMessageBackgroundSchedule()
     }
 
-    fun saveProvider(type: IosProviderType, baseUrl: String, modelId: String, apiKey: String) {
+    fun saveProvider(providerId: String, name: String, baseUrl: String, apiKey: String) {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
-        val normalizedModel = modelId.trim()
-        if (normalizedBaseUrl.isBlank() || normalizedModel.isBlank()) {
-            mutableState.update { it.copy(error = "Base URL and model ID are required.") }
+        if (name.isBlank() || normalizedBaseUrl.isBlank()) {
+            mutableState.update { it.copy(error = "Provider name and base URL are required.") }
             return
         }
         scope.launch {
-            if (apiKey.isNotBlank()) secureStore.writeString(apiKeyName(type), apiKey.trim())
-            val hasSavedKey = apiKey.isNotBlank() ||
-                secureStore.readString(apiKeyName(type)).isNullOrBlank().not()
-            mutableState.update {
-                it.copy(
-                    provider = IosProviderPreferences(type, normalizedBaseUrl, normalizedModel),
-                    providerConfigurations = it.providerConfigurations
-                        .filterNot { preferences -> preferences.type == type } +
-                        IosProviderPreferences(type, normalizedBaseUrl, normalizedModel),
-                    hasApiKey = hasSavedKey,
+            if (apiKey.isNotBlank()) secureStore.writeString(apiKeyName(providerId), apiKey.trim())
+            val hasSelectedKey = mutableState.value.selectedChatModel
+                ?.takeIf { (provider, _) -> provider.id.toString() == providerId }
+                ?.let { secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not() }
+            mutableState.update { current ->
+                current.copy(
+                    providers = current.providers.map { provider ->
+                        if (provider.id.toString() != providerId) provider else when (provider) {
+                            is ProviderSetting.OpenAI -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
+                            is ProviderSetting.Google -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
+                            is ProviderSetting.Claude -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
+                            else -> provider
+                        }
+                    },
+                    hasApiKey = hasSelectedKey ?: current.hasApiKey,
                     error = null,
                 )
             }
             persist()
+        }
+    }
+
+    fun addProvider(name: String, type: IosProviderType) {
+        val provider = when (type) {
+            IosProviderType.OPENAI -> ProviderSetting.OpenAI(name = name)
+            IosProviderType.GOOGLE -> ProviderSetting.Google(name = name)
+            IosProviderType.CLAUDE -> ProviderSetting.Claude(name = name)
+        }
+        mutableState.update { current ->
+            current.copy(providers = current.providers + provider)
+        }
+        persistAsync()
+    }
+
+    fun deleteProvider(providerId: String) {
+        mutableState.update { current ->
+            val remaining = current.providers.filterNot { it.id.toString() == providerId }
+            current.copy(
+                providers = remaining,
+                selectedChatModelId = current.selectedChatModelId
+                    ?.takeIf { ref -> findProviderModel(remaining, ref) != null },
+            )
+        }
+        scope.launch { secureStore.remove(apiKeyName(providerId)) }
+        persistAsync()
+    }
+
+    fun addModelToProvider(providerId: String, modelId: String) {
+        val normalized = modelId.trim()
+        if (normalized.isBlank()) return
+        mutableState.update { current ->
+            current.copy(providers = current.providers.map { provider ->
+                if (provider.id.toString() != providerId) provider else provider.addModel(
+                    Model(modelId = normalized, displayName = normalized, type = ModelType.CHAT),
+                )
+            })
+        }
+        persistAsync()
+    }
+
+    fun removeModelFromProvider(providerId: String, modelRef: String) {
+        mutableState.update { current ->
+            current.copy(providers = current.providers.map { provider ->
+                if (provider.id.toString() != providerId) provider else provider.models
+                    .firstOrNull { it.id.toString() == modelRef }
+                    ?.let(provider::delModel)
+                    ?: provider
+            })
+        }
+        persistAsync()
+    }
+
+    fun selectDefaultModel(providerId: String, modelDisplayId: String) {
+        val provider = mutableState.value.providers
+            .firstOrNull { it.id.toString() == providerId } ?: return
+        val model = provider.models
+            .firstOrNull { it.modelId == modelDisplayId && it.type == ModelType.CHAT } ?: return
+        mutableState.update { it.copy(selectedChatModelId = model.id.toString()) }
+        persistAsync()
+    }
+
+    fun clearProviderApiKey(providerId: String) {
+        scope.launch {
+            secureStore.remove(apiKeyName(providerId))
+            val selectedProviderId = mutableState.value.selectedChatModel?.first?.id?.toString()
+            if (selectedProviderId == providerId) {
+                mutableState.update { it.copy(hasApiKey = false) }
+            }
         }
     }
 
     fun clearApiKey() {
-        scope.launch {
-            secureStore.remove(apiKeyName(mutableState.value.provider.type))
-            mutableState.update { it.copy(hasApiKey = false) }
-        }
-    }
-
-    fun selectDefaultModel(type: IosProviderType, modelId: String) {
-        val configuration = mutableState.value.providerConfigurations
-            .firstOrNull { it.type == type }
-            ?: return
-        val normalizedModelId = modelId.trim()
-        if (normalizedModelId.isBlank()) return
-        scope.launch {
-            val selected = configuration.copy(modelId = normalizedModelId)
-            val hasSavedKey = secureStore.readString(apiKeyName(type)).isNullOrBlank().not()
-            mutableState.update { current ->
-                current.copy(
-                    provider = selected,
-                    providerConfigurations = current.providerConfigurations
-                        .filterNot { it.type == type } + selected,
-                    hasApiKey = hasSavedKey,
-                    error = null,
-                )
-            }
-            persist()
-        }
+        val providerId = mutableState.value.selectedChatModel?.first?.id?.toString() ?: return
+        clearProviderApiKey(providerId)
     }
 
     fun saveSearch(
@@ -756,32 +875,13 @@ class IosAppController(
             mutableState.update { it.copy(error = "Select an image generation model first.") }
             return
         }
-        if (
-            preferences.enabled &&
-            preferences.providerType == IosImageProviderType.COMFY_UI &&
-            preferences.comfyUi.workflowJson.isBlank()
-        ) {
-            mutableState.update { it.copy(error = "Import a ComfyUI API workflow JSON first.") }
+        if (preferences.enabled && preferences.providerId.isNullOrBlank()) {
+            mutableState.update { it.copy(error = "Select the image generation provider first.") }
             return
         }
         mutableState.update {
             it.copy(
-                imageGeneration = preferences.copy(
-                    modelId = modelId,
-                    method = if (preferences.providerType == IosImageProviderType.COMFY_UI) {
-                        ImageGenerationMethod.DIFFUSION
-                    } else {
-                        preferences.method
-                    },
-                    comfyUi = preferences.comfyUi.copy(
-                        baseUrl = preferences.comfyUi.baseUrl.trim(),
-                        workflowJson = preferences.comfyUi.workflowJson.trim(),
-                        promptNodeId = preferences.comfyUi.promptNodeId.trim(),
-                        promptInputName = preferences.comfyUi.promptInputName.trim().ifBlank { "text" },
-                        modelNodeId = preferences.comfyUi.modelNodeId.trim(),
-                        modelInputName = preferences.comfyUi.modelInputName.trim().ifBlank { "ckpt_name" },
-                    ),
-                ),
+                imageGeneration = preferences.copy(modelId = modelId),
                 error = null,
             )
         }
@@ -939,7 +1039,7 @@ class IosAppController(
 
     fun saveMemorySettings(
         mode: IosMemoryMode,
-        embeddingProviderType: IosProviderType,
+        embeddingProviderId: String?,
         embeddingModelId: String,
         similarityThreshold: Float,
         limit: Int,
@@ -956,7 +1056,7 @@ class IosAppController(
                     if (assistant.id == assistantId) {
                         assistant.copy(
                             memoryMode = mode,
-                            embeddingProviderType = embeddingProviderType,
+                            embeddingProviderId = embeddingProviderId,
                             embeddingModelId = normalizedModel,
                             ragSimilarityThreshold = similarityThreshold.coerceIn(0f, 1f),
                             ragLimit = limit.coerceIn(1, 20),
@@ -1168,16 +1268,38 @@ class IosAppController(
         }
     }
 
+    private data class GenerationTarget(
+        val providerSetting: ProviderSetting,
+        val model: Model,
+    )
+
+    private suspend fun readApiKey(providerId: String): String =
+        secureStore.readString(apiKeyName(providerId)).orEmpty()
+
+    private suspend fun resolveChatGeneration(): GenerationTarget? {
+        val selected = mutableState.value.selectedChatModel
+        if (selected == null) {
+            mutableState.update { it.copy(error = "Select a chat model in Settings first.") }
+            return null
+        }
+        val apiKey = readApiKey(selected.first.id.toString())
+        if (apiKey.isBlank()) {
+            mutableState.update {
+                it.copy(error = "Configure the ${selected.first.name} API key in Settings first.")
+            }
+            return null
+        }
+        return GenerationTarget(selected.first.withApiKey(apiKey, selected.second), selected.second)
+    }
+
     fun send(text: String) {
         val prompt = text.trim()
         val snapshot = mutableState.value
         val conversation = snapshot.selectedConversation ?: return
         if ((prompt.isEmpty() && snapshot.pendingAttachments.isEmpty()) || snapshot.generating) return
         generationJob = scope.launch {
-            val preferences = snapshot.provider
-            val apiKey = secureStore.readString(apiKeyName(preferences.type))
-            if (apiKey.isNullOrBlank()) {
-                mutableState.update { it.copy(error = "Configure an API key in Settings first.") }
+            val target = resolveChatGeneration()
+            if (target == null) {
                 generationJob = null
                 return@launch
             }
@@ -1210,7 +1332,7 @@ class IosAppController(
             }
             persist()
 
-            val model = Model(modelId = preferences.modelId, displayName = preferences.modelId)
+            val model = target.model
             val selectedMemories = runCatching {
                 selectMemories(snapshot.assistant, prompt)
             }.getOrElse { emptyList() }
@@ -1247,8 +1369,7 @@ class IosAppController(
                     toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
                     requestMessages.drop(systemMessages.size)
                 runProviderToolLoop(
-                    preferences,
-                    apiKey,
+                    target.providerSetting,
                     model,
                     conversation.id,
                     tools,
@@ -1334,7 +1455,6 @@ class IosAppController(
         val snapshot = mutableState.value
         if (snapshot.generating) return
         val conversation = snapshot.conversations.firstOrNull { it.id == conversationId } ?: return
-        val preferences = snapshot.provider
         val nodes = conversation.messageNodes
         val lastUserIndex = nodes.indexOfLast { it.role == MessageRole.USER }
         if (lastUserIndex == -1 || lastUserIndex == nodes.lastIndex) return
@@ -1345,9 +1465,8 @@ class IosAppController(
             ?.plus(turnStart)
             ?: return
         generationJob = scope.launch {
-            val apiKey = secureStore.readString(apiKeyName(preferences.type))
-            if (apiKey.isNullOrBlank()) {
-                mutableState.update { it.copy(error = "Configure an API key in Settings first.") }
+            val target = resolveChatGeneration()
+            if (target == null) {
                 generationJob = null
                 return@launch
             }
@@ -1404,7 +1523,7 @@ class IosAppController(
                         } else message
                     }
                 } else history
-                val model = Model(modelId = preferences.modelId, displayName = preferences.modelId)
+                val model = target.model
                 val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
                     buildMemoryTools(assistant) +
                     buildLocalTools(assistant, conversationId)
@@ -1413,8 +1532,7 @@ class IosAppController(
                     toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
                     requestMessages
                 runProviderToolLoop(
-                    preferences,
-                    apiKey,
+                    target.providerSetting,
                     model,
                     conversationId,
                     tools,
@@ -1442,8 +1560,7 @@ class IosAppController(
     }
 
     private suspend fun runProviderToolLoop(
-        preferences: IosProviderPreferences,
-        apiKey: String,
+        providerSetting: ProviderSetting,
         model: Model,
         conversationId: String,
         tools: List<Tool>,
@@ -1453,7 +1570,7 @@ class IosAppController(
         var toolStep = 0
         var lastCheckpointAt = Clock.System.now().toEpochMilliseconds()
         while (true) {
-            providerFlow(preferences, apiKey, model, providerMessages, tools).collect { chunk ->
+            providerFlow(providerSetting, model, providerMessages, tools).collect { chunk ->
                 updateConversation(conversationId) { current ->
                     val currentMessages = current.currentMessages
                     val last = currentMessages.lastOrNull()
@@ -1507,40 +1624,14 @@ class IosAppController(
     }
 
     private suspend fun providerFlow(
-        preferences: IosProviderPreferences,
-        apiKey: String,
+        providerSetting: ProviderSetting,
         model: Model,
         messages: List<UIMessage>,
         tools: List<Tool>,
-    ): kotlinx.coroutines.flow.Flow<MessageChunk> = when (preferences.type) {
-        IosProviderType.OPENAI -> {
-            val setting = ProviderSetting.OpenAI(
-                name = "OpenAI compatible", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).streamText(
-                setting, messages, TextGenerationParams(model = model, tools = tools),
-            )
-        }
-        IosProviderType.GOOGLE -> {
-            val setting = ProviderSetting.Google(
-                name = "Google", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).streamText(
-                setting, messages, TextGenerationParams(model = model, tools = tools),
-            )
-        }
-        IosProviderType.CLAUDE -> {
-            val setting = ProviderSetting.Claude(
-                name = "Claude", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).streamText(
-                setting, messages, TextGenerationParams(model = model, tools = tools),
-            )
-        }
-    }
+    ): kotlinx.coroutines.flow.Flow<MessageChunk> =
+        providerManager.getProviderByType(providerSetting).streamText(
+            providerSetting, messages, TextGenerationParams(model = model, tools = tools),
+        )
 
     private fun scheduleAdaptiveMemory(conversationId: String) {
         val snapshot = mutableState.value
@@ -1666,13 +1757,11 @@ class IosAppController(
             - Keep it concise (under 2 sentences if possible) as it is a notification.
             - Do NOT include quotes or prefixes like "Notification:". Just the content.
         """.trimIndent()
-        val preferences = snapshot.provider
-        val apiKey = secureStore.readString(apiKeyName(preferences.type)).orEmpty()
-        require(apiKey.isNotBlank()) { "Configure the selected provider API key first." }
+        val target = resolveChatGeneration()
+        requireNotNull(target) { "Configure a chat model and its API key first." }
         val response = generateBackgroundText(
-            preferences = preferences,
-            apiKey = apiKey,
-            model = Model(preferences.modelId, preferences.modelId),
+            providerSetting = target.providerSetting,
+            model = target.model,
             prompt = prompt,
             temperature = 0.7f,
             thinkingBudget = 0,
@@ -1754,22 +1843,20 @@ class IosAppController(
         persist()
         generationJob = scope.launch {
             try {
-                val preferences = mutableState.value.provider
-                val apiKey = secureStore.readString(apiKeyName(preferences.type)).orEmpty()
-                require(apiKey.isNotBlank()) { "Configure an API key in Settings first." }
+                val target = resolveChatGeneration()
+                    ?: error("Configure a chat model and its API key first.")
                 val tools = listOfNotNull(buildSearchTool(mutableState.value.search)) +
                     buildMemoryTools(assistant) + buildLocalTools(assistant, conversation.id)
                 val systemMessages = assistant.systemPrompt.takeIf(String::isNotBlank)
                     ?.let { listOf(UIMessage.system(it)) }.orEmpty()
                 val storedMessages = mutableState.value.conversations
                     .first { it.id == conversation.id }.currentMessages.dropLast(1)
-                val model = Model(preferences.modelId, preferences.modelId)
+                val model = target.model
                 val toolGuide = tools.joinToString("\n") {
                     it.systemPrompt(model, systemMessages + storedMessages)
                 }.trim()
                 runProviderToolLoop(
-                    preferences = preferences,
-                    apiKey = apiKey,
+                    providerSetting = target.providerSetting,
                     model = model,
                     conversationId = conversation.id,
                     tools = tools,
@@ -1836,12 +1923,10 @@ class IosAppController(
                 )
             }
             .toList()
-        val preferences = snapshot.provider
-        val apiKey = secureStore.readString(apiKeyName(preferences.type)).orEmpty()
-        if (apiKey.isBlank()) return
-        val model = Model(preferences.modelId, preferences.modelId)
+        val target = resolveChatGeneration() ?: return
+        val model = target.model
         val prompt = buildTemporalMemoryExtractionPrompt(sourceMessages, existing)
-        val response = generateBackgroundText(preferences, apiKey, model, prompt)
+        val response = generateBackgroundText(target.providerSetting, model, prompt)
         val text = response.choices.firstOrNull()?.message?.toContentText().orEmpty()
         val extraction = parseMemoryExtraction(text) ?: return
         applyAdaptiveExtraction(assistant, conversationId, sourceMessages, extraction)
@@ -1852,53 +1937,18 @@ class IosAppController(
     }
 
     private suspend fun generateBackgroundText(
-        preferences: IosProviderPreferences,
-        apiKey: String,
+        providerSetting: ProviderSetting,
         model: Model,
         prompt: String,
         temperature: Float = 0.1f,
         thinkingBudget: Int? = null,
-    ): MessageChunk = when (preferences.type) {
-        IosProviderType.OPENAI -> {
-            val setting = ProviderSetting.OpenAI(
-                name = "OpenAI compatible", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).generateText(
-                setting, listOf(UIMessage.user(prompt)), TextGenerationParams(
-                    model = model,
-                    temperature = temperature,
-                    thinkingBudget = thinkingBudget,
-                ),
-            )
-        }
-        IosProviderType.GOOGLE -> {
-            val setting = ProviderSetting.Google(
-                name = "Google", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).generateText(
-                setting, listOf(UIMessage.user(prompt)), TextGenerationParams(
-                    model = model,
-                    temperature = temperature,
-                    thinkingBudget = thinkingBudget,
-                ),
-            )
-        }
-        IosProviderType.CLAUDE -> {
-            val setting = ProviderSetting.Claude(
-                name = "Claude", apiKey = apiKey,
-                baseUrl = preferences.baseUrl, models = listOf(model),
-            )
-            providerManager.getProviderByType(setting).generateText(
-                setting, listOf(UIMessage.user(prompt)), TextGenerationParams(
-                    model = model,
-                    temperature = temperature,
-                    thinkingBudget = thinkingBudget,
-                ),
-            )
-        }
-    }
+    ): MessageChunk = providerManager.getProviderByType(providerSetting).generateText(
+        providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(
+            model = model,
+            temperature = temperature,
+            thinkingBudget = thinkingBudget,
+        ),
+    )
 
     private fun parseMemoryExtraction(text: String): MemoryExtractionEnvelope? {
         val start = text.indexOf('{')
@@ -2127,12 +2177,12 @@ class IosAppController(
         content: String,
         assistant: IosAssistantPreferences,
     ): List<List<Float>> {
-        val preferences = mutableState.value.providerConfigurations
-            .firstOrNull { it.type == assistant.embeddingProviderType }
-            ?: error("Configure the embedding provider first")
-        val apiKey = secureStore.readString(apiKeyName(preferences.type)).orEmpty()
+        val provider = mutableState.value.providers
+            .firstOrNull { it.id.toString() == assistant.embeddingProviderId }
+            ?: error("Configure the embedding provider in memory settings first")
+        val apiKey = readApiKey(provider.id.toString())
         require(apiKey.isNotBlank()) {
-            "Configure the ${preferences.type.name.lowercase()} provider API key before using searchable memory"
+            "Configure the ${provider.name} API key before using searchable memory"
         }
         val model = Model(
             modelId = assistant.embeddingModelId,
@@ -2140,26 +2190,11 @@ class IosAppController(
             type = ModelType.EMBEDDING,
         )
         val chunks = PortableMemoryChunker.chunkText(content)
-        val embeddings = when (preferences.type) {
-            IosProviderType.OPENAI -> {
-                val setting = ProviderSetting.OpenAI(
-                    name = "OpenAI compatible",
-                    apiKey = apiKey,
-                    baseUrl = preferences.baseUrl,
-                    models = listOf(model),
-                )
-                providerManager.getProviderByType(setting).createEmbedding(setting, chunks, model)
-            }
-            IosProviderType.GOOGLE -> {
-                val setting = ProviderSetting.Google(
-                    name = "Google",
-                    apiKey = apiKey,
-                    baseUrl = preferences.baseUrl,
-                    models = listOf(model),
-                )
-                providerManager.getProviderByType(setting).createEmbedding(setting, chunks, model)
-            }
-            IosProviderType.CLAUDE -> error("Claude does not provide an embedding endpoint")
+        val setting = provider.withApiKey(apiKey, model)
+        val embeddings = when (setting) {
+            is ProviderSetting.Claude -> error("Claude does not provide an embedding endpoint")
+            else -> providerManager.getProviderByType(setting)
+                .createEmbedding(setting, chunks, model)
         }
         require(embeddings.isNotEmpty()) { "The embedding provider returned no vectors" }
         return embeddings
@@ -2629,6 +2664,14 @@ class IosAppController(
         val snapshot = mutableState.value
         val imagePreferences = snapshot.imageGeneration
         require(imagePreferences.enabled) { "No image generation model selected" }
+        val providerSetting = snapshot.providers
+            .firstOrNull { it.id.toString() == imagePreferences.providerId }
+            ?: error("Select the image generation provider in Settings first")
+        val apiKey = if (providerSetting is ProviderSetting.ComfyUI) "" else {
+            readApiKey(providerSetting.id.toString()).also { key ->
+                require(key.isNotBlank()) { "Configure the ${providerSetting.name} API key first" }
+            }
+        }
         val configuredModel = Model(
             modelId = imagePreferences.modelId,
             displayName = imagePreferences.modelId,
@@ -2641,52 +2684,16 @@ class IosAppController(
             outputModalities = listOf(Modality.IMAGE),
             imageGenerationMethod = imagePreferences.method,
         )
-        val model = if (imagePreferences.providerType == IosImageProviderType.COMFY_UI) {
+        val model = if (providerSetting is ProviderSetting.ComfyUI) {
             configuredModel.withComfyDefaults()
         } else {
             configuredModel
         }
-        val providerSetting: ProviderSetting = when (imagePreferences.providerType) {
-            IosImageProviderType.OPENAI -> {
-                val providerPreferences = snapshot.providerConfigurations
-                    .firstOrNull { it.type == IosProviderType.OPENAI }
-                    ?: error("OpenAI image provider not found")
-                val apiKey = secureStore.readString(apiKeyName(IosProviderType.OPENAI)).orEmpty()
-                require(apiKey.isNotBlank()) { "Configure the OpenAI API key first" }
-                ProviderSetting.OpenAI(
-                name = "OpenAI compatible",
-                apiKey = apiKey,
-                baseUrl = providerPreferences.baseUrl,
-                models = listOf(model),
-            )
-            }
-            IosImageProviderType.GOOGLE -> {
-                val providerPreferences = snapshot.providerConfigurations
-                    .firstOrNull { it.type == IosProviderType.GOOGLE }
-                    ?: error("Google image provider not found")
-                val apiKey = secureStore.readString(apiKeyName(IosProviderType.GOOGLE)).orEmpty()
-                require(apiKey.isNotBlank()) { "Configure the Google API key first" }
-                ProviderSetting.Google(
-                name = "Google",
-                apiKey = apiKey,
-                baseUrl = providerPreferences.baseUrl,
-                models = listOf(model),
-            )
-            }
-            IosImageProviderType.COMFY_UI -> ProviderSetting.ComfyUI(
-                baseUrl = imagePreferences.comfyUi.baseUrl,
-                workflowJson = imagePreferences.comfyUi.workflowJson,
-                promptNodeId = imagePreferences.comfyUi.promptNodeId,
-                promptInputName = imagePreferences.comfyUi.promptInputName,
-                modelNodeId = imagePreferences.comfyUi.modelNodeId,
-                modelInputName = imagePreferences.comfyUi.modelInputName,
-                models = listOf(model),
-            )
-        }
-        val provider = providerManager.getProviderByType(providerSetting)
+        val effectiveSetting = providerSetting.withApiKey(apiKey, model)
+        val provider = providerManager.getProviderByType(effectiveSetting)
         val items = when (model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION) {
             ImageGenerationMethod.DIFFUSION -> provider.generateImage(
-                providerSetting = providerSetting,
+                providerSetting = effectiveSetting,
                 params = ImageGenerationParams(
                     model = model,
                     prompt = prompt,
@@ -2708,7 +2715,7 @@ class IosAppController(
                     add(UIMessagePart.Text(prompt))
                 }
                 val result = provider.generateText(
-                    providerSetting = providerSetting,
+                    providerSetting = effectiveSetting,
                     messages = listOf(UIMessage(role = MessageRole.USER, parts = parts)),
                     params = TextGenerationParams(
                         model = model.copy(
@@ -2929,8 +2936,8 @@ class IosAppController(
     }
 
     private suspend fun applyIosBackupImportPlan(plan: IosBackupImportPlan) {
-        plan.providerCredentials.forEach { credential ->
-            secureStore.writeString(apiKeyName(credential.type), credential.apiKey)
+        plan.providerApiKeys.forEach { (providerId, key) ->
+            secureStore.writeString(apiKeyName(providerId), key)
         }
         plan.ttsApiKeys.forEach { (type, key) ->
             if (key.isNotBlank()) secureStore.writeString(ttsApiKeyName(type), key)
@@ -2938,13 +2945,9 @@ class IosAppController(
         plan.searchApiKeys.forEach { (type, key) ->
             if (key.isNotBlank()) secureStore.writeString(searchApiKeyName(type), key)
         }
+        val providerList = plan.providers.ifEmpty { mutableState.value.providers }
         val assistantList = plan.assistants.ifEmpty { mutableState.value.assistants }
         mutableState.update { current ->
-            val configurations = current.providerConfigurations.map { config ->
-                plan.providerCredentials.firstOrNull { it.type == config.type }?.let { credential ->
-                    config.copy(baseUrl = credential.baseUrl, modelId = credential.modelId ?: config.modelId)
-                } ?: config
-            }
             current.copy(
                 appearance = plan.appearance ?: current.appearance,
                 assistants = assistantList,
@@ -2952,22 +2955,25 @@ class IosAppController(
                     ?.takeIf { id -> assistantList.any { it.id == id } }
                     ?: current.selectedAssistantId?.takeIf { id -> assistantList.any { it.id == id } }
                     ?: assistantList.firstOrNull()?.id,
-                providerConfigurations = configurations,
-                provider = plan.selectedProviderType
-                    ?.let { type -> configurations.firstOrNull { it.type == type } }
-                    ?: current.provider,
+                providers = providerList,
+                selectedChatModelId = plan.selectedChatModelId
+                    ?.takeIf { ref -> findProviderModel(providerList, ref) != null }
+                    ?: current.selectedChatModelId?.takeIf { ref -> findProviderModel(providerList, ref) != null },
                 search = plan.search ?: current.search,
                 tts = plan.tts ?: current.tts,
             )
         }
         persist()
         val snapshot = mutableState.value
-        val apiKey = secureStore.readString(apiKeyName(snapshot.provider.type)).orEmpty()
+        val selectedModel = snapshot.selectedChatModel
+        val apiKey = selectedModel
+            ?.let { (provider, _) -> secureStore.readString(apiKeyName(provider.id.toString())).orEmpty() }
+            .orEmpty()
         val searchKeyPresent = hasSearchApiKey(snapshot.search)
         val ttsKey = secureStore.readString(ttsApiKeyName(snapshot.tts.type)).orEmpty()
         mutableState.update {
             it.copy(
-                hasApiKey = apiKey.isNotBlank(),
+                hasApiKey = selectedModel != null && apiKey.isNotBlank(),
                 hasSearchApiKey = searchKeyPresent,
                 hasTtsApiKey = ttsKey.isNotBlank(),
             )
@@ -2997,8 +3003,8 @@ class IosAppController(
         val stored = IosStoredState(
             conversations = snapshot.conversations,
             selectedConversationId = snapshot.selectedConversationId,
-            provider = snapshot.provider,
-            providerConfigurations = snapshot.providerConfigurations,
+            providers = snapshot.providers,
+            selectedChatModelId = snapshot.selectedChatModelId,
             appearance = snapshot.appearance,
             assistants = snapshot.assistants,
             selectedAssistantId = snapshot.selectedAssistantId,
@@ -3033,16 +3039,12 @@ class IosAppController(
         const val MAX_PENDING_MEMORY_MESSAGES = 20
         const val MAX_MEMORY_OPERATIONS_PER_PASS = 12
         const val MAX_MEMORY_STATEMENT_LENGTH = 600
-        fun apiKeyName(type: IosProviderType): String = "provider_apikey_ios_${type.name.lowercase()}"
+        fun legacyApiKeyName(type: IosProviderType): String = "provider_apikey_ios_${type.name.lowercase()}"
+        fun apiKeyName(providerId: String): String = "provider_apikey_ios_$providerId"
         fun searchApiKeyName(type: IosSearchProviderType): String =
             "search_apikey_ios_${type.name.lowercase()}"
         fun ttsApiKeyName(type: IosTtsProviderType): String =
             "tts_provider_apikey_ios_${type.name.lowercase()}"
-        fun defaultProviderPreferences(type: IosProviderType): IosProviderPreferences = when (type) {
-            IosProviderType.OPENAI -> IosProviderPreferences(type, "https://api.openai.com/v1", "gpt-4.1-mini")
-            IosProviderType.GOOGLE -> IosProviderPreferences(type, "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash")
-            IosProviderType.CLAUDE -> IosProviderPreferences(type, "https://api.anthropic.com/v1", "claude-sonnet-4-5")
-        }
     }
 }
 
@@ -3271,7 +3273,10 @@ internal fun buildIosForkConversation(
 private data class IosStoredState(
     val conversations: List<IosConversation> = emptyList(),
     val selectedConversationId: String? = null,
-    val provider: IosProviderPreferences = IosProviderPreferences(),
+    val providers: List<ProviderSetting> = emptyList(),
+    val selectedChatModelId: String? = null,
+    // Legacy per-type provider state; migrated into [providers] on load
+    val provider: IosProviderPreferences? = null,
     val providerConfigurations: List<IosProviderPreferences> = emptyList(),
     val appearance: IosAppearancePreferences = IosAppearancePreferences(),
     val assistants: List<IosAssistantPreferences> = emptyList(),

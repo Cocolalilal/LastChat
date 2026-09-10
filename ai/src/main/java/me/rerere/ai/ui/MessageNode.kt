@@ -117,20 +117,95 @@ fun List<MessageNode>.currentVersionMessages(): List<UIMessage> {
  * turn propagates to new snapshots so tool results stay linked to their generation.
  */
 fun List<MessageNode>.mergeCurrentVersionMessages(messages: List<UIMessage>): List<MessageNode> {
-    val newNodes = this.toMutableList()
+    if (messages.isEmpty()) return this
 
-    // Get the versionTag from the active turn's last assistant node (if it exists)
-    // We only look past the most recent user message to avoid leaking tags from past turns
+    // Fast path: during streaming generation, messages are appended to or updated in the trailing node,
+    // while all preceding nodes are unchanged. This avoids allocating HashMaps and iterating all historical
+    // turns on every single token chunk (which happens 50-100 times/sec in 200k-token chats).
+    if (isNotEmpty()) {
+        if (size == messages.size) {
+            val lastNode = last()
+            val lastMessage = messages.last()
+            if (lastNode.currentMessage.id == lastMessage.id) {
+                var prefixMatches = true
+                for (i in 0 until size - 1) {
+                    val nodeMsg = this[i].currentMessage
+                    val incomingMsg = messages[i]
+                    if (nodeMsg !== incomingMsg && nodeMsg != incomingMsg) {
+                        prefixMatches = false
+                        break
+                    }
+                }
+                if (prefixMatches) {
+                    val messageIndex = lastNode.messages.indexOfFirst { it.id == lastMessage.id }
+                    val existingMessage = if (messageIndex >= 0) lastNode.messages[messageIndex] else null
+                    if (existingMessage == lastMessage && lastNode.selectIndex == messageIndex) {
+                        return this
+                    }
+                    val newMessages = lastNode.messages.toMutableList()
+                    if (messageIndex >= 0) {
+                        newMessages[messageIndex] = lastMessage
+                    } else {
+                        newMessages.add(lastMessage)
+                    }
+                    val updatedSelectIndex = if (messageIndex >= 0) messageIndex else newMessages.lastIndex
+                    val updatedLastNode = lastNode.copy(
+                        messages = newMessages,
+                        selectIndex = updatedSelectIndex,
+                    )
+                    val newNodes = this.toMutableList()
+                    newNodes[newNodes.lastIndex] = updatedLastNode
+                    return newNodes
+                }
+            }
+        } else if (size + 1 == messages.size) {
+            var prefixMatches = true
+            for (i in 0 until size) {
+                val nodeMsg = this[i].currentMessage
+                val incomingMsg = messages[i]
+                if (nodeMsg !== incomingMsg && nodeMsg != incomingMsg) {
+                    prefixMatches = false
+                    break
+                }
+            }
+            if (prefixMatches) {
+                val activeVersionTag = this
+                    .takeLastWhile { it.role != MessageRole.USER }
+                    .lastOrNull { it.role == MessageRole.ASSISTANT }
+                    ?.currentMessage?.versionTag
+                val lastIncoming = messages.last()
+                val messageWithTag = if (activeVersionTag != null && lastIncoming.versionTag == null) {
+                    lastIncoming.copy(versionTag = activeVersionTag)
+                } else {
+                    lastIncoming
+                }
+                val newNodes = this.toMutableList()
+                newNodes.add(messageWithTag.toMessageNode())
+                return newNodes
+            }
+        }
+    }
+
     val activeVersionTag = this
         .takeLastWhile { it.role != MessageRole.USER }
         .lastOrNull { it.role == MessageRole.ASSISTANT }
         ?.currentMessage?.versionTag
 
-    var previousNodeIndex = -1
-    messages.forEach { message ->
-        val existingNodeIndex = newNodes.indexOfFirst { node ->
-            node.messages.any { it.id == message.id }
+    // Map each message ID to its node index for O(1) lookup
+    val messageIdToNodeIndex = HashMap<Uuid, Int>(this.size * 2)
+    for (nodeIndex in indices) {
+        val node = this[nodeIndex]
+        for (msg in node.messages) {
+            messageIdToNodeIndex[msg.id] = nodeIndex
         }
+    }
+
+    var newNodes: MutableList<MessageNode>? = null
+    var hasChanges = false
+    var previousNodeIndex = -1
+
+    messages.forEach { message ->
+        val existingNodeIndex = messageIdToNodeIndex[message.id] ?: -1
         val isNewGeneratedMessage = existingNodeIndex == -1
 
         // Propagate versionTag ONLY to new messages that don't have one
@@ -142,23 +217,52 @@ fun List<MessageNode>.mergeCurrentVersionMessages(messages: List<UIMessage>): Li
         }
 
         if (existingNodeIndex >= 0) {
-            val node = newNodes[existingNodeIndex]
+            val currentNodes = newNodes ?: this
+            val node = currentNodes[existingNodeIndex]
             val messageIndex = node.messages.indexOfFirst { it.id == messageWithTag.id }
-            val newMessages = node.messages.toMutableList()
-            newMessages[messageIndex] = messageWithTag
-            newNodes[existingNodeIndex] = node.copy(
-                messages = newMessages,
-                selectIndex = messageIndex,
-            )
+            val existingMessage = if (messageIndex >= 0) node.messages[messageIndex] else null
+            if (existingMessage != messageWithTag || node.selectIndex != messageIndex) {
+                if (newNodes == null) {
+                    newNodes = this.toMutableList()
+                }
+                val newMessages = node.messages.toMutableList()
+                if (messageIndex >= 0) {
+                    newMessages[messageIndex] = messageWithTag
+                } else {
+                    newMessages.add(messageWithTag)
+                }
+                val updatedSelectIndex = if (messageIndex >= 0) messageIndex else newMessages.lastIndex
+                newNodes[existingNodeIndex] = node.copy(
+                    messages = newMessages,
+                    selectIndex = updatedSelectIndex,
+                )
+                messageIdToNodeIndex[messageWithTag.id] = existingNodeIndex
+                hasChanges = true
+            }
             previousNodeIndex = existingNodeIndex
         } else {
+            if (newNodes == null) {
+                newNodes = this.toMutableList()
+            }
             val insertionIndex = (previousNodeIndex + 1).coerceIn(0, newNodes.size)
-            newNodes.add(insertionIndex, messageWithTag.toMessageNode())
+            val newNode = messageWithTag.toMessageNode()
+            newNodes.add(insertionIndex, newNode)
+            // Shift indices for nodes at or after insertionIndex
+            for (entry in messageIdToNodeIndex.entries) {
+                if (entry.value >= insertionIndex) {
+                    entry.setValue(entry.value + 1)
+                }
+            }
+            messageIdToNodeIndex[newNode.currentMessage.id] = insertionIndex
+            for (msg in newNode.messages) {
+                messageIdToNodeIndex[msg.id] = insertionIndex
+            }
             previousNodeIndex = insertionIndex
+            hasChanges = true
         }
     }
 
-    return newNodes
+    return if (hasChanges && newNodes != null) newNodes else this
 }
 
 /**
