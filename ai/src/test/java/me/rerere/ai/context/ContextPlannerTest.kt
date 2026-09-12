@@ -268,4 +268,57 @@ class ContextPlannerTest {
             )
         )
     }
+    /**
+     * Validates the token-budget expansion pass:
+     * With 12 COMPACT TurnGroups and a tight targetRemainingTokens, the slicer must absorb
+     * more groups than the heuristic baseline (8) to bring the tail under budget.
+     */
+    @Test
+    fun calculateMilestoneSlice_budgetExpansion_expandsBeyondHeuristic() {
+        // Each TurnGroup contains a user + assistant message with ~500-char text
+        // so token estimation is proportional to text length.
+        val longText = "x".repeat(500)
+        val messages = buildList {
+            repeat(12) { i ->
+                add(UIMessage.user("Prompt $i $longText"))
+                add(UIMessage.assistant("Reply $i $longText"))
+            }
+        }
+        val model = Model(modelId = "test-budget", contextWindowTokens = 100_000)
+        val turnGroups = messages.toTurnGroups()
+        assertEquals(12, turnGroups.size)
+
+        // Without expansion: heuristic baseline for COMPACT NORMAL = 8 groups
+        val sliceNoTarget = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.COMPACT,
+            pressureTier = ContextPressureTier.NORMAL,
+            messages = messages,
+            model = model,
+            targetRemainingTokens = 0, // disabled
+        )
+        assertNotNull(sliceNoTarget)
+        assertEquals(8, sliceNoTarget!!.groupsSummarized)
+
+        // With expansion: set target so tight the slicer must absorb more than 8 groups
+        val tinyTarget = 10 // Only 10 tokens allowed in tail — forces max absorption
+        val sliceWithTarget = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.COMPACT,
+            pressureTier = ContextPressureTier.NORMAL,
+            messages = messages,
+            model = model,
+            targetRemainingTokens = tinyTarget,
+        )
+        assertNotNull(sliceWithTarget)
+        // Budget expansion must have pushed past the 8-group baseline
+        assertTrue(
+            "Expected expansion beyond heuristic 8 groups, got ${sliceWithTarget!!.groupsSummarized}",
+            sliceWithTarget.groupsSummarized > 8
+        )
+        // Must always keep at least 1 tail group (maxGroups = 12 - 1 = 11)
+        assertTrue(sliceWithTarget.groupsSummarized <= 11)
+    }
 }

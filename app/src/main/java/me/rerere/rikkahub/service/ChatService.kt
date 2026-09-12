@@ -2711,6 +2711,9 @@ class ChatService(
                 startIndex = startIndex,
                 archetype = plan.archetype,
                 pressureTier = plan.pressureTier,
+                messages = messages,
+                model = model,
+                targetRemainingTokens = plan.lowWatermarkTargetTokens,
             ) ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
 
             val lastIndexToSummarize = slicePlan.lastIndexToSummarize

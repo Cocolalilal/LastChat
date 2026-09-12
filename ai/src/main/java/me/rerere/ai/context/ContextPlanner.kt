@@ -6,6 +6,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.TurnGroup
 import me.rerere.ai.ui.toTurnGroups
 
+
 /**
  * Slicing execution plan for atomic milestone summarization.
  */
@@ -195,15 +196,30 @@ object ContextPlanner {
 
     /**
      * Computes the atomic TurnGroup milestone slicing boundary for conversation summarization.
-     * Prevents auto-summarization deadlock on VAST and COMPACT models by slicing into standard
-     * milestone chunks (e.g. 16 TurnGroups for VAST, 8 for COMPACT) while strictly preserving
-     * atomic TurnGroup integrity and keeping the recent dialogue active.
+     *
+     * First picks a heuristic baseline (turn-count-based chunk per archetype), then performs a
+     * token-budget expansion loop: absorbs additional TurnGroups from the tail-boundary inward
+     * until the tokens remaining in the unsummarized tail fall at or below [targetRemainingTokens].
+     *
+     * This prevents the "too-conservative" compaction bug where a fixed chunk summarizes only
+     * 130k → 72k when the low watermark would require reaching ~44k.
+     *
+     * Always preserves at least 1 TurnGroup untouched at the tail (protected "live" dialogue).
+     *
+     * @param messages      The full flat message list (needed for token estimation of tail slices).
+     * @param model         The active model (for per-model token estimation).
+     * @param targetRemainingTokens  The low-watermark token budget that the unsummarized tail
+     *                      should stay at or below. Pass [ContextPlan.lowWatermarkTargetTokens].
+     *                      Pass 0 or negative to skip expansion (pure heuristic mode).
      */
     fun calculateMilestoneSlice(
         turnGroups: List<TurnGroup>,
         startIndex: Int,
         archetype: ContextScaleArchetype,
         pressureTier: ContextPressureTier,
+        messages: List<UIMessage> = emptyList(),
+        model: Model? = null,
+        targetRemainingTokens: Int = 0,
     ): MilestoneSlicePlan? {
         val unsummarizedGroups = turnGroups.filter { it.startIndex >= startIndex }
         if (unsummarizedGroups.size <= 1) return null
@@ -214,7 +230,8 @@ object ContextPlanner {
             ContextScaleArchetype.VAST -> 16
         }
 
-        val groupsToSummarize = when {
+        // ─── Heuristic baseline (turn-count) ─────────────────────────────────────
+        val baseGroupsToSummarize = when {
             pressureTier >= ContextPressureTier.HIGH -> {
                 val tailToKeep = when {
                     pressureTier == ContextPressureTier.CRITICAL -> 1
@@ -230,6 +247,28 @@ object ContextPlanner {
             else -> {
                 val tailToKeep = 2.coerceAtMost(unsummarizedGroups.size - 1)
                 (unsummarizedGroups.size - tailToKeep).coerceIn(1, unsummarizedGroups.size - 1)
+            }
+        }
+
+        // ─── Token-budget expansion pass ──────────────────────────────────────────
+        // After the heuristic, expand the slice further if the unsummarized tail would still
+        // exceed the target remaining budget. We always keep at least 1 tail group live.
+        var groupsToSummarize = baseGroupsToSummarize
+        val maxGroups = unsummarizedGroups.size - 1  // must keep ≥1 tail group
+
+        if (targetRemainingTokens > 0 && model != null && messages.isNotEmpty()) {
+            // Fast estimate of current tail tokens before any expansion
+            var tailStartIdx = unsummarizedGroups[groupsToSummarize].startIndex
+            var tailTokens = ContextTokenEstimator.messagesTokens(
+                messages.subList(tailStartIdx, messages.size), model
+            )
+            // Expand one group at a time until tail is within budget or no more to take
+            while (tailTokens > targetRemainingTokens && groupsToSummarize < maxGroups) {
+                groupsToSummarize++
+                tailStartIdx = unsummarizedGroups[groupsToSummarize].startIndex
+                tailTokens = ContextTokenEstimator.messagesTokens(
+                    messages.subList(tailStartIdx, messages.size), model
+                )
             }
         }
 
