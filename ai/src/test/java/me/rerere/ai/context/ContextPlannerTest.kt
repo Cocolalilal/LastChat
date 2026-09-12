@@ -100,5 +100,15 @@ class ContextPlannerTest {
         // Fixed = 1000 + 1200 + 2000 = 4200. Floor = 4200 + 512 = 4712.
         assertEquals(4_712, floor)
         assertTrue(floor >= 1_500)
+
+        // Model capacity smaller than theoretical floor is clamped to capacity
+        val smallModel = Model(modelId = "tiny-floor", contextWindowTokens = 4_000)
+        val clampedFloor = calculateMinSafeFloorTokens(
+            model = smallModel,
+            systemPromptTokens = 2_000,
+            toolDefinitionTokens = 2_000,
+            requestedOutputTokens = 1_000,
+        )
+        assertEquals(4_000, clampedFloor)
     }
 }

@@ -37,6 +37,8 @@ data class Model(
     val maxInputTokens: Int? = null,
     /** Provider-reported maximum response size. */
     val maxOutputTokens: Int? = null,
+    /** User-defined custom context limit override from chat UI. Null means no custom cap. */
+    val customContextLimitTokens: Int? = null,
     /** Where the active token limits came from. Null means legacy/unknown provenance. */
     val contextLimitSource: ContextLimitSource? = null,
     /** Maximum images accepted in one request. Null means unknown/unlimited. */
@@ -48,8 +50,13 @@ data class Model(
     val backend: Boolean = false,
 )
 
-/** Best provider/runtime-backed capacity available for context management and display. */
-val Model.contextCapacityTokens: Int?
+/** Best raw provider/runtime-backed capacity available for context management and display. */
+val Model.baseCapacityTokens: Int?
     get() = contextWindowTokens?.takeIf { it > 0 }
         ?: maxInputTokens?.takeIf { it > 0 }
+
+/** Effective capacity considering user-defined manual limit override. */
+val Model.contextCapacityTokens: Int?
+    get() = customContextLimitTokens?.takeIf { it > 0 }
+        ?: baseCapacityTokens
 

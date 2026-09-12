@@ -7,6 +7,7 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
@@ -538,13 +539,15 @@ fun smartInputBudget(
     requestedOutputTokens: Int?,
     customLimitTokens: Int? = null,
 ): Int? {
-    val window = customLimitTokens?.takeIf { it > 0 } ?: model.contextWindowTokens?.takeIf { it > 0 }
+    val effectiveWindow = customLimitTokens?.takeIf { it > 0 }
+        ?: model.contextCapacityTokens?.takeIf { it > 0 }
+        ?: model.contextWindowTokens?.takeIf { it > 0 }
     val independentInputLimit = model.maxInputTokens?.takeIf { it > 0 }
-    if (window == null && independentInputLimit == null) return null
-    val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
+    if (effectiveWindow == null && independentInputLimit == null) return null
+    val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens, customLimitTokens = effectiveWindow) ?: return null
     // Covers provider-specific message framing, tokenizer mismatch, and small transformations that
     // occur after context assembly. A visible unused sliver is preferable to a context overflow.
-    val availableAfterOutput = window
+    val availableAfterOutput = effectiveWindow
         ?.let { (it - outputReserve).coerceAtLeast(0) }
         ?: independentInputLimit.orEmptyTokenLimit()
     val rawInputCeiling = listOfNotNull(
@@ -570,12 +573,19 @@ fun calculateMinSafeFloorTokens(
 ): Int {
     val reserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: 1_024
     val fixed = (systemPromptTokens + toolDefinitionTokens + reserve).coerceAtLeast(0)
-    return maxOf(1_500, fixed + 512)
+    val maxCap = model.baseCapacityTokens ?: model.contextCapacityTokens ?: Int.MAX_VALUE
+    return maxOf(1_500, fixed + 512).coerceAtMost(maxCap)
 }
 
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */
-fun smartOutputTokenBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 }
+fun smartOutputTokenBudget(
+    model: Model,
+    requestedOutputTokens: Int?,
+    customLimitTokens: Int? = null,
+): Int? {
+    val window = customLimitTokens?.takeIf { it > 0 }
+        ?: model.contextCapacityTokens?.takeIf { it > 0 }
+        ?: model.contextWindowTokens?.takeIf { it > 0 }
     val independentOutputLimit = model.maxOutputTokens?.takeIf { it > 0 }
     val reference = window
         ?: independentOutputLimit

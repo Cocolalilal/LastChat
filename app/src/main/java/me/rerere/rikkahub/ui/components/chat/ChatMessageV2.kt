@@ -316,7 +316,7 @@ private fun JsonElement.lightSignature(depth: Int = 0): Int {
     }
 }
 
-private fun MessageTurnGroup.activityStateSignature(
+internal fun MessageTurnGroup.activityStateSignature(
     loading: Boolean,
     includeReasoningText: Boolean = false,
 ): Long {
@@ -358,7 +358,9 @@ private fun MessageTurnGroup.activityStateSignature(
                         .mix(part.finishedAt?.toEpochMilliseconds() ?: -1L)
                         .mix(sampledStringHash(part.title))
                     if (includeReasoningText) {
-                        hash = hash.mix(part.reasoning.length)
+                        hash = hash
+                            .mix(part.reasoning.length)
+                            .mix(sampledStringHash(part.reasoning))
                     } else {
                         hash = hash.mix(if (part.reasoning.isBlank()) 1 else 0)
                     }
@@ -386,7 +388,7 @@ private fun MessageTurnGroup.activityStateSignature(
     return hash
 }
 
-private fun MessageTurnGroup.timelineEntriesSignature(loading: Boolean): Long {
+internal fun MessageTurnGroup.timelineEntriesSignature(loading: Boolean): Long {
     var hash = activityStateSignature(loading, includeReasoningText = true)
 
     filteredNodes.forEach { node ->
@@ -1035,9 +1037,10 @@ fun ChatMessageTurn(
     // remember keys; using MessageTurnGroup or MessageNode keys can structurally
     // compare large JsonElement tool payloads on the UI thread.
     val isTimelineLive = loading && isLastTurn
+    val includeReasoningText = timelineOpen || effectiveDisplay.reasoningPreviewEnabled
     val activitySignature = group.activityStateSignature(
         loading = isTimelineLive,
-        includeReasoningText = effectiveDisplay.reasoningPreviewEnabled
+        includeReasoningText = includeReasoningText
     )
     val activityState = remember(activitySignature) {
         deriveActivityState(

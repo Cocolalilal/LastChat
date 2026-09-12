@@ -20,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
+import kotlin.uuid.Uuid
 
 class ActivityTimelineParsingTest {
     @Test
@@ -648,4 +649,77 @@ class ActivityTimelineParsingTest {
         assertFalse(closedReasoning.isInProgress)
         assertEquals(3000L, closedReasoning.durationMs)
     }
+
+    @Test
+    fun activityStateSignature_tracksReasoningStreamingWhenIncludeReasoningTextIsTrue() {
+        val now = Clock.System.now()
+        val nodeId = Uuid.random()
+        val messageId = Uuid.random()
+        val node1 = MessageNode(
+            id = nodeId,
+            messages = listOf(
+                UIMessage(
+                    id = messageId,
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Reasoning(
+                            reasoning = "Word1",
+                            createdAt = now,
+                            finishedAt = null,
+                        )
+                    )
+                )
+            )
+        )
+        val node2 = MessageNode(
+            id = nodeId,
+            messages = listOf(
+                UIMessage(
+                    id = messageId,
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Reasoning(
+                            reasoning = "Word1 Word2 Word3",
+                            createdAt = now,
+                            finishedAt = null,
+                        )
+                    )
+                )
+            )
+        )
+        val group1 = MessageTurnGroup(listOf(node1), MessageRole.ASSISTANT)
+        val group2 = MessageTurnGroup(listOf(node2), MessageRole.ASSISTANT)
+
+        // When includeReasoningText is true (e.g. timelineOpen is true or preview enabled),
+        // the signature MUST change as more tokens stream in.
+        val sig1Live = group1.activityStateSignature(loading = true, includeReasoningText = true)
+        val sig2Live = group2.activityStateSignature(loading = true, includeReasoningText = true)
+        assertTrue("Signature must change as tokens stream in when includeReasoningText=true", sig1Live != sig2Live)
+
+        // When includeReasoningText is false (collapsed pill), signature remains stable to avoid recompositions
+        val sig1Collapsed = group1.activityStateSignature(loading = true, includeReasoningText = false)
+        val sig2Collapsed = group2.activityStateSignature(loading = true, includeReasoningText = false)
+        assertEquals("Signature must stay stable when collapsed to avoid UI thread lag", sig1Collapsed, sig2Collapsed)
+    }
+
+    @Test
+    fun deriveActivityState_updatesReasoningTextContinuously() {
+        val now = Clock.System.now()
+        val part1 = UIMessagePart.Reasoning(
+            reasoning = "Thinking step 1",
+            createdAt = now,
+            finishedAt = null
+        )
+        val state1 = deriveActivityState(parts = listOf(part1), loading = true)
+        assertTrue(state1 is ActivityState.Reasoning)
+        assertEquals("Thinking step 1", (state1 as ActivityState.Reasoning).reasoningText)
+        assertEquals(now.toEpochMilliseconds(), state1.startTimeMs)
+
+        val part2 = part1.copy(reasoning = "Thinking step 1 and step 2")
+        val state2 = deriveActivityState(parts = listOf(part2), loading = true)
+        assertTrue(state2 is ActivityState.Reasoning)
+        assertEquals("Thinking step 1 and step 2", (state2 as ActivityState.Reasoning).reasoningText)
+        assertEquals(now.toEpochMilliseconds(), state2.startTimeMs)
+    }
 }
+

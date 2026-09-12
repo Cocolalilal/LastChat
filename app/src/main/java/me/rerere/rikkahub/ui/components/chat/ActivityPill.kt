@@ -483,7 +483,8 @@ private fun AnimatedSinglePill(
             val isLive = timelineLive && reasoningEntry.isInProgress
             SinglePillContentState.ExpandedReasoning(
                 state = ActivityState.Reasoning(
-                    startTimeMs = System.currentTimeMillis() - (reasoningEntry.durationMs),
+                    startTimeMs = (state as? ActivityState.Reasoning)?.startTimeMs
+                        ?: (System.currentTimeMillis() - reasoningEntry.durationMs),
                     title = reasoningEntry.title,
                     reasoningText = reasoningEntry.content
                 ),
@@ -629,12 +630,19 @@ private fun AnimatedSinglePill(
                     )
                 }
                 is SinglePillContentState.ExpandedReasoning -> {
-                    ReasoningPreviewCard(
-                        state = if (targetContentState.isLive) {
-                            (state as? ActivityState.Reasoning) ?: targetContentState.state
+                    val activeReasoningState = targetContentState.state.let { targetState ->
+                        val parentState = state as? ActivityState.Reasoning
+                        if (parentState != null &&
+                            parentState.startTimeMs == targetState.startTimeMs &&
+                            parentState.reasoningText.length > targetState.reasoningText.length
+                        ) {
+                            parentState
                         } else {
-                            targetContentState.state
-                        },
+                            targetState
+                        }
+                    }
+                    ReasoningPreviewCard(
+                        state = activeReasoningState,
                         active = surfaceExpanded,
                         isLive = targetContentState.isLive,
                         durationMs = targetContentState.durationMs,

@@ -21,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -144,6 +145,7 @@ import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -3623,8 +3625,9 @@ private fun ContextUsagePopupContent(
 
     val haptics = rememberPremiumHaptics()
     var isEditingLimit by remember { mutableStateOf(false) }
-    val maxCapacityTokens = model?.contextCapacityTokens ?: usage.totalTokens
-    val isCustomLimitActive = model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
+    val maxCapacityTokens = model?.baseCapacityTokens ?: maxOf(usage.totalTokens, model?.contextCapacityTokens ?: 0)
+    val isCustomLimitActive = model?.customContextLimitTokens != null ||
+        model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
 
     val minSafeFloorTokens = remember(model, usage) {
         if (model != null) {
@@ -3637,13 +3640,15 @@ private fun ContextUsagePopupContent(
             1_500
         }
     }
+    val safeFloor = minSafeFloorTokens.coerceAtMost(maxCapacityTokens)
 
-    var draggedTokens by remember(usage.totalTokens, maxCapacityTokens) {
-        mutableStateOf(usage.totalTokens.coerceIn(minSafeFloorTokens, maxCapacityTokens))
+    val currentLimit = model?.customContextLimitTokens ?: usage.totalTokens
+    var draggedTokens by remember(currentLimit, maxCapacityTokens) {
+        mutableStateOf(currentLimit.coerceIn(safeFloor, maxCapacityTokens))
     }
-    LaunchedEffect(usage.totalTokens, maxCapacityTokens, isEditingLimit) {
+    LaunchedEffect(currentLimit, maxCapacityTokens, isEditingLimit) {
         if (!isEditingLimit) {
-            draggedTokens = usage.totalTokens.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+            draggedTokens = currentLimit.coerceIn(safeFloor, maxCapacityTokens)
         }
     }
 
@@ -3675,14 +3680,15 @@ private fun ContextUsagePopupContent(
     val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
     val activeBudgetCeiling = if (isEditingLimit) draggedTokens else animatedTotal
-    val liveBudget = if (model != null && isEditingLimit) {
+    val liveBudget = if (model != null) {
         smartInputBudget(model, null, customLimitTokens = activeBudgetCeiling) ?: activeBudgetCeiling
     } else {
         activeBudgetCeiling
     }
     val liveReserve = (activeBudgetCeiling - liveBudget).coerceAtLeast(0)
-    val effectiveReserved = if (isEditingLimit) liveReserve else animatedReserved
-    val effectiveAvailable = (activeBudgetCeiling - animatedUsed - effectiveReserved).coerceAtLeast(0)
+    val effectiveReserved = if (isEditingLimit) liveReserve else (if (animatedReserved > 0) animatedReserved else liveReserve)
+    val animatedEffectiveReserved by animateIntAsState(effectiveReserved, tokenAnimation, label = "context_effective_reserved")
+    val effectiveAvailable = (activeBudgetCeiling - animatedUsed - animatedEffectiveReserved).coerceAtLeast(0)
     val remainingPercent = if (activeBudgetCeiling <= 0) 100 else
         ((effectiveAvailable.toFloat() / activeBudgetCeiling) * 100).toInt().coerceIn(0, 100)
 
@@ -3721,7 +3727,7 @@ private fun ContextUsagePopupContent(
             ) { editing ->
                 if (editing) {
                     Text(
-                        text = "Floor: ${compactTokenCount(minSafeFloorTokens)}",
+                        text = "Floor: ${compactTokenCount(safeFloor)}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3749,28 +3755,30 @@ private fun ContextUsagePopupContent(
                 label = "context_limit_zoom",
             )
 
+            val canReset = isCustomLimitActive || (isEditingLimit && draggedTokens != maxCapacityTokens)
+
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(14.dp)
+                    .height(24.dp)
                     .onGloballyPositioned { coordinates ->
                         barWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
                     }
                     .then(
                         if (isEditingLimit) {
-                            Modifier.pointerInput(minSafeFloorTokens, maxCapacityTokens) {
+                            Modifier.pointerInput(safeFloor, maxCapacityTokens) {
                                 detectDragGestures(
                                     onDragStart = { offset ->
                                         haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Selection)
                                         val fraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
                                         val computed = (fraction * maxCapacityTokens).roundToInt()
-                                        draggedTokens = computed.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+                                        draggedTokens = computed.coerceIn(safeFloor, maxCapacityTokens)
                                     },
                                     onDrag = { change, _ ->
                                         change.consume()
                                         val fraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
                                         val computed = (fraction * maxCapacityTokens).roundToInt()
-                                        val clamped = computed.coerceIn(minSafeFloorTokens, maxCapacityTokens)
+                                        val clamped = computed.coerceIn(safeFloor, maxCapacityTokens)
                                         if (clamped != draggedTokens) {
                                             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
                                             draggedTokens = clamped
@@ -3785,10 +3793,12 @@ private fun ContextUsagePopupContent(
                     ),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                // Background Track
+                // Background Track (18dp height centered in 24dp container)
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .align(Alignment.Center)
                         .clip(RoundedCornerShape(999.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 ) {
@@ -3810,10 +3820,10 @@ private fun ContextUsagePopupContent(
                         if (effectiveAvailable > 0) {
                             Spacer(Modifier.weight(effectiveAvailable.toFloat()).fillMaxHeight())
                         }
-                        if (effectiveReserved > 0) {
+                        if (animatedEffectiveReserved > 0) {
                             Spacer(
                                 Modifier
-                                    .weight(effectiveReserved.toFloat())
+                                    .weight(animatedEffectiveReserved.toFloat())
                                     .fillMaxHeight()
                                     .background(reserveColor),
                             )
@@ -3838,44 +3848,60 @@ private fun ContextUsagePopupContent(
                     }
                 }
 
-                // Draggable thumb indicator (when in edit mode)
+                // Tactile Draggable thumb indicator (24dp height, 8dp width, centered over the 18dp track)
                 if (isEditingLimit) {
                     val density = LocalDensity.current
-                    val thumbOffset = ((zoomFraction * barWidthPx) - with(density) { 3.dp.toPx() }).coerceAtLeast(0f)
+                    val thumbWidth = 8.dp
+                    val thumbWidthPx = with(density) { thumbWidth.toPx() }
+                    val thumbOffset = ((zoomFraction * barWidthPx) - (thumbWidthPx / 2f))
+                        .coerceIn(0f, (barWidthPx - thumbWidthPx).coerceAtLeast(0f))
                     Box(
                         modifier = Modifier
+                            .align(Alignment.CenterStart)
                             .offset { androidx.compose.ui.unit.IntOffset(thumbOffset.roundToInt(), 0) }
-                            .width(6.dp)
-                            .height(18.dp)
+                            .width(thumbWidth)
+                            .height(24.dp)
                             .clip(RoundedCornerShape(999.dp))
                             .background(MaterialTheme.colorScheme.primary)
-                            .border(1.dp, MaterialTheme.colorScheme.onPrimary, RoundedCornerShape(999.dp)),
+                            .border(1.5.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(999.dp)),
                     )
                 }
             }
 
-            // The Pencil / Close button at the end of the context bar
-            IconButton(
-                onClick = {
-                    haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                    if (isEditingLimit) {
-                        val newLimit = if (draggedTokens >= maxCapacityTokens) null else draggedTokens
-                        onUpdateModelLimit?.invoke(newLimit)
-                        isEditingLimit = false
-                    } else {
-                        isEditingLimit = true
-                    }
-                },
+            // The Pencil / Close button sized to 24dp to optically balance against the bar height, with long-press reset
+            Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(24.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
                     .background(
                         color = when {
                             isEditingLimit -> MaterialTheme.colorScheme.surfaceContainerHighest
                             isCustomLimitActive -> MaterialTheme.colorScheme.primaryContainer
-                            else -> Color.Transparent
+                            else -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
                         },
                         shape = androidx.compose.foundation.shape.CircleShape,
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                            if (isEditingLimit) {
+                                val newLimit = if (draggedTokens >= maxCapacityTokens) null else draggedTokens
+                                onUpdateModelLimit?.invoke(newLimit)
+                                isEditingLimit = false
+                            } else {
+                                isEditingLimit = true
+                            }
+                        },
+                        onLongClick = if (canReset) {
+                            {
+                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Success)
+                                draggedTokens = maxCapacityTokens
+                                onUpdateModelLimit?.invoke(null)
+                                isEditingLimit = false
+                            }
+                        } else null,
                     ),
+                contentAlignment = Alignment.Center,
             ) {
                 AnimatedContent(
                     targetState = isEditingLimit,
@@ -3885,7 +3911,7 @@ private fun ContextUsagePopupContent(
                     Icon(
                         imageVector = if (editing) androidx.compose.material.icons.Icons.Rounded.Close else androidx.compose.material.icons.Icons.Rounded.Edit,
                         contentDescription = if (editing) "Commit" else "Edit context limit",
-                        modifier = Modifier.size(15.dp),
+                        modifier = Modifier.size(13.dp),
                         tint = when {
                             editing -> MaterialTheme.colorScheme.onSurface
                             isCustomLimitActive -> MaterialTheme.colorScheme.onPrimaryContainer
@@ -3906,12 +3932,12 @@ private fun ContextUsagePopupContent(
                     Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
                 }
             }
-            if (animatedReserved > 0) {
+            if (animatedEffectiveReserved > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).background(reserveColor, RoundedCornerShape(999.dp)))
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        "${stringResource(R.string.context_meter_reserved)} ${compactTokenCount(animatedReserved)}",
+                        "${stringResource(R.string.context_meter_reserved)} ${compactTokenCount(animatedEffectiveReserved)}",
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }

@@ -458,6 +458,7 @@ data class WebProviderModelDto(
     val contextWindowTokens: Int? = null,
     val maxInputTokens: Int? = null,
     val maxOutputTokens: Int? = null,
+    val customContextLimitTokens: Int? = null,
     val contextLimitSource: ContextLimitSource? = null,
     val maxImagesInContext: Int? = null,
 )
@@ -1011,6 +1012,7 @@ private fun Model.toWebProviderModelDto(
         contextWindowTokens = contextWindowTokens,
         maxInputTokens = maxInputTokens,
         maxOutputTokens = maxOutputTokens,
+        customContextLimitTokens = customContextLimitTokens,
         contextLimitSource = contextLimitSource,
         maxImagesInContext = maxImagesInContext,
     )

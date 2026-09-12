@@ -29,6 +29,7 @@ val viewModelModule = module {
             updateChecker = get(),
             appScope = get(),
             appStorageRepository = get(),
+            modelMetadataResolver = get(),
         )
     }
     viewModel<SettingVM> {
