@@ -49,6 +49,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
@@ -838,9 +839,19 @@ class GenerationHandler(
                 (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(1)
             } else budget
         }
+        val smartPlan = if (smartEnabled) {
+            me.rerere.ai.context.ContextPlanner.plan(
+                messages = messages,
+                model = model,
+                customBudgetTokens = maxTokens,
+                systemPromptTokens = estimateTokens(assistant.systemPrompt),
+                toolDefinitionTokens = tools.sumOf { ContextTokenEstimator.toolDefinitionTokens(it, model) },
+            )
+        } else null
+
         val effectiveTools = when {
             ModelAbility.TOOL !in model.abilities -> emptyList()
-            smartEnabled -> selectSmartTools(tools, messages, model, maxTokens)
+            smartEnabled && smartPlan?.allowToolDistillation == true -> selectSmartTools(tools, messages, model, maxTokens)
             else -> tools
         }
         var currentTokens = 0
@@ -1414,35 +1425,62 @@ class GenerationHandler(
             }.joinToString(separator = "\n")
 
             if (orderedSelectedMessages.isNotEmpty()) {
-                val lastMessage = orderedSelectedMessages.last()
-                val history = orderedSelectedMessages.dropLast(1)
-                
-                val depthByInsertionIndex = depthSkills.groupBy { skill ->
-                    (history.size - skill.depth.coerceAtLeast(0)).coerceIn(0, history.size)
+                val turnGroups = orderedSelectedMessages.toTurnGroups()
+                val latestTurnGroup = turnGroups.last()
+                val historicalTurnGroups = turnGroups.dropLast(1)
+
+                // Depth injections are aligned to atomic TurnGroup boundaries to prevent interleaving inside tool exchanges
+                val depthByGroupIndex = depthSkills.groupBy { skill ->
+                    (historicalTurnGroups.size - skill.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
                 }
-                val lorebookDepthByInsertionIndex = depthEntries.groupBy { entry ->
-                    (history.size - entry.depth.coerceAtLeast(0)).coerceIn(0, history.size)
-                }
-                for (index in 0..history.size) {
-                    depthByInsertionIndex[index].orEmpty().forEach { add(skillMessage(it)) }
-                    lorebookDepthByInsertionIndex[index].orEmpty().forEach { add(lorebookMessage(it)) }
-                    if (index < history.size) add(history[index])
+                val lorebookDepthByGroupIndex = depthEntries.groupBy { entry ->
+                    (historicalTurnGroups.size - entry.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
                 }
 
+                for (groupIndex in 0..historicalTurnGroups.size) {
+                    depthByGroupIndex[groupIndex].orEmpty().forEach { add(skillMessage(it)) }
+                    lorebookDepthByGroupIndex[groupIndex].orEmpty().forEach { add(lorebookMessage(it)) }
+                    if (groupIndex < historicalTurnGroups.size) {
+                        addAll(historicalTurnGroups[groupIndex].messages)
+                    }
+                }
+
+                // Injections BEFORE the latest turn sit strictly outside the active TurnGroup
                 beforeLatestSkills.forEach { add(skillMessage(it)) }
                 beforeLatestEntries.forEach { add(lorebookMessage(it)) }
-                
-                var finalParts = lastMessage.parts
-                
-                if (allContextAttachments.isNotEmpty()) {
-                    finalParts = allContextAttachments + finalParts
+
+                // Attach dynamic context (summary, memories, time) strictly to the initiating USER message.
+                // In multi-step tool turns, attaching text to TOOL messages triggers Gemini 400 INVALID_ARGUMENT
+                // and causes OpenAI/Claude to drop/blackout memory and summary context.
+                val latestMessages = latestTurnGroup.messages
+                val initiatingUserIndex = latestMessages.indexOfFirst { it.role == MessageRole.USER }
+
+                if (initiatingUserIndex != -1) {
+                    latestMessages.forEachIndexed { idx, msg ->
+                        if (idx == initiatingUserIndex) {
+                            var userParts = msg.parts
+                            if (allContextAttachments.isNotEmpty()) {
+                                userParts = allContextAttachments + userParts
+                            }
+                            if (dynamicContext.isNotBlank()) {
+                                userParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + userParts
+                            }
+                            add(msg.copy(parts = userParts))
+                        } else {
+                            add(msg)
+                        }
+                    }
+                } else {
+                    // If the active turn has no USER message (e.g. initial assistant greeting),
+                    // prepend dynamic context as system/user before the turn messages.
+                    if (dynamicContext.isNotBlank()) {
+                        add(UIMessage.system(dynamicContext))
+                    }
+                    if (allContextAttachments.isNotEmpty()) {
+                        add(UIMessage(role = MessageRole.USER, parts = allContextAttachments))
+                    }
+                    addAll(latestMessages)
                 }
-                
-                if (dynamicContext.isNotBlank()) {
-                    finalParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + finalParts
-                }
-                
-                add(lastMessage.copy(parts = finalParts))
             } else {
                 depthSkills.forEach { add(skillMessage(it)) }
                 depthEntries.forEach { add(lorebookMessage(it)) }

@@ -163,6 +163,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
 import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
+import me.rerere.rikkahub.data.ai.tools.toDefinitionPreviews
 import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
@@ -3280,8 +3281,17 @@ private fun rememberContextMeterUsage(
         val activeMcpTools = settings.mcpServers
             .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
             .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable } }
+        val localPreviews = assistant.localTools.flatMap { it.toDefinitionPreviews() }
         val definitionText = buildString {
-            assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
+            localPreviews.forEach { tool ->
+                appendLine(
+                    ContextTokenEstimator.toolDefinitionText(
+                        name = tool.name,
+                        description = tool.description,
+                        schema = tool.schema,
+                    )
+                )
+            }
             activeMcpTools.forEach { tool ->
                 appendLine(
                     ContextTokenEstimator.toolDefinitionText(
@@ -3292,11 +3302,11 @@ private fun rememberContextMeterUsage(
                 )
             }
         }
-        val localTokens = assistant.localTools.sumOf { tool ->
+        val localTokens = localPreviews.sumOf { tool ->
             ContextTokenEstimator.toolDefinitionTokens(
-                name = tool.toString(),
-                description = "",
-                schema = null,
+                name = tool.name,
+                description = tool.description,
+                schema = tool.schema,
                 model = activeModel,
             ).toLong()
         }
@@ -3370,42 +3380,122 @@ private fun rememberContextMeterUsage(
     val effectiveSmartInputBudget = baseSmartInputBudget?.let { budget ->
         (budget - probableTemporaryTokens).coerceAtLeast(1)
     }
-    val pendingMessage = pendingParts.takeIf { hasPendingInput }?.let { parts ->
-        UIMessage(role = MessageRole.USER, parts = parts)
-    }
-    val messagesToCount = if (smartActive) {
-        val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
-            ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-            fixedMemoryTokens + skillTokens + lorebookTokens +
-            toolDefinitionTokens +
-            knownContextMediaTokens
-        val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
-            .coerceAtLeast(1)
-        smartFitContext(
-            messages = messages + listOfNotNull(pendingMessage),
+
+    val baseBreakdown = remember(
+        messages,
+        activeModel,
+        systemPromptText,
+        conversation.contextSummary,
+        fixedMemoryText,
+        fixedMemoryTokens,
+        skillText,
+        lorebookText,
+        skillTokens,
+        lorebookTokens,
+        toolDefinitionText,
+        toolDefinitionTokens,
+        knownContextAttachments,
+        effectiveSmartInputBudget,
+        sourceKey,
+    ) {
+        val messagesToCount = if (smartActive) {
+            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+                ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
+                fixedMemoryTokens + skillTokens + lorebookTokens +
+                toolDefinitionTokens +
+                knownContextMediaTokens
+            val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
+                .coerceAtLeast(1)
+            smartFitContext(
+                messages = messages,
+                model = activeModel,
+                messageBudgetTokens = messageBudget,
+            )
+        } else {
+            messages
+        }
+        ContextTokenEstimator.breakdown(
+            messages = messagesToCount,
             model = activeModel,
-            messageBudgetTokens = messageBudget,
+            systemPromptText = systemPromptText,
+            summaryText = conversation.contextSummary.orEmpty(),
+            memoryText = fixedMemoryText,
+            memoryTokensOverride = fixedMemoryTokens,
+            skillText = skillText,
+            lorebookText = lorebookText,
+            skillTokensOverride = skillTokens,
+            lorebookTokensOverride = lorebookTokens,
+            toolDefinitionText = toolDefinitionText,
+            toolDefinitionTokensOverride = toolDefinitionTokens,
+            pendingParts = knownContextAttachments,
+            usableInputTokens = effectiveSmartInputBudget,
+            sourceKey = sourceKey,
         )
-    } else {
-        messages
     }
-    val computedBreakdown = ContextTokenEstimator.breakdown(
-        messages = messagesToCount,
-        model = activeModel,
-        systemPromptText = systemPromptText,
-        summaryText = conversation.contextSummary.orEmpty(),
-        memoryText = fixedMemoryText,
-        memoryTokensOverride = fixedMemoryTokens,
-        skillText = skillText,
-        lorebookText = lorebookText,
-        skillTokensOverride = skillTokens,
-        lorebookTokensOverride = lorebookTokens,
-        toolDefinitionText = toolDefinitionText,
-        toolDefinitionTokensOverride = toolDefinitionTokens,
-        pendingParts = knownContextAttachments + if (smartActive) emptyList() else pendingParts,
-        usableInputTokens = effectiveSmartInputBudget,
-        sourceKey = sourceKey,
-    )
+
+    val computedBreakdown = if (!hasPendingInput) {
+        baseBreakdown
+    } else {
+        var pendingTextTokens = 0
+        var pendingMediaTokens = 0
+        var pendingImages = 0
+        pendingParts.forEach { part ->
+            when (part) {
+                is UIMessagePart.Image -> {
+                    pendingMediaTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                    pendingImages++
+                }
+                is UIMessagePart.Video, is UIMessagePart.Audio, is UIMessagePart.Document -> {
+                    pendingMediaTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                }
+                else -> {
+                    pendingTextTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                }
+            }
+        }
+        val framingDelta = if (messages.isEmpty()) 7 else 4
+        val estimatedTotalTokens = baseBreakdown.usedTokens + pendingTextTokens + pendingMediaTokens + framingDelta
+        val budgetLimit = effectiveSmartInputBudget ?: Int.MAX_VALUE
+
+        if (smartActive && estimatedTotalTokens > budgetLimit) {
+            val pendingMessage = UIMessage(role = MessageRole.USER, parts = pendingParts)
+            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+                ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
+                fixedMemoryTokens + skillTokens + lorebookTokens +
+                toolDefinitionTokens +
+                knownContextMediaTokens
+            val messageBudget = (budgetLimit - namedTokens).coerceAtLeast(1)
+            val messagesToCount = smartFitContext(
+                messages = messages + listOf(pendingMessage),
+                model = activeModel,
+                messageBudgetTokens = messageBudget,
+            )
+            ContextTokenEstimator.breakdown(
+                messages = messagesToCount,
+                model = activeModel,
+                systemPromptText = systemPromptText,
+                summaryText = conversation.contextSummary.orEmpty(),
+                memoryText = fixedMemoryText,
+                memoryTokensOverride = fixedMemoryTokens,
+                skillText = skillText,
+                lorebookText = lorebookText,
+                skillTokensOverride = skillTokens,
+                lorebookTokensOverride = lorebookTokens,
+                toolDefinitionText = toolDefinitionText,
+                toolDefinitionTokensOverride = toolDefinitionTokens,
+                pendingParts = knownContextAttachments,
+                usableInputTokens = effectiveSmartInputBudget,
+                sourceKey = sourceKey,
+            )
+        } else {
+            baseBreakdown.copy(
+                conversationTokens = baseBreakdown.conversationTokens + pendingTextTokens + framingDelta,
+                mediaTokens = baseBreakdown.mediaTokens + pendingMediaTokens,
+                imageCount = baseBreakdown.imageCount + pendingImages,
+                usedTokens = estimatedTotalTokens,
+            )
+        }
+    }
     lastStableUsage = computedBreakdown
     return computedBreakdown
 }

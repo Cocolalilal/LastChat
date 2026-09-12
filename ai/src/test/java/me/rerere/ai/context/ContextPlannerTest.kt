@@ -4,8 +4,11 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.toTurnGroups
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,5 +113,159 @@ class ContextPlannerTest {
             requestedOutputTokens = 1_000,
         )
         assertEquals(4_000, clampedFloor)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_vastArchetype_slicesStandard16TurnMilestone() {
+        val messages = buildList {
+            repeat(22) { i ->
+                add(UIMessage.user("Prompt $i"))
+                add(UIMessage.assistant("Reply $i"))
+            }
+        }
+        val turnGroups = messages.toTurnGroups()
+        assertEquals(22, turnGroups.size)
+
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.VAST,
+            pressureTier = ContextPressureTier.NORMAL,
+        )
+
+        assertNotNull(slice)
+        assertEquals(0, slice!!.startIndex)
+        assertEquals(16, slice.groupsSummarized)
+        // Groups 0..15 summarized, ending at TurnGroup 15's endIndex
+        assertEquals(turnGroups[15].endIndex, slice.lastIndexToSummarize)
+        // Retains 6 unsummarized turns at the tail (Turns 17..22)
+        val remainingTurns = turnGroups.size - slice.groupsSummarized
+        assertEquals(6, remainingTurns)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_vastArchetype_secondMilestonePreservesContinuousBridge() {
+        val messages = buildList {
+            repeat(38) { i ->
+                add(UIMessage.user("Prompt $i"))
+                add(UIMessage.assistant("Reply $i"))
+            }
+        }
+        val turnGroups = messages.toTurnGroups()
+        val previousSummaryUpToIndex = turnGroups[15].endIndex
+        val nextStartIndex = previousSummaryUpToIndex + 1
+
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = nextStartIndex,
+            archetype = ContextScaleArchetype.VAST,
+            pressureTier = ContextPressureTier.NORMAL,
+        )
+
+        assertNotNull(slice)
+        assertEquals(nextStartIndex, slice!!.startIndex)
+        assertEquals(16, slice.groupsSummarized)
+        // Milestone 2 covers TurnGroups 16..31 (Turns 17..32)
+        assertEquals(turnGroups[31].endIndex, slice.lastIndexToSummarize)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_compactArchetype_manualRefresh_slicesCleanChunk() {
+        val messages = buildList {
+            repeat(10) { i ->
+                add(UIMessage.user("Prompt $i"))
+                add(UIMessage.assistant("Reply $i"))
+            }
+        }
+        val turnGroups = messages.toTurnGroups()
+
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.COMPACT,
+            pressureTier = ContextPressureTier.NORMAL,
+        )
+
+        assertNotNull(slice)
+        assertEquals(8, slice!!.groupsSummarized)
+        assertEquals(turnGroups[7].endIndex, slice.lastIndexToSummarize)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_compactArchetype_smallHistory_retainsTwoTurns() {
+        val messages = buildList {
+            repeat(5) { i ->
+                add(UIMessage.user("Prompt $i"))
+                add(UIMessage.assistant("Reply $i"))
+            }
+        }
+        val turnGroups = messages.toTurnGroups()
+
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.COMPACT,
+            pressureTier = ContextPressureTier.NORMAL,
+        )
+
+        assertNotNull(slice)
+        // 5 unsummarized groups: retains 2 at tail, summarizes 3
+        assertEquals(3, slice!!.groupsSummarized)
+        assertEquals(turnGroups[2].endIndex, slice.lastIndexToSummarize)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_criticalPressure_summarizesAggressively() {
+        val messages = buildList {
+            repeat(15) { i ->
+                add(UIMessage.user("Prompt $i"))
+                add(UIMessage.assistant("Reply $i"))
+            }
+        }
+        val turnGroups = messages.toTurnGroups()
+
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            turnGroups = turnGroups,
+            startIndex = 0,
+            archetype = ContextScaleArchetype.COMPACT,
+            pressureTier = ContextPressureTier.CRITICAL,
+        )
+
+        assertNotNull(slice)
+        // Under CRITICAL pressure, retains only 1 active tail group, summarizes 14
+        assertEquals(14, slice!!.groupsSummarized)
+        assertEquals(turnGroups[13].endIndex, slice.lastIndexToSummarize)
+    }
+
+    @Test
+    fun calculateMilestoneSlice_singleTurnOrExhausted_returnsNull() {
+        val singleTurn = listOf(
+            UIMessage.user("Hi"),
+            UIMessage.assistant("Hello"),
+        )
+        assertNull(
+            ContextPlanner.calculateMilestoneSlice(
+                turnGroups = singleTurn.toTurnGroups(),
+                startIndex = 0,
+                archetype = ContextScaleArchetype.COMPACT,
+                pressureTier = ContextPressureTier.NORMAL,
+            )
+        )
+
+        // When startIndex is beyond message list
+        val multiTurn = listOf(
+            UIMessage.user("T1"),
+            UIMessage.assistant("R1"),
+            UIMessage.user("T2"),
+            UIMessage.assistant("R2"),
+        )
+        assertNull(
+            ContextPlanner.calculateMilestoneSlice(
+                turnGroups = multiTurn.toTurnGroups(),
+                startIndex = 10,
+                archetype = ContextScaleArchetype.COMPACT,
+                pressureTier = ContextPressureTier.NORMAL,
+            )
+        )
     }
 }

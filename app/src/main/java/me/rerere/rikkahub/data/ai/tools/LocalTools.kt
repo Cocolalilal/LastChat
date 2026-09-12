@@ -93,7 +93,170 @@ object LocalToolOptionListSerializer :
     }
 }
 
+data class LocalToolDefinitionPreview(
+    val name: String,
+    val description: String,
+    val schema: InputSchema?,
+)
 
+fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = when (this) {
+    LocalToolOption.JavascriptEngine -> listOf(
+        LocalToolDefinitionPreview(
+            name = "eval_javascript",
+            description = "Execute JavaScript code with QuickJS. If use this tool to calculate math, better to add `toFixed` to the code.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("code", buildJsonObject {
+                        put("type", "string")
+                        put("description", "The JavaScript code to execute")
+                    })
+                },
+            )
+        )
+    )
+    LocalToolOption.Notifications -> listOf(
+        LocalToolDefinitionPreview(
+            name = "send_notification",
+            description = "Send a notification to the user",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("title", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Notification title")
+                    })
+                    put("content", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Notification content")
+                    })
+                },
+                required = listOf("title", "content")
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "schedule_message",
+            description = "Schedule a follow-up notification message after a delay. Delivery time is approximate and may vary with Android system optimizations.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("reason", buildJsonObject {
+                        put("type", "string")
+                        put("description", "The reason for scheduling this message (e.g., 'Remind user to drink water')")
+                    })
+                    put("delay_minutes", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Delay in minutes before sending the message")
+                    })
+                },
+                required = listOf("reason", "delay_minutes")
+            )
+        ),
+        LocalToolDefinitionPreview(
+            name = "get_notifications",
+            description = "Get recent notifications from the device",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max number of notifications to retrieve (default 10)")
+                    })
+                }
+            )
+        )
+    )
+    LocalToolOption.PythonEngine -> emptyList()
+    LocalToolOption.Tts -> listOf(
+        LocalToolDefinitionPreview(
+            name = "text_to_speech",
+            description = "Read text aloud using the currently selected LastChat TTS provider. Use this when the user explicitly wants spoken output.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("text", buildJsonObject {
+                        put("type", "string")
+                        put("description", "The text to speak aloud")
+                    })
+                },
+                required = listOf("text")
+            )
+        )
+    )
+    LocalToolOption.AskUser -> listOf(
+        LocalToolDefinitionPreview(
+            name = ASK_USER_TOOL_NAME,
+            description = "Ask the user a short structured questionnaire when a clarification or tradeoff would genuinely help. Use this sparingly. Ask at most 5 questions, with up to 3 concise options per question. Each option may include a short description. Do not use this just for chit-chat.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("questions", buildJsonObject {
+                        put("type", "array")
+                        put("description", "A short questionnaire for the user. Maximum 5 questions.")
+                        put("items", buildJsonObject {
+                            put("type", "object")
+                            put("properties", buildJsonObject {
+                                put("id", buildJsonObject {
+                                    put("type", "string")
+                                    put("description", "Stable question identifier.")
+                                })
+                                put("question", buildJsonObject {
+                                    put("type", "string")
+                                    put("description", "The question to ask the user.")
+                                })
+                                put("options", buildJsonObject {
+                                    put("type", "array")
+                                    put("description", "Up to 3 suggested replies.")
+                                    put("items", buildJsonObject {
+                                        put("type", "object")
+                                        put("properties", buildJsonObject {
+                                            put("label", buildJsonObject {
+                                                put("type", "string")
+                                                put("description", "Short reply option text.")
+                                            })
+                                            put("description", buildJsonObject {
+                                                put("type", "string")
+                                                put("description", "Optional one-sentence explanation.")
+                                            })
+                                        })
+                                        put("required", JsonArray(listOf(JsonPrimitive("label"))))
+                                    })
+                                })
+                            })
+                            put(
+                                "required",
+                                JsonArray(
+                                    listOf(
+                                        JsonPrimitive("id"),
+                                        JsonPrimitive("question"),
+                                    )
+                                )
+                            )
+                        })
+                    })
+                },
+                required = listOf("questions")
+            )
+        )
+    )
+    LocalToolOption.ImageGeneration -> listOf(
+        LocalToolDefinitionPreview(
+            name = "generate_image",
+            description = "Generate an image with LastChat's selected image generation model and save it to the image gallery. Use this only when the user asks for an image. Improve vague user requests into a concrete visual prompt before calling.",
+            schema = InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("prompt", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Detailed visual prompt to generate")
+                    })
+                    put("aspect_ratio", buildJsonObject {
+                        put("type", "string")
+                        put("description", "square, landscape, or portrait")
+                    })
+                    put("count", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Number of images to generate, 1 to 4")
+                    })
+                },
+                required = listOf("prompt")
+            )
+        )
+    )
+}
 
 internal fun scheduledMessageToolJson(result: ScheduledLocalToolMessage): JsonObject {
     return buildJsonObject {

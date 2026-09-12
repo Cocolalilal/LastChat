@@ -7,6 +7,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.MessageRole
@@ -194,6 +195,43 @@ data class UIMessage(
 
             else -> ""
         }
+    }
+
+    /**
+     * High-fidelity digest preserving conversation dialogue, structured tool actions, and execution results.
+     * Used by conversation summarizers so tool actions, bash commands, code edits, and search results
+     * are never lost or rendered as blank lines.
+     */
+    fun toSummarizableDigest(maxPartLength: Int = 1000): String {
+        return parts.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Text -> {
+                    if (part.text.isBlank()) null else {
+                        if (part.text.length > maxPartLength) part.text.take(maxPartLength) + "…" else part.text
+                    }
+                }
+                is UIMessagePart.ToolCall -> {
+                    val args = if (part.arguments.length > 250) part.arguments.take(247) + "…" else part.arguments
+                    "[Action: ${part.toolName}($args)]"
+                }
+                is UIMessagePart.ToolResult -> {
+                    val raw = when (val c = part.content) {
+                        is JsonPrimitive -> c.content
+                        is JsonObject -> c["receipt"]?.jsonPrimitiveOrNull?.contentOrNull ?: c.toString()
+                        else -> c.toString()
+                    }.trim()
+                    val preview = if (raw.length > 400) raw.take(397).trimEnd() + "…" else raw
+                    "[Action Result: ${part.toolName} -> $preview]"
+                }
+                is UIMessagePart.Document -> "[Document: ${part.fileName} (${part.mime})]"
+                is UIMessagePart.Image -> "[Image attachment]"
+                is UIMessagePart.Audio -> "[Audio attachment]"
+                is UIMessagePart.Video -> "[Video attachment]"
+                is UIMessagePart.Reasoning -> part.title?.takeIf { it.isNotBlank() }?.let { "[Reasoning Summary: $it]" }
+                is UIMessagePart.Thinking -> null
+                else -> null
+            }
+        }.filter { it.isNotBlank() }.joinToString(separator = "\n")
     }
 
     /**

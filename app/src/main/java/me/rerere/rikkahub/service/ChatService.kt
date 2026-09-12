@@ -63,6 +63,7 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.isEmptyInputMessage
+import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
@@ -2605,8 +2606,7 @@ class ChatService(
             val model = conversationContext.chatModel
             val smartThresholdReached = if (
                 assistant.smartContextManagement &&
-                model?.contextCapacityTokens != null &&
-                messagesToSummarizeCount >= 6
+                model?.contextCapacityTokens != null
             ) {
                 val unsummarized = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
                     messages.drop(lastSummaryIndex + 1)
@@ -2616,16 +2616,22 @@ class ChatService(
                 val usable = smartInputBudget(model, assistant.maxTokens)
                     ?: model.contextCapacityTokens
                     ?: Int.MAX_VALUE
-                val oldHistory = unsummarized.dropLast(messagesToKeep.coerceAtMost(unsummarized.size))
-                val summarizableTokens = ContextTokenEstimator.messagesTokens(oldHistory, model)
-                val enoughUsefulHistory = summarizableTokens >= maxOf(1_024, (usable * 0.08).toInt())
-                val finalPlanUsage = _contextUsage.value[conversationId]
-                val pressureTokens = finalPlanUsage?.usedTokens ?: (
-                    ContextTokenEstimator.messagesTokens(unsummarized, model) +
-                        ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), model) +
-                        ContextTokenEstimator.textTokens(assistant.systemPrompt, model)
-                    )
-                enoughUsefulHistory && pressureTokens >= (usable * 0.68).toInt()
+                val plan = me.rerere.ai.context.ContextPlanner.plan(
+                    messages = messages,
+                    model = model,
+                    customBudgetTokens = usable,
+                    systemPromptTokens = ContextTokenEstimator.textTokens(assistant.systemPrompt, model),
+                )
+                val unsummarizedGroups = unsummarized.toTurnGroups()
+                val unsummarizedTokens = ContextTokenEstimator.messagesTokens(unsummarized, model)
+
+                me.rerere.ai.context.ContextPlanner.shouldTriggerSummarization(
+                    messages = messages,
+                    model = model,
+                    unsummarizedTokens = unsummarizedTokens,
+                    unsummarizedTurnCount = unsummarizedGroups.size,
+                    plan = plan,
+                )
             } else {
                 false
             }
@@ -2675,83 +2681,76 @@ class ChatService(
             val provider = model.findProvider(settings.providers)
                 ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_provider)
 
-
-
-            // Determine which messages to summarize
+            // Determine which messages to summarize using atomic TurnGroups
             val previousSummary = conversation.contextSummary
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
-            
-            // Keep the last 4 messages (2 user + assistant exchanges) so the AI remembers what was just said
-            val messagesToKeep = 4
-            val lastIndexToSummarize = (messages.size - messagesToKeep - 1).coerceAtLeast(0)
-            
-            // Only get messages AFTER the last summary index, but before the last 4 messages
-            val startIndex = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
+
+            val turnGroups = messages.toTurnGroups()
+            val usable = smartInputBudget(model, assistant.maxTokens)
+                ?: model.contextCapacityTokens
+                ?: 16_000
+            val plan = me.rerere.ai.context.ContextPlanner.plan(
+                messages = messages,
+                model = model,
+                customBudgetTokens = usable,
+            )
+            // Continuous Summary Bridge: only get messages AFTER the last summary index
+            val startIndex = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
                 (lastSummaryIndex + 1).coerceAtMost(messages.size)
             } else {
-                0 // No previous summary, summarize from beginning
+                0
             }
-            
-            val messagesToSummarize = if (startIndex <= lastIndexToSummarize) {
-                messages.subList(startIndex, lastIndexToSummarize + 1)
-            } else {
-                emptyList()
+
+            if (startIndex >= messages.size) {
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
-            
+
+            val slicePlan = me.rerere.ai.context.ContextPlanner.calculateMilestoneSlice(
+                turnGroups = turnGroups,
+                startIndex = startIndex,
+                archetype = plan.archetype,
+                pressureTier = plan.pressureTier,
+            ) ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
+
+            val lastIndexToSummarize = slicePlan.lastIndexToSummarize
+            val messagesToSummarize = messages.subList(startIndex, lastIndexToSummarize + 1)
             if (messagesToSummarize.isEmpty()) {
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
-            // Build summarization prompt - only include NEW messages
-            val messagesText = messagesToSummarize.joinToString("\n") { msg ->
-                "${msg.role}: ${msg.toText().take(500)}" // Limit each message
-            }
-            
-            val prompt = if (hasPreviousSummary) {
-                """
-                    You have a previous summary of this conversation. Update and expand it with new information from the recent messages.
-                    
-                    **Previous Summary:**
-                    $previousSummary
-                    
-                    **New Messages (${messagesToSummarize.size} messages since last summary):**
-                    $messagesText
-                    
-                    Create an updated summary that:
-                    - Preserves important context from the previous summary
-                    - Incorporates new information from recent messages
-                    - Keeps the summary under 500 words
-                    - Focuses on: main topics, key decisions, pending tasks, user preferences
-                    
-                    Updated Summary:
-                """.trimIndent()
-            } else {
-                """
-                    Summarize this conversation concisely, preserving the key context, decisions, and important information that would be needed to continue the conversation. Focus on:
-                    - Main topics discussed
-                    - Key decisions or conclusions
-                    - Any pending questions or tasks
-                    - Important user preferences revealed
-                    
-                    Keep the summary under 500 words.
-                    
-                    Conversation:
-                    $messagesText
-                    
-                    Summary:
-                """.trimIndent()
+            // Build summarization prompt with high-fidelity digest (preserving tool calls, results, code, file edits)
+            val messagesText = messagesToSummarize.mapNotNull { msg ->
+                val digest = msg.toSummarizableDigest()
+                if (digest.isNotBlank()) "[${msg.role}]:\n$digest" else null
+            }.joinToString("\n\n")
+
+            if (messagesText.isBlank()) {
+                return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
+            // Determine milestone index from previous summary to append frozen blocks
+            val milestoneRegex = Regex("""###\s*\[Milestone\s*(\d+)""", RegexOption.IGNORE_CASE)
+            val existingMilestones = milestoneRegex.findAll(previousSummary.orEmpty()).toList()
+            val nextMilestoneNumber = (existingMilestones.lastOrNull()?.groupValues?.getOrNull(1)?.toIntOrNull() ?: existingMilestones.size) + 1
+
+            val prompt = """
+                Summarize this conversation segment concisely, preserving key facts, decisions, tool executions, file edits, and user preferences needed to continue the conversation seamlessly. Focus on:
+                - Main topics discussed and decisions made
+                - Tools or commands executed and their outcomes
+                - Current state, pending tasks, or unresolved questions
+                - Important user preferences or constraints
+                
+                Keep the summary concise (under 300 words).
+                
+                Conversation Segment:
+                $messagesText
+                
+                Milestone Summary:
+            """.trimIndent()
+
             // Estimate tokens saved (based on messages being summarized)
-            val originalTokens = messagesToSummarize.sumOf { msg ->
-                msg.parts.sumOf { part ->
-                    when (part) {
-                        is UIMessagePart.Text -> part.text.length / 4
-                        else -> 50
-                    }
-                }
-            }
+            val originalTokens = ContextTokenEstimator.messagesTokens(messagesToSummarize, model)
 
             // Call the model
             val providerHandler = providerManager.getProviderByType(provider)
@@ -2769,16 +2768,24 @@ class ChatService(
                 setContextManagementActivity(conversationId, null)
             }
 
-            val summary = response.choices.firstOrNull()?.message?.toContentText()
+            val rawSummary = response.choices.firstOrNull()?.message?.toContentText()?.trim()
                 ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
 
-            // Estimate new tokens
-            val summaryTokens = summary.length / 4
+            // Append-only frozen Milestone Block to preserve KV prompt cache across turns
+            val milestoneHeader = "### [Milestone $nextMilestoneNumber]"
+            val milestoneBlock = "$milestoneHeader\n$rawSummary"
+            val finalSummary = if (previousSummary.isNullOrBlank()) {
+                milestoneBlock
+            } else {
+                "$previousSummary\n\n$milestoneBlock"
+            }
+
+            val summaryTokens = ContextTokenEstimator.textTokens(rawSummary, model)
 
             // Update conversation with summary
             val now = System.currentTimeMillis()
             val updatedConversation = conversation.copy(
-                contextSummary = summary,
+                contextSummary = finalSummary,
                 contextSummaryUpToIndex = lastIndexToSummarize, // Index of last message included in summary
                 lastRefreshTime = now
             )
@@ -2787,11 +2794,11 @@ class ChatService(
             conversationRepo.updateConversation(updatedConversation)
             updateConversation(conversationId, updatedConversation)
 
-            Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages, saved ~${originalTokens - summaryTokens} tokens")
+            Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages into Milestone $nextMilestoneNumber, saved ~${originalTokens - summaryTokens} tokens")
 
             ContextRefreshResult(
                 success = true,
-                summary = summary,
+                summary = finalSummary,
                 messagesSummarized = messagesToSummarize.size,
                 tokensSaved = (originalTokens - summaryTokens).coerceAtLeast(0)
             )
