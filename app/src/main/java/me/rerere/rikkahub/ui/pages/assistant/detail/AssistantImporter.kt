@@ -125,7 +125,7 @@ private fun SillyTavernImporter(
     ) {
         OutlinedButton(
             onClick = {
-                pngPickerLauncher.launch(arrayOf("image/png"))
+                pngPickerLauncher.launch(arrayOf("image/png", "image/webp"))
             },
             enabled = !isLoading
         ) {
@@ -135,7 +135,7 @@ private fun SillyTavernImporter(
 
         OutlinedButton(
             onClick = {
-                jsonPickerLauncher.launch(arrayOf("application/json"))
+                jsonPickerLauncher.launch(arrayOf("application/json", "application/zip", "application/x-zip-compressed"))
             },
             enabled = !isLoading
         ) {
@@ -146,107 +146,6 @@ private fun SillyTavernImporter(
 }
 
 // region Parsing Strategy
-
-private interface TavernCardParser {
-    val specName: String
-    fun parse(context: Context, json: JsonObject, background: String?): Assistant
-}
-
-private class CharaCardV2Parser : TavernCardParser {
-    override val specName: String = "chara_card_v2"
-
-    override fun parse(context: Context, json: JsonObject, background: String?): Assistant {
-        val data = json["data"]?.jsonObject ?: error(context.getString(R.string.assistant_importer_missing_data_field))
-        val name = data["name"]?.jsonPrimitiveOrNull?.contentOrNull
-            ?: error(context.getString(R.string.assistant_importer_missing_name_field))
-        val firstMessage = data["first_mes"]?.jsonPrimitiveOrNull?.contentOrNull
-        val system = data["system_prompt"]?.jsonPrimitiveOrNull?.contentOrNull
-        val description = data["description"]?.jsonPrimitiveOrNull?.contentOrNull
-        val personality = data["personality"]?.jsonPrimitiveOrNull?.contentOrNull
-        val scenario = data["scenario"]?.jsonPrimitiveOrNull?.contentOrNull
-
-        val prompt = buildString {
-            appendLine("You are roleplaying as $name.")
-            appendLine()
-            if (!system.isNullOrBlank()) {
-                appendLine(system)
-                appendLine()
-            }
-            appendLine("## Description of the character")
-            appendLine(description ?: "Empty")
-            appendLine()
-            appendLine("## Personality of the character")
-            appendLine(personality ?: "Empty")
-            appendLine()
-            appendLine("## Scenario")
-            append(scenario ?: "Empty")
-        }
-
-        return Assistant(
-            name = name,
-            presetMessages = if (firstMessage != null) listOf(UIMessage.assistant(firstMessage)) else emptyList(),
-            systemPrompt = prompt,
-            background = background
-        )
-    }
-}
-
-private class CharaCardV3Parser : TavernCardParser {
-    override val specName: String = "chara_card_v3"
-
-    override fun parse(context: Context, json: JsonObject, background: String?): Assistant {
-        val data = json["data"]?.jsonObject ?: error(context.getString(R.string.assistant_importer_missing_data_field))
-        val name = data["name"]?.jsonPrimitiveOrNull?.contentOrNull ?: error(context.getString(R.string.assistant_importer_missing_name_field))
-        val description = data["description"]?.jsonPrimitiveOrNull?.contentOrNull
-        val firstMessage = data["first_mes"]?.jsonPrimitiveOrNull?.contentOrNull
-        val system = data["system_prompt"]?.jsonPrimitiveOrNull?.contentOrNull
-        val personality = data["personality"]?.jsonPrimitiveOrNull?.contentOrNull
-        val scenario = data["scenario"]?.jsonPrimitiveOrNull?.contentOrNull
-
-        val prompt = buildString {
-            appendLine("You are roleplaying as $name.")
-            appendLine()
-            if (!system.isNullOrBlank()) {
-                appendLine(system)
-                appendLine()
-            }
-            appendLine("## Description of the character")
-            appendLine(description ?: "Empty")
-            appendLine()
-            appendLine("## Personality of the character")
-            appendLine(personality ?: "Empty")
-            appendLine()
-            appendLine("## Scenario")
-            append(scenario ?: "Empty")
-        }
-
-        return Assistant(
-            name = name,
-            presetMessages = if (firstMessage != null) listOf(UIMessage.assistant(firstMessage)) else emptyList(),
-            systemPrompt = prompt,
-            background = background
-        )
-    }
-}
-
-private val TAVERN_PARSERS: Map<String, TavernCardParser> = listOf(
-    CharaCardV2Parser(),
-    CharaCardV3Parser()
-).associateBy { it.specName }
-
-private fun parseAssistantFromJson(
-    context: Context,
-    json: JsonObject,
-    background: String?,
-): Assistant {
-    val spec = json["spec"]?.jsonPrimitive?.contentOrNull
-        ?: error(context.getString(R.string.assistant_importer_missing_spec_field))
-    val parser = TAVERN_PARSERS[spec] ?: error(context.getString(R.string.assistant_importer_unsupported_spec, spec))
-    return parser.parse(context = context, json = json, background = background)
-}
-
-// endregion
-
 private suspend fun importAssistantFromUri(
     context: Context,
     uri: Uri,
@@ -254,34 +153,33 @@ private suspend fun importAssistantFromUri(
     toaster: AppToasterState,
 ) {
     try {
-        val mime = withContext(Dispatchers.IO) { context.getFileMimeType(uri) }
-        val (jsonString, backgroundStr) = withContext(Dispatchers.IO) {
-            when (mime) {
-                "image/png" -> {
-                    val result = ImageUtils.getTavernCharacterMeta(context, uri)
-                    result.map { base64Data ->
-                        val json = String(base64Decode(base64Data))
-                        val bg = context.importOwnedFile(
-                            sourceUri = uri,
-                            directory = OwnedFileDirectory.ASSISTANT_BACKGROUND,
-                        )?.toString() ?: error(context.getString(R.string.assistant_importer_read_json_failed))
-                        json to bg
-                    }.getOrElse { throw it }
+        val result = withContext(Dispatchers.IO) {
+            me.rerere.rikkahub.utils.AssistantExportImport.parseImport(uri, context)
+        }
+        when (result) {
+            is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success -> {
+                onImport(result.assistant)
+            }
+            is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Configurable -> {
+                val finalAssistant = if (result.exportV1 != null) {
+                    me.rerere.rikkahub.utils.AssistantExportImport.finalizeLastChatImport(
+                        export = result.exportV1,
+                        context = context,
+                        importMemories = result.hasMemories,
+                        importLorebooks = result.hasLorebooks
+                    )
+                } else {
+                    result.assistant
                 }
-
-                "application/json" -> {
-                    val json = context.contentResolver.openInputStream(uri)?.bufferedReader()
-                        .use { it?.readText() }
-                        ?: error(context.getString(R.string.assistant_importer_read_json_failed))
-                    json to null
-                }
-
-                else -> error(context.getString(R.string.assistant_importer_unsupported_file_type, mime ?: "unknown"))
+                onImport(finalAssistant)
+            }
+            is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Error -> {
+                toaster.show(
+                    message = result.message,
+                    type = ToastType.Error
+                )
             }
         }
-        val json = Json.parseToJsonElement(jsonString).jsonObject
-        val assistant = parseAssistantFromJson(context = context, json = json, background = backgroundStr)
-        onImport(assistant)
     } catch (exception: Exception) {
         exception.printStackTrace()
         toaster.show(
@@ -290,6 +188,3 @@ private suspend fun importAssistantFromUri(
         )
     }
 }
-
-@OptIn(ExperimentalEncodingApi::class)
-private fun base64Decode(value: String): ByteArray = Base64.decode(value)

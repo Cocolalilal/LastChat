@@ -79,6 +79,8 @@ data class Assistant(
     val presetMessages: List<UIMessage> = emptyList(),
     val quickMessages: List<QuickMessage> = emptyList(),
     val regexes: List<AssistantRegex> = emptyList(),
+    val alternateGreetings: List<String> = emptyList(),
+    val cycleIntrosOnNewChat: Boolean = false,
     val thinkingBudget: Int? = -1,
     val maxTokens: Int? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
@@ -115,6 +117,30 @@ data class Assistant(
     // Per-assistant UI customization (null = use global setting)
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
+
+fun Assistant.getInitialMessageNodes(): List<me.rerere.ai.ui.MessageNode> {
+    val allIntros = mutableListOf<String>()
+    
+    // Port old preset messages (gather all ASSISTANT ones)
+    presetMessages.filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }.map { it.toText() }.let { allIntros.addAll(it) }
+    allIntros.addAll(alternateGreetings)
+    
+    if (allIntros.isEmpty()) return emptyList()
+    
+    val originalMsg = me.rerere.ai.ui.UIMessage(
+        role = me.rerere.ai.core.MessageRole.ASSISTANT,
+        parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = allIntros.first())),
+        versionTag = kotlin.uuid.Uuid.random().toString()
+    )
+    val alternates = allIntros.drop(1).map { text ->
+        originalMsg.copy(
+            id = kotlin.uuid.Uuid.random(),
+            parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = text)),
+            versionTag = kotlin.uuid.Uuid.random().toString()
+        )
+    }
+    return listOf(me.rerere.ai.ui.MessageNode.of(originalMsg).copy(messages = listOf(originalMsg) + alternates))
+}
 
 internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
 

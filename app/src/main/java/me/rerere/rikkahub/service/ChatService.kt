@@ -102,6 +102,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.model.getInitialMessageNodes
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.currentVersionMessages
@@ -946,10 +947,30 @@ class ChatService(
             // 新建对话, 并添加预设消息
             val currentSettings = settingsStore.settingsFlowRaw.first()
             val assistant = currentSettings.getCurrentAssistant()
+            
+            var initialNodes = assistant.getInitialMessageNodes()
+            if (assistant.cycleIntrosOnNewChat) {
+                val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
+                if (introCount > 1) {
+                    val pastConversations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        conversationRepo.getRecentConversations(assistant.id, limit = 100)
+                    }
+                    val index = pastConversations.size % introCount
+                    initialNodes = initialNodes.map { node ->
+                        if (node.role == me.rerere.ai.core.MessageRole.ASSISTANT && node.messages.size > 1) {
+                            node.copy(selectIndex = index)
+                        } else {
+                            node
+                        }
+                    }
+                }
+            }
+
             val newConversation = Conversation.ofId(
                 id = conversationId,
                 assistantId = assistant.id,
-            ).updateCurrentMessages(assistant.presetMessages)
+                messages = initialNodes
+            )
             setConversationPersistenceMode(conversationId, ChatPersistenceMode.PERSIST_ON_REPLY)
             updateConversation(conversationId, newConversation)
         }
@@ -958,10 +979,28 @@ class ChatService(
     suspend fun createConversation(assistantId: Uuid): Conversation {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getAssistantById(assistantId) ?: settings.getCurrentAssistant()
+        var initialNodes = assistant.getInitialMessageNodes()
+        if (assistant.cycleIntrosOnNewChat) {
+            val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
+            if (introCount > 1) {
+                val pastConversations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    conversationRepo.getRecentConversations(assistantId, limit = 100)
+                }
+                val index = pastConversations.size % introCount
+                initialNodes = initialNodes.map { node ->
+                    if (node.role == me.rerere.ai.core.MessageRole.ASSISTANT && node.messages.size > 1) {
+                        node.copy(selectIndex = index)
+                    } else {
+                        node
+                    }
+                }
+            }
+        }
         val conversation = Conversation.ofId(
             id = Uuid.random(),
             assistantId = assistant.id,
-        ).updateCurrentMessages(assistant.presetMessages)
+            messages = initialNodes
+        )
         setConversationPersistenceMode(conversation.id, ChatPersistenceMode.PERSIST_ON_REPLY)
         saveConversation(conversation.id, conversation)
         return conversation

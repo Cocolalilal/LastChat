@@ -212,9 +212,16 @@ internal fun hasConversationMessages(conversation: Conversation): Boolean {
 }
 
 internal fun hasConversationPresetMessages(conversation: Conversation, assistant: Assistant): Boolean {
-    if (assistant.presetMessages.isEmpty()) return false
+    if (assistant.presetMessages.isEmpty() && assistant.alternateGreetings.isEmpty()) return false
     val presetIds = assistant.presetMessages.map { it.id }.toSet()
-    return conversation.currentMessages.any { it.id in presetIds }
+    if (conversation.currentMessages.any { it.id in presetIds }) return true
+    if (assistant.alternateGreetings.isNotEmpty()) {
+        val alternatesSet = assistant.alternateGreetings.toSet()
+        if (conversation.currentMessages.any { msg -> msg.role == me.rerere.ai.core.MessageRole.ASSISTANT && msg.toContentText() in alternatesSet }) {
+            return true
+        }
+    }
+    return false
 }
 
 @Composable
@@ -2890,7 +2897,7 @@ private fun ChatToolbar(
     var showAssistantPicker by remember { mutableStateOf(false) }
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
     val rawActionMode = run {
-        val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+        val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty() || currentAssistant.alternateGreetings.isNotEmpty()
         val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
         val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
