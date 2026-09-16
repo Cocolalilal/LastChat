@@ -125,7 +125,7 @@ private fun SillyTavernImporter(
     ) {
         OutlinedButton(
             onClick = {
-                pngPickerLauncher.launch(arrayOf("image/png", "image/webp"))
+                pngPickerLauncher.launch(arrayOf("image/png", "image/webp", "image/*", "*/*"))
             },
             enabled = !isLoading
         ) {
@@ -135,7 +135,7 @@ private fun SillyTavernImporter(
 
         OutlinedButton(
             onClick = {
-                jsonPickerLauncher.launch(arrayOf("application/json", "application/zip", "application/x-zip-compressed"))
+                jsonPickerLauncher.launch(arrayOf("application/json", "application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*"))
             },
             enabled = !isLoading
         ) {

@@ -172,4 +172,99 @@ class AssistantExportImportTest {
         assertEquals("Array Character", assistant.name)
         assertTrue(assistant.systemPrompt.contains("First in array"))
     }
+
+    @Test
+    fun testParseCardWithNullCharacterBook() {
+        val jsonContent = """
+        {
+            "spec": "chara_card_v2",
+            "data": {
+                "name": "Yuko",
+                "first_mes": "Hello",
+                "character_book": null
+            }
+        }
+        """
+        val result = invokeParseCharacterCard(jsonContent)
+        assertNotNull(result)
+        assertEquals("Yuko", result!!.first.name)
+        assertEquals("Hello", result.first.presetMessages.first().parts.first().let { if (it is me.rerere.ai.ui.UIMessagePart.Text) it.text else "" })
+    }
+
+    @Test
+    fun testParseCardWithComplexCharacterBook() {
+        val jsonContent = """
+        {
+            "spec": "chara_card_v2",
+            "data": {
+                "name": "Tilly",
+                "first_mes": "Hello brother",
+                "alternate_greetings": ["Alt 1", {"content": "Alt 2"}],
+                "character_book": {
+                    "name": "Tilly Lore",
+                    "description": "Lorebook description",
+                    "entries": [
+                        {
+                            "id": 1,
+                            "keys": ["Key1", "Key2"],
+                            "name": "Entry 1",
+                            "content": "Lore content here",
+                            "enabled": true,
+                            "position": null,
+                            "priority": 2,
+                            "extensions": {
+                                "depth": 4,
+                                "linked": false,
+                                "weight": 10
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+        """
+        val result = invokeParseCharacterCard(jsonContent)
+        assertNotNull(result)
+        assertEquals("Tilly", result!!.first.name)
+        assertEquals(2, result.first.alternateGreetings.size)
+        assertEquals("Alt 1", result.first.alternateGreetings[0])
+        assertEquals("Alt 2", result.first.alternateGreetings[1])
+        assertNotNull(result.second)
+        val lorebooks = (result.second as? AssistantExportV1)?.lorebooks
+        assertNotNull(lorebooks)
+        assertEquals(1, lorebooks!!.size)
+        assertEquals(1, lorebooks[0].lorebook.entries.size)
+        assertEquals("Lore content here", lorebooks[0].lorebook.entries[0].prompt)
+    }
+
+    @Test
+    fun testParseRealDownloadedCards() {
+        val files = listOf(
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\NeoHex900 -- Yuko Akiyama [Pepper0].card.png"),
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\Lisatago -- Harumi_ Your Tsundare Sister Nurse.card.png"),
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\PapuPapu0 -- Tina - Your Crush ❤️.card.png"),
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\SzainX -- Sonya - Mommy's Love School.card.png"),
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\MWhittz -- Tilly.card.png"),
+            java.io.File("C:\\Users\\Julian Gander\\Downloads\\main_hoi-60e905767a77_spec_v2.png")
+        )
+
+        for (file in files) {
+            if (!file.exists()) continue
+            val bytes = file.readBytes()
+            val chunksMethod = AssistantExportImport::class.java.getDeclaredMethod("extractPngChunks", ByteArray::class.java)
+            chunksMethod.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val chunks = chunksMethod.invoke(AssistantExportImport, bytes) as Map<String, String>
+            val charData = chunks["chara"] ?: chunks["Chara"] ?: chunks["card"]
+            assertNotNull("Chunk chara not found in ${file.name}", charData)
+
+            val decodedBytes = decodeBase64OrNull(charData!!)
+            val jsonStr = if (decodedBytes != null) String(decodedBytes, Charsets.UTF_8) else charData
+
+            val result = invokeParseCharacterCard(jsonStr)
+            assertNotNull("Failed to parse card from ${file.name}", result)
+            assertTrue("Assistant name is blank in ${file.name}", result!!.first.name.isNotBlank())
+            assertTrue("System prompt is blank in ${file.name}", result.first.systemPrompt.isNotBlank())
+        }
+    }
 }

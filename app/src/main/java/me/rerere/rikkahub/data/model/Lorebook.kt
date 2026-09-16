@@ -129,11 +129,11 @@ data class TavernCharacterBookEntry(
     val keys: List<String> = emptyList(),
     val content: String = "",
     val enabled: Boolean = true,
-    val insertion_order: Int = 0,
+    val insertion_order: Int? = 0,
     val case_sensitive: Boolean = false,
-    val priority: Int = 10,
-    val position: String = "after_char",  // "before_char" or "after_char"
-    val extensions: Map<String, String> = emptyMap()
+    val priority: Int? = 10,
+    val position: String? = "after_char",  // "before_char" or "after_char", can be null in cards
+    val extensions: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap()
 ) {
     /**
      * Convert Tavern entry to LastChat LorebookEntry
@@ -183,7 +183,7 @@ fun TavernCharacterBook.toLorebook(): Lorebook {
     return Lorebook(
         name = name,
         description = description,
-        entries = entries.sortedBy { it.insertion_order }.map { it.toLorebookEntry() }
+        entries = entries.sortedBy { it.insertion_order ?: 0 }.map { it.toLorebookEntry() }
     )
 }
 
