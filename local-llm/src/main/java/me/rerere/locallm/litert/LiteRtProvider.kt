@@ -9,13 +9,13 @@ import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolCall
 import com.google.gson.Gson
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
@@ -93,9 +93,18 @@ class LiteRtProvider(
                             .coerceAtLeast(0),
                     ),
                 )
+            } catch (t: Throwable) {
+                if (t is CancellationException || !currentCoroutineContext().isActive) {
+                    runCatching { conversation.cancelProcess() }
+                    throw if (t is CancellationException) t else CancellationException("LiteRT generation cancelled", t)
+                }
+                throw t
             } finally {
-                runtime.setReady(effective, loaded.backends.effective)
-                runCatching { conversation.close() }
+                withContext(NonCancellable) {
+                    runCatching { conversation.cancelProcess() }
+                    runtime.setReady(effective, loaded.backends.effective)
+                    runCatching { conversation.close() }
+                }
             }
         }
     }
@@ -117,93 +126,92 @@ class LiteRtProvider(
                 val sendable = preparedMessages.sendable
                 val modelId = params.model.modelId
 
-                emitAll(callbackFlow {
-                    runtime.setGenerating(effective)
-                    var accumulated = ""
-                    var emittedReasoning = ""
-                    var emittedText = ""
-                    var lastToolCalls: List<ToolCall> = emptyList()
+                runtime.setGenerating(effective)
+                var accumulated = ""
+                var emittedReasoning = ""
+                var emittedText = ""
+                var lastToolCalls: List<ToolCall> = emptyList()
 
-                    fun emitTextChunk(reasoningDelta: String, textDelta: String) {
-                        if (reasoningDelta.isEmpty() && textDelta.isEmpty()) return
-                        val parts = buildList {
-                            if (reasoningDelta.isNotEmpty()) {
-                                add(UIMessagePart.Reasoning(reasoning = reasoningDelta, finishedAt = null))
+                try {
+                    conversation.sendMessageAsync(toSendableMessage(effective, sendable), emptyMap())
+                        .collect { msg ->
+                            val raw = msg.textString()
+                            accumulated = when {
+                                raw.isEmpty() -> accumulated
+                                raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw
+                                else -> accumulated + raw
                             }
-                            if (textDelta.isNotEmpty()) add(UIMessagePart.Text(textDelta))
-                        }
-                        trySend(
-                            MessageChunk(
-                                id = modelId,
-                                model = modelId,
-                                choices = listOf(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
-                                        message = null,
-                                        finishReason = null,
-                                    )
-                                ),
-                            )
-                        )
-                    }
+                            if (msg.toolCalls.isNotEmpty()) lastToolCalls = msg.toolCalls
 
-                    val job = launch {
-                        conversation.sendMessageAsync(toSendableMessage(effective, sendable), emptyMap())
-                            .catch { close(it) }
-                            .collect { msg ->
-                                val raw = msg.textString()
-                                accumulated = when {
-                                    raw.isEmpty() -> accumulated
-                                    raw.length >= accumulated.length && raw.startsWith(accumulated) -> raw
-                                    else -> accumulated + raw
+                            val (reasoningFull, textFull) = splitThink(accumulated)
+                            val reasoningDelta = reasoningFull.removePrefixSafe(emittedReasoning)
+                            val textDelta = textFull.removePrefixSafe(emittedText)
+                            emittedReasoning = reasoningFull
+                            emittedText = textFull
+
+                            if (reasoningDelta.isNotEmpty() || textDelta.isNotEmpty()) {
+                                val parts = buildList {
+                                    if (reasoningDelta.isNotEmpty()) {
+                                        add(UIMessagePart.Reasoning(reasoning = reasoningDelta, finishedAt = null))
+                                    }
+                                    if (textDelta.isNotEmpty()) add(UIMessagePart.Text(textDelta))
                                 }
-                                if (msg.toolCalls.isNotEmpty()) lastToolCalls = msg.toolCalls
-
-                                val (reasoningFull, textFull) = splitThink(accumulated)
-                                val reasoningDelta = reasoningFull.removePrefixSafe(emittedReasoning)
-                                val textDelta = textFull.removePrefixSafe(emittedText)
-                                emittedReasoning = reasoningFull
-                                emittedText = textFull
-                                emitTextChunk(reasoningDelta, textDelta)
-                            }
-
-                        val toolParts = lastToolCalls.toUiToolCalls(gson)
-                        val benchmark = conversation.getBenchmarkInfo()
-                        trySend(
-                            MessageChunk(
-                                id = modelId,
-                                model = modelId,
-                                choices = listOf(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = if (toolParts.isEmpty()) {
-                                            UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
-                                        } else {
-                                            UIMessage(role = MessageRole.ASSISTANT, parts = toolParts)
-                                        },
-                                        message = null,
-                                        finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
+                                emit(
+                                    MessageChunk(
+                                        id = modelId,
+                                        model = modelId,
+                                        choices = listOf(
+                                            UIMessageChoice(
+                                                index = 0,
+                                                delta = UIMessage(role = MessageRole.ASSISTANT, parts = parts),
+                                                message = null,
+                                                finishReason = null,
+                                            )
+                                        ),
                                     )
-                                ),
-                                usage = TokenUsage(
-                                    promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
-                                    completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
-                                    totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
-                                        .coerceAtLeast(0),
-                                ),
-                            )
-                        )
-                        close()
-                    }
+                                )
+                            }
+                        }
 
-                    awaitClose {
+                    val toolParts = lastToolCalls.toUiToolCalls(gson)
+                    val benchmark = conversation.getBenchmarkInfo()
+                    emit(
+                        MessageChunk(
+                            id = modelId,
+                            model = modelId,
+                            choices = listOf(
+                                UIMessageChoice(
+                                    index = 0,
+                                    delta = if (toolParts.isEmpty()) {
+                                        UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                                    } else {
+                                        UIMessage(role = MessageRole.ASSISTANT, parts = toolParts)
+                                    },
+                                    message = null,
+                                    finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
+                                )
+                            ),
+                            usage = TokenUsage(
+                                promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
+                                completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
+                                totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
+                                    .coerceAtLeast(0),
+                            ),
+                        )
+                    )
+                } catch (t: Throwable) {
+                    if (t is CancellationException || !currentCoroutineContext().isActive) {
                         runCatching { conversation.cancelProcess() }
-                        job.cancel()
+                        throw if (t is CancellationException) t else CancellationException("LiteRT generation cancelled", t)
+                    }
+                    throw t
+                } finally {
+                    withContext(NonCancellable) {
+                        runCatching { conversation.cancelProcess() }
                         runtime.setReady(effective, loaded.backends.effective)
                         runCatching { conversation.close() }
                     }
-                })
+                }
             }
         }
     }

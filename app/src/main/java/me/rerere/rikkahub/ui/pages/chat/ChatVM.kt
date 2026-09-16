@@ -321,6 +321,10 @@ class ChatVM(
     // 生成完成 (从ChatService获取)
     val generationDoneFlow: SharedFlow<Uuid> = chatService.generationDoneFlow
 
+    fun stopGeneration() {
+        chatService.stopGeneration(_conversationId)
+    }
+
     // MCP管理器 (从ChatService获取)
     val mcpManager = chatService.mcpManager
 

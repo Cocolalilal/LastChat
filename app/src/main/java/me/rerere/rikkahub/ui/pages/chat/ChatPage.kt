@@ -1914,6 +1914,7 @@ private fun ChatPageContent(
                         }
                     },
                     onCancelClick = {
+                        vm.stopGeneration()
                         loadingJob?.cancel()
                     },
                     enableSearch = enableWebSearch,

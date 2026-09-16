@@ -149,7 +149,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **Embeddings stored in BOTH source entities AND `EmbeddingCacheDAO`** (keyed by `memory_id+memory_type+model_id` so model switches don't invalidate cache). Sync both. Prefer existing entity embeddings over re-computation.
 - **`MessageNode` branching**: each node has `messages: List<UIMessage>` + `selectIndex`. Users can regenerate/edit to create branches. `selectConversationTurnVersion` switches versions.
 - **`ChatPersistenceMode`**: `NORMAL`/`TEMPORARY`/`PERSIST_ON_REPLY` (used by spontaneous "unrelated" messages).
-- **Streaming checkpoint**: `STREAMING_CHECKPOINT_INTERVAL_MS=1000` (saves to DB every 1s). `AUTO_RESUME_MAX_RETRIES=3`, `AUTO_RESUME_RETRY_DELAY_MS=700`.
+- **Streaming checkpoint**: `STREAMING_CHECKPOINT_INTERVAL_MS=1000` (saves to DB every 1s).
 
 - **`handleMessageChunk(messages, chunk, model)`** is the streaming-merge entry point in `:ai` `ui/MessageUtils.kt`. Don't write your own merger. `List<UIMessage>.limitContext(size)` walks backwards through tool-call→tool-result dependency chains — don't replace with `takeLast(size)`.
 - **`Model.providerOverwrite: ProviderSetting?`** — a model can carry its own `ProviderSetting` that overrides the user's selected provider. `GenerationHandler` consults this; if non-null, routes the request through the overwrite's provider. This is how the model catalog routes specific models to specific providers.

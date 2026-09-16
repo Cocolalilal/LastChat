@@ -127,8 +127,6 @@ import kotlin.uuid.Uuid
 private const val TAG = "ChatService"
 private const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
 private const val STREAMING_UI_UPDATE_INTERVAL_MS = 25L
-private const val AUTO_RESUME_MAX_RETRIES = 3
-private const val AUTO_RESUME_RETRY_DELAY_MS = 700L
 private const val SMART_CONTEXT_OVERFLOW_RETRIES = 6
 
 private fun Throwable.isContextWindowOverflow(): Boolean = generateSequence(this) { it.cause }
@@ -480,60 +478,6 @@ internal fun UIMessage.hasDurableAssistantProgress(): Boolean {
             else -> false
         }
     }
-}
-
-internal fun UIMessage.needsAssistantReplyResume(): Boolean {
-    if (role != MessageRole.ASSISTANT) return false
-
-    val hasToolCall = parts.any { part -> part is UIMessagePart.ToolCall }
-    val hasReasoningProgress = parts.any { part ->
-        when (part) {
-            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
-            is UIMessagePart.Thinking -> part.thinking.isNotBlank()
-            else -> false
-        }
-    }
-
-    return hasReasoningProgress && !hasVisibleAssistantReply() && !hasToolCall
-}
-
-private fun UIMessage.hasVisibleAssistantReply(): Boolean {
-    if (role != MessageRole.ASSISTANT) return false
-
-    return parts.any { part ->
-        when (part) {
-            is UIMessagePart.Text -> part.text.isNotBlank()
-            is UIMessagePart.Image -> part.url.isNotBlank()
-            is UIMessagePart.Document -> part.url.isNotBlank()
-            is UIMessagePart.Video -> part.url.isNotBlank()
-            is UIMessagePart.Audio -> part.url.isNotBlank()
-            else -> false
-        }
-    }
-}
-
-internal fun Conversation.needsAssistantReplyAfterToolResult(): Boolean {
-    if (hasPendingToolApprovals()) return false
-
-    val selectedMessages = currentMessages
-    val lastMessage = selectedMessages.lastOrNull() ?: return false
-    if (lastMessage.role == MessageRole.TOOL) {
-        return lastMessage.getToolResults().isNotEmpty()
-    }
-
-    if (lastMessage.role != MessageRole.ASSISTANT) return false
-    if (lastMessage.hasVisibleAssistantReply()) return false
-    if (lastMessage.getToolCalls().isNotEmpty()) return false
-
-    val previousMessage = selectedMessages.dropLast(1).lastOrNull() ?: return false
-    return previousMessage.role == MessageRole.TOOL &&
-        previousMessage.getToolResults().isNotEmpty()
-}
-
-internal fun Conversation.canAutoResumeAssistantReply(): Boolean {
-    if (hasPendingToolApprovals()) return false
-    val lastMessage = currentMessages.lastOrNull() ?: return false
-    return lastMessage.role == MessageRole.ASSISTANT && lastMessage.hasDurableAssistantProgress()
 }
 
 internal fun shouldPersistStreamingCheckpoint(
@@ -1591,7 +1535,6 @@ class ChatService(
         var lastStreamingPersistMs = 0L
         var lastStreamingUiUpdateMs = 0L
         var latestStreamingConversation: Conversation? = null
-        var autoResumeAttempts = 0
         var contextOverflowAttempts = 0
         var contextBudgetScale = 1.0
 
@@ -1776,7 +1719,6 @@ class ChatService(
                     completionPersisted &&
                     !cleanedConversation.hasPendingToolApprovals() &&
                     cleanedConversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true &&
-                    cleanedConversation.currentMessages.lastOrNull()?.needsAssistantReplyResume() != true &&
                     !suppressCompletionNotification &&
                     !isForeground.value &&
                     settings.displaySetting.enableNotificationOnMessageGeneration
@@ -1854,38 +1796,13 @@ class ChatService(
                         firstTokenTime = null
                         continue
                     }
-                    val latestConversation = getConversationFlow(conversationId).value
-                    if (
-                        autoResumeAttempts < AUTO_RESUME_MAX_RETRIES &&
-                        latestConversation.canAutoResumeAssistantReply()
-                    ) {
-                        autoResumeAttempts++
-                        Log.w(TAG, "Auto-resuming interrupted assistant reply ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)", error)
-                        firstTokenTime = null
-                        delay(AUTO_RESUME_RETRY_DELAY_MS)
-                        continue
-                    }
                     throw error
-                }
-
-                val latestConversation = getConversationFlow(conversationId).value
-                if (
-                    autoResumeAttempts < AUTO_RESUME_MAX_RETRIES &&
-                    (
-                        latestConversation.currentMessages.lastOrNull()?.needsAssistantReplyResume() == true ||
-                            latestConversation.needsAssistantReplyAfterToolResult()
-                        )
-                ) {
-                    autoResumeAttempts++
-                    Log.w(TAG, "Auto-resuming assistant reply with no visible response ($autoResumeAttempts/$AUTO_RESUME_MAX_RETRIES)")
-                    firstTokenTime = null
-                    delay(AUTO_RESUME_RETRY_DELAY_MS)
-                    continue
                 }
 
                 break
             }
         }.onFailure {
+            if (it is CancellationException) return@onFailure
             it.printStackTrace()
             _errorFlow.emit(it)
             Logging.log(TAG, "handleMessageComplete: $it")

@@ -464,7 +464,10 @@ fun AssistantOverlayScreen(
                             }
                         },
                         onClearContext = {},
-                        onCancelClick = { generationJob?.cancel() },
+                        onCancelClick = {
+                            viewModel.stopGeneration()
+                            generationJob?.cancel()
+                        },
                         onSendClick = { doSend() },
                         onLongSendClick = { doSend() },
                         bottomPadding = 16.dp,
