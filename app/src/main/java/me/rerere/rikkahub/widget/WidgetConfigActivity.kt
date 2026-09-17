@@ -122,6 +122,10 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Emoji -> "emoji" to avatar.content
             is Avatar.Image -> "image" to avatar.url
             is Avatar.Resource -> "resource" to avatar.id.toString()
+            is Avatar.Blob -> "blob" to me.rerere.rikkahub.utils.JsonInstant.encodeToString(
+                Avatar.serializer(),
+                avatar,
+            )
         }
         
         LogUtil.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, avatarData=$avatarData")

@@ -124,9 +124,13 @@ suspend fun extractColorCandidates(
     val avatarSource = when (val avatar = assistant.avatar) {
         is Avatar.Image -> avatar.url
         is Avatar.Resource -> null // handled separately below
+        is Avatar.Blob -> null
         else -> null
     }
     val avatarResourceId = (assistant.avatar as? Avatar.Resource)?.id
+    val blobSeed = (assistant.avatar as? Avatar.Blob)?.let { blob ->
+        parseMaterialYouColor(blob.color)
+    }
 
     val bgCandidates = backgroundSource?.let { source ->
         loadBitmap(context, source)?.let { extractCandidatesFromBitmap(it) }
@@ -140,6 +144,7 @@ suspend fun extractColorCandidates(
             BitmapFactory.decodeResource(context.resources, avatarResourceId)
                 ?.let { extractCandidatesFromBitmap(it) }
         }
+        blobSeed != null -> listOf(blobSeed)
         else -> null
     } ?: emptyList()
 

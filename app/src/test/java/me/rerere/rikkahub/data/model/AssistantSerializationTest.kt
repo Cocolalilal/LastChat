@@ -172,4 +172,40 @@ class AssistantSerializationTest {
         assertEquals("#12ABEF", decoded.customMaterialYouColor)
     }
 
+    @Test
+    fun blobAvatarRoundTripsThroughAssistantJson() {
+        val assistant = Assistant(
+            id = Uuid.parse("00000000-0000-0000-0000-000000000017"),
+            name = "Blob Assistant",
+            avatar = Avatar.Blob.generical().copy(
+                shape = BlobShape.Pebble,
+                glowEnabled = true,
+                glowColor = "#87D2E9",
+            ),
+        )
+
+        val encoded = JsonInstant.encodeToString(Assistant.serializer(), assistant)
+        val decoded = JsonInstant.decodeFromString(Assistant.serializer(), encoded)
+        val blob = decoded.avatar as Avatar.Blob
+        assertEquals(BlobEyePack.Generical, blob.eyes)
+        assertEquals(BlobShape.Pebble, blob.shape)
+        assertEquals(Avatar.Blob.DEFAULT_GENERICAL_COLOR, blob.color)
+        assertTrue(blob.glowEnabled)
+        assertTrue(encoded.contains("\"blob\""))
+    }
+
+    @Test
+    fun legacyDummyAvatarStillDecodes() {
+        val assistant = JsonInstant.decodeFromString<Assistant>(
+            """
+            {
+              "id": "00000000-0000-0000-0000-000000000018",
+              "name": "Legacy Dummy",
+              "avatar": {"type": "Dummy"}
+            }
+            """.trimIndent()
+        )
+        assertEquals(Avatar.Dummy, assistant.avatar)
+    }
+
 }

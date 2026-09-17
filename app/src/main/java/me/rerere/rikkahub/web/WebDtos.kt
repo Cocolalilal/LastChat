@@ -335,6 +335,11 @@ data class WebAvatarDto(
     val type: String? = null,
     val content: String? = null,
     val url: String? = null,
+    val color: String? = null,
+    val shape: String? = null,
+    val eyes: String? = null,
+    val glowEnabled: Boolean? = null,
+    val glowColor: String? = null,
 )
 
 @Serializable
@@ -1030,6 +1035,14 @@ private fun Avatar.toWebAvatarDto(context: Context): WebAvatarDto? {
         is Avatar.Resource -> WebAvatarDto(
             type = "image",
             url = "android.resource://${context.packageName}/${id}".toWebAssetUrl(context),
+        )
+        is Avatar.Blob -> WebAvatarDto(
+            type = "blob",
+            color = color,
+            shape = shape.name,
+            eyes = eyes.name,
+            glowEnabled = glowEnabled,
+            glowColor = glowColor,
         )
     }
 }

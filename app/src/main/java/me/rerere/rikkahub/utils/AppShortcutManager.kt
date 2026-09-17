@@ -119,6 +119,10 @@ class AppShortcutManager(
                 // This preserves the original icon shape (like Generical)
                 Icon.createWithResource(context, avatar.id)
             }
+            is Avatar.Blob -> {
+                val bitmap = me.rerere.rikkahub.ui.components.avatar.BlobBitmap.render(avatar, 192)
+                createCircularAdaptiveIcon(bitmap)
+            }
             is Avatar.Dummy -> {
                 // Create icon with first letter of name
                 createTextIcon(fallbackName)

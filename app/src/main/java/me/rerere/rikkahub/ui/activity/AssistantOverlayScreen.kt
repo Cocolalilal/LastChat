@@ -405,7 +405,16 @@ fun AssistantOverlayScreen(
                     ) {
                         TranscriptPanel(
                             assistantAvatar = { modifier ->
-                                UIAvatar(name = assistant.name, value = assistant.avatar, modifier = modifier)
+                                UIAvatar(
+                                    name = assistant.name,
+                                    value = assistant.avatar,
+                                    modifier = modifier,
+                                    loading = isGenerating,
+                                    lifecycle = me.rerere.rikkahub.ui.components.avatar.blobLifecycleFromChat(
+                                        activityState = activityState,
+                                        loading = isGenerating,
+                                    ),
+                                )
                             },
                             messages = transcript,
                             activityState = activityState,

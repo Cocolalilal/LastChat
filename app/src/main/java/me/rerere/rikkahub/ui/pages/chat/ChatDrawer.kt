@@ -670,8 +670,13 @@ private fun DrawerAvatarVisual(
     modifier: Modifier = Modifier,
     forceCircle: Boolean = false
 ) {
+    val clipModifier = if (avatar is Avatar.Blob) {
+        modifier
+    } else {
+        modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false))
+    }
     Box(
-        modifier = modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false)),
+        modifier = clipModifier,
         contentAlignment = Alignment.Center
     ) {
         when (avatar) {
@@ -697,6 +702,14 @@ private fun DrawerAvatarVisual(
                 Text(
                     text = avatar.content,
                     style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            is Avatar.Blob -> {
+                me.rerere.rikkahub.ui.components.avatar.BlobAvatar(
+                    spec = avatar,
+                    modifier = Modifier.fillMaxSize(),
+                    lifecycle = me.rerere.rikkahub.ui.components.avatar.BlobLifecycle.Idle,
                 )
             }
 

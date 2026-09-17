@@ -97,6 +97,8 @@ import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.avatar.blobLifecycleFromChat
+import me.rerere.rikkahub.ui.components.avatar.hasPendingToolApproval
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -1417,6 +1419,10 @@ private fun AssistantMessageTurn(
     // Get avatar info
     val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: defaultAssistantName
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
+    val blocked = group.filteredNodes.any { node ->
+        node.currentMessage.parts.hasPendingToolApproval()
+    }
+    val blobLifecycle = blobLifecycleFromChat(activityState, loading, blocked)
     
     // Check if there's interesting activity (reasoning or tools)
     val hasInterestingActivity = activityState !is ActivityState.Hidden
@@ -1494,6 +1500,7 @@ private fun AssistantMessageTurn(
                             modifier = Modifier.size(36.dp),
                             value = avatarValue,
                             loading = loading,
+                            lifecycle = blobLifecycle,
                         )
                     }
 
@@ -1535,6 +1542,7 @@ private fun AssistantMessageTurn(
                                 modifier = Modifier.size(36.dp),
                                 value = avatarValue,
                                 loading = loading,
+                                lifecycle = blobLifecycle,
                             )
                         }
                         if (showModelName) {
@@ -1609,6 +1617,7 @@ private fun AssistantMessageTurn(
                             modifier = Modifier.size(36.dp),
                             value = avatarValue,
                             loading = loading,
+                            lifecycle = blobLifecycle,
                         )
                     }
                     if (showModelName) {
