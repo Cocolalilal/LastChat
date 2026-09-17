@@ -181,6 +181,12 @@ class AssistantSerializationTest {
                 shape = BlobShape.Pebble,
                 glowEnabled = true,
                 glowColor = "#87D2E9",
+                glowStrength = 0.6f,
+                eyeSize = 1.1f,
+                eyeSpacing = 0.9f,
+                eyeRoundness = 0.7f,
+                lookAround = 0.8f,
+                accentColor = "#FDE68A",
             ),
         )
 
@@ -191,6 +197,12 @@ class AssistantSerializationTest {
         assertEquals(BlobShape.Pebble, blob.shape)
         assertEquals(Avatar.Blob.DEFAULT_GENERICAL_COLOR, blob.color)
         assertTrue(blob.glowEnabled)
+        assertEquals(0.6f, blob.glowStrength, 0.001f)
+        assertEquals(1.1f, blob.eyeSize, 0.001f)
+        assertEquals(0.9f, blob.eyeSpacing, 0.001f)
+        assertEquals(0.7f, blob.eyeRoundness, 0.001f)
+        assertEquals(0.8f, blob.lookAround, 0.001f)
+        assertEquals("#FDE68A", blob.accentColor)
         assertTrue(encoded.contains("\"blob\""))
     }
 

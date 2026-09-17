@@ -393,6 +393,7 @@ fun MinimalChatInput(
     
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    val blobGlancePulse = me.rerere.rikkahub.ui.components.avatar.LocalBlobGlancePulse.current
     var isExpandedFullScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
     var pendingAttachmentImports by remember { mutableIntStateOf(0) }
@@ -769,6 +770,7 @@ fun MinimalChatInput(
                                 stopSttRecording(accept = true)
                             } else {
                                 showPicker = true
+                                blobGlancePulse.pulse(-0.55f, 0.78f)
                                 keyboardController?.hide()
                             }
                         },
@@ -952,7 +954,13 @@ fun MinimalChatInput(
                                             Modifier.contentReceiver(receiveContentListener)
                                         }
                                     )
-                                    .onFocusChanged { isFocused = it.isFocused },
+                                    .onFocusChanged {
+                                        val nowFocused = it.isFocused
+                                        if (nowFocused && !isFocused) {
+                                            blobGlancePulse.pulse(0f, 0.82f)
+                                        }
+                                        isFocused = nowFocused
+                                    },
                                 placeholder = {
                                     androidx.compose.animation.AnimatedVisibility(
                                         visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),
@@ -1046,6 +1054,7 @@ fun MinimalChatInput(
                                             LastChatComposerAction.Picker,
                                             LastChatComposerAction.SttFinalizing -> {
                                                 showPicker = true
+                                                blobGlancePulse.pulse(-0.55f, 0.78f)
                                             }
                                         }
                                     },

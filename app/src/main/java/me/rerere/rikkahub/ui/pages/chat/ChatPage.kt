@@ -1331,7 +1331,13 @@ private fun ChatPageContent(
     }
 
     AssistantChatTheme(assistant = currentAssistant) {
-        CompositionLocalProvider(LocalLastChatBlur provides blur) {
+        val blobGlance = remember { me.rerere.rikkahub.ui.components.avatar.BlobGlanceController() }
+        CompositionLocalProvider(
+            LocalLastChatBlur provides blur,
+            me.rerere.rikkahub.ui.components.avatar.LocalBlobGlance provides blobGlance.glance,
+            me.rerere.rikkahub.ui.components.avatar.LocalBlobGlancePulse provides
+                me.rerere.rikkahub.ui.components.avatar.BlobGlancePulse { x, y -> blobGlance.pulse(x, y) },
+        ) {
             Surface(
                 color = if (renderBackground) {
                     MaterialTheme.colorScheme.background

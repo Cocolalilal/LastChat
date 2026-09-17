@@ -54,6 +54,12 @@ export interface AssistantAvatar {
   eyes?: string;
   glowEnabled?: boolean;
   glowColor?: string;
+  glowStrength?: number;
+  eyeSize?: number;
+  eyeSpacing?: number;
+  eyeRoundness?: number;
+  lookAround?: number;
+  accentColor?: string;
   [key: string]: unknown;
 }
 

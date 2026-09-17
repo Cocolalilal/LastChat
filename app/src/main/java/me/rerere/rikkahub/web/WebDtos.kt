@@ -340,6 +340,12 @@ data class WebAvatarDto(
     val eyes: String? = null,
     val glowEnabled: Boolean? = null,
     val glowColor: String? = null,
+    val glowStrength: Float? = null,
+    val eyeSize: Float? = null,
+    val eyeSpacing: Float? = null,
+    val eyeRoundness: Float? = null,
+    val lookAround: Float? = null,
+    val accentColor: String? = null,
 )
 
 @Serializable
@@ -1043,6 +1049,12 @@ private fun Avatar.toWebAvatarDto(context: Context): WebAvatarDto? {
             eyes = eyes.name,
             glowEnabled = glowEnabled,
             glowColor = glowColor,
+            glowStrength = glowStrength,
+            eyeSize = eyeSize,
+            eyeSpacing = eyeSpacing,
+            eyeRoundness = eyeRoundness,
+            lookAround = lookAround,
+            accentColor = accentColor,
         )
     }
 }

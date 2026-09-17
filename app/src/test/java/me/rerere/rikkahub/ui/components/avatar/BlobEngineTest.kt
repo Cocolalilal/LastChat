@@ -36,22 +36,59 @@ class BlobEngineTest {
         assertEquals(0f, face.lookY, 0.001f)
         assertEquals(0f, face.left.tilt, 0.001f)
         assertEquals(0f, face.right.tilt, 0.001f)
-        assertTrue("Generical idle eyes are taller than wide", face.left.h > face.left.w)
+        assertTrue("Generical idle eyes are taller than wide", face.left.h > face.left.w * 2f)
+        assertEquals(0.145f, face.left.w, 0.001f)
     }
 
     @Test
-    fun genericalBlockedUsesMirrorTilts() {
+    fun genericalBlockedIsAWinkNotGrokTilts() {
         val face = faceFor(BlobEyePack.Generical, BlobLifecycle.Blocked)
-        assertTrue(face.left.tilt > 0f)
-        assertTrue(face.right.tilt < 0f)
-        assertEquals(face.left.tilt, -face.right.tilt, 0.001f)
+        assertEquals(0f, face.left.tilt, 0.001f)
+        assertEquals(0f, face.right.tilt, 0.001f)
+        assertTrue("blocked wink keeps one tall eye", face.left.h > face.left.w)
+        assertTrue("blocked wink collapses the other eye to a dash", face.right.h < face.right.w)
     }
 
     @Test
-    fun grokBlockedUsesMirrorTilts() {
-        val face = faceFor(BlobEyePack.Grok, BlobLifecycle.Blocked)
-        assertEquals(30f, face.left.tilt, 0.001f)
-        assertEquals(-30f, face.right.tilt, 0.001f)
+    fun grokLifecycleFacesAreVisiblyDistinct() {
+        val idle = faceFor(BlobEyePack.Grok, BlobLifecycle.Idle)
+        val thinking = faceFor(BlobEyePack.Grok, BlobLifecycle.Thinking)
+        val working = faceFor(BlobEyePack.Grok, BlobLifecycle.Working)
+        val waiting = faceFor(BlobEyePack.Grok, BlobLifecycle.Waiting)
+        val blocked = faceFor(BlobEyePack.Grok, BlobLifecycle.Blocked)
+        val done = faceFor(BlobEyePack.Grok, BlobLifecycle.Done)
+        assertTrue("thinking looks down, not rest-up", thinking.gaze.pitch < 0f)
+        assertTrue("thinking pitch flips vs rest", abs(thinking.gaze.pitch - idle.gaze.pitch) > 20f)
+        assertTrue("working eyes are much taller than idle", working.left.h > idle.left.h * 1.4f)
+        assertTrue("waiting eyes are slits", waiting.left.h < waiting.left.w)
+        assertEquals(30f, blocked.left.tilt, 0.001f)
+        assertTrue("done is a squint", done.left.h < done.left.w)
+        val faces = listOf(idle, thinking, working, waiting, blocked, done)
+        for (i in faces.indices) {
+            for (j in i + 1 until faces.size) {
+                val a = faces[i]
+                val b = faces[j]
+                val dist = abs(a.gaze.yaw - b.gaze.yaw) +
+                    abs(a.gaze.pitch - b.gaze.pitch) +
+                    abs(a.left.h - b.left.h) +
+                    abs(a.left.tilt - b.left.tilt)
+                assertTrue("Grok $i vs $j should differ, dist=$dist", dist > 8f)
+            }
+        }
+    }
+
+    @Test
+    fun genericalLifecycleFacesAreVisiblyDistinct() {
+        val idle = faceFor(BlobEyePack.Generical, BlobLifecycle.Idle)
+        val thinking = faceFor(BlobEyePack.Generical, BlobLifecycle.Thinking)
+        val waiting = faceFor(BlobEyePack.Generical, BlobLifecycle.Waiting)
+        val blocked = faceFor(BlobEyePack.Generical, BlobLifecycle.Blocked)
+        val done = faceFor(BlobEyePack.Generical, BlobLifecycle.Done)
+        assertTrue("thinking looks up", thinking.lookY < -0.05f)
+        assertTrue("waiting is a dash pair", waiting.left.h < 0.1f)
+        assertTrue("blocked is a wink", blocked.left.h > blocked.right.h * 2f)
+        assertTrue("done is a happy squint", done.left.h < done.left.w)
+        assertTrue("idle stays a tall lozenge", idle.left.h > idle.left.w * 2f)
     }
 
     @Test
@@ -167,8 +204,82 @@ class BlobEngineTest {
         for (shape in BlobShape.entries) {
             val radii = BlobShapes.radii(shape)
             assertEquals(BLOB_PROFILE_SAMPLES, radii.size)
-            assertTrue(radii.all { it.isFinite() && it > 0.2f && it < 2.5f })
+            assertTrue(radii.all { it.isFinite() && it > 0.2f && it <= 1.0001f })
+            val peak = radii.maxOrNull() ?: 0f
+            assertEquals("peak-normalized $shape", 1f, peak, 1e-4f)
         }
+    }
+
+    @Test
+    fun knobsScaleGenericalEyesAndSplit() {
+        val runtime = BlobRuntime()
+        val base = runtime.sample(1.1f, Avatar.Blob.generical(), BlobLifecycle.Idle, reduceMotion = true)
+        val big = BlobRuntime().sample(
+            1.1f,
+            Avatar.Blob.generical().copy(eyeSize = 1.4f, eyeSpacing = 1.3f),
+            BlobLifecycle.Idle,
+            reduceMotion = true,
+        )
+        assertTrue(big.left.w > base.left.w * 1.2f)
+        assertTrue(big.split > base.split * 1.2f)
+        assertEquals(1.4f, big.left.w / base.left.w, 0.02f)
+    }
+
+    @Test
+    fun glanceMovesGenericalLookAndGrokGaze() {
+        val glance = BlobGlance(x = 1f, y = 0.5f, strength = 1f, id = 1)
+        val gen = BlobRuntime().sample(
+            1.1f,
+            Avatar.Blob.generical(),
+            BlobLifecycle.Idle,
+            reduceMotion = true,
+            glance = glance,
+        )
+        val gen0 = BlobRuntime().sample(
+            1.1f,
+            Avatar.Blob.generical(),
+            BlobLifecycle.Idle,
+            reduceMotion = true,
+        )
+        assertTrue(gen.lookX > gen0.lookX)
+        assertTrue(gen.lookY > gen0.lookY)
+
+        val grok = BlobRuntime().sample(
+            1.1f,
+            Avatar.Blob.grok(),
+            BlobLifecycle.Idle,
+            reduceMotion = true,
+            glance = glance,
+        )
+        val grok0 = BlobRuntime().sample(
+            1.1f,
+            Avatar.Blob.grok(),
+            BlobLifecycle.Idle,
+            reduceMotion = true,
+        )
+        assertTrue(grok.gaze.yaw > grok0.gaze.yaw)
+        assertTrue("Grok stays a hole-cut pack", grok.flatFill)
+        assertTrue(grok.pack == BlobEyePack.Grok)
+    }
+
+    @Test
+    fun grokCloudSpinsWhileGenericalIdleGazeStaysFlat() {
+        val a = BlobRuntime().sample(2.0f, Avatar.Blob.grok().copy(shape = BlobShape.Cloud), BlobLifecycle.Idle)
+        val b = BlobRuntime().sample(2.6f, Avatar.Blob.grok().copy(shape = BlobShape.Cloud), BlobLifecycle.Idle)
+        assertTrue(
+            "cloud profile should rotate",
+            a.radii.zip(b.radii).any { (x, y) -> abs(x - y) > 0.01f },
+        )
+        val gen = BlobRuntime().sample(4.1f, Avatar.Blob.generical(), BlobLifecycle.Idle)
+        assertEquals(0f, gen.gaze.yaw, 0.001f)
+        assertEquals(0f, gen.gaze.pitch, 0.001f)
+        assertEquals(0f, gen.left.tilt, 0.2f)
+    }
+
+    @Test
+    fun idleAccentEnvelopeIsZeroOutsideBeats() {
+        val (_, w) = idleAccentEnvelope(0.2f)
+        assertEquals(0f, w, 0.001f)
     }
 
     private fun hypot2(x: Float, y: Float): Float = kotlin.math.sqrt(x * x + y * y)

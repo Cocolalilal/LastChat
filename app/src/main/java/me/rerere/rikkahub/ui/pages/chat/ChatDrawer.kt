@@ -411,7 +411,13 @@ fun ChatDrawerContent(
                                 Box(
                                     modifier = Modifier
                                         .size(assistantAvatarSize)
-                                        .clip(rememberAvatarShape(false))
+                                        .then(
+                                            if (currentAssistant.avatar is Avatar.Blob) {
+                                                Modifier
+                                            } else {
+                                                Modifier.clip(rememberAvatarShape(false))
+                                            }
+                                        )
                                         .clickable {
                                             haptics.perform(HapticPattern.Pop)
                                             navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))

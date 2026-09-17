@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.components.avatar
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.BlobEyePack
 import me.rerere.rikkahub.data.model.BlobShape
+import kotlin.math.abs
+import kotlin.math.sin
 
 internal data class EyeCfg(
     val w: Float,
@@ -22,7 +24,7 @@ internal data class FaceSpec(
     val glowAlpha: Float = 0.55f,
 )
 
-internal class BlobFrame(
+internal data class BlobFrame(
     val radii: FloatArray,
     val cx: Float,
     val cy: Float,
@@ -39,10 +41,18 @@ internal class BlobFrame(
     val glowEnabled: Boolean,
     val colorHex: String,
     val glowHex: String,
+    val accentHex: String,
+    val glowStrength: Float,
+    val eyeRoundness: Float,
+    val squashX: Float,
+    val squashY: Float,
+    val highlightAngle: Float,
+    val flatFill: Boolean,
 )
 
 internal const val BLOB_MORPH_SECONDS = 0.4f
 internal const val BLOB_DONE_HOLD_SECONDS = 1.35f
+internal const val BLOB_GLANCE_DECAY_SECONDS = 0.9f
 
 internal fun faceFor(pack: BlobEyePack, lifecycle: BlobLifecycle): FaceSpec {
     return when (pack) {
@@ -52,119 +62,137 @@ internal fun faceFor(pack: BlobEyePack, lifecycle: BlobLifecycle): FaceSpec {
 }
 
 /**
- * Grok pack: sphere-head poses. Body stays the user's shape — we do not port
- * bloub's 14-state silhouette morphs (3-dot thinking, comet, orbit, cookie).
+ * Grok pack: sphere-head poses from the measured bloub expressions / video
+ * faces. Body stays the user's shape — we do not port silhouette circus
+ * (3-dot thinking, comet, orbit, cookie).
  *
- * Informal mapping onto the xAI lifecycle:
- * Idle = rest gaze; Thinking = look up / attentive; Working = wider / kicked in;
- * Waiting = aside + droopy; Blocked = angry mirror tilts; Done = happy squint.
+ * Idle = fitted rest gaze. Thinking = `curieux` (look down/aside, head roll).
+ * Working = tamed `wide` (huge eyes, looking up). Waiting = `blase` slits.
+ * Blocked = `colere` mirror tilts. Done = `heureux` squint arcs.
  */
 private fun grokFace(lifecycle: BlobLifecycle): FaceSpec {
-    fun pair(w: Float, h: Float, tilt: Float = 0f, open: Float = 1f) = EyeCfg(w, h, tilt, open)
+    fun eye(w: Float, h: Float, tilt: Float = 0f, open: Float = 1f) = EyeCfg(w, h, tilt, open)
+    fun pair(w: Float, h: Float, tilt: Float = 0f, open: Float = 1f) =
+        eye(w, h, tilt, open) to eye(w, h, -tilt, open)
     return when (lifecycle) {
         BlobLifecycle.Idle -> FaceSpec(
             gaze = REST_GAZE,
             split = EYE_SPLIT,
-            left = pair(EYE_W, EYE_H),
-            right = pair(EYE_W, EYE_H),
+            left = eye(EYE_W, EYE_H),
+            right = eye(EYE_W, EYE_H),
             wander = 1f,
         )
-        BlobLifecycle.Thinking -> FaceSpec(
-            gaze = HeadGaze(yaw = 4f, pitch = 18f, roll = -4f),
-            split = 16f,
-            left = pair(0.21f, 0.44f),
-            right = pair(0.21f, 0.44f),
-            wander = 0.35f,
-        )
-        BlobLifecycle.Working -> FaceSpec(
-            gaze = HeadGaze(yaw = 6.92f, pitch = -8f, roll = 6f),
-            split = 18f,
-            left = pair(0.28f, 0.52f),
-            right = pair(0.28f, 0.52f),
-            wander = 0.2f,
-        )
+        BlobLifecycle.Thinking -> {
+            FaceSpec(
+                gaze = HeadGaze(yaw = 16f, pitch = -9f, roll = -15f),
+                split = 16.5f,
+                left = eye(0.24f, 0.46f, tilt = -8f),
+                right = eye(0.20f, 0.38f, tilt = -8f),
+                wander = 0.22f,
+            )
+        }
+        BlobLifecycle.Working -> {
+            FaceSpec(
+                gaze = HeadGaze(yaw = 6.92f, pitch = -21.96f, roll = 11.6f),
+                split = 18.43f,
+                left = eye(0.32f, 0.64f),
+                right = eye(0.32f, 0.64f),
+                wander = 0.12f,
+            )
+        }
         BlobLifecycle.Waiting -> FaceSpec(
-            gaze = HeadGaze(yaw = -18f, pitch = 2f, roll = 0f),
+            gaze = HeadGaze(yaw = -22f, pitch = 2f, roll = 0f),
             split = 16f,
-            left = pair(0.28f, 0.12f),
-            right = pair(0.28f, 0.12f),
-            wander = 0.15f,
+            left = eye(0.30f, 0.12f),
+            right = eye(0.30f, 0.12f),
+            wander = 0.12f,
         )
-        BlobLifecycle.Blocked -> FaceSpec(
-            gaze = HeadGaze(yaw = 3f, pitch = 7f, roll = 0f),
-            split = 17f,
-            left = pair(0.34f, 0.15f, tilt = 30f),
-            right = pair(0.34f, 0.15f, tilt = -30f),
-            wander = 0.08f,
-        )
-        BlobLifecycle.Done -> FaceSpec(
-            gaze = HeadGaze(yaw = 5f, pitch = 9f, roll = 0f),
-            split = 17f,
-            left = pair(0.27f, 0.17f, tilt = 14f),
-            right = pair(0.27f, 0.17f, tilt = -14f),
-            wander = 0.1f,
-        )
+        BlobLifecycle.Blocked -> {
+            val (l, r) = pair(0.34f, 0.15f, tilt = 30f)
+            FaceSpec(
+                gaze = HeadGaze(yaw = 3f, pitch = 7f, roll = 0f),
+                split = 17f,
+                left = l,
+                right = r,
+                wander = 0.06f,
+            )
+        }
+        BlobLifecycle.Done -> {
+            val (l, r) = pair(0.27f, 0.17f, tilt = 14f)
+            FaceSpec(
+                gaze = HeadGaze(yaw = 5f, pitch = 9f, roll = 0f),
+                split = 17f,
+                left = l,
+                right = r,
+                wander = 0.08f,
+            )
+        }
     }
 }
 
 /**
- * Generical pack: a flat pair of tall rounded rectangles inside a fixed circle.
- * Idle is centred and untilted. Look-around translates the pair; it does not
- * rotate a sphere. Head-turn is the same translation, clamped to the body.
+ * Generical pack: a flat pair of tall rounded rectangles, matching the
+ * expression sheet. Idle is centred and untilted. Look-around translates the
+ * pair; it does not rotate a sphere or paint Grok tilts.
+ *
+ * Eyes are glossy white lozenges — not fat glowing pills. Glow, if enabled,
+ * is a soft body halo (see renderer), not a bloom on each eye.
  */
 private fun genericalFace(lifecycle: BlobLifecycle): FaceSpec {
-    fun pair(w: Float, h: Float, tilt: Float = 0f) = EyeCfg(w, h, tilt, 1f)
+    fun eye(w: Float, h: Float, open: Float = 1f) = EyeCfg(w, h, tilt = 0f, open = open)
     return when (lifecycle) {
         BlobLifecycle.Idle -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.18f,
-            left = pair(0.22f, 0.36f),
-            right = pair(0.22f, 0.36f),
+            split = 0.155f,
+            left = eye(0.145f, 0.34f),
+            right = eye(0.145f, 0.34f),
             wander = 1f,
-            glowAlpha = 0.55f,
+            glowAlpha = 0.28f,
         )
         BlobLifecycle.Thinking -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.17f,
-            left = pair(0.18f, 0.28f),
-            right = pair(0.18f, 0.28f),
-            wander = 0.25f,
-            lookY = -0.10f,
-            glowAlpha = 0.70f,
+            split = 0.145f,
+            left = eye(0.12f, 0.22f),
+            right = eye(0.12f, 0.22f),
+            wander = 0.18f,
+            lookX = 0.05f,
+            lookY = -0.13f,
+            glowAlpha = 0.22f,
         )
         BlobLifecycle.Working -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.175f,
-            left = pair(0.20f, 0.40f),
-            right = pair(0.20f, 0.40f),
-            wander = 0.15f,
-            glowAlpha = 0.85f,
+            split = 0.15f,
+            left = eye(0.155f, 0.30f),
+            right = eye(0.155f, 0.30f),
+            wander = 0.12f,
+            glowAlpha = 0.34f,
         )
         BlobLifecycle.Waiting -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.16f,
-            left = pair(0.28f, 0.07f),
-            right = pair(0.28f, 0.07f),
-            wander = 0.1f,
-            lookY = 0.04f,
-            glowAlpha = 0.40f,
+            split = 0.15f,
+            left = eye(0.20f, 0.07f),
+            right = eye(0.20f, 0.07f),
+            wander = 0.08f,
+            lookX = 0.11f,
+            lookY = 0.03f,
+            glowAlpha = 0.16f,
         )
         BlobLifecycle.Blocked -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.17f,
-            left = pair(0.20f, 0.22f, tilt = 28f),
-            right = pair(0.20f, 0.22f, tilt = -28f),
-            wander = 0.05f,
-            glowAlpha = 0.25f,
+            split = 0.155f,
+            left = eye(0.145f, 0.30f),
+            right = eye(0.22f, 0.055f),
+            wander = 0.04f,
+            glowAlpha = 0.12f,
         )
         BlobLifecycle.Done -> FaceSpec(
             gaze = HeadGaze(0f, 0f, 0f),
-            split = 0.175f,
-            left = pair(0.24f, 0.14f, tilt = 12f),
-            right = pair(0.24f, 0.14f, tilt = -12f),
-            wander = 0.08f,
+            split = 0.16f,
+            left = eye(0.18f, 0.13f),
+            right = eye(0.18f, 0.13f),
+            wander = 0.06f,
             lookY = -0.02f,
-            glowAlpha = 0.75f,
+            glowAlpha = 0.30f,
         )
     }
 }
@@ -202,6 +230,78 @@ private fun blendRadii(a: FloatArray, b: FloatArray, t: Float): FloatArray {
     return out
 }
 
+private data class AccentBeat(val start: Float, val dur: Float, val kind: Int)
+
+private val IDLE_ACCENTS: List<AccentBeat> = run {
+    val rng = createRng(0xA11E)
+    val out = ArrayList<AccentBeat>(180)
+    var t = 3.2f
+    var kind = 0
+    while (t < 900f) {
+        val dur = 0.55f + rng() * 0.75f
+        out.add(AccentBeat(t, dur, kind % 5))
+        kind++
+        t += dur + 3.6f + rng() * 4.8f
+    }
+    out
+}
+
+internal fun idleAccentEnvelope(t: Float): Pair<Int, Float> {
+    for (beat in IDLE_ACCENTS) {
+        if (t < beat.start) break
+        val k = (t - beat.start) / beat.dur
+        if (k in 0f..1f) {
+            val env = when {
+                k < 0.32f -> k / 0.32f
+                k > 0.68f -> (1f - k) / 0.32f
+                else -> 1f
+            }
+            return beat.kind to clamp(env)
+        }
+    }
+    return 0 to 0f
+}
+
+private fun applyIdleAccent(pack: BlobEyePack, face: FaceSpec, kind: Int, weight: Float): FaceSpec {
+    if (weight <= 0.001f) return face
+    val target = when (pack) {
+        BlobEyePack.Grok -> when (kind) {
+            0 -> face.copy(
+                gaze = HeadGaze(face.gaze.yaw - 14f, face.gaze.pitch - 8f, face.gaze.roll + 6f),
+            )
+            1 -> face.copy(
+                gaze = HeadGaze(face.gaze.yaw + 12f, face.gaze.pitch - 5f, face.gaze.roll - 5f),
+            )
+            2 -> face.copy(
+                left = face.left.copy(w = face.left.w * 1.18f, h = face.left.h * 1.22f),
+                right = face.right.copy(w = face.right.w * 1.18f, h = face.right.h * 1.22f),
+            )
+            3 -> face.copy(
+                right = face.right.copy(h = face.right.h * 0.18f, w = face.right.w * 1.08f),
+            )
+            else -> face.copy(
+                left = face.left.copy(h = face.left.h * 0.42f, tilt = 10f),
+                right = face.right.copy(h = face.right.h * 0.42f, tilt = -10f),
+            )
+        }
+        BlobEyePack.Generical -> when (kind) {
+            0 -> face.copy(lookX = face.lookX - 0.13f)
+            1 -> face.copy(lookX = face.lookX + 0.13f)
+            2 -> face.copy(lookY = face.lookY - 0.11f)
+            3 -> face.copy(
+                left = face.left.copy(h = face.left.h * 0.55f, w = face.left.w * 1.08f),
+                right = face.right.copy(h = face.right.h * 0.55f, w = face.right.w * 1.08f),
+            )
+            else -> face.copy(
+                right = face.right.copy(h = 0.055f, w = 0.22f),
+            )
+        }
+    }
+    return blendFace(face, target, weight)
+}
+
+private fun scaleEye(cfg: EyeCfg, size: Float) = cfg.copy(w = cfg.w * size, h = cfg.h * size)
+
 /**
  * Stateful sampler. Time is injected ([tSeconds]) so tests are deterministic
  * and Compose owns the clock.
@@ -225,6 +325,7 @@ internal class BlobRuntime {
         spec: Avatar.Blob,
         requested: BlobLifecycle,
         reduceMotion: Boolean = false,
+        glance: BlobGlance = BlobGlance(),
     ): BlobFrame {
         if (!initialized) {
             currentPack = spec.eyes
@@ -261,12 +362,22 @@ internal class BlobRuntime {
         }
 
         val morphT = easeOutQuint(morphProgress(tSeconds))
-        val face = blendFace(fromFace, toFace, morphT)
+        var face = blendFace(fromFace, toFace, morphT)
         val shapeT = easeOutQuint(clamp((tSeconds - shapeMorphStart) / BLOB_MORPH_SECONDS))
-        val radii = if (shapeT >= 1f) toRadii else blendRadii(fromRadii, toRadii, shapeT)
+        val baseRadii = if (shapeT >= 1f) toRadii else blendRadii(fromRadii, toRadii, shapeT)
+
+        val lookAround = if (reduceMotion) spec.clampedLookAround() * 0.25f else spec.clampedLookAround()
+        val eyeSize = spec.clampedEyeSize()
+        val eyeSpacing = spec.clampedEyeSpacing()
+        val isGrok = spec.eyes == BlobEyePack.Grok
+
+        if (!reduceMotion && shownLifecycle == BlobLifecycle.Idle) {
+            val (kind, env) = idleAccentEnvelope(tSeconds)
+            face = applyIdleAccent(spec.eyes, face, kind, env)
+        }
 
         val wander = if (reduceMotion) face.wander * 0.2f else face.wander
-        val sphereWander = if (spec.eyes == BlobEyePack.Grok) wander else 0f
+        val sphereWander = if (isGrok) wander * lookAround else 0f
         val live = liveliness(
             t = tSeconds,
             wander = sphereWander,
@@ -283,37 +394,80 @@ internal class BlobRuntime {
             }
         }
 
-        val gaze = HeadGaze(
-            yaw = face.gaze.yaw + live.dYaw,
-            pitch = face.gaze.pitch + live.dPitch,
-            roll = face.gaze.roll + live.dRoll,
-        )
-
-        val lookScale = if (spec.eyes == BlobEyePack.Generical) {
-            if (reduceMotion) 0.25f else 1f
-        } else {
-            0f
+        val glanceAmt = glance.strength.coerceIn(0f, 1f) * lookAround
+        var yaw = face.gaze.yaw + live.dYaw
+        var pitch = face.gaze.pitch + live.dPitch
+        var roll = face.gaze.roll + live.dRoll
+        if (isGrok && glanceAmt > 0f) {
+            yaw += glance.x * glanceAmt * 16f
+            pitch += glance.y * glanceAmt * 12f
         }
-        val lookX = face.lookX + loopNoise(tSeconds, 11.3f, 0.4f) * 0.08f * face.wander * lookScale
-        val lookY = face.lookY + loopNoise(tSeconds, 9.1f, 1.3f) * 0.06f * face.wander * lookScale
+
+        when (shownLifecycle) {
+            BlobLifecycle.Working -> {
+                val pulse = sin(tSeconds * TAU / 1.15f)
+                if (isGrok) {
+                    yaw += pulse * 2.2f
+                    pitch += sin(tSeconds * TAU / 0.92f) * 1.6f
+                }
+            }
+            BlobLifecycle.Thinking -> {
+                roll += sin(tSeconds * TAU / 2.6f) * 3.5f * lookAround
+            }
+            BlobLifecycle.Blocked -> {
+                yaw += sin(tSeconds * 26f) * 2.4f
+            }
+            BlobLifecycle.Waiting -> {
+                yaw += sin(tSeconds * TAU / 5.2f) * 4f * lookAround
+            }
+            else -> Unit
+        }
+
+        val gaze = HeadGaze(yaw = yaw, pitch = pitch, roll = roll)
+
+        val genLook = if (isGrok) 0f else if (reduceMotion) 0.25f else lookAround
+        var lookX = face.lookX + loopNoise(tSeconds, 11.3f, 0.4f) * 0.055f * face.wander * genLook
+        var lookY = face.lookY + loopNoise(tSeconds, 9.1f, 1.3f) * 0.04f * face.wander * genLook
+        if (!isGrok && glanceAmt > 0f) {
+            lookX += glance.x * glanceAmt * 0.22f
+            lookY += glance.y * glanceAmt * 0.18f
+        }
+
+        val spin = bodySpin(spec.shape, isGrok, shownLifecycle, tSeconds, gaze, reduceMotion)
+        val radii = if (abs(spin) < 1e-4f) baseRadii else BlobShapes.rotated(baseRadii, spin)
+
+        val squash = bodySquash(isGrok, shownLifecycle, gaze, tSeconds, reduceMotion)
+        val breathMul = when (shownLifecycle) {
+            BlobLifecycle.Working -> 1f + sin(tSeconds * TAU / 1.15f) * 0.012f
+            BlobLifecycle.Thinking -> 1f + sin(tSeconds * TAU / 2.4f) * 0.008f
+            BlobLifecycle.Blocked -> 1f + sin(tSeconds * TAU * 8f) * 0.005f
+            else -> 1f
+        }
 
         return BlobFrame(
             radii = radii,
             cx = live.driftX,
             cy = live.driftY,
-            breath = live.breath,
+            breath = live.breath * breathMul,
             gaze = gaze,
-            split = face.split,
-            left = face.left,
-            right = face.right,
+            split = face.split * eyeSpacing,
+            left = scaleEye(face.left, eyeSize),
+            right = scaleEye(face.right, eyeSize),
             lid = blinkOverride ?: live.lid,
             lookX = lookX,
             lookY = lookY,
-            glowAlpha = face.glowAlpha,
+            glowAlpha = face.glowAlpha * spec.clampedGlowStrength(),
             pack = spec.eyes,
             glowEnabled = spec.glowEnabled && spec.eyes == BlobEyePack.Generical,
             colorHex = spec.color,
             glowHex = spec.glowColor,
+            accentHex = spec.accentColor,
+            glowStrength = spec.clampedGlowStrength(),
+            eyeRoundness = spec.clampedEyeRoundness(),
+            squashX = squash.first,
+            squashY = squash.second,
+            highlightAngle = spin + tSeconds * 0.45f,
+            flatFill = isGrok,
         )
     }
 
@@ -332,7 +486,6 @@ internal class BlobRuntime {
             doneHoldUntil = 0f
             return requested
         }
-        // requested is Idle
         if (shownLifecycle.isActiveWork()) {
             doneHoldUntil = tSeconds + BLOB_DONE_HOLD_SECONDS
             return BlobLifecycle.Done
@@ -342,4 +495,47 @@ internal class BlobRuntime {
         }
         return BlobLifecycle.Idle
     }
+}
+
+private fun bodySpin(
+    shape: BlobShape,
+    isGrok: Boolean,
+    lifecycle: BlobLifecycle,
+    t: Float,
+    gaze: HeadGaze,
+    reduceMotion: Boolean,
+): Float {
+    if (reduceMotion) return 0f
+    val tumble = when (shape) {
+        BlobShape.Cloud -> t * 0.62f
+        BlobShape.Droplet -> t * 0.28f
+        BlobShape.Cookie -> t * 0.22f
+        BlobShape.Pebble, BlobShape.SoftHex, BlobShape.Triangle, BlobShape.Arch -> {
+            if (isGrok) t * 0.12f else t * 0.04f
+        }
+        else -> 0f
+    }
+    val gazeSpin = if (isGrok) deg(gaze.yaw) * 0.12f else 0f
+    val workSpin = if (lifecycle == BlobLifecycle.Working && isGrok) t * 0.18f else 0f
+    return tumble + gazeSpin + workSpin
+}
+
+private fun bodySquash(
+    isGrok: Boolean,
+    lifecycle: BlobLifecycle,
+    gaze: HeadGaze,
+    t: Float,
+    reduceMotion: Boolean,
+): Pair<Float, Float> {
+    if (!isGrok || reduceMotion) return 1f to 1f
+    val sx = (1f - 0.055f * (abs(gaze.yaw) / 45f).coerceAtMost(1f)).coerceIn(0.88f, 1f)
+    var sy = (1f - 0.045f * (abs(gaze.pitch) / 45f).coerceAtMost(1f)).coerceIn(0.88f, 1f)
+    if (lifecycle == BlobLifecycle.Working) {
+        sy *= 1f + sin(t * TAU / 1.15f) * 0.02f
+    }
+    if (lifecycle == BlobLifecycle.Done) {
+        sy *= 0.97f
+        return (sx * 1.03f) to sy
+    }
+    return sx to sy
 }

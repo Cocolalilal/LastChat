@@ -39,19 +39,44 @@ function getAvatarImage(avatar?: AssistantAvatar | null): string | null {
 function blobSvg(avatar: AssistantAvatar): string {
   const color = avatar.color?.trim() || "#009FE0";
   const pack = avatar.eyes?.toLowerCase() === "grok" ? "grok" : "generical";
+  const size = clampUnit(avatar.eyeSize, 1);
+  const spacing = clampUnit(avatar.eyeSpacing, 1);
+  const round = clampUnit(avatar.eyeRoundness, 1);
   // Static SVG only — the Android canvas engine is not ported to web yet.
   if (pack === "grok") {
+    const split = 7 * spacing;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-      <circle cx="32" cy="32" r="32" fill="${color}"/>
-      <ellipse cx="24.5" cy="30" rx="5.2" ry="11.4" fill="white" transform="rotate(-26 24.5 30)"/>
-      <ellipse cx="39.5" cy="30" rx="3.6" ry="11.4" fill="white" transform="rotate(-26 39.5 30)"/>
+      <defs>
+        <mask id="grok-eyes">
+          <rect width="64" height="64" fill="white"/>
+          <ellipse cx="${32 - split}" cy="28" rx="${4.2 * size}" ry="${9.6 * size}" fill="black" transform="rotate(-26 ${32 - split} 28)"/>
+          <ellipse cx="${32 + split}" cy="27" rx="${3.1 * size}" ry="${9.6 * size}" fill="black" transform="rotate(-26 ${32 + split} 27)"/>
+        </mask>
+      </defs>
+      <circle cx="32" cy="32" r="32" fill="${color}" mask="url(#grok-eyes)"/>
     </svg>`;
   }
+  const w = 7.4 * size;
+  const h = 20.4 * size;
+  const gap = 8 * spacing;
+  const rx = Math.max(1.2, (w / 2) * round);
+  const left = 32 - gap - w / 2;
+  const right = 32 + gap - w / 2;
+  const top = 32 - h / 2;
+  const accent = avatar.accentColor?.trim() || "#E8F7FF";
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
     <circle cx="32" cy="32" r="32" fill="${color}"/>
-    <rect x="16.5" y="20" width="12" height="20" rx="6" fill="white" stroke="#d7f4ff" stroke-width="1.4"/>
-    <rect x="35.5" y="20" width="12" height="20" rx="6" fill="white" stroke="#d7f4ff" stroke-width="1.4"/>
+    <rect x="${left}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="white"/>
+    <rect x="${right}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="white"/>
+    <rect x="${left + w * 0.18}" y="${top + 1.2}" width="${w * 0.64}" height="${h * 0.38}" rx="${rx * 0.7}" fill="${accent}" opacity="0.55"/>
+    <rect x="${right + w * 0.18}" y="${top + 1.2}" width="${w * 0.64}" height="${h * 0.38}" rx="${rx * 0.7}" fill="${accent}" opacity="0.55"/>
   </svg>`;
+}
+
+function clampUnit(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1.5, Math.max(0.6, n));
 }
 
 export function UIAvatar({ name, avatar, size = "default", className }: UIAvatarProps) {
