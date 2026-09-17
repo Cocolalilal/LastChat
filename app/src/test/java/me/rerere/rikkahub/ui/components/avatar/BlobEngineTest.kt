@@ -136,10 +136,12 @@ class BlobEngineTest {
         val runtime = BlobRuntime()
         val spec = Avatar.Blob.generical()
         runtime.sample(0f, spec, BlobLifecycle.Working)
-        val duringHold = runtime.sample(0.2f, spec, BlobLifecycle.Idle)
+        runtime.sample(0.05f, spec, BlobLifecycle.Idle)
+        assertEquals(BlobLifecycle.Done, runtime.shownLifecycle())
+        val duringHold = runtime.sample(0.05f + BLOB_MORPH_SECONDS + 0.02f, spec, BlobLifecycle.Idle)
         assertEquals(BlobLifecycle.Done, runtime.shownLifecycle())
         assertTrue("done eyes are a happy squint", duringHold.left.h < duringHold.left.w)
-        runtime.sample(0.2f + BLOB_DONE_HOLD_SECONDS + 0.05f, spec, BlobLifecycle.Idle)
+        runtime.sample(0.05f + BLOB_DONE_HOLD_SECONDS + 0.05f, spec, BlobLifecycle.Idle)
         assertEquals(BlobLifecycle.Idle, runtime.shownLifecycle())
     }
 

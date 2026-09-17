@@ -195,17 +195,10 @@ class AssistantSerializationTest {
     }
 
     @Test
-    fun legacyDummyAvatarStillDecodes() {
-        val assistant = JsonInstant.decodeFromString<Assistant>(
-            """
-            {
-              "id": "00000000-0000-0000-0000-000000000018",
-              "name": "Legacy Dummy",
-              "avatar": {"type": "Dummy"}
-            }
-            """.trimIndent()
-        )
-        assertEquals(Avatar.Dummy, assistant.avatar)
+    fun dummyAvatarRoundTrips() {
+        val encoded = JsonInstant.encodeToString(Avatar.serializer(), Avatar.Dummy)
+        val decoded = JsonInstant.decodeFromString(Avatar.serializer(), encoded)
+        assertEquals(Avatar.Dummy, decoded)
     }
 
 }

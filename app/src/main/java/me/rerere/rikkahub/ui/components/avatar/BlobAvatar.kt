@@ -24,10 +24,10 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
@@ -188,29 +188,22 @@ private fun eyeCapsulePath(eye: LaidOutEye, blink: Float): Path {
             )
         )
     }
-    path.transform(eyeMatrix(eye, blink))
-    return path
-}
-
-private fun eyeMatrix(eye: LaidOutEye, blink: Float): Matrix {
     val ct = kotlin.math.cos(eye.tiltRad)
     val st = kotlin.math.sin(eye.tiltRad)
     val m00 = eye.a * ct + eye.c * st
     val m01 = -eye.a * st + eye.c * ct
     val m10 = blink * (eye.b * ct + eye.d * st)
     val m11 = blink * (-eye.b * st + eye.d * ct)
-    val values = FloatArray(16)
-    values[10] = 1f
-    values[15] = 1f
-    values[Matrix.ScaleX] = m00
-    values[Matrix.SkewX] = m01
-    values[Matrix.SkewY] = m10
-    values[Matrix.ScaleY] = m11
-    values[Matrix.TranslateX] = eye.cx
-    values[Matrix.TranslateY] = eye.cy
-    val matrix = Matrix()
-    matrix.setFrom(values)
-    return matrix
+    val androidMatrix = android.graphics.Matrix()
+    androidMatrix.setValues(
+        floatArrayOf(
+            m00, m01, eye.cx,
+            m10, m11, eye.cy,
+            0f, 0f, 1f,
+        )
+    )
+    path.asAndroidPath().transform(androidMatrix)
+    return path
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFF101010)

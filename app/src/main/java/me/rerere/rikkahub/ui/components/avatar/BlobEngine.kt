@@ -206,7 +206,7 @@ private fun blendRadii(a: FloatArray, b: FloatArray, t: Float): FloatArray {
  * Stateful sampler. Time is injected ([tSeconds]) so tests are deterministic
  * and Compose owns the clock.
  */
-class BlobRuntime {
+internal class BlobRuntime {
     private var shownLifecycle: BlobLifecycle = BlobLifecycle.Idle
     private var fromFace: FaceSpec = faceFor(BlobEyePack.Generical, BlobLifecycle.Idle)
     private var toFace: FaceSpec = fromFace
