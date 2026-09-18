@@ -172,6 +172,20 @@ class AssistantWidget : GlanceAppWidget() {
         return when (avatarType) {
             "emoji" -> createEmojiBitmap(avatarData)
             "image" -> loadImageBitmapSync(avatarData) ?: createTextBitmap(fallbackName)
+            "blob" -> {
+                try {
+                    val avatar = me.rerere.rikkahub.utils.JsonInstant.decodeFromString(
+                        me.rerere.rikkahub.data.model.Avatar.serializer(),
+                        avatarData,
+                    )
+                    (avatar as? me.rerere.rikkahub.data.model.Avatar.Blob)?.let {
+                        me.rerere.rikkahub.ui.components.avatar.BlobBitmap.render(it, 256)
+                    } ?: createTextBitmap(fallbackName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error rendering blob avatar", e)
+                    createTextBitmap(fallbackName)
+                }
+            }
             "resource" -> {
                 try {
                     val resId = avatarData.toIntOrNull() ?: R.drawable.default_generical_pfp

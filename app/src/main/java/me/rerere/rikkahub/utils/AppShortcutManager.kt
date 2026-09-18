@@ -119,6 +119,11 @@ class AppShortcutManager(
                 // This preserves the original icon shape (like Generical)
                 Icon.createWithResource(context, avatar.id)
             }
+            is Avatar.Blob -> {
+                Icon.createWithBitmap(
+                    me.rerere.rikkahub.ui.components.avatar.BlobBitmap.render(avatar, 192)
+                )
+            }
             is Avatar.Dummy -> {
                 // Create icon with first letter of name
                 createTextIcon(fallbackName)

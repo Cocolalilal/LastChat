@@ -407,6 +407,12 @@ object AssistantExportImport : KoinComponent {
                 // Create placeholder with emoji text
                 createEmojiPng(avatar.content)
             }
+            is Avatar.Blob -> {
+                val bitmap = me.rerere.rikkahub.ui.components.avatar.BlobBitmap.render(avatar, 256)
+                val stream = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+                stream.toByteArray()
+            }
             Avatar.Dummy -> {
                 createPlaceholderPng(assistant.name)
             }

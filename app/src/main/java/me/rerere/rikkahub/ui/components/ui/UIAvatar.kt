@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.avatar.BlobAvatar
+import me.rerere.rikkahub.ui.components.avatar.BlobLifecycle
+import me.rerere.rikkahub.ui.components.avatar.CreateBlobAvatarSheet
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.utils.createChatFilesByContents
 
@@ -81,6 +84,7 @@ fun UIAvatar(
     value: Avatar,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
+    lifecycle: BlobLifecycle? = null,
     onUpdate: ((Avatar) -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
@@ -88,11 +92,18 @@ fun UIAvatar(
     var showPickOption by remember { mutableStateOf(false) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
+    var showCreateAvatar by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
     
     // State for square cropper
     var showCropper by remember { mutableStateOf(false) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val blobLifecycle = lifecycle ?: if (loading) BlobLifecycle.Working else BlobLifecycle.Idle
+    val handleClick = {
+        onClick?.invoke()
+        if (onUpdate != null) showPickOption = true
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -104,60 +115,68 @@ fun UIAvatar(
         }
     }
 
-    Surface(
-        shape = rememberAvatarShape(loading),
-        modifier = modifier.size(32.dp),
-        onClick = {
-            onClick?.invoke()
-            if (onUpdate != null) showPickOption = true
-        },
-        tonalElevation = 4.dp,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
+    if (value is Avatar.Blob) {
+        BlobAvatar(
+            spec = value,
+            modifier = modifier.size(32.dp),
+            lifecycle = blobLifecycle,
+            onClick = handleClick,
+        )
+    } else {
+        Surface(
+            shape = rememberAvatarShape(loading),
+            modifier = modifier.size(32.dp),
+            onClick = handleClick,
+            tonalElevation = 4.dp,
+            color = MaterialTheme.colorScheme.secondaryContainer,
         ) {
-            when (value) {
-                is Avatar.Image -> {
-                    AsyncImage(
-                        model = value.url,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                when (value) {
+                    is Avatar.Image -> {
+                        AsyncImage(
+                            model = value.url,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
 
-                is Avatar.Emoji -> {
-                    Text(
-                        text = value.content,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 15.sp,
-                            maxFontSize = 30.sp,
-                        ),
-                        lineHeight = 1.em,
-                        modifier = Modifier.padding(2.dp)
-                    )
-                }
+                    is Avatar.Emoji -> {
+                        Text(
+                            text = value.content,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 15.sp,
+                                maxFontSize = 30.sp,
+                            ),
+                            lineHeight = 1.em,
+                            modifier = Modifier.padding(2.dp)
+                        )
+                    }
 
-                is Avatar.Resource -> {
-                    AsyncImage(
-                        model = value.id,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
+                    is Avatar.Resource -> {
+                        AsyncImage(
+                            model = value.id,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
 
-                is Avatar.Dummy -> {
-                    Text(
-                        text = name
-                            .ifBlank { stringResource(R.string.user_default_name) }
-                            .takeIf { it.isNotEmpty() }
-                            ?.firstOrNull()?.toString()?.uppercase() ?: "A",
-                        fontSize = 20.sp,
-                        lineHeight = 1.em
-                    )
+                    is Avatar.Dummy -> {
+                        Text(
+                            text = name
+                                .ifBlank { stringResource(R.string.user_default_name) }
+                                .takeIf { it.isNotEmpty() }
+                                ?.firstOrNull()?.toString()?.uppercase() ?: "A",
+                            fontSize = 20.sp,
+                            lineHeight = 1.em
+                        )
+                    }
+
+                    is Avatar.Blob -> Unit
                 }
             }
         }
@@ -175,6 +194,15 @@ fun UIAvatar(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Button(
+                        onClick = {
+                            showPickOption = false
+                            showCreateAvatar = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = stringResource(id = R.string.avatar_create))
+                    }
                     Button(
                         onClick = {
                             showPickOption = false
@@ -227,6 +255,17 @@ fun UIAvatar(
                     Text(stringResource(id = R.string.avatar_cancel))
                 }
             }
+        )
+    }
+
+    if (showCreateAvatar) {
+        CreateBlobAvatarSheet(
+            initial = (value as? Avatar.Blob) ?: Avatar.Blob.generical(),
+            onDismiss = { showCreateAvatar = false },
+            onSave = { blob ->
+                onUpdate?.invoke(blob)
+                showCreateAvatar = false
+            },
         )
     }
 

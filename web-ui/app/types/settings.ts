@@ -49,6 +49,19 @@ export interface AssistantAvatar {
   type?: string;
   content?: string;
   url?: string;
+  color?: string;
+  shape?: string;
+  eyes?: string;
+  eyeColor?: string;
+  flat3d?: boolean;
+  glowEnabled?: boolean;
+  glowColor?: string;
+  glowStrength?: number;
+  eyeSize?: number;
+  eyeSpacing?: number;
+  eyeRoundness?: number;
+  lookAround?: number;
+  accentColor?: string;
   [key: string]: unknown;
 }
 

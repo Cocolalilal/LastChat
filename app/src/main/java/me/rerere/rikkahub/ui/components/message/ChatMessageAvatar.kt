@@ -102,6 +102,11 @@ fun ChatMessageAssistantAvatar(
                     modifier = Modifier.size(36.dp),
                     value = avatarValue,
                     loading = loading,
+                    lifecycle = if (loading) {
+                        me.rerere.rikkahub.ui.components.avatar.BlobLifecycle.Working
+                    } else {
+                        me.rerere.rikkahub.ui.components.avatar.BlobLifecycle.Idle
+                    },
                 )
             }
             Column(

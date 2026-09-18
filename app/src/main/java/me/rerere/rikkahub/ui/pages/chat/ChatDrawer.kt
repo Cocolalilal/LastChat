@@ -710,6 +710,13 @@ private fun DrawerAvatarVisual(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
             }
+
+            is Avatar.Blob -> {
+                me.rerere.rikkahub.ui.components.avatar.BlobAvatar(
+                    spec = avatar,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }

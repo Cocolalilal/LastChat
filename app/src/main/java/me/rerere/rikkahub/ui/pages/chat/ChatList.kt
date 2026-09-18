@@ -1148,6 +1148,7 @@ private fun PhantomLoadingTurn(
                         modifier = Modifier.size(36.dp),
                         value = avatarValue,
                         loading = true,
+                        lifecycle = me.rerere.rikkahub.ui.components.avatar.BlobLifecycle.Waiting,
                     )
                 }
 
@@ -1171,6 +1172,7 @@ private fun PhantomLoadingTurn(
                             modifier = Modifier.size(36.dp),
                             value = avatarValue,
                             loading = true,
+                            lifecycle = me.rerere.rikkahub.ui.components.avatar.BlobLifecycle.Waiting,
                         )
                     }
                     if (showModelName) {
