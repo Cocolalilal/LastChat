@@ -165,7 +165,7 @@
     <string name="avatar_glow_color">Glow colour</string>
     <string name="avatar_glow_desc">Optional halo around the body. Eyes stay crisp — never a bloom on the pair.</string>
     <string name="avatar_glow_strength">Glow strength</string>
-    <string name="avatar_grok_fill_hint">Grok eyes sit on a sphere with the measured rest gaze; the body is flat with a subtle moving highlight.</string>
+    <string name="avatar_grok_fill_hint">Grok eyes are small slanted black slits on the flat coloured mark. The body never spins — volume comes from a slow lighting tumble.</string>
     <string name="avatar_knobs">Face</string>
     <string name="avatar_lifecycle">Lifecycle preview</string>
     <string name="avatar_lifecycle_blocked">Blocked</string>

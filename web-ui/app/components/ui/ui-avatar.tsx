@@ -43,37 +43,45 @@ function clampUnit(value: unknown, fallback: number): number {
 }
 
 // Static SVG only: the animated Android canvas engine is not ported to web yet.
-// Body flat colour, light eyes (never holes) so it reads on any background.
+// Generical = white-border + pale vertical gradient. Grok = small dark slits.
 function blobSvg(avatar: AssistantAvatar): string {
   const color = avatar.color?.trim() || "#009FE0";
-  const eyeColor = avatar.eyeColor?.trim() || "#FBFDFF";
   const pack = avatar.eyes?.toLowerCase() === "grok" ? "grok" : "generical";
   const size = clampUnit(avatar.eyeSize, 1);
   const spacing = clampUnit(avatar.eyeSpacing, 1);
   const round = clampUnit(avatar.eyeRoundness, 1);
   if (pack === "grok") {
-    // sphere rest gaze: eyes lean "\\" ~26°, inner eye a touch bigger than outer
-    const split = 7.6 * spacing;
+    const eye = avatar.eyeColor?.trim() || "#171717";
+    const slit = "#171717";
+    const fill = eye.toLowerCase() === "#fbfdff" || eye.toLowerCase() === "#ffffff" ? slit : eye;
+    const split = 6.4 * spacing;
+    const w = 5.6 * size;
+    const h = 2.1 * size;
+    const y = 24;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
       <circle cx="32" cy="32" r="30" fill="${color}"/>
-      <rect x="${32 - split - 3.4 * size}" y="${25 - 6.6 * size}" width="${6.8 * size}" height="${13.2 * size}" rx="${3.4 * size}" fill="${eyeColor}" transform="rotate(-26 ${32 - split} 27)"/>
-      <rect x="${32 + split - 2.9 * size}" y="${25 - 6.6 * size}" width="${5.8 * size}" height="${12.6 * size}" rx="${2.9 * size}" fill="${eyeColor}" transform="rotate(-26 ${32 + split} 26)"/>
+      <rect x="${32 - split - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="${fill}" transform="rotate(-20 ${32 - split} ${y})"/>
+      <rect x="${32 + split - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="${fill}" transform="rotate(-20 ${32 + split} ${y})"/>
     </svg>`;
   }
-  const w = 7 * size;
-  const h = 15.6 * size;
-  const gap = 7.4 * spacing;
+  const w = 10.4 * size;
+  const h = 20.8 * size;
+  const gap = 9.2 * spacing;
   const rx = Math.max(1.2, (w / 2) * round);
   const left = 32 - gap - w / 2;
   const right = 32 + gap - w / 2;
   const top = 32 - h / 2;
-  const accent = avatar.accentColor?.trim() || "#EAF7FF";
+  const stroke = avatar.eyeColor?.trim() || "#FBFDFF";
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <defs>
+      <linearGradient id="ge" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#FFFFFF"/>
+        <stop offset="1" stop-color="#C7EAF8"/>
+      </linearGradient>
+    </defs>
     <circle cx="32" cy="32" r="30" fill="${color}"/>
-    <rect x="${left}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="${eyeColor}"/>
-    <rect x="${right}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="${eyeColor}"/>
-    <rect x="${left + w * 0.2}" y="${top + 1.2}" width="${w * 0.6}" height="${h * 0.34}" rx="${rx * 0.7}" fill="${accent}" opacity="0.55"/>
-    <rect x="${right + w * 0.2}" y="${top + 1.2}" width="${w * 0.6}" height="${h * 0.34}" rx="${rx * 0.7}" fill="${accent}" opacity="0.55"/>
+    <rect x="${left}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="url(#ge)" stroke="${stroke}" stroke-width="2.4"/>
+    <rect x="${right}" y="${top}" width="${w}" height="${h}" rx="${rx}" fill="url(#ge)" stroke="${stroke}" stroke-width="2.4"/>
   </svg>`;
 }
 

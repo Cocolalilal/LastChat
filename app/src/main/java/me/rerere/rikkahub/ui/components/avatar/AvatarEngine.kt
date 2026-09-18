@@ -3,15 +3,14 @@ package me.rerere.rikkahub.ui.components.avatar
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.BlobEyePack
 import me.rerere.rikkahub.data.model.BlobShape
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
  * One laid-out eye. Positions/sizes are in ball-radius units (renderer scales by
- * the pixel radius). [a],[b],[c],[d] are the sphere tangent matrix for Grok, or
- * identity for the flat Generical glyph.
+ * the pixel radius). Both packs are flat glyphs on the mark; [a],[b],[c],[d]
+ * stay identity and [tiltRad] carries any lean.
  */
 internal data class LaidEye(
     val cx: Float, val cy: Float,
@@ -20,6 +19,11 @@ internal data class LaidEye(
     val tiltRad: Float,
     val open: Float,
     val visible: Boolean,
+    val topRound: Float = 1f,
+    val bottomRound: Float = 1f,
+    val innerTopDrop: Float = 0f,
+    val outerTopDrop: Float = 0f,
+    val innerSign: Float = 1f,
 )
 
 /** Everything a renderer needs for one frame. Pure data, no Android types. */
@@ -51,10 +55,9 @@ internal data class BlobFrame(
 
 internal const val BLOB_MORPH_SECONDS = 0.4f
 internal const val BLOB_DONE_HOLD_SECONDS = 1.4f
-private const val GROK_FIT = 0.8f
-private const val GROK_PAIR_LIMIT = 0.36f
-private const val GEN_LOOK_LIMIT = 0.4f
-private const val GEN_EYE_LIMIT = 0.6f
+private const val LOOK_LIMIT = 0.52f
+private const val EYE_LIMIT = 0.72f
+private const val PAIR_MID_LIMIT = 0.55f
 
 /**
  * Stateful sampler. Time is injected so Compose owns the clock and tests /
@@ -124,7 +127,6 @@ internal class BlobRuntime(initialLifecycle: BlobLifecycle = BlobLifecycle.Idle)
         val shapeT = easeOutQuint(clamp((tSeconds - shapeMorphStart) / BLOB_MORPH_SECONDS))
         val radii = if (shapeT >= 1f) toRadii else blendRadii(fromRadii, toRadii, shapeT)
 
-        val isGrok = spec.eyes == BlobEyePack.Grok
         val lookAround = spec.clampedLookAround() * life
         val eyeSize = spec.clampedEyeSize()
         val eyeSpacing = spec.clampedEyeSpacing()
@@ -137,7 +139,7 @@ internal class BlobRuntime(initialLifecycle: BlobLifecycle = BlobLifecycle.Idle)
         val wander = face.wander * life
         val live = liveliness(
             t = tSeconds,
-            wander = if (isGrok) wander * lookAround else 0f,
+            wander = 0f,
             blink = life > 0f,
             float = life > 0f,
         )
@@ -152,36 +154,22 @@ internal class BlobRuntime(initialLifecycle: BlobLifecycle = BlobLifecycle.Idle)
         }
         val lid = if (life <= 0f) 1f else (blinkOverride ?: live.lid)
 
-        // Grok gaze = pose + drift + a little state-specific motion (never a body spin)
-        var yaw = face.gaze.yaw + live.dYaw
-        var pitch = face.gaze.pitch + live.dPitch
-        var roll = face.gaze.roll + live.dRoll
-        if (isGrok && life > 0f) {
+        // Both packs look by translating the pair on the flat mark (never a body spin).
+        var lookX = face.lookX + loopNoise(tSeconds, 11.3f, 0.4f) * 0.055f * wander * lookAround
+        var lookY = face.lookY + loopNoise(tSeconds, 9.1f, 1.3f) * 0.04f * wander * lookAround
+        if (life > 0f) {
             when (shownLifecycle) {
-                BlobLifecycle.Thinking -> roll += sin(tSeconds * TAU / 2.6f) * 3.5f * lookAround
-                BlobLifecycle.Working -> {
-                    yaw += sin(tSeconds * TAU / 1.15f) * 2.2f
-                    pitch += sin(tSeconds * TAU / 0.92f) * 1.6f
-                }
-                BlobLifecycle.Waiting -> yaw += sin(tSeconds * TAU / 5.2f) * 4f * lookAround
-                BlobLifecycle.Blocked -> yaw += sin(tSeconds * 26f) * 2.2f
+                BlobLifecycle.Thinking -> lookX += sin(tSeconds * TAU / 2.6f) * 0.035f * lookAround
+                BlobLifecycle.Working -> lookY += sin(tSeconds * TAU / 1.15f) * 0.018f
+                BlobLifecycle.Waiting -> lookX += sin(tSeconds * TAU / 5.2f) * 0.045f * lookAround
+                BlobLifecycle.Blocked -> lookX += sin(tSeconds * 26f) * 0.012f
                 else -> Unit
             }
         }
-        val gaze = HeadGaze(yaw, pitch, roll)
-
-        // Generical flat gaze translation
-        val genLook = if (isGrok) 0f else lookAround
-        var lookX = face.lookX + loopNoise(tSeconds, 11.3f, 0.4f) * 0.055f * face.wander * genLook
-        var lookY = face.lookY + loopNoise(tSeconds, 9.1f, 1.3f) * 0.04f * face.wander * genLook
 
         val driftX = live.driftX
         val driftY = live.driftY
-        val (left, right) = if (isGrok) {
-            grokEyes(gaze, face, radii, eyeSize, eyeSpacing, driftX, driftY)
-        } else {
-            genericalEyes(face, radii, eyeSize, eyeSpacing, lookX, lookY, driftX, driftY)
-        }
+        val (left, right) = layFlatEyes(face, radii, eyeSize, eyeSpacing, lookX, lookY, driftX, driftY)
 
         val breathMul = if (life <= 0f) 1f else when (shownLifecycle) {
             BlobLifecycle.Working -> 1f + sin(tSeconds * TAU / 1.15f) * 0.012f
@@ -253,52 +241,7 @@ internal class BlobRuntime(initialLifecycle: BlobLifecycle = BlobLifecycle.Idle)
 private fun isActiveState(l: BlobLifecycle) =
     l == BlobLifecycle.Thinking || l == BlobLifecycle.Working
 
-private fun grokEyes(
-    gaze: HeadGaze,
-    face: FaceSpec,
-    radii: FloatArray,
-    eyeSize: Float,
-    eyeSpacing: Float,
-    driftX: Float,
-    driftY: Float,
-): Pair<LaidEye, LaidEye> {
-    val (lp, rp) = eyePoses(gaze, 1f, face.split * eyeSpacing)
-    var left = grokEye(lp, face.left, radii, eyeSize, driftX, driftY)
-    var right = grokEye(rp, face.right, radii, eyeSize, driftX, driftY)
-    // keep the pair's midpoint inside the body so organic rims never eat an eye
-    val mx = (left.cx + right.cx) * 0.5f
-    val my = (left.cy + right.cy) * 0.5f
-    val d = hypot(mx, my)
-    if (d > GROK_PAIR_LIMIT && d > 1e-5f) {
-        val s = (d - GROK_PAIR_LIMIT) / d
-        left = left.copy(cx = left.cx - mx * s, cy = left.cy - my * s)
-        right = right.copy(cx = right.cx - mx * s, cy = right.cy - my * s)
-    }
-    return left to right
-}
-
-private fun grokEye(
-    pose: EyePose,
-    cfg: EyeCfg,
-    radii: FloatArray,
-    eyeSize: Float,
-    driftX: Float,
-    driftY: Float,
-): LaidEye {
-    val fit = BlobShapes.radiusAtAngle(radii, atan2(pose.y, pose.x)) * GROK_FIT
-    return LaidEye(
-        cx = pose.x * fit + driftX,
-        cy = pose.y * fit + driftY,
-        a = pose.a, b = pose.b, c = pose.c, d = pose.d,
-        hw = cfg.w * eyeSize / 2f,
-        hh = cfg.h * eyeSize / 2f,
-        tiltRad = deg(cfg.tilt),
-        open = cfg.open,
-        visible = pose.depth > 0.02f,
-    )
-}
-
-private fun genericalEyes(
+private fun layFlatEyes(
     face: FaceSpec,
     radii: FloatArray,
     eyeSize: Float,
@@ -308,9 +251,14 @@ private fun genericalEyes(
     driftX: Float,
     driftY: Float,
 ): Pair<LaidEye, LaidEye> {
-    val (mx, my) = nearestInside(lookX, lookY, radii, GEN_LOOK_LIMIT)
+    val (mx, my) = nearestInside(lookX, lookY, radii, LOOK_LIMIT)
     fun one(side: Float, cfg: EyeCfg): LaidEye {
-        val (x, y) = nearestInside(side * face.split * eyeSpacing + mx, my, radii, GEN_EYE_LIMIT)
+        val (x, y) = nearestInside(
+            side * face.split * eyeSpacing + mx + cfg.ox,
+            my + cfg.oy,
+            radii,
+            EYE_LIMIT,
+        )
         return LaidEye(
             cx = x + driftX, cy = y + driftY,
             a = 1f, b = 0f, c = 0f, d = 1f,
@@ -319,9 +267,47 @@ private fun genericalEyes(
             tiltRad = deg(cfg.tilt),
             open = cfg.open,
             visible = true,
+            topRound = cfg.topRound,
+            bottomRound = cfg.bottomRound,
+            innerTopDrop = cfg.innerTopDrop,
+            outerTopDrop = cfg.outerTopDrop,
+            innerSign = if (side < 0f) 1f else -1f,
         )
     }
     return one(-1f, face.left) to one(1f, face.right)
+}
+
+/** Frozen frame from an authored face (contact sheets of Julian's expression poses). */
+internal fun frozenFaceFrame(spec: Avatar.Blob, face: FaceSpec): BlobFrame {
+    val radii = BlobShapes.radii(spec.shape)
+    val (left, right) = layFlatEyes(
+        face, radii, spec.clampedEyeSize(), spec.clampedEyeSpacing(),
+        face.lookX, face.lookY, 0f, 0f,
+    )
+    return BlobFrame(
+        radii = radii,
+        cx = 0f,
+        cy = 0f,
+        breath = 1f,
+        squashX = 1f,
+        squashY = 1f,
+        left = left,
+        right = right,
+        lid = 1f,
+        pack = spec.eyes,
+        eyeRoundness = spec.clampedEyeRoundness(),
+        colorHex = spec.color,
+        eyeHex = spec.eyeColor,
+        accentHex = spec.accentColor,
+        glowHex = spec.glowColor,
+        glowEnabled = spec.glowEnabled,
+        glowStrength = spec.clampedGlowStrength(),
+        glowAlpha = face.glowAlpha,
+        flat3d = spec.flat3d,
+        lightX = -0.24f,
+        lightY = -0.24f,
+        lightStrength = if (spec.flat3d) 1f else 0f,
+    )
 }
 
 private fun blendRadii(a: FloatArray, b: FloatArray, t: Float): FloatArray {
@@ -336,5 +322,5 @@ private fun blendRadii(a: FloatArray, b: FloatArray, t: Float): FloatArray {
 internal fun BlobFrame.eyePairInside(): Boolean {
     val mx = (left.cx + right.cx) * 0.5f
     val my = (left.cy + right.cy) * 0.5f
-    return hypot(mx, my) <= GROK_PAIR_LIMIT + 1e-3f
+    return hypot(mx, my) <= PAIR_MID_LIMIT + 1e-3f
 }

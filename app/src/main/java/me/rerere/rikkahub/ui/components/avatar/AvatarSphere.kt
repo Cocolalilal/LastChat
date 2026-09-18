@@ -4,14 +4,12 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Grok bot sphere-head math, ported as DATA from the MIT recreation
- * https://github.com/jeremy-prt/bloub (`src/bot/face.ts`).
+ * Blink schedule and idle liveliness for blob avatars. Pure Kotlin, clock-free.
  *
- * The eyes are painted on a sphere and projected orthographically: each eye gets
- * the tangent frame of the sphere at its position, so the `\\` lean (~26° off
- * vertical) and the near/far size asymmetry emerge from the projection instead of
- * being painted on. The constants were fitted frame-by-frame (residual ~1 px on a
- * 190 px radius) — do not "tidy" them, that breaks the resemblance.
+ * Sphere-projected capsules (the `bloub` recreation of the x.ai homepage bot)
+ * were rejected for the Grok pack: Grokky Character marks are small slanted
+ * black slits sitting on a flat coloured shape. [eyePoses] is kept as a
+ * reference of the measured rest gaze but is not used to lay out Grok eyes.
  */
 
 internal data class HeadGaze(

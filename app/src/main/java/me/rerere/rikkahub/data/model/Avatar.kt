@@ -21,9 +21,11 @@ sealed class Avatar {
      * Vector "blob" avatar: a coloured body shape plus one of two eye packs.
      *
      * The body engine is shared between packs; only the eye layer differs
-     * ([BlobEyePack.Grok] = sphere-projected capsules, [BlobEyePack.Generical] =
-     * flat upright rounded rects). Lifecycle (idle/thinking/working/...) is
-     * derived at render time from chat activity — it is NOT persisted here.
+     * ([BlobEyePack.Grok] = small slanted black slits sitting on the flat
+     * coloured mark, [BlobEyePack.Generical] = white-bordered rounded glyphs
+     * with a pale vertical gradient, morphing by path/pose only). Lifecycle
+     * (idle/thinking/working/...) is derived at render time from chat activity
+     * — it is NOT persisted here.
      *
      * All colours are `#RRGGBB` / `#AARRGGBB` hex. Knob fields are clamped by the
      * `clamped*` helpers before use so out-of-range persisted values can't break
@@ -35,7 +37,7 @@ sealed class Avatar {
         val color: String = DEFAULT_GENERICAL_COLOR,
         val shape: BlobShape = BlobShape.Circle,
         val eyes: BlobEyePack = BlobEyePack.Generical,
-        /** Eye fill colour. Light by default so eyes read on any background. */
+        /** Eye colour. Generical uses this as the white stroke; Grok defaults dark. */
         val eyeColor: String = DEFAULT_EYE_COLOR,
         /** Subtle lighting-based volume (key light + rim). Never a 2-D spin. */
         val flat3d: Boolean = true,
@@ -59,13 +61,16 @@ sealed class Avatar {
             const val DEFAULT_GENERICAL_GLOW = "#87D2E9"
             const val DEFAULT_GENERICAL_ACCENT = "#EAF7FF"
             const val DEFAULT_EYE_COLOR = "#FBFDFF"
-            const val DEFAULT_GROK_COLOR = "#0A0A0C"
+            /** Mid coloured mark so Grok's black slits read (not a near-black body). */
+            const val DEFAULT_GROK_COLOR = "#4A7DC7"
+            const val DEFAULT_GROK_EYE_COLOR = "#171717"
 
             fun generical() = Blob()
 
             fun grok() = Blob(
                 color = DEFAULT_GROK_COLOR,
                 eyes = BlobEyePack.Grok,
+                eyeColor = DEFAULT_GROK_EYE_COLOR,
                 glowEnabled = false,
                 eyeRoundness = 1f,
             )

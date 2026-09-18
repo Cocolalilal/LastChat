@@ -33,3 +33,33 @@ internal fun luminanceOf(color: Int): Float {
     val b = (color and 0xFF) / 255f
     return 0.2126f * r + 0.7152f * g + 0.0722f * b
 }
+
+internal fun mixArgb(a: Int, b: Int, t: Float): Int {
+    val k = t.coerceIn(0f, 1f)
+    fun ch(shift: Int): Int {
+        val av = (a shr shift) and 0xFF
+        val bv = (b shr shift) and 0xFF
+        return (av + (bv - av) * k).toInt().coerceIn(0, 255)
+    }
+    val aa = ch(24)
+    return (aa shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+}
+
+/** Pale fill at the bottom of a Generical eye: mostly white, a hint of the body. */
+internal fun genericalEyeFillBottom(body: Int, stroke: Int): Int =
+    mixArgb(stroke, body, 0.22f)
+
+/**
+ * Grok slits are dark marks on the coloured shape. Near-white requested colours
+ * (the Generical default) collapse to black so old saves don't resurrect white
+ * capsules. If the body is too dark for a dark slit, fall back to a light mark.
+ */
+internal fun resolveGrokSlitColor(body: Int, requested: Int): Int {
+    val reqL = luminanceOf(requested)
+    val slit = if (reqL > 0.72f) 0xFF171717.toInt() else requested
+    val bodyL = luminanceOf(body)
+    val slitL = luminanceOf(slit)
+    val contrast = if (bodyL > slitL) bodyL - slitL else slitL - bodyL
+    if (contrast >= 0.28f) return slit
+    return if (bodyL > 0.42f) 0xFF171717.toInt() else 0xFFFBFDFF.toInt()
+}

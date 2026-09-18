@@ -71,11 +71,12 @@ private val BODY_COLORS = listOf(
     Avatar.Blob.DEFAULT_GENERICAL_COLOR,
     Avatar.Blob.DEFAULT_GROK_COLOR,
     "#2563EB", "#7C3AED", "#DB2777", "#EA580C",
-    "#16A34A", "#0891B2", "#F1EFE9", "#111827",
+    "#16A34A", "#0891B2", "#F1EFE9", "#111827", "#0A0A0C",
 )
 
 private val EYE_COLORS = listOf(
     Avatar.Blob.DEFAULT_EYE_COLOR,
+    Avatar.Blob.DEFAULT_GROK_EYE_COLOR,
     "#FFFFFF", "#0A0A0C", "#111827", "#FDE68A", "#A5B4FC",
 )
 
@@ -533,6 +534,11 @@ private fun Avatar.Blob.withPack(pack: BlobEyePack): Avatar.Blob {
             toGrok && color.equals(Avatar.Blob.DEFAULT_GENERICAL_COLOR, true) -> Avatar.Blob.DEFAULT_GROK_COLOR
             toGenerical && color.equals(Avatar.Blob.DEFAULT_GROK_COLOR, true) -> Avatar.Blob.DEFAULT_GENERICAL_COLOR
             else -> color
+        },
+        eyeColor = when {
+            toGrok && eyeColor.equals(Avatar.Blob.DEFAULT_EYE_COLOR, true) -> Avatar.Blob.DEFAULT_GROK_EYE_COLOR
+            toGenerical && eyeColor.equals(Avatar.Blob.DEFAULT_GROK_EYE_COLOR, true) -> Avatar.Blob.DEFAULT_EYE_COLOR
+            else -> eyeColor
         },
         glowEnabled = if (toGrok) false else glowEnabled,
     )

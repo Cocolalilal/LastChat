@@ -62,23 +62,23 @@ Counter-intuitive facts it calls out (and that v2 got wrong):
 | The comet crosses the screen | The dot stays put, the **trail orbits** it |
 | The avatar floats at rest | It doesn't — **the life is gaze drift + blinking** |
 
-### 1.2 Eyes: painted on a sphere, projected orthographically
+### 1.2 Eyes: small slanted black slits on the flat coloured mark (Grokky)
 
-From `bloub/src/bot/face.ts`, the eyes are not flat — they sit on a sphere and
-the tangent frame is projected orthographically. The measured constants
-(residual ~1 px on a 190 px radius) are:
+Julian's Grokky Character / mark screenshots (01–09) superseded the `bloub`
+sphere-projected **white capsules**. The Grok pack must look like the real Bot
+**mark**, not the x.ai homepage video bot:
 
-- `EYE_SPLIT = 15.46°` (half-gap; total separation ~31°)
-- `EYE_W = 0.186`, `EYE_H = 0.412` (ball-radius units) — a tall capsule
-- `REST_GAZE = { yaw: 28.49°, pitch: 28.62°, roll: -13° }`
+- The coloured shape **is** the body. Eyes are **minimal dark marks** near the
+  upper area — small slanted ovals / slits, typically leaning `\\`.
+- They sit **on** the flat fill. No sphere tangent frame, no near/far size
+  asymmetry from projection, no glowing white capsules.
+- Default body is a mid coloured mark (`#4A7DC7`) so black slits read. Near-white
+  requested eye colours collapse to `#171717`; if the body is itself near-black,
+  the slit lifts to a light mark so it does not vanish.
 
-`eyePoses(gaze, scale, split)` builds the head frame (`spin` yaw→pitch→roll),
-then each eye gets its own tangent basis `[a,b,c,d]` and a depth `z`
-(`depth > 0.02` ⇒ visible). The characteristic `\\` lean and the near/far size
-asymmetry (outer eye ≈ 0.69× the inner) fall out of the projection — they are not
-painted on. This is why hand-tilting flat eyes never looked right.
-
-Ported verbatim (as data) into `AvatarSphere.kt`.
+`AvatarSphere.kt` still owns the **blink schedule** and idle liveliness noise
+from `bloub` (those measurements remain good). It is **not** used to lay out
+Grok eyes.
 
 ### 1.3 Rest life: blink + gaze drift only
 
@@ -93,20 +93,18 @@ Ported verbatim (as data) into `AvatarSphere.kt`.
   ±0.006–0.007 r and breath is ±0.005 — i.e. essentially still. "The avatar
   floats at rest? It doesn't."
 
-### 1.4 Lifecycle faces = measured expressions
+### 1.4 Lifecycle faces (Grok slits)
 
-`bloub/src/bot/expressions.ts` and `states.ts` give measured poses we map onto
-the six lifecycle states (gaze `{yaw,pitch,roll}`, `split`, eye `w/h/tilt/open`,
-tilt is mirrored per eye to reach anger/sadness that head-roll alone cannot):
+Grok expressions stay **small dark marks**; they change pose, not glyph language:
 
-| Lifecycle | Source pose | gaze | split | eyes |
+| Lifecycle | Pose | look | split | eyes |
 |---|---|---|---|---|
-| Idle | `neutre` (REST_GAZE) | 28.49 / 28.62 / -13 | 15.46 | 0.186 × 0.412 |
-| Thinking | `curieux` (head tilt) | 16 / -9 / -15 | 16.5 | (0.24×0.46,-8°) / (0.20×0.38,-8°) |
-| Working | `wide` (eyes up, huge) | 6.92 / -21.96 / 11.6 | 18.43 | 0.356 × 0.875 |
-| Waiting | `blase` (slits, look aside) | -22 / 2 / 0 | 16 | 0.30 × 0.12 |
-| Blocked | `colere` (mirror tilt) | 3 / 7 / 0 | 17 | 0.34 × 0.15, ±30° |
-| Done | `heureux` (squint arcs) | 5 / 9 / 0 | 17 | 0.27 × 0.17, ±14° |
+| Idle | rest slits, upper half, `\\` lean | lookY −0.24 | 0.155 | 0.145 × 0.052, tilt −20° |
+| Thinking | look up-right | lookX +0.14, lookY −0.30 | 0.145 | slightly smaller, −14° / −16° |
+| Working | a touch more open | lookY −0.20 | 0.16 | 0.150 × 0.078, −12° |
+| Waiting | thin dashes | lookY −0.22 | 0.16 | 0.165 × 0.026 |
+| Blocked | angry mirrored slants | lookY −0.18 | 0.16 | 0.140 × 0.038, ±26° |
+| Done | happy squint | lookY −0.18 | 0.16 | 0.150 × 0.030, ±14° |
 
 Idle also gets rare **micro-accents** (a saccade, a widen, a wink, a squint) on a
 long, deterministic cooldown so it is alive but not busy — matching the video's
@@ -114,9 +112,8 @@ long, deterministic cooldown so it is alive but not busy — matching the video'
 
 ### 1.5 Body: flat colour, subtle 3-D by *lighting*, never a 2-D spin
 
-`bloub` bodies are flat fills; volume comes from the eye projection, not shading.
-The task additionally asks for *subtle* 3-D ("cloud tumble via lighting/SDF/mesh
-under ortho — NOT endless 2D spin"). So v3:
+`bloub` bodies are flat fills. The task asks for *subtle* 3-D ("cloud tumble via
+lighting — NOT endless 2D spin"). So v3:
 
 - Keeps the **default shape a perfect circle** and the body **fill flat**.
 - Adds a soft, offset **key-light highlight** + a faint rim shade computed from
@@ -135,49 +132,64 @@ interpolation of radii — same technique as `bloub/src/bot/shape.ts`.
 ### 1.6 Eyes must be portable across backgrounds
 
 x.ai/`bloub` render eyes as holes to a light "paper" behind the body. That is
-**not portable** onto arbitrary chat surfaces. v3 draws the eyes as a **solid,
-light eye colour clipped to the body path** (default near-white, customizable).
-Same visual as x.ai on a dark body, but correct on any background — the direct
-fix for the vanished eyes.
+**not portable** onto arbitrary chat surfaces, and Julian rejected both the hole
+trick and the light-capsule stand-in. Grok now paints **dark slits** (with a
+contrast lift on near-black bodies). Generical paints an **opaque** white-border
+glyph with a pale inner gradient, clipped to the body path.
 
-### 1.7 Corroborating recreation — `nasawz/GrokBot` (Flutter)
+### 1.7 Historical note — `bloub` / `nasawz/GrokBot`
 
-An independent `CustomPaint` recreation confirms the model: normalized gaze
-`[-1,1]` → ~±13.2/±8.4, head-turn maps eye centroid to a spherical longitude with
-`cos` width compression (hidden when turned to the back), 320 ms blink
-(42% close / 58% open, min height 4%), 48-point contour interpolation, spring
-morph on expression change.[^grokbot] Numbers differ slightly (different capture)
-but the structure — sphere projection + measured expressions + timed blink —
-matches `bloub`, so v3 follows `bloub`'s measured constants as the primary
-source.
+An earlier pass treated `jeremy-prt/bloub` and `nasawz/GrokBot` as the Grok
+source of truth (sphere-projected white capsules, REST_GAZE 28.49/28.62/−13).
+Julian rejected that look against the Grokky Character screenshots. Those
+repos remain useful for **blink timing**, **ease-out morphs**, and "the body
+never spins" — not for Grok eye glyphs.
 
 ---
 
-## 2. The Generical pack (attached sheet) — a *different* eye glyph
+## 2. The Generical pack — Julian's painted face (hard visual target)
 
-`generical-expressions.png` (LastChat's own mascot; default PFP `:)` in
-`default_generical_pfp.jpg`) is deliberately **not** Grok:
+Source of truth is the attached **photographs**, not the outline sketch sheet
+and not an invented glow-capsule:
 
-- Eyes are **flat, upright, white rounded-rectangles / capsules** — no sphere
-  projection, no `\\` lean, no near/far asymmetry. At rest: two vertical pills,
-  centered, symmetric.
-- Expression is carried by **height** (tall pill = alert; short bar = sleepy /
-  blink), **translation** (look up/down/left/right — never a sphere tilt),
-  **tilt** (upturned `^^` for happy, converging for cross), and **asymmetry**
-  (a wink = one pill + one dash). All of these appear on the sheet's two rows.
-- Default body is the LastChat **blue** (`#009FE0`), eyes white, with an optional
-  soft **accent gloss** inside each eye.
+| Ref | What it is |
+|---|---|
+| `generical-base-face.jpg` | **Locked rest face**: bright cyan/blue circle (`#009FE0`); two identical **vertical rounded-rects / squircles**; thick **white stroke**; interior **vertical gradient** white → pale cyan. Centered, symmetric. |
+| `sheet-4up.jpg` | (a) both vertical eyes shifted right; (b) sad/worried, inner tops slanted toward centre; (c) wink = one tall glyph + one thin horizontal pill; (d) happy squint = two thin arched horizontal pills. |
+| `eyes-horizontal-pills.jpg` | Solid-looking white horizontal capsules (closed / waiting). |
+| `look-up-right.jpg` | Irregular tilted glyphs clustered upper-right. |
+| `neutral-rounded.jpg` | Shorter, wider rounded rects, centered. |
+| `goggle-flat-top.jpg` | Flatter top, deeply rounded bottom. |
 
-v3's Generical lifecycle faces are authored from the sheet directly (idle pills,
-thinking look-up + narrow, working steady/focused, waiting sleepy dashes, blocked
-worried asymmetry, done happy squint), and look-around is a **translation** of
-the pair, never a Grok tilt. The reject shots (`generical-hideous.jpg`,
-`generical-idle.jpg`) are treated as anti-patterns (glow bloom on the eyes,
-wrong proportions).
+Rules Julian locked:
+
+- Personality is **only the two eye shapes morphing** (position, rotation, path,
+  open vs squint). No mouth, no nose.
+- Keep the **white border + soft inner gradient** language. Do not invent
+  glowing capsules or Grok slits for Generical.
+- Idle / look / emotion must **feel like this sheet**, not a fade-only of one
+  glyph.
+
+Lifecycle mapping:
+
+| Lifecycle | Pose |
+|---|---|
+| Idle | Base rest face |
+| Thinking | Look-up-right |
+| Working | Goggles |
+| Waiting | Horizontal pills |
+| Blocked | Sad / slanted tops |
+| Done | Happy squint |
+
+Idle also morphs through look-left/right, wink, happy, and goggles on a long
+deterministic cooldown so the rest face is alive without leaving Julian's
+vocabulary.
+
+Default body is LastChat blue (`#009FE0`). Optional body glow stays **behind**
+the silhouette; it is never drawn on the eyes.
 
 Both packs share the **same body engine** (shapes, colour, lighting, lifecycle
-timing); only the eye layer differs. That is the "shared body, distinct eyes"
-requirement.
+timing); only the eye layer differs.
 
 ---
 

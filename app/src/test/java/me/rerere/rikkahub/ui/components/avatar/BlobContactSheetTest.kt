@@ -49,7 +49,7 @@ class BlobContactSheetTest {
         val h = headerH + 2 * (labelH + cell + pad) + pad
         val (img, c) = canvas(w, h, darkBg)
 
-        title(c, "Create Avatar v3 - lifecycle (dark surface)")
+        title(c, "Create Avatar v3 - lifecycle (Grok slits / Generical sheet)")
         val packs = listOf("Grok" to Avatar.Blob.grok(), "Generical" to Avatar.Blob.generical())
         var y = headerH
         for ((name, spec) in packs) {
@@ -120,6 +120,60 @@ class BlobContactSheetTest {
             y += labelH + cell + pad
         }
         finish(img, c, "avatar-shapes.png")
+    }
+
+    @Test
+    fun genericalJulianExpressionSheet() {
+        val poses = GenericalPose.entries
+        val cell = 168
+        val pad = 18
+        val labelH = 22
+        val headerH = 36
+        val cols = 5
+        val rows = (poses.size + cols - 1) / cols
+        val w = pad + cols * (cell + pad)
+        val h = headerH + rows * (labelH + cell + pad) + pad
+        val (img, c) = canvas(w, h, darkBg)
+        title(c, "Generical — Julian expression poses (white border + gradient)")
+        val spec = Avatar.Blob.generical()
+        var i = 0
+        for (row in 0 until rows) {
+            var x = pad
+            val y = headerH + row * (labelH + cell + pad)
+            for (col in 0 until cols) {
+                if (i >= poses.size) break
+                val pose = poses[i]
+                val frame = frozenFaceFrame(spec, genericalPose(pose))
+                cell(c, frame, x, y, cell)
+                label(c, pose.name, x + 6f, y + cell + 16f, 12f, AColor.rgb(0xB8, 0xC2, 0xCC))
+                x += cell + pad
+                i++
+            }
+        }
+        finish(img, c, "avatar-generical-expressions.png")
+    }
+
+    @Test
+    fun grokMarkSheet() {
+        val cell = 160
+        val pad = 16
+        val labelH = 22
+        val headerH = 36
+        val lives = BlobLifecycle.entries
+        val w = pad + lives.size * (cell + pad)
+        val h = headerH + labelH + cell + pad
+        val (img, c) = canvas(w, h, darkBg)
+        title(c, "Grok — black slits on the coloured mark")
+        var x = pad
+        val y = headerH
+        val spec = Avatar.Blob.grok()
+        for (life in lives) {
+            val frame = BlobRuntime(life).sample(0f, spec, life, motion = 0f)
+            cell(c, frame, x, y, cell)
+            label(c, life.name, x + 6f, y + cell + 16f, 12f, AColor.rgb(0xB8, 0xC2, 0xCC))
+            x += cell + pad
+        }
+        finish(img, c, "avatar-grok-marks.png")
     }
 
     // ---- helpers -------------------------------------------------------------

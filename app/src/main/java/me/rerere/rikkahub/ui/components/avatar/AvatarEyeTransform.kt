@@ -7,10 +7,10 @@ import kotlin.math.sin
 /**
  * Screen-space affine for one eye, shared by every renderer.
  *
- * The eye is a rounded rectangle centred at the origin with half-extents
- * ([hwPx],[hhPx]); apply the 2x3 matrix `[m00 m01 tx / m10 m11 ty]` to place it.
- * Tilt is folded into the matrix; the blink is a vertical squash in *screen*
- * space (only the y-row is scaled), matching the measured reference.
+ * The eye glyph is centred at the origin with half-extents ([hwPx],[hhPx]);
+ * apply the 2x3 matrix `[m00 m01 tx / m10 m11 ty]` to place it. Tilt is folded
+ * into the matrix; the blink is a vertical squash in *screen* space (only the
+ * y-row is scaled).
  */
 internal data class EyeAffine(
     val m00: Float, val m01: Float, val tx: Float,
@@ -18,6 +18,11 @@ internal data class EyeAffine(
     val hwPx: Float, val hhPx: Float,
     val cornerPx: Float,
     val visible: Boolean,
+    val topRound: Float,
+    val bottomRound: Float,
+    val innerTopDrop: Float,
+    val outerTopDrop: Float,
+    val innerSign: Float,
 )
 
 internal fun eyeAffine(
@@ -45,5 +50,10 @@ internal fun eyeAffine(
         hhPx = hhPx,
         cornerPx = corner,
         visible = eye.visible,
+        topRound = eye.topRound,
+        bottomRound = eye.bottomRound,
+        innerTopDrop = eye.innerTopDrop,
+        outerTopDrop = eye.outerTopDrop,
+        innerSign = eye.innerSign,
     )
 }
