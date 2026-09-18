@@ -182,6 +182,12 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
     packaging {
         resources {
             excludes += setOf(
@@ -404,6 +410,7 @@ dependencies {
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

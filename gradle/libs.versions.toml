@@ -72,6 +72,7 @@ jlatexmath = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath", ver
 jlatexmath-font-greek = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath-font-greek", version.ref = "jlatexmath" }
 jlatexmath-font-cyrillic = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath-font-cyrillic", version.ref = "jlatexmath" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version = "4.14.1" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
