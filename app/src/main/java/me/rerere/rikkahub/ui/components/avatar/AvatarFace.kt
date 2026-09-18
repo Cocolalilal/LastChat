@@ -95,27 +95,27 @@ internal fun genericalPose(pose: GenericalPose): FaceSpec = when (pose) {
     // Locked BASE rest: two identical vertical rounded-rects, centered.
     // Proportions from generical-base-face.jpg (fat squircles, not thin capsules).
     GenericalPose.Base -> FaceSpec(
-        gaze = FLAT, split = 0.30f,
-        left = eye(0.34f, 0.68f), right = eye(0.34f, 0.68f),
-        wander = 1f, lookY = 0f, glowAlpha = 0.18f,
+        gaze = FLAT, split = 0.31f,
+        left = eye(0.38f, 0.64f), right = eye(0.38f, 0.64f),
+        wander = 1f, lookY = 0f, glowAlpha = 0.12f,
     )
     // sheet-4up (a): both vertical eyes shifted right; left a touch taller.
     GenericalPose.LookRight -> FaceSpec(
         gaze = FLAT, split = 0.26f,
-        left = eye(0.30f, 0.62f), right = eye(0.26f, 0.50f),
-        wander = 0.2f, lookX = 0.24f, lookY = -0.04f, glowAlpha = 0.16f,
+        left = eye(0.34f, 0.60f), right = eye(0.30f, 0.48f),
+        wander = 0.2f, lookX = 0.24f, lookY = -0.04f, glowAlpha = 0.12f,
     )
     GenericalPose.LookLeft -> FaceSpec(
         gaze = FLAT, split = 0.26f,
-        left = eye(0.26f, 0.50f), right = eye(0.30f, 0.62f),
-        wander = 0.2f, lookX = -0.24f, lookY = -0.04f, glowAlpha = 0.16f,
+        left = eye(0.30f, 0.48f), right = eye(0.34f, 0.60f),
+        wander = 0.2f, lookX = -0.24f, lookY = -0.04f, glowAlpha = 0.12f,
     )
     // sheet-4up (b): shorter eyes, inner tops slanted toward center.
     GenericalPose.Sad -> FaceSpec(
-        gaze = FLAT, split = 0.28f,
-        left = eye(0.30f, 0.26f, topRound = 0.55f, bottomRound = 0.92f, innerTopDrop = 0.42f, outerTopDrop = 0.04f),
-        right = eye(0.30f, 0.26f, topRound = 0.55f, bottomRound = 0.92f, innerTopDrop = 0.42f, outerTopDrop = 0.04f),
-        wander = 0.06f, lookY = -0.02f, glowAlpha = 0.12f,
+        gaze = FLAT, split = 0.29f,
+        left = eye(0.32f, 0.30f, topRound = 0.42f, bottomRound = 0.95f, innerTopDrop = 0.30f, outerTopDrop = 0.02f),
+        right = eye(0.32f, 0.30f, topRound = 0.42f, bottomRound = 0.95f, innerTopDrop = 0.30f, outerTopDrop = 0.02f),
+        wander = 0.06f, lookY = -0.02f, glowAlpha = 0.10f,
     )
     // sheet-4up (c): one tall rounded glyph + one thin horizontal pill.
     GenericalPose.Wink -> FaceSpec(
@@ -132,13 +132,13 @@ internal fun genericalPose(pose: GenericalPose): FaceSpec = when (pose) {
     // eyes-horizontal-pills.jpg: long thin white capsules, centered.
     GenericalPose.Pills -> FaceSpec(
         gaze = FLAT, split = 0.30f,
-        left = eye(0.44f, 0.078f), right = eye(0.44f, 0.078f),
-        wander = 0.1f, glowAlpha = 0.10f,
+        left = eye(0.48f, 0.088f), right = eye(0.48f, 0.088f),
+        wander = 0.1f, glowAlpha = 0.08f,
     )
     // look-up-right.jpg: irregular tilted glyphs clustered upper-right.
     GenericalPose.LookUpRight -> FaceSpec(
         gaze = FLAT, split = 0.18f,
-        left = eye(0.30f, 0.32f, tilt = -22f, ox = -0.02f, oy = 0.05f, topRound = 0.72f, bottomRound = 0.88f),
+        left = eye(0.30f, 0.35f, tilt = -22f, ox = -0.02f, oy = 0.05f, topRound = 0.72f, bottomRound = 0.88f),
         right = eye(0.28f, 0.40f, tilt = -10f, ox = 0.05f, oy = -0.07f, topRound = 0.85f, bottomRound = 0.92f),
         wander = 0.12f, lookX = 0.26f, lookY = -0.30f, glowAlpha = 0.14f,
     )
@@ -151,10 +151,10 @@ internal fun genericalPose(pose: GenericalPose): FaceSpec = when (pose) {
     )
     // goggle-flat-top.jpg: flatter top, deeply rounded bottom.
     GenericalPose.Goggle -> FaceSpec(
-        gaze = FLAT, split = 0.30f,
-        left = eye(0.34f, 0.28f, topRound = 0.22f, bottomRound = 1f),
-        right = eye(0.34f, 0.28f, topRound = 0.22f, bottomRound = 1f),
-        wander = 0.14f, lookY = 0.02f, glowAlpha = 0.16f,
+        gaze = FLAT, split = 0.31f,
+        left = eye(0.36f, 0.33f, topRound = 0.18f, bottomRound = 1f),
+        right = eye(0.36f, 0.33f, topRound = 0.18f, bottomRound = 1f),
+        wander = 0.14f, lookY = 0.02f, glowAlpha = 0.12f,
     )
 }
 
@@ -172,36 +172,36 @@ private fun genericalFace(lifecycle: BlobLifecycle): FaceSpec = when (lifecycle)
 /** Grok pack — small slanted dark ovals painted on the flat mark, upper half. */
 private fun grokFace(lifecycle: BlobLifecycle): FaceSpec = when (lifecycle) {
     BlobLifecycle.Idle -> FaceSpec(
-        gaze = FLAT, split = 0.155f,
-        left = eye(0.145f, 0.052f, tilt = -20f),
-        right = eye(0.145f, 0.052f, tilt = -20f),
+        gaze = FLAT, split = 0.17f,
+        left = eye(0.22f, 0.10f, tilt = -20f),
+        right = eye(0.22f, 0.10f, tilt = -20f),
         wander = 1f, lookY = -0.24f, glowAlpha = 0f,
     )
     BlobLifecycle.Thinking -> FaceSpec(
-        gaze = FLAT, split = 0.145f,
-        left = eye(0.130f, 0.046f, tilt = -14f),
-        right = eye(0.118f, 0.040f, tilt = -16f),
+        gaze = FLAT, split = 0.155f,
+        left = eye(0.20f, 0.088f, tilt = -14f),
+        right = eye(0.18f, 0.078f, tilt = -16f),
         wander = 0.22f, lookX = 0.14f, lookY = -0.30f, glowAlpha = 0f,
     )
     BlobLifecycle.Working -> FaceSpec(
-        gaze = FLAT, split = 0.16f,
-        left = eye(0.150f, 0.078f, tilt = -12f),
-        right = eye(0.150f, 0.078f, tilt = -12f),
+        gaze = FLAT, split = 0.175f,
+        left = eye(0.23f, 0.14f, tilt = -12f),
+        right = eye(0.23f, 0.14f, tilt = -12f),
         wander = 0.12f, lookY = -0.20f, glowAlpha = 0f,
     )
     BlobLifecycle.Waiting -> FaceSpec(
-        gaze = FLAT, split = 0.16f,
-        left = eye(0.165f, 0.026f, tilt = -8f),
-        right = eye(0.165f, 0.026f, tilt = -8f),
+        gaze = FLAT, split = 0.175f,
+        left = eye(0.26f, 0.052f, tilt = -8f),
+        right = eye(0.26f, 0.052f, tilt = -8f),
         wander = 0.14f, lookY = -0.22f, glowAlpha = 0f,
     )
     BlobLifecycle.Blocked -> {
-        val (l, r) = mirror(0.140f, 0.038f, tilt = 26f)
-        FaceSpec(gaze = FLAT, split = 0.16f, left = l, right = r, wander = 0.06f, lookY = -0.18f, glowAlpha = 0f)
+        val (l, r) = mirror(0.22f, 0.07f, tilt = 26f)
+        FaceSpec(gaze = FLAT, split = 0.17f, left = l, right = r, wander = 0.06f, lookY = -0.18f, glowAlpha = 0f)
     }
     BlobLifecycle.Done -> {
-        val (l, r) = mirror(0.150f, 0.030f, tilt = 14f)
-        FaceSpec(gaze = FLAT, split = 0.16f, left = l, right = r, wander = 0.1f, lookY = -0.18f, glowAlpha = 0f)
+        val (l, r) = mirror(0.24f, 0.058f, tilt = 14f)
+        FaceSpec(gaze = FLAT, split = 0.17f, left = l, right = r, wander = 0.1f, lookY = -0.18f, glowAlpha = 0f)
     }
 }
 

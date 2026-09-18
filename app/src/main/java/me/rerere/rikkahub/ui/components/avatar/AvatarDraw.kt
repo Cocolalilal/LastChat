@@ -11,6 +11,7 @@ import android.graphics.Shader
 import me.rerere.rikkahub.data.model.BlobEyePack
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -58,7 +59,7 @@ internal object AvatarDraw {
             val hx = cx + frame.lightX * radius
             val hy = cy + frame.lightY * radius
             val dark = luminanceOf(bodyColor) < 0.5f
-            val highlightA = if (dark) 0.16f else 0.22f
+            val highlightA = if (dark) 0.12f else 0.12f
             canvas.save()
             canvas.clipPath(bodyPath)
             val hi = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -132,7 +133,7 @@ internal object AvatarDraw {
         canvas.drawPath(glyph, fill)
 
         val minHalf = min(af.hwPx, af.hhPx)
-        val strokePx = (minHalf * 0.34f).coerceIn(1.4f, minHalf * 0.72f)
+        val strokePx = min(minHalf * 0.85f, max(1.2f, minHalf * 0.42f))
         val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             color = stroke

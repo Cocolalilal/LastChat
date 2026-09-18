@@ -47,7 +47,7 @@ internal fun mixArgb(a: Int, b: Int, t: Float): Int {
 
 /** Pale fill at the bottom of a Generical eye: mostly white, a hint of the body. */
 internal fun genericalEyeFillBottom(body: Int, stroke: Int): Int =
-    mixArgb(stroke, body, 0.22f)
+    mixArgb(stroke, body, 0.34f)
 
 /**
  * Grok slits are dark marks on the coloured shape. Near-white requested colours

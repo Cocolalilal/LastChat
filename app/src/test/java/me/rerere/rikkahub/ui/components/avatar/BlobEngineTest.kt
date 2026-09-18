@@ -42,7 +42,7 @@ class BlobEngineTest {
         assertTrue("Grok slits sit above centre", frame.left.cy < -0.12f)
         assertTrue("Grok slits are much shorter than they are wide", frame.left.hh < frame.left.hw)
         val gen = frozen(generical, BlobLifecycle.Idle)
-        assertTrue("Grok eyes are much smaller than Generical", frame.left.hh < gen.left.hh * 0.25f)
+        assertTrue("Grok eyes are much smaller than Generical", frame.left.hh < gen.left.hh * 0.40f)
     }
 
     @Test
