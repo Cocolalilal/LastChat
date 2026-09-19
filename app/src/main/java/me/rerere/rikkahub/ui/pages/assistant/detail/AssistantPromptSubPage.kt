@@ -1,6 +1,12 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -21,15 +28,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -99,7 +107,7 @@ import me.rerere.rikkahub.utils.onSuccess
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AssistantPromptSubPage(
     assistant: Assistant,
@@ -148,19 +156,53 @@ fun AssistantPromptSubPage(
             }
 
             var introsExpanded by remember { mutableStateOf(intros.isNotEmpty()) }
-            // Auto-expand when intros are first added
+            var introPendingDelete by remember { mutableStateOf<Int?>(null) }
             LaunchedEffect(intros.isNotEmpty()) {
                 if (intros.isNotEmpty()) introsExpanded = true
             }
 
+            introPendingDelete?.let { pendingIndex ->
+                AlertDialog(
+                    onDismissRequest = { introPendingDelete = null },
+                    title = { Text("Delete intro?") },
+                    text = { Text("This intro will be removed from the character.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Error)
+                                val newList = intros.toMutableList()
+                                if (pendingIndex in newList.indices) {
+                                    newList.removeAt(pendingIndex)
+                                    updateIntros(newList)
+                                }
+                                introPendingDelete = null
+                            }
+                        ) {
+                            Text(stringResource(R.string.delete))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { introPendingDelete = null }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                )
+            }
+
             if (intros.isEmpty()) {
-                Button(
+                OutlinedButton(
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         updateIntros(listOf(""))
                         introsExpanded = true
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) {
                     Icon(Icons.Rounded.Add, null)
                     Spacer(Modifier.width(8.dp))
@@ -168,14 +210,7 @@ fun AssistantPromptSubPage(
                 }
             } else {
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(
-                            animationSpec = androidx.compose.animation.core.spring(
-                                dampingRatio = 0.5f,
-                                stiffness = 400f
-                            )
-                        ),
+                    modifier = Modifier.fillMaxWidth(),
                     color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
                         MaterialTheme.colorScheme.surfaceContainerLow
                     else
@@ -207,13 +242,22 @@ fun AssistantPromptSubPage(
                             )
                         }
 
-                        AnimatedVisibility(visible = introsExpanded) {
+                        AnimatedVisibility(
+                            visible = introsExpanded,
+                            enter = fadeIn(tween(150, easing = FastOutSlowInEasing)) +
+                                expandVertically(tween(180, easing = FastOutSlowInEasing)),
+                            exit = fadeOut(tween(120, easing = FastOutSlowInEasing)) +
+                                shrinkVertically(tween(150, easing = FastOutSlowInEasing)),
+                        ) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    itemsIndexed(intros) { index, intro ->
+                                    itemsIndexed(
+                                        items = intros,
+                                        key = { index, _ -> "intro-$index" },
+                                    ) { index, intro ->
                                         var isEditing by remember { mutableStateOf(false) }
                                         Surface(
                                             color = MaterialTheme.colorScheme.surface,
@@ -222,6 +266,10 @@ fun AssistantPromptSubPage(
                                             modifier = Modifier
                                                 .width(280.dp)
                                                 .height(140.dp)
+                                                .animateItem(
+                                                    fadeInSpec = tween(150, easing = FastOutSlowInEasing),
+                                                    fadeOutSpec = tween(120, easing = FastOutSlowInEasing),
+                                                )
                                                 .clickable {
                                                     haptics.perform(HapticPattern.Pop)
                                                     isEditing = true
@@ -237,10 +285,8 @@ fun AssistantPromptSubPage(
                                                     Spacer(Modifier.weight(1f))
                                                     IconButton(
                                                         onClick = {
-                                                            haptics.perform(HapticPattern.Error)
-                                                            val newList = intros.toMutableList()
-                                                            newList.removeAt(index)
-                                                            updateIntros(newList)
+                                                            haptics.perform(HapticPattern.Tick)
+                                                            introPendingDelete = index
                                                         },
                                                         modifier = Modifier.size(24.dp)
                                                     ) {
@@ -274,13 +320,17 @@ fun AssistantPromptSubPage(
                                         }
                                     }
 
-                                    item {
+                                    item(key = "add-intro") {
                                         Surface(
                                             color = MaterialTheme.colorScheme.secondaryContainer,
                                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
                                             modifier = Modifier
                                                 .width(100.dp)
                                                 .height(140.dp)
+                                                .animateItem(
+                                                    fadeInSpec = tween(150, easing = FastOutSlowInEasing),
+                                                    fadeOutSpec = tween(120, easing = FastOutSlowInEasing),
+                                                )
                                                 .clickable {
                                                     haptics.perform(HapticPattern.Pop)
                                                     updateIntros(intros + "")
@@ -306,17 +356,19 @@ fun AssistantPromptSubPage(
                                     }
                                 }
 
-                                FormItem(
-                                    label = { Text("Cycle through intros on new chats") },
-                                    tail = {
-                                        HapticSwitch(
-                                            checked = assistant.cycleIntrosOnNewChat,
-                                            onCheckedChange = {
-                                                onUpdate(assistant.copy(cycleIntrosOnNewChat = it))
-                                            }
-                                        )
-                                    }
-                                )
+                                if (intros.size > 1) {
+                                    FormItem(
+                                        label = { Text("Cycle through intros on new chats") },
+                                        tail = {
+                                            HapticSwitch(
+                                                checked = assistant.cycleIntrosOnNewChat,
+                                                onCheckedChange = {
+                                                    onUpdate(assistant.copy(cycleIntrosOnNewChat = it))
+                                                }
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

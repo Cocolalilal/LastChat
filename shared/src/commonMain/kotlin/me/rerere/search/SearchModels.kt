@@ -46,9 +46,10 @@ sealed class SearchServiceOptions {
     abstract val id: Uuid
 
     companion object {
-        val DEFAULT = BingLocalOptions()
+        val DEFAULT = KeylessOptions()
 
         val TYPES = mapOf(
+            KeylessOptions::class to "Keyless",
             BingLocalOptions::class to "Bing",
             ZhipuOptions::class to "智谱",
             TavilyOptions::class to "Tavily",
@@ -66,6 +67,12 @@ sealed class SearchServiceOptions {
             GrokOptions::class to "Grok",
         )
     }
+
+    @Serializable
+    @SerialName("keyless")
+    class KeylessOptions(
+        override val id: Uuid = Uuid.random()
+    ) : SearchServiceOptions()
 
     @Serializable
     @SerialName("bing_local")

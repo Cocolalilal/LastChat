@@ -486,6 +486,20 @@ class ModelCatalogTest {
         assertEquals("Gemma 4 should have 256k context window", 256000, gemma4.contextWindowTokens)
         assertEquals("Gemma 4 should use EFFORT reasoning", me.rerere.ai.provider.ReasoningModeType.EFFORT, gemma4.reasoningConfig?.type)
 
+        val gemini3 = getEntry("gemini-3-flash")
+        assertEquals(
+            "Gemini 3 should use EFFORT thinking levels, not Gemini 2.5 token budgets",
+            me.rerere.ai.provider.ReasoningModeType.EFFORT,
+            gemini3.reasoningConfig?.type,
+        )
+        assertTrue(gemini3.supportsReasoning)
+        val gemini25 = getEntry("gemini-2.5-pro")
+        assertEquals(
+            "Gemini 2.5 should keep BUDGET thinking tokens",
+            me.rerere.ai.provider.ReasoningModeType.BUDGET,
+            gemini25.reasoningConfig?.type,
+        )
+
         // Gemma 3 27B: Vision, Tools, No Reasoning, 128k context
         val gemma3 = getEntry("google/gemma-3-27b-it")
         assertTrue("Gemma 3 should support function calling", gemma3.supportsFunctionCalling)

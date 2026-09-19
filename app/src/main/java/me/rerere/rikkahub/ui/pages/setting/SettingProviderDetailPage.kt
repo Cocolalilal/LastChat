@@ -177,6 +177,7 @@ import me.rerere.rikkahub.ui.components.ui.lobeHubIconUri
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
+import me.rerere.rikkahub.ui.pages.setting.components.ModelReasoningConfigEditor
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
 import me.rerere.rikkahub.ui.theme.extendColors
@@ -1474,6 +1475,13 @@ private fun ModelSettingsForm(
                                 onModelChange(model.copy(customBodies = bodies))
                             }
                         )
+
+                        if (model.type == ModelType.CHAT) {
+                            ModelReasoningConfigEditor(
+                                model = model,
+                                onModelChange = onModelChange,
+                            )
+                        }
                     }
                 }
             }

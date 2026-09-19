@@ -685,11 +685,13 @@ private fun SharedTransitionScope.ChatListNormal(
                             enabled = selecting,
                         ) {
                             val isLastTurn = index == displayGroups.lastIndex
-                            val showRegenerate = remember(group.role, isLastTurn) {
-                                when (group.role) {
-                                    me.rerere.ai.core.MessageRole.USER -> true
-                                    else -> isLastTurn
-                                }
+                            val previousGroup = displayGroups.getOrNull(index - 1)
+                            val showRegenerate = remember(group.role, isLastTurn, previousGroup == null) {
+                                shouldOfferMessageRegenerate(
+                                    role = group.role,
+                                    isLastTurn = isLastTurn,
+                                    previousGroup = previousGroup,
+                                )
                             }
                             ChatMessageTurn(
                                 group = group,

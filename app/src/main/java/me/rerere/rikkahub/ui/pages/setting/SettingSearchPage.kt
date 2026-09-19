@@ -107,6 +107,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.plus
+import me.rerere.search.KeylessSearchService
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
@@ -131,9 +132,9 @@ data class SearchServicePreset(
  */
 val SEARCH_SERVICE_PRESETS = listOf(
     SearchServicePreset(
-        name = "Bing",
-        descriptionRes = R.string.setting_search_preset_bing_desc,
-        createOptions = { SearchServiceOptions.BingLocalOptions() },
+        name = "Keyless",
+        descriptionRes = R.string.setting_search_preset_keyless_desc,
+        createOptions = { SearchServiceOptions.KeylessOptions() },
         hasScraping = false
     ),
     SearchServicePreset(
@@ -223,6 +224,28 @@ val SEARCH_SERVICE_PRESETS = listOf(
 )
 
 @Composable
+private fun KeylessOptionsDescription() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.setting_search_keyless_explainer),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = stringResource(R.string.setting_search_keyless_backends_label),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        KeylessSearchService.backends.forEach { backend ->
+            Text(
+                text = "• $backend",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SearchServiceDescription(service: SearchServiceOptions) {
     val uriHandler = LocalUriHandler.current
 
@@ -234,6 +257,7 @@ private fun SearchServiceDescription(service: SearchServiceOptions) {
     }
 
     when (service) {
+        is SearchServiceOptions.KeylessOptions -> Text(stringResource(SearchR.string.keyless_desc))
         is SearchServiceOptions.BingLocalOptions -> Text(stringResource(SearchR.string.bing_desc))
         is SearchServiceOptions.SearXNGOptions -> {
             Text(stringResource(SearchR.string.searxng_desc_1))
@@ -667,6 +691,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     currentService = it
                                 }
                             }
+                            is SearchServiceOptions.KeylessOptions -> {
+                                KeylessOptionsDescription()
+                            }
                             is SearchServiceOptions.BingLocalOptions -> {
                                 // No configuration needed for Bing
                                 Text(
@@ -1036,6 +1063,7 @@ private fun SearchServiceEditorSheet(
                         is SearchServiceOptions.OllamaOptions -> OllamaOptions(currentService as SearchServiceOptions.OllamaOptions) { currentService = it }
                         is SearchServiceOptions.PerplexityOptions -> PerplexityOptions(currentService as SearchServiceOptions.PerplexityOptions) { currentService = it }
                         is SearchServiceOptions.GrokOptions -> GrokOptions(currentService as SearchServiceOptions.GrokOptions) { currentService = it }
+                        is SearchServiceOptions.KeylessOptions -> KeylessOptionsDescription()
                         is SearchServiceOptions.BingLocalOptions -> Text(
                             text = stringResource(R.string.setting_search_bing_no_config),
                             style = MaterialTheme.typography.bodyMedium,

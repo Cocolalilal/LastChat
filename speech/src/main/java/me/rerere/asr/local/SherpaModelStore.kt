@@ -37,6 +37,8 @@ class SherpaModelStore(private val context: Context) {
 
     suspend fun remove(id: String) = mutate { it.filterNot { model -> model.id == id } }
 
+    suspend fun clear() = mutate { emptyList() }
+
     suspend fun move(from: Int, to: Int) = mutate { models ->
         if (from !in models.indices || to !in models.indices || from == to) return@mutate models
         models.toMutableList().apply { add(to, removeAt(from)) }

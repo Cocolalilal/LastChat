@@ -466,6 +466,7 @@ internal object IosBackupImporter {
     }
 
     private fun searchProviderType(options: SearchServiceOptions): IosSearchProviderType? = when (options) {
+        is SearchServiceOptions.KeylessOptions -> IosSearchProviderType.KEYLESS
         is SearchServiceOptions.BingLocalOptions -> IosSearchProviderType.BING
         is SearchServiceOptions.TavilyOptions -> IosSearchProviderType.TAVILY
         is SearchServiceOptions.ExaOptions -> IosSearchProviderType.EXA

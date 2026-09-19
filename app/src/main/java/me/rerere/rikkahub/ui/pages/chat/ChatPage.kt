@@ -224,6 +224,40 @@ internal fun hasConversationPresetMessages(conversation: Conversation, assistant
     return false
 }
 
+internal fun shouldOfferMessageRegenerate(
+    role: me.rerere.ai.core.MessageRole,
+    isLastTurn: Boolean,
+    previousGroup: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup?,
+): Boolean {
+    if (role == me.rerere.ai.core.MessageRole.ASSISTANT && previousGroup == null) return false
+    return when (role) {
+        me.rerere.ai.core.MessageRole.USER -> true
+        else -> isLastTurn
+    }
+}
+
+internal fun isCharacterIntroMessage(
+    messages: List<me.rerere.ai.ui.UIMessage>,
+    message: me.rerere.ai.ui.UIMessage,
+): Boolean {
+    if (message.role != me.rerere.ai.core.MessageRole.ASSISTANT) return false
+    val index = messages.indexOfFirst { it.id == message.id }
+    if (index < 0) return false
+    return messages.take(index).none { it.role == me.rerere.ai.core.MessageRole.USER }
+}
+
+internal fun completedGenerationIdsAfterDone(
+    currentCompleted: Set<Uuid>,
+    finishedConversationId: Uuid,
+    viewingConversationId: Uuid,
+): Set<Uuid> {
+    return if (finishedConversationId == viewingConversationId) {
+        currentCompleted - viewingConversationId
+    } else {
+        currentCompleted + finishedConversationId
+    }
+}
+
 @Composable
 private fun ChatTopFadeOverlay(
     fadeHeight: Dp,

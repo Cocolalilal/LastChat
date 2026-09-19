@@ -28,6 +28,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.asr.ASRState
 import me.rerere.asr.ASRStatus
+import me.rerere.asr.ConservativeSpeechEndpointDetector
 import me.rerere.asr.appendAmplitude
 import me.rerere.asr.calculateRmsAmplitude
 import okhttp3.MediaType.Companion.toMediaType
@@ -180,7 +181,7 @@ class OpenAICompatibleASRController(
                 recorder.startRecording()
                 val buffer = ByteArray(bufferSize)
                 val segmentMs = (model.sttOptions?.segmentDurationSec ?: 0).coerceAtLeast(0) * 1000L
-                var silenceStartMs = 0L
+                val endpoint = ConservativeSpeechEndpointDetector()
                 sessionBuffer.reset()
                 while (isActive) {
                     val read = recorder.read(buffer, 0, buffer.size)
@@ -202,16 +203,10 @@ class OpenAICompatibleASRController(
                         if (shouldFlush) {
                             triggerFlush()
                         }
-                        
-                        // Simple VAD auto-stop (1.5 seconds of silence)
-                        if (amplitude < 0.12f) {
-                            if (silenceStartMs == 0L) silenceStartMs = SystemClock.elapsedRealtime()
-                            else if (SystemClock.elapsedRealtime() - silenceStartMs > 1500L) {
-                                scope.launch { stop() }
-                                break
-                            }
-                        } else {
-                            silenceStartMs = 0L
+
+                        if (endpoint.onFrame(amplitude, SystemClock.elapsedRealtime())) {
+                            scope.launch { stop() }
+                            break
                         }
                     } else if (read < 0) {
                         throw IllegalStateException("AudioRecord read error: $read")

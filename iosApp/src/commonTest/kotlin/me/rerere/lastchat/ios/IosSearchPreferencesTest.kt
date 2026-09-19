@@ -15,6 +15,7 @@ class IosSearchPreferencesTest {
         IosSearchProviderType.entries.forEach { type ->
             val options = type.toOptions("secret")
             when (type) {
+                IosSearchProviderType.KEYLESS -> assertIs<SearchServiceOptions.KeylessOptions>(options)
                 IosSearchProviderType.BING -> assertIs<SearchServiceOptions.BingLocalOptions>(options)
                 IosSearchProviderType.TAVILY -> assertIs<SearchServiceOptions.TavilyOptions>(options)
                 IosSearchProviderType.EXA -> assertIs<SearchServiceOptions.ExaOptions>(options)
@@ -34,9 +35,11 @@ class IosSearchPreferencesTest {
     }
 
     @Test
-    fun onlyKeylessBingSkipsKeychainRequirement() {
+    fun onlyKeylessProvidersSkipKeychainRequirement() {
+        assertFalse(IosSearchProviderType.KEYLESS.requiresApiKey())
         assertFalse(IosSearchProviderType.BING.requiresApiKey())
-        IosSearchProviderType.entries.filterNot { it == IosSearchProviderType.BING }
+        IosSearchProviderType.entries
+            .filterNot { it == IosSearchProviderType.KEYLESS || it == IosSearchProviderType.BING }
             .forEach { assertTrue(it.requiresApiKey(), it.displayName()) }
     }
 

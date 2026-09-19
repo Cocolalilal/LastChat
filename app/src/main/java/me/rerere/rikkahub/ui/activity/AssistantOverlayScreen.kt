@@ -117,6 +117,7 @@ import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.ui.components.chat.ActivityState
 import me.rerere.rikkahub.ui.components.chat.ActivityType
 import me.rerere.rikkahub.ui.components.chat.categorizeToolName
+import me.rerere.rikkahub.ui.pages.chat.isCharacterIntroMessage
 import me.rerere.rikkahub.ui.components.chat.deriveActivityState
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
@@ -235,7 +236,16 @@ fun AssistantOverlayScreen(
         }
     }
 
+    var acceptSttTranscript by remember { mutableStateOf(true) }
+    var utteranceSent by remember { mutableStateOf(false) }
+
+    fun applySttTranscript(text: String) {
+        if (acceptSttTranscript) inputState.setMessageText(text)
+    }
+
     fun doSend() {
+        acceptSttTranscript = false
+        utteranceSent = true
         if (sttState.isRecording) stt.stop()
         if (inputState.isEmpty()) return
         haptics.perform(HapticPattern.Send)
@@ -246,14 +256,14 @@ fun AssistantOverlayScreen(
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) stt.start { inputState.setMessageText(it) }
+        if (granted) stt.start(::applySttTranscript)
     }
     LaunchedEffect(Unit) {
         if (config.autoStartStt) {
             val granted = ContextCompat.checkSelfPermission(
                 context, Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
-            if (granted) stt.start { inputState.setMessageText(it) }
+            if (granted) stt.start(::applySttTranscript)
             else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
@@ -358,14 +368,30 @@ fun AssistantOverlayScreen(
                     // Auto-send when transcription settles.
                     var wasRecording by remember { mutableStateOf(false) }
                     LaunchedEffect(sttState.status) {
-                        if (sttState.status == ASRStatus.Listening ||
-                            sttState.status == ASRStatus.Stopping
-                        ) {
-                            wasRecording = true
-                        } else if (sttState.status == ASRStatus.Idle && wasRecording) {
-                            wasRecording = false
-                            if (config.autoSendOnSttFinish && !inputState.isEmpty() && !isGenerating) {
-                                doSend()
+                        when (sttState.status) {
+                            ASRStatus.Connecting, ASRStatus.Listening -> {
+                                acceptSttTranscript = true
+                                utteranceSent = false
+                                wasRecording = true
+                            }
+                            ASRStatus.Stopping -> {
+                                wasRecording = true
+                            }
+                            ASRStatus.Idle -> {
+                                if (wasRecording) {
+                                    wasRecording = false
+                                    if (
+                                        config.autoSendOnSttFinish &&
+                                        !utteranceSent &&
+                                        !inputState.isEmpty() &&
+                                        !isGenerating
+                                    ) {
+                                        doSend()
+                                    }
+                                }
+                            }
+                            ASRStatus.Error -> {
+                                wasRecording = false
                             }
                         }
                     }
@@ -503,7 +529,7 @@ private fun TranscriptPanel(
     val containerColor = if (blur.enabled && blur.hazeState != null) {
         blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
     } else {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f)
+        MaterialTheme.colorScheme.surfaceContainerLow
     }
     val contentColor = MaterialTheme.colorScheme.onSurface
 
@@ -547,7 +573,8 @@ private fun TranscriptPanel(
                         AnimatedVisibility(visible = actionsVisible) {
                             AssistantActionsRow(
                                 isSpeaking = isSpeaking,
-                                showRegenerate = message.id == lastAssistantId,
+                                showRegenerate = message.id == lastAssistantId &&
+                                    !isCharacterIntroMessage(messages, message),
                                 onCopy = { onCopy(message) },
                                 onRegenerate = { onRegenerate(message) },
                                 onToggleTts = { onToggleTts(message) },

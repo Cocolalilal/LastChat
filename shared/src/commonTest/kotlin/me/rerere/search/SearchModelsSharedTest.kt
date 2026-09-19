@@ -10,7 +10,7 @@ class SearchModelsSharedTest {
         val defaultOptions = SearchServiceOptions.DEFAULT
         val tavilyOptions = SearchServiceOptions.TavilyOptions(apiKey = "key")
 
-        assertIs<SearchServiceOptions.BingLocalOptions>(defaultOptions)
+        assertIs<SearchServiceOptions.KeylessOptions>(defaultOptions)
         assertEquals("Tavily", SearchServiceOptions.TYPES[tavilyOptions::class])
         assertEquals("advanced", tavilyOptions.depth)
     }

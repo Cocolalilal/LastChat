@@ -467,7 +467,15 @@ fun SettingProviderPage(
                         Text(stringResource(R.string.confirm_delete))
                     },
                     text = {
-                        Text(stringResource(R.string.setting_provider_page_delete_dialog_text))
+                        Text(
+                            stringResource(
+                                if (providerToDelete is ProviderSetting.LiteRtLocal) {
+                                    R.string.setting_provider_page_delete_local_dialog_text
+                                } else {
+                                    R.string.setting_provider_page_delete_dialog_text
+                                }
+                            )
+                        )
                     },
                     dismissButton = {
                         TextButton(onClick = { 
@@ -480,13 +488,7 @@ fun SettingProviderPage(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                providerToDelete?.let { p ->
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            providers = settings.providers.filter { it.id != p.id }
-                                        )
-                                    )
-                                }
+                                providerToDelete?.let { p -> vm.deleteProvider(p) }
                                 showDeleteDialog = false
                                 providerToDelete = null
                             }
