@@ -133,4 +133,74 @@ class ProviderSettingsNormalizationTest {
         assertEquals(0.45f, normalized.ragSimilarityThreshold)
     }
 
+    @Test
+    fun `local provider is created when any on-device model exists`() {
+        val stt = Model(modelId = "whisper-local", displayName = "Whisper", type = ModelType.STT)
+        val settings = Settings(providers = listOf(ProviderSetting.OpenAI()))
+
+        val created = settings.withSyncedLocalProviderModels(
+            llmAndEmbeddingModels = emptyList(),
+            sttModels = listOf(stt),
+        )
+
+        val local = created.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().single()
+        assertEquals(listOf(stt.modelId), local.models.map { it.modelId })
+    }
+
+    @Test
+    fun `empty install list does not recreate a deleted local provider`() {
+        val settings = Settings(providers = listOf(ProviderSetting.OpenAI()))
+        val unchanged = settings.withSyncedLocalProviderModels(
+            llmAndEmbeddingModels = emptyList(),
+            sttModels = emptyList(),
+        )
+        assertTrue(unchanged.providers.none { it is ProviderSetting.LiteRtLocal })
+    }
+
+    @Test
+    fun `existing local provider stays in place while models sync`() {
+        val existing = ProviderSetting.LiteRtLocal(name = "Local")
+        val remote = ProviderSetting.OpenAI()
+        val chat = Model(modelId = "gemma-local", displayName = "Gemma", type = ModelType.CHAT)
+        val settings = Settings(providers = listOf(remote, existing))
+
+        val synced = settings.withSyncedLocalProviderModels(
+            llmAndEmbeddingModels = listOf(chat),
+            sttModels = emptyList(),
+        )
+
+        assertEquals(listOf(remote.id, existing.id), synced.providers.map { it.id })
+        val local = synced.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().single()
+        assertEquals(listOf(chat.modelId), local.models.map { it.modelId })
+    }
+
+    @Test
+    fun `bing search services migrate to keyless and enable Generical search`() {
+        val bing = me.rerere.search.SearchServiceOptions.BingLocalOptions()
+        val settings = Settings(
+            searchServices = listOf(bing),
+            assistants = listOf(
+                Assistant(
+                    id = DEFAULT_ASSISTANT_ID,
+                    name = "Generical",
+                    searchMode = me.rerere.rikkahub.data.model.AssistantSearchMode.Off,
+                )
+            ),
+        )
+
+        val migrated = settings.normalizeSearchServices()
+
+        assertTrue(migrated.searchServices.single() is me.rerere.search.SearchServiceOptions.KeylessOptions)
+        assertEquals(bing.id, migrated.searchServices.single().id)
+        assertTrue(
+            migrated.assistants.single().searchMode is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider
+        )
+    }
+
+    @Test
+    fun `keyless search services are left unchanged`() {
+        val keyless = me.rerere.search.SearchServiceOptions.KeylessOptions()
+        val settings = Settings(searchServices = listOf(keyless))
+        assertEquals(settings.searchServices, settings.normalizeSearchServices().searchServices)
+    }
 }
