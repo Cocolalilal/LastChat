@@ -236,4 +236,55 @@ class ChatPageTest {
         )
         ChatSessionDraftStore.clear()
     }
+
+    @Test
+    fun characterIntroTurnsDoNotOfferRegenerate() {
+        assertFalse(
+            shouldOfferMessageRegenerate(
+                role = me.rerere.ai.core.MessageRole.ASSISTANT,
+                isLastTurn = true,
+                previousGroup = null,
+            )
+        )
+        assertTrue(
+            shouldOfferMessageRegenerate(
+                role = me.rerere.ai.core.MessageRole.ASSISTANT,
+                isLastTurn = true,
+                previousGroup = me.rerere.rikkahub.ui.components.chat.MessageTurnGroup(
+                    nodes = listOf(MessageNode.of(UIMessage.user("Hi"))),
+                    role = me.rerere.ai.core.MessageRole.USER,
+                ),
+            )
+        )
+    }
+
+    @Test
+    fun characterIntroMessagesAreDetectedBeforeAnyUserTurn() {
+        val intro = UIMessage.assistant("Hello there")
+        val user = UIMessage.user("Hi")
+        val reply = UIMessage.assistant("Welcome")
+        assertTrue(isCharacterIntroMessage(listOf(intro, user, reply), intro))
+        assertFalse(isCharacterIntroMessage(listOf(intro, user, reply), reply))
+    }
+
+    @Test
+    fun unreadDotIsNotAddedForTheConversationCurrentlyBeingViewed() {
+        val viewing = Uuid.random()
+        val other = Uuid.random()
+        assertTrue(
+            completedGenerationIdsAfterDone(
+                currentCompleted = emptySet(),
+                finishedConversationId = viewing,
+                viewingConversationId = viewing,
+            ).isEmpty()
+        )
+        assertEquals(
+            setOf(other),
+            completedGenerationIdsAfterDone(
+                currentCompleted = emptySet(),
+                finishedConversationId = other,
+                viewingConversationId = viewing,
+            )
+        )
+    }
 }

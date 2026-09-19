@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -141,11 +142,19 @@ fun ChatDrawerContent(
         initialValue = emptyMap(),
     )
     var completedGenerationIds by remember { mutableStateOf(emptySet<Uuid>()) }
+    val viewingConversationId by rememberUpdatedState(current.id)
 
     LaunchedEffect(vm) {
         vm.generationDoneFlow.collect { conversationId ->
-            completedGenerationIds = completedGenerationIds + conversationId
+            completedGenerationIds = completedGenerationIdsAfterDone(
+                currentCompleted = completedGenerationIds,
+                finishedConversationId = conversationId,
+                viewingConversationId = viewingConversationId,
+            )
         }
+    }
+    LaunchedEffect(current.id) {
+        completedGenerationIds = completedGenerationIds - current.id
     }
     LaunchedEffect(conversationJobs.keys.toSet()) {
         completedGenerationIds = completedGenerationIds - conversationJobs.keys
