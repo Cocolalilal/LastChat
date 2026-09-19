@@ -2,17 +2,27 @@ package me.rerere.rikkahub.ui.pages.assistant
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.service.ChatService
+
+data class AssistantDeleteImpact(
+    val conversationCount: Int,
+    val memoryCount: Int,
+)
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
@@ -20,6 +30,7 @@ class AssistantVM(
     private val conversationRepo: ConversationRepository,
     private val appScope: me.rerere.rikkahub.AppScope,
     private val appStorageRepository: AppStorageRepository,
+    private val chatService: ChatService,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -68,6 +79,13 @@ class AssistantVM(
 
     private val deletionJobs = java.util.concurrent.ConcurrentHashMap<kotlin.uuid.Uuid, kotlinx.coroutines.Job>()
 
+    suspend fun loadDeleteImpact(assistant: Assistant): AssistantDeleteImpact = withContext(Dispatchers.IO) {
+        AssistantDeleteImpact(
+            conversationCount = conversationRepo.getConversationCountOfAssistant(assistant.id),
+            memoryCount = memoryRepository.getMemoryCountOfAssistant(assistant.id.toString()),
+        )
+    }
+
     fun removeAssistant(assistant: Assistant) {
         // Cancel any existing job for this assistant
         deletionJobs[assistant.id]?.cancel()
@@ -81,9 +99,13 @@ class AssistantVM(
             }
         }
 
-        // Start delayed deletion of data
+        // Start delayed deletion of data — same window as the undo toast.
         val job = appScope.launch {
-            kotlinx.coroutines.delay(4000) // 4 seconds to undo
+            kotlinx.coroutines.delay(DESTRUCTIVE_UNDO_WINDOW_MS)
+            val conversations = conversationRepo.getConversationsOfAssistant(assistant.id).first()
+            conversations.forEach { conversation ->
+                chatService.tombstoneConversation(conversation.id)
+            }
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
             conversationRepo.deleteConversationOfAssistant(assistant.id)
             appStorageRepository.deleteFilesIfUnreferenced(assistant.collectMediaFileRefs())
@@ -92,10 +114,9 @@ class AssistantVM(
         deletionJobs[assistant.id] = job
     }
 
-    fun undoRemoveAssistant(assistant: Assistant) {
-        // Cancel deletion job if it exists
-        deletionJobs[assistant.id]?.cancel()
-        deletionJobs.remove(assistant.id)
+    fun undoRemoveAssistant(assistant: Assistant): Boolean {
+        val job = deletionJobs.remove(assistant.id) ?: return false
+        job.cancel()
 
         viewModelScope.launch {
             // Restore to settings
@@ -109,6 +130,7 @@ class AssistantVM(
                 }
             }
         }
+        return true
     }
 
     fun copyAssistant(assistant: Assistant) {

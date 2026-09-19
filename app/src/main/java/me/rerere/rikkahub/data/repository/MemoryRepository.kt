@@ -80,6 +80,10 @@ class MemoryRepository(
             .map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
     }
 
+    suspend fun getMemoryCountOfAssistant(assistantId: String): Int {
+        return memoryDAO.getMemoryCountOfAssistant(assistantId)
+    }
+
     suspend fun getMemoryById(id: Int): AssistantMemory? {
         val memory = memoryDAO.getMemoryById(id) ?: return null
         return AssistantMemory(

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -124,19 +125,38 @@ class SettingVM(
         iconManager.cleanupUnusedIcons(usedKeys)
     }
 
+    private val pendingFileCleanupJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
     fun cleanupFilesIfUnreferenced(
         fileRefs: Collection<String>,
         delayMs: Long = 0L,
+        cleanupKey: String? = null,
     ) {
+        if (cleanupKey != null) {
+            cancelUnreferencedFileCleanup(cleanupKey)
+        }
         if (fileRefs.isEmpty()) {
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            if (delayMs > 0L) {
-                delay(delayMs)
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (delayMs > 0L) {
+                    delay(delayMs)
+                }
+                appStorageRepository.deleteFilesIfUnreferenced(fileRefs)
+            } finally {
+                if (cleanupKey != null) {
+                    pendingFileCleanupJobs.remove(cleanupKey, coroutineContext[Job])
+                }
             }
-            appStorageRepository.deleteFilesIfUnreferenced(fileRefs)
         }
+        if (cleanupKey != null) {
+            pendingFileCleanupJobs[cleanupKey] = job
+        }
+    }
+
+    fun cancelUnreferencedFileCleanup(cleanupKey: String) {
+        pendingFileCleanupJobs.remove(cleanupKey)?.cancel()
     }
 
     fun refreshModelCatalog(
