@@ -926,6 +926,7 @@ private fun me.rerere.rikkahub.data.ai.mcp.McpServerConfig.toWebMcpServerDto(): 
 
 private fun me.rerere.search.SearchServiceOptions.toWebSearchServiceDto(): WebSearchServiceDto {
     val type = when (this) {
+        is me.rerere.search.SearchServiceOptions.KeylessOptions -> "keyless"
         is me.rerere.search.SearchServiceOptions.BingLocalOptions -> "bing_local"
         is me.rerere.search.SearchServiceOptions.ZhipuOptions -> "zhipu"
         is me.rerere.search.SearchServiceOptions.TavilyOptions -> "tavily"

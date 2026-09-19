@@ -31,6 +31,7 @@ interface SearchService<T : SearchServiceOptions> {
                 is SearchServiceOptions.TavilyOptions -> TavilySearchService
                 is SearchServiceOptions.ExaOptions -> ExaSearchService
                 is SearchServiceOptions.ZhipuOptions -> ZhipuSearchService
+                is SearchServiceOptions.KeylessOptions -> KeylessSearchService
                 is SearchServiceOptions.BingLocalOptions -> BingSearchService
                 is SearchServiceOptions.SearXNGOptions -> SearXNGService
                 is SearchServiceOptions.LinkUpOptions -> LinkUpService

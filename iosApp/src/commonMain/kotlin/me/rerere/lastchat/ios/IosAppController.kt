@@ -161,14 +161,14 @@ data class IosMemoryRecord(
 
 @Serializable
 enum class IosSearchProviderType {
-    BING, TAVILY, EXA, BRAVE, PERPLEXITY, FIRECRAWL, JINA, LINKUP,
+    KEYLESS, BING, TAVILY, EXA, BRAVE, PERPLEXITY, FIRECRAWL, JINA, LINKUP,
     ZHIPU, METASO, BOCHA, OLLAMA, GROK, NANOGPT,
 }
 
 @Serializable
 data class IosSearchPreferences(
     val enabled: Boolean = false,
-    val provider: IosSearchProviderType = IosSearchProviderType.BING,
+    val provider: IosSearchProviderType = IosSearchProviderType.KEYLESS,
     val resultSize: Int = 5,
 )
 
@@ -3386,6 +3386,7 @@ internal fun IosTtsPreferences.toProviderSetting(apiKey: String): TTSProviderSet
 }
 
 internal fun IosSearchProviderType.displayName(): String = when (this) {
+    IosSearchProviderType.KEYLESS -> "Keyless"
     IosSearchProviderType.BING -> "Bing"
     IosSearchProviderType.TAVILY -> "Tavily"
     IosSearchProviderType.EXA -> "Exa"
@@ -3417,9 +3418,11 @@ internal fun imageExtension(mimeType: String): String = when (mimeType.lowercase
     else -> "png"
 }
 
-internal fun IosSearchProviderType.requiresApiKey(): Boolean = this != IosSearchProviderType.BING
+internal fun IosSearchProviderType.requiresApiKey(): Boolean =
+    this != IosSearchProviderType.KEYLESS && this != IosSearchProviderType.BING
 
 internal fun IosSearchProviderType.toOptions(apiKey: String): SearchServiceOptions = when (this) {
+    IosSearchProviderType.KEYLESS -> SearchServiceOptions.KeylessOptions()
     IosSearchProviderType.BING -> SearchServiceOptions.BingLocalOptions()
     IosSearchProviderType.TAVILY -> SearchServiceOptions.TavilyOptions(apiKey = apiKey)
     IosSearchProviderType.EXA -> SearchServiceOptions.ExaOptions(apiKey = apiKey)
