@@ -532,6 +532,17 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: migrate from 32 to 33 success")
             }
         }
+
+        /**
+         * A brief experiment shipped DB v40, then was reverted to v39. Without this path Room
+         * cannot open a v40 file. Never use fallbackToDestructiveMigrationOnDowngrade.
+         */
+        val MIGRATION_40_39 = object : Migration(40, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: downgrade from 40 to 39")
+                db.execSQL("DROP INDEX IF EXISTS index_MemoryEntity_assistant_id")
+            }
+        }
     }
 }
 
