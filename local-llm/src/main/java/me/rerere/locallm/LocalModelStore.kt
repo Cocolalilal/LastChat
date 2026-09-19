@@ -55,6 +55,8 @@ class LocalModelStore(private val context: Context) {
 
     suspend fun remove(id: String) = mutate { list -> list.filterNot { it.id == id } }
 
+    suspend fun clear() = mutate { emptyList() }
+
     suspend fun updateConfig(id: String, config: LocalModelConfig) =
         update(id) { it.copy(config = config) }
 

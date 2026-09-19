@@ -12,6 +12,29 @@ import me.rerere.locallm.effectiveRuntimeContextLength
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
 import me.rerere.rikkahub.data.ai.models.inferFamilyEntry
 
+/**
+ * If any on-device model is installed, the Local provider must exist so it shows on the
+ * providers screen. An empty install list never creates a provider (that would undo an
+ * intentional delete).
+ */
+fun Settings.withSyncedLocalProviderModels(
+    llmAndEmbeddingModels: List<Model>,
+    sttModels: List<Model>,
+): Settings {
+    val mergedModels = sttModels + llmAndEmbeddingModels
+    val current = providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+    if (current == null) {
+        if (mergedModels.isEmpty()) return this
+        return copy(providers = providers + ProviderSetting.LiteRtLocal(models = mergedModels))
+    }
+    if (current.models == mergedModels) return this
+    return copy(
+        providers = providers.map { provider ->
+            if (provider is ProviderSetting.LiteRtLocal) provider.copy(models = mergedModels) else provider
+        }
+    )
+}
+
 /** Keeps LiteRT's selectable model metadata aligned with the context the runtime really loads. */
 suspend fun syncInstalledLocalModelsToSettings(
     installed: List<InstalledLocalModel>,
@@ -20,19 +43,19 @@ suspend fun syncInstalledLocalModelsToSettings(
     catalogSnapshot: ModelCatalogSnapshot?,
 ) {
     val settings = settingsStore.settingsFlow.first { !it.init }
-    val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
-    val existingByModelId = local.models.associateBy { it.modelId }
-    val newModels = local.models.filter { it.type == ModelType.STT } + installed.map { installedModel ->
+    val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+    if (local == null && installed.isEmpty()) return
+    val existingByModelId = local?.models.orEmpty().associateBy { it.modelId }
+    val llmModels = installed.map { installedModel ->
         installedModel.toSettingsModel(existingByModelId[installedModel.id], catalogSnapshot, totalRamGb)
     }
-    if (newModels == local.models) return
-    settingsStore.update(
-        settings.copy(
-            providers = settings.providers.map { provider ->
-                if (provider is ProviderSetting.LiteRtLocal) provider.copy(models = newModels) else provider
-            }
-        ).clearMissingModelReferences()
+    val sttModels = local?.models.orEmpty().filter { it.type == ModelType.STT }
+    val updated = settings.withSyncedLocalProviderModels(
+        llmAndEmbeddingModels = llmModels,
+        sttModels = sttModels,
     )
+    if (updated.providers == settings.providers) return
+    settingsStore.update(updated.clearMissingModelReferences())
 }
 
 private fun InstalledLocalModel.toSettingsModel(

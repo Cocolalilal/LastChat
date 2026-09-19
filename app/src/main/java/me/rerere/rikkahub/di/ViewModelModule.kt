@@ -42,6 +42,13 @@ val viewModelModule = module {
             modelCatalogService = get(),
             modelMetadataResolver = get(),
             memoryRepository = get(),
+            localModelStore = get(),
+            localModelInstall = get(),
+            liteRtRuntime = get(),
+            liteRtEmbedder = get(),
+            sherpaModelStore = get(),
+            sherpaModelInstall = get(),
+            sherpaSttRuntime = get(),
         )
     }
 
