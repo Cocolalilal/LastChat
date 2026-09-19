@@ -1017,7 +1017,7 @@ private fun BoxScope.MessageJumper(
                 shape = CircleShape,
                 tonalElevation = 4.dp,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1044,7 +1044,7 @@ private fun BoxScope.MessageJumper(
                 shape = CircleShape,
                 tonalElevation = 4.dp,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1066,7 +1066,7 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1088,7 +1088,7 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),

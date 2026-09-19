@@ -192,6 +192,8 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionMicrophone
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.LocalSTTState
@@ -774,7 +776,7 @@ fun MinimalChatInput(
                         },
                         containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(AppSize.ChromePill)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
                     ) {
                         Icon(
@@ -792,7 +794,7 @@ fun MinimalChatInput(
                     containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
+                        .heightIn(min = AppSize.ChromePill)
                         .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape),
                 ) {
                     Column(
@@ -1255,7 +1257,7 @@ fun MinimalChatInput(
                             ) {
                                 AttachmentImportAction(
                                     isImporting = isImportingAttachments,
-                                    modifier = Modifier.size(56.dp),
+                                    modifier = Modifier.size(AppSize.ChromePill),
                                 ) {
                                     val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion ->
@@ -1281,7 +1283,7 @@ fun MinimalChatInput(
                                             else -> Unit
                                         }
                                     },
-                                    modifier = Modifier.size(56.dp),
+                                    modifier = Modifier.size(AppSize.ChromePill),
                                     containerColorOverride = if (currentAction == LastChatComposerAction.Picker) {
                                         MaterialTheme.colorScheme.surfaceVariant
                                     } else {
@@ -1406,7 +1408,7 @@ private fun WorkspaceRequiredCard(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -1475,7 +1477,7 @@ private fun CharacterQuestionsCard(
     val canGoNext = currentIndex < questionnaire.questions.lastIndex
 
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -1645,7 +1647,7 @@ private fun ToolApprovalCard(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -2601,7 +2603,7 @@ private fun MinimalFileButtonCompact(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),  // Optically round with 40dp outer container
+        shape = AppShapes.CardMedium,  // Optically round with 40dp outer container
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.height(72.dp)
     ) {

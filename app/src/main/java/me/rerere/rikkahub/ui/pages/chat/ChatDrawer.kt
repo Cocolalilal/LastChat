@@ -586,7 +586,7 @@ fun CollapsedChatSideRail(
                 size = 48.dp
             )
             Column(
-                modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                modifier = Modifier.clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 DrawerAction(

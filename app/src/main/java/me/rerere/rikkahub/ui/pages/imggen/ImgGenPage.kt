@@ -121,9 +121,11 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.saveMessageImage
 import org.koin.androidx.compose.koinViewModel
@@ -735,6 +737,7 @@ private fun ImageGalleryScreen(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val pullToRefreshState = rememberPullToRefreshState()
+    var pendingDeleteImage by remember { mutableStateOf<GeneratedImage?>(null) }
 
     PullToRefreshBox(
         isRefreshing = false,
@@ -871,7 +874,7 @@ private fun ImageGalleryScreen(
                                         }
 
                                         IconButton(
-                                            onClick = { vm.deleteImage(it) },
+                                            onClick = { pendingDeleteImage = it },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Icon(
@@ -897,6 +900,18 @@ private fun ImageGalleryScreen(
             }
         }
     }
+
+    pendingDeleteImage?.let { image ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.imggen_page_delete_title),
+            consequence = stringResource(R.string.imggen_page_delete_consequence),
+            onDismiss = { pendingDeleteImage = null },
+            onConfirm = {
+                pendingDeleteImage = null
+                vm.deleteImage(image)
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -910,7 +925,7 @@ private fun SettingsBottomSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle() }

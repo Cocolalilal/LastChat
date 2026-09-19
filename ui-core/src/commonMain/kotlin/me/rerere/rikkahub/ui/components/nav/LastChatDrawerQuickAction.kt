@@ -33,7 +33,7 @@ fun LastChatDrawerQuickActionGroup(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(24.dp)),
+            .clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         content = content,
     )

@@ -17,19 +17,21 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
+import me.rerere.rikkahub.ui.theme.AppSurface
 
 /** The production chat-toolbar drawer button shared by Android and iOS. */
 @Composable
 fun LastChatMenuButton(
     onClick: () -> Unit,
     contentDescription: String,
-    modifier: Modifier = Modifier.size(48.dp),
-    size: Dp = 48.dp,
+    modifier: Modifier = Modifier.size(AppSize.ChromePill),
+    size: Dp = AppSize.ChromePill,
     shape: Shape = AppShapes.ButtonPill,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     border: BorderStroke = BorderStroke(
-        1.dp,
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        AppSurface.SoftEdgeWidth,
+        AppSurface.softEdgeColor(MaterialTheme.colorScheme),
     ),
 ) {
     Surface(

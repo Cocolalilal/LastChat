@@ -96,7 +96,9 @@ fun LastChatAssistantPickerSheet(
     val handleDismissThreshold = with(density) { 48.dp.toPx() }
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = me.rerere.rikkahub.ui.theme.AppSurface.fill(MaterialTheme.colorScheme),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.BottomSheet,
+        tonalElevation = me.rerere.rikkahub.ui.theme.AppSurface.TonalElevation,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,

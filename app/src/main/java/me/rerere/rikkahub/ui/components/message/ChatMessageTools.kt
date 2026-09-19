@@ -68,7 +68,9 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
@@ -312,13 +314,14 @@ private fun ToolCallPreviewSheet(
     val navController = LocalNavController.current
     val memoryRepo: MemoryRepository = koinInject()
     val scope = rememberCoroutineScope()
+    var pendingMemoryDeleteId by remember { mutableStateOf<Int?>(null) }
 
     // Check if this is a memory creation/update operation
     val isMemoryOperation = toolName in listOf("create_memory", "edit_memory")
     val memoryId = (content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.intOrNull
 
     ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         onDismissRequest = {
             onDismissRequest()
@@ -670,16 +673,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             // 如果是memory操作，允许用户快速删除
                             if (isMemoryOperation && memoryId != null) {
                                 IconButton(
-                                    onClick = {
-                                        scope.launch {
-                                            try {
-                                                memoryRepo.deleteMemory(memoryId)
-                                                onDismissRequest()
-                                            } catch (e: Exception) {
-                                                // Handle error if needed
-                                            }
-                                        }
-                                    }
+                                    onClick = { pendingMemoryDeleteId = memoryId }
                                 ) {
                                     Icon(
                                         Icons.Rounded.Delete,
@@ -791,4 +785,21 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         },
     )
+
+    pendingMemoryDeleteId?.let { id ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.chat_message_delete_memory_title),
+            consequence = stringResource(R.string.chat_message_delete_memory_consequence),
+            onDismiss = { pendingMemoryDeleteId = null },
+            onConfirm = {
+                pendingMemoryDeleteId = null
+                scope.launch {
+                    runCatching {
+                        memoryRepo.deleteMemory(id)
+                        onDismissRequest()
+                    }
+                }
+            },
+        )
+    }
 }
