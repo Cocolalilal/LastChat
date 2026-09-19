@@ -40,7 +40,7 @@ internal fun parseWikipediaSearch(json: String): List<SearchResultItem> {
         val obj = element.jsonObjectOrEmpty()
         val title = obj.string("title")
         if (title.isBlank()) return@mapNotNull null
-        val snippet = obj.string("snippet").cleanHtmlText()
+        val snippet = obj.string("snippet").removeTags().cleanHtmlText()
         SearchResultItem(
             title = title,
             url = "https://en.wikipedia.org/wiki/" + title.replace(' ', '_'),
