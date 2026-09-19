@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +18,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -205,11 +201,7 @@ fun AssistantModelSubPage(
             )
             
             // Temperature Slider
-            AnimatedVisibility(
-                visible = assistant.temperature != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.temperature != null) {
                 Surface(
                     color = if (LocalDarkMode.current) 
                         MaterialTheme.colorScheme.surfaceContainerLow 
@@ -268,11 +260,7 @@ fun AssistantModelSubPage(
             )
 
             // Top-P Slider
-            AnimatedVisibility(
-                visible = assistant.topP != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.topP != null) {
                 Surface(
                     color = if (LocalDarkMode.current) 
                         MaterialTheme.colorScheme.surfaceContainerLow 

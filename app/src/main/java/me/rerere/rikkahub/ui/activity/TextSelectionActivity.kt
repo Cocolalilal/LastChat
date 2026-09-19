@@ -56,7 +56,7 @@ class TextSelectionActivity : ComponentActivity() {
                         viewModel = viewModel,
                         onDismiss = { finish() },
                         onContinueInApp = {
-                            val continuationData = viewModel.buildContinuationData() ?: return@TextSelectionSheet
+                            val continuationData = viewModel.buildContinuationData()
                             val routeIntent = Intent(this@TextSelectionActivity, RouteActivity::class.java).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                                 putQuickAskContinuationData(continuationData)

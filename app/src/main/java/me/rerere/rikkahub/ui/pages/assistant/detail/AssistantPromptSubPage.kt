@@ -1,12 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -26,8 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
@@ -102,12 +94,13 @@ import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onSuccess
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
-@OptIn(FlowPreview::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(FlowPreview::class)
 @Composable
 fun AssistantPromptSubPage(
     assistant: Assistant,
@@ -242,22 +235,15 @@ fun AssistantPromptSubPage(
                             )
                         }
 
-                        AnimatedVisibility(
-                            visible = introsExpanded,
-                            enter = fadeIn(tween(150, easing = FastOutSlowInEasing)) +
-                                expandVertically(tween(180, easing = FastOutSlowInEasing)),
-                            exit = fadeOut(tween(120, easing = FastOutSlowInEasing)) +
-                                shrinkVertically(tween(150, easing = FastOutSlowInEasing)),
-                        ) {
+                        ExpandableContent(visible = introsExpanded) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                LazyRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
                                 ) {
-                                    itemsIndexed(
-                                        items = intros,
-                                        key = { index, _ -> "intro-$index" },
-                                    ) { index, intro ->
+                                    intros.forEachIndexed { index, intro ->
                                         var isEditing by remember { mutableStateOf(false) }
                                         Surface(
                                             color = MaterialTheme.colorScheme.surface,
@@ -266,10 +252,6 @@ fun AssistantPromptSubPage(
                                             modifier = Modifier
                                                 .width(280.dp)
                                                 .height(140.dp)
-                                                .animateItem(
-                                                    fadeInSpec = tween(150, easing = FastOutSlowInEasing),
-                                                    fadeOutSpec = tween(120, easing = FastOutSlowInEasing),
-                                                )
                                                 .clickable {
                                                     haptics.perform(HapticPattern.Pop)
                                                     isEditing = true
@@ -320,38 +302,32 @@ fun AssistantPromptSubPage(
                                         }
                                     }
 
-                                    item(key = "add-intro") {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.secondaryContainer,
-                                            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
-                                            modifier = Modifier
-                                                .width(100.dp)
-                                                .height(140.dp)
-                                                .animateItem(
-                                                    fadeInSpec = tween(150, easing = FastOutSlowInEasing),
-                                                    fadeOutSpec = tween(120, easing = FastOutSlowInEasing),
-                                                )
-                                                .clickable {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                    updateIntros(intros + "")
-                                                }
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.fillMaxSize(),
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.Center
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Add,
-                                                    null,
-                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                                Text(
-                                                    "Add Intro",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
+                                        modifier = Modifier
+                                            .width(100.dp)
+                                            .height(140.dp)
+                                            .clickable {
+                                                haptics.perform(HapticPattern.Pop)
+                                                updateIntros(intros + "")
                                             }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Add,
+                                                null,
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                            Text(
+                                                "Add Intro",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
                                         }
                                     }
                                 }
@@ -515,7 +491,7 @@ fun AssistantPromptSubPage(
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                        AnimatedVisibility(visible = variablesExpanded) {
+                        ExpandableContent(visible = variablesExpanded) {
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 verticalArrangement = Arrangement.spacedBy(2.dp),

@@ -4,11 +4,6 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.SpontaneousMessageMode
@@ -149,11 +145,7 @@ fun AssistantAdvancedSubPage(
                 }
             )
 
-            AnimatedVisibility(
-                visible = assistant.enableSpontaneous,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
+            ExpandableContent(visible = assistant.enableSpontaneous) {
                 val scheduleStartHour = scheduleSelection.startHour
                 SettingGroupInputItem(
                     title = stringResource(R.string.assistant_advanced_delivery_schedule),
@@ -248,11 +240,7 @@ fun AssistantAdvancedSubPage(
             }
 
 
-            AnimatedVisibility(
-                visible = assistant.enableSpontaneous,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
+            ExpandableContent(visible = assistant.enableSpontaneous) {
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_advanced_message_type),
                     subtitle = stringResource(R.string.assistant_advanced_message_type_desc),
@@ -275,11 +263,7 @@ fun AssistantAdvancedSubPage(
                     }
                 )
             }
-            AnimatedVisibility(
-                visible = assistant.enableSpontaneous,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
+            ExpandableContent(visible = assistant.enableSpontaneous) {
                 val frequencyHours = frequencySlider.roundToInt().coerceIn(1, 24)
                 SettingGroupInputItem(
                     title = stringResource(R.string.assistant_advanced_minimum_gap),

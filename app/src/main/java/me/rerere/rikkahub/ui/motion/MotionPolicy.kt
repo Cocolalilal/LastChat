@@ -27,8 +27,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavBackStackEntry
 import me.rerere.rikkahub.Screen
 
-private const val TOP_LEVEL_FADE_IN_DURATION_MS = 120
-private const val TOP_LEVEL_FADE_OUT_DURATION_MS = 90
+internal const val TOP_LEVEL_FADE_IN_DURATION_MS = 120
+internal const val TOP_LEVEL_FADE_OUT_DURATION_MS = 90
 private const val FORWARD_BACK_SLIDE_DURATION_MS = 200
 private const val FORWARD_BACK_FADE_IN_DURATION_MS = 150
 private const val FORWARD_BACK_FADE_OUT_DURATION_MS = 100

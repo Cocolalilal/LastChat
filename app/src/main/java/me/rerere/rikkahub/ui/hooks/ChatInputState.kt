@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
@@ -45,6 +46,12 @@ class ChatInputState {
         private set
     var editingMessage by mutableStateOf<Uuid?>(null)
     var loading by mutableStateOf(false)
+    /**
+     * Bumped by [clearInput] so in-flight STT final results cannot rewrite the composer
+     * after a successful send.
+     */
+    var sttCommitEpoch by mutableIntStateOf(0)
+        private set
     
     // FocusRequester for the text field - allows external focus requests
     val focusRequester = FocusRequester()
@@ -53,6 +60,7 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd("")
         setMessageContentWithIds(emptyList(), emptyList())
         editingMessage = null
+        sttCommitEpoch++
     }
 
     fun isEditing() = editingMessage != null

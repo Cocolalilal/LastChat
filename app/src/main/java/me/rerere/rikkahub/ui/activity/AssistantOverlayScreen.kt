@@ -238,9 +238,12 @@ fun AssistantOverlayScreen(
 
     var acceptSttTranscript by remember { mutableStateOf(true) }
     var utteranceSent by remember { mutableStateOf(false) }
+    var sttSessionEpoch by remember { mutableIntStateOf(inputState.sttCommitEpoch) }
 
     fun applySttTranscript(text: String) {
-        if (acceptSttTranscript) inputState.setMessageText(text)
+        if (acceptSttTranscript && inputState.sttCommitEpoch == sttSessionEpoch) {
+            inputState.setMessageText(text)
+        }
     }
 
     fun doSend() {
@@ -372,6 +375,7 @@ fun AssistantOverlayScreen(
                             ASRStatus.Connecting, ASRStatus.Listening -> {
                                 acceptSttTranscript = true
                                 utteranceSent = false
+                                sttSessionEpoch = inputState.sttCommitEpoch
                                 wasRecording = true
                             }
                             ASRStatus.Stopping -> {
@@ -383,10 +387,15 @@ fun AssistantOverlayScreen(
                                     if (
                                         config.autoSendOnSttFinish &&
                                         !utteranceSent &&
-                                        !inputState.isEmpty() &&
                                         !isGenerating
                                     ) {
-                                        doSend()
+                                        val spoken = sttState.transcript.trim()
+                                        if (inputState.isEmpty() && spoken.isNotBlank()) {
+                                            inputState.setMessageText(spoken)
+                                        }
+                                        if (!inputState.isEmpty()) {
+                                            doSend()
+                                        }
                                     }
                                 }
                             }

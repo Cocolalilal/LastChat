@@ -113,9 +113,10 @@ import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
 import me.rerere.rikkahub.service.ChatPersistenceMode
+import me.rerere.rikkahub.data.model.getInitialMessageNodes
 import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
-import me.rerere.rikkahub.ui.activity.buildQuickAskMessageParts
 import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
+import me.rerere.rikkahub.ui.activity.seedQuickAskChat
 import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
@@ -583,25 +584,6 @@ class RouteActivity : ComponentActivity() {
             if (data != null) {
                 pendingTextSelection = null
                 try {
-                    val userParts = buildQuickAskMessageParts(
-                        text = data.text,
-                        attachments = data.attachments,
-                        customPrompt = data.userPrompt
-                    )
-
-                    val userMessage = if (userParts.isNotEmpty()) {
-                        me.rerere.ai.ui.UIMessage(
-                            role = me.rerere.ai.core.MessageRole.USER,
-                            parts = userParts
-                        )
-                    } else null
-
-                    val aiResponse = data.aiResponse
-                    val assistantMessage = if (!aiResponse.isNullOrBlank()) {
-                        me.rerere.ai.ui.UIMessage.assistant(aiResponse)
-                    } else null
-
-                    // Resolve the assistant ID from continuation data or fall back to current
                     val assistantId = data.assistantId?.takeIf { it.isNotBlank() }?.let {
                         try { Uuid.parse(it) } catch (e: Exception) { null }
                     } ?: settings.assistantId
@@ -610,45 +592,27 @@ class RouteActivity : ComponentActivity() {
                     settingsStore.updateAssistant(assistantId)
                     settingsStore.markAssistantUsed(assistantId)
 
-                    // Search for a recent existing conversation with this assistant to append to
+                    val assistant = settings.assistants.find { it.id == assistantId }
+                        ?: settings.assistants.firstOrNull()
                     val existingConvos = conversationRepo.getRecentConversations(assistantId, limit = 1)
-                    val targetConvo = existingConvos.firstOrNull()
-
-                    if (targetConvo != null) {
-                        // Append to existing conversation
-                        val updatedMessages = targetConvo.messageNodes.toMutableList()
-                        if (userMessage != null) {
-                            updatedMessages.add(me.rerere.ai.ui.MessageNode.of(userMessage))
-                        }
-                        if (assistantMessage != null) {
-                            updatedMessages.add(me.rerere.ai.ui.MessageNode.of(assistantMessage))
-                        }
-                        val updated = targetConvo.copy(messageNodes = updatedMessages)
-                        chatService.saveConversation(targetConvo.id, updated)
-                        navigateToChatPage(navBackStack, chatId = targetConvo.id)
-                    } else {
-                        // No existing conversation — create a new one
-                        val conversationId = Uuid.random()
-                        val messages = mutableListOf<me.rerere.ai.ui.MessageNode>()
-                        if (userMessage != null) {
-                            messages.add(me.rerere.ai.ui.MessageNode.of(userMessage))
-                        }
-                        if (assistantMessage != null) {
-                            messages.add(me.rerere.ai.ui.MessageNode.of(assistantMessage))
-                        }
-                        if (messages.isNotEmpty()) {
-                            val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
-                                id = conversationId,
-                                assistantId = assistantId,
-                                messages = messages
-                            )
-                            chatService.saveConversation(conversationId, conversation)
-                        }
-                        // Even with no exchange yet (e.g. "Open in app" tapped before a reply),
-                        // still open a fresh chat with the selected assistant so we land on the
-                        // right character instead of the default one.
-                        navigateToChatPage(navBackStack, chatId = conversationId)
+                    val seed = seedQuickAskChat(
+                        data = data,
+                        existingConversation = existingConvos.firstOrNull(),
+                        introNodes = assistant?.getInitialMessageNodes().orEmpty(),
+                    )
+                    val conversationId = seed.reuseConversationId ?: Uuid.random()
+                    if (seed.messageNodes.isNotEmpty()) {
+                        val base = existingConvos.firstOrNull()?.takeIf { it.id == conversationId }
+                        val conversation = (base ?: me.rerere.rikkahub.data.model.Conversation.ofId(
+                            id = conversationId,
+                            assistantId = assistantId,
+                        )).copy(
+                            assistantId = assistantId,
+                            messageNodes = seed.messageNodes,
+                        )
+                        chatService.saveConversation(conversationId, conversation)
                     }
+                    navigateToChatPage(navBackStack, chatId = conversationId)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
