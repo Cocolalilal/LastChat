@@ -63,6 +63,6 @@ class PreferenceStoreV1Migration : DataMigration<Preferences> {
                 }
             }
             JsonInstant.encodeToString(filtered)
-        }.getOrDefault("[]")
+        }.getOrElse { json }
     }
 }
