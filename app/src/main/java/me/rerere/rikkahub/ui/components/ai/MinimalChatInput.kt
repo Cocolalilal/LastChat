@@ -199,7 +199,9 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.LocalSTTState
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.mergeCommittedSttTranscript
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.shouldApplyPendingSttTranscript
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
@@ -336,6 +338,7 @@ fun MinimalChatInput(
     var sttDraft by remember { mutableStateOf("") }
     var acceptSttWhenIdle by remember { mutableStateOf(false) }
     var discardSttWhenIdle by remember { mutableStateOf(false) }
+    var sttEpochAtStop by remember { mutableIntStateOf(0) }
     val sttRecording = sttState.isRecording
     val sttFinalizing = sttState.status == me.rerere.asr.ASRStatus.Stopping
 
@@ -354,6 +357,7 @@ fun MinimalChatInput(
         sttDraft = ""
         acceptSttWhenIdle = false
         discardSttWhenIdle = false
+        sttEpochAtStop = state.sttCommitEpoch
         keyboardController?.hide()
         stt.start { transcript ->
             sttDraft = transcript
@@ -361,6 +365,7 @@ fun MinimalChatInput(
     }
 
     fun stopSttRecording(accept: Boolean) {
+        sttEpochAtStop = state.sttCommitEpoch
         acceptSttWhenIdle = accept
         discardSttWhenIdle = !accept
         stt.stop()
@@ -374,17 +379,31 @@ fun MinimalChatInput(
 
     LaunchedEffect(sttRecording, sttFinalizing, acceptSttWhenIdle, discardSttWhenIdle) {
         if (!sttRecording && !sttFinalizing && (acceptSttWhenIdle || discardSttWhenIdle)) {
-            if (acceptSttWhenIdle) {
+            if (
+                shouldApplyPendingSttTranscript(
+                    accept = acceptSttWhenIdle,
+                    epochAtCapture = sttEpochAtStop,
+                    epochNow = state.sttCommitEpoch,
+                )
+            ) {
                 delay(220)
-                val transcript = sttDraft.trim()
-                
-                if (transcript.isNotBlank()) {
-                    val prefix = state.textContent.text.toString()
-                    state.setMessageText(
-                        if (prefix.isBlank()) transcript else "$prefix $transcript"
+                if (
+                    shouldApplyPendingSttTranscript(
+                        accept = true,
+                        epochAtCapture = sttEpochAtStop,
+                        epochNow = state.sttCommitEpoch,
                     )
-                    
-                    runCatching { state.focusRequester.requestFocus() }
+                ) {
+                    val transcript = sttDraft.trim()
+                    if (transcript.isNotBlank()) {
+                        state.setMessageText(
+                            mergeCommittedSttTranscript(
+                                existing = state.textContent.text.toString(),
+                                transcript = transcript,
+                            )
+                        )
+                        runCatching { state.focusRequester.requestFocus() }
+                    }
                 }
             }
             sttDraft = ""

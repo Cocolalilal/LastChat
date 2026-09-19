@@ -2,16 +2,13 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -277,11 +275,7 @@ fun AssistantMemorySettings(
             )
 
             // Recent Chats Toggle (when memory enabled)
-            AnimatedVisibility(
-                visible = assistant.enableMemory,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.enableMemory) {
                 val isLockedByConsolidation = assistant.enableMemoryConsolidation
 
                 MemorySettingsItem(
@@ -312,11 +306,7 @@ fun AssistantMemorySettings(
             }
 
             // Memory Search Tool Toggle (when memory enabled)
-            AnimatedVisibility(
-                visible = assistant.enableMemory,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.enableMemory) {
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_search_tool),
                     subtitle = stringResource(R.string.assistant_memory_search_tool_desc),
@@ -333,11 +323,7 @@ fun AssistantMemorySettings(
             }
 
             // RAG Toggle (when memory enabled)
-            AnimatedVisibility(
-                visible = assistant.enableMemory,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.enableMemory) {
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_rag_retrieval),
                     subtitle = stringResource(R.string.assistant_memory_rag_retrieval_desc),
@@ -361,11 +347,7 @@ fun AssistantMemorySettings(
             }
 
             // Memory Consolidation Toggle (requires RAG)
-            AnimatedVisibility(
-                visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.enableMemory && assistant.useRagMemoryRetrieval) {
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_advanced_title),
                     subtitle = stringResource(R.string.assistant_memory_advanced_desc),
@@ -399,11 +381,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // RAG SETTINGS (when RAG is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = assistant.enableMemory && assistant.useRagMemoryRetrieval) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_rag_settings))
                 RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
@@ -424,11 +402,7 @@ fun AssistantMemorySettings(
                 }
 
                 // Regenerate embeddings button (visible when embeddings are missing or outdated)
-                AnimatedVisibility(
-                    visible = needsEmbeddingRegeneration && requestEmbeddingRegeneration != null,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
+                ExpandableContent(visible = needsEmbeddingRegeneration && requestEmbeddingRegeneration != null) {
                     Surface(
                         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
                         shape = RoundedCornerShape(24.dp)
@@ -460,11 +434,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // CONSOLIDATION SETTINGS (when consolidation is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = assistant.enableMemory && assistant.enableMemoryConsolidation) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_advanced_settings))
 
@@ -481,11 +451,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // MEMORY STATISTICS (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = assistant.enableMemory) {
             MemoryStatisticsCard(
                 assistant = assistant,
                 memories = memories,
@@ -496,11 +462,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // MANAGE MEMORIES (when memory is enabled)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = assistant.enableMemory) {
             ManageMemoriesSection(
                 memories = memories,
                 assistant = assistant,
@@ -522,11 +484,7 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         // MEMORY DEBUGGER (RAG only)
         // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null) {
             if (onTestRetrieval != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     SettingsGroupHeader(title = stringResource(R.string.assistant_memory_debugger))
@@ -773,11 +731,7 @@ private fun ConsolidationSettingsCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        AnimatedVisibility(
-            visible = showSummarizerWarning,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = showSummarizerWarning) {
             SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
         }
         Surface(
@@ -909,7 +863,7 @@ private fun MemoryStatisticsCard(
                 }
                 
                 // Show embeddings when RAG is enabled
-                AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
+                ExpandableContent(visible = assistant.useRagMemoryRetrieval) {
                     StatItem(
                         value = withEmbeddings.toString(),
                         label = stringResource(R.string.assistant_memory_embedded),
@@ -921,7 +875,7 @@ private fun MemoryStatisticsCard(
                 }
             }
 
-            AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
+            ExpandableContent(visible = assistant.useRagMemoryRetrieval) {
                 Text(
                     text = stringResource(
                         R.string.assistant_memory_estimated_capacity,
@@ -1094,11 +1048,7 @@ private fun ManageMemoriesSection(
         }
 
         // Category Tabs (only when consolidation is enabled)
-        AnimatedVisibility(
-            visible = showMemoryTypes,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
+        ExpandableContent(visible = showMemoryTypes) {
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
@@ -1281,11 +1231,7 @@ private fun MemoryItem(
                     memory.embeddingModelId != null && memory.embeddingModelId != currentEmbeddingModelId
                 val isMissingEmbedding = useRagMemoryRetrieval && !memory.hasEmbedding
                 val showBadges = showType || isMissingEmbedding || isModelMismatch
-                AnimatedVisibility(
-                    visible = showBadges,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
+                ExpandableContent(visible = showBadges) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1411,10 +1357,7 @@ private fun MemoryDebugger(
                 }
             }
 
-            AnimatedVisibility(
-                visible = state.hasRun,
-                enter = fadeIn() + expandVertically()
-            ) {
+            ExpandableContent(visible = state.hasRun) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     state.error?.let { error ->
                         Text(

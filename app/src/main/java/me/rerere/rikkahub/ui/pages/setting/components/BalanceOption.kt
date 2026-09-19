@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +30,7 @@ import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.isJsonExprValid
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
 import androidx.compose.ui.text.font.FontFamily
 
@@ -79,7 +79,7 @@ fun SettingProviderBalanceOption(
                 onCheckedChange = { onEdit(balanceOption.copy(enabled = it)) }
             )
         }
-        AnimatedVisibility(visible = expand) {
+        ExpandableContent(visible = expand) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

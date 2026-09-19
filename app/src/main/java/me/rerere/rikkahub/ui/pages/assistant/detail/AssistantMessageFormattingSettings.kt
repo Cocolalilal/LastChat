@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +41,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantRegex
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 @Composable
@@ -162,7 +162,7 @@ private fun RegexEditorCard(
         color = MaterialTheme.colorScheme.surface
     ) {
         Column(
-            modifier = Modifier.padding(12.dp).animateContentSize(),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -183,62 +183,64 @@ private fun RegexEditorCard(
                 }
             }
 
-            if (expanded) {
-                DebouncedTextField(
-                    value = regex.name,
-                    onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(name = value) else r })) },
-                    label = stringResource(R.string.assistant_page_regex_name),
-                    stateKey = "adv_regex_name_${regex.id}",
-                    modifier = Modifier.fillMaxWidth()
-                )
+            ExpandableContent(visible = expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebouncedTextField(
+                        value = regex.name,
+                        onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(name = value) else r })) },
+                        label = stringResource(R.string.assistant_page_regex_name),
+                        stateKey = "adv_regex_name_${regex.id}",
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                DebouncedTextField(
-                    value = regex.findRegex,
-                    onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(findRegex = value) else r })) },
-                    label = stringResource(R.string.assistant_page_regex_find_regex),
-                    stateKey = "adv_regex_find_${regex.id}",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    DebouncedTextField(
+                        value = regex.findRegex,
+                        onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(findRegex = value) else r })) },
+                        label = stringResource(R.string.assistant_page_regex_find_regex),
+                        stateKey = "adv_regex_find_${regex.id}",
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                DebouncedTextField(
-                    value = regex.replaceString,
-                    onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(replaceString = value) else r })) },
-                    label = stringResource(R.string.assistant_page_regex_replace_string),
-                    stateKey = "adv_regex_replace_${regex.id}",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    DebouncedTextField(
+                        value = regex.replaceString,
+                        onValueChange = { value -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(replaceString = value) else r })) },
+                        label = stringResource(R.string.assistant_page_regex_replace_string),
+                        stateKey = "adv_regex_replace_${regex.id}",
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                Text(stringResource(R.string.assistant_page_regex_affecting_scopes), style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    AssistantAffectScope.entries.forEach { scope ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = scope in regex.affectingScope,
-                                onCheckedChange = { checked ->
-                                    val newScopes = if (checked) regex.affectingScope + scope else regex.affectingScope - scope
-                                    onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(affectingScope = newScopes) else r }))
-                                }
-                            )
-                            Text(scope.name.lowercase().replaceFirstChar { it.uppercase() })
+                    Text(stringResource(R.string.assistant_page_regex_affecting_scopes), style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        AssistantAffectScope.entries.forEach { scope ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = scope in regex.affectingScope,
+                                    onCheckedChange = { checked ->
+                                        val newScopes = if (checked) regex.affectingScope + scope else regex.affectingScope - scope
+                                        onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(affectingScope = newScopes) else r }))
+                                    }
+                                )
+                                Text(scope.name.lowercase().replaceFirstChar { it.uppercase() })
+                            }
                         }
                     }
-                }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = regex.visualOnly,
-                        onCheckedChange = { checked -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(visualOnly = checked) else r })) }
-                    )
-                    Text(stringResource(R.string.assistant_page_regex_visual_only))
-                }
-
-                TextButton(
-                    onClick = {
-                        onUpdate(assistant.copy(regexes = assistant.regexes.filterIndexed { i, _ -> i != index }))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = regex.visualOnly,
+                            onCheckedChange = { checked -> onUpdate(assistant.copy(regexes = assistant.regexes.mapIndexed { i, r -> if (i == index) r.copy(visualOnly = checked) else r })) }
+                        )
+                        Text(stringResource(R.string.assistant_page_regex_visual_only))
                     }
-                ) {
-                    Icon(Icons.Rounded.Delete, null)
-                    Text(stringResource(R.string.delete))
+
+                    TextButton(
+                        onClick = {
+                            onUpdate(assistant.copy(regexes = assistant.regexes.filterIndexed { i, _ -> i != index }))
+                        }
+                    ) {
+                        Icon(Icons.Rounded.Delete, null)
+                        Text(stringResource(R.string.delete))
+                    }
                 }
             }
         }

@@ -76,7 +76,6 @@ class AskLastChatShareActivity : ComponentActivity() {
                             onDismiss = { finish() },
                             onContinueInApp = {
                                 val continuationData = viewModel.buildContinuationData()
-                                    ?: return@TextSelectionSheet
                                 val routeIntent =
                                     Intent(this@AskLastChatShareActivity, RouteActivity::class.java).apply {
                                         flags =

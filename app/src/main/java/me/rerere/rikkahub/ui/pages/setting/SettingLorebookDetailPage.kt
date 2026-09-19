@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -78,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
@@ -981,7 +981,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 )
             }
 
-            AnimatedVisibility(visible = activationType == LorebookActivationType.KEYWORDS) {
+            ExpandableContent(visible = activationType == LorebookActivationType.KEYWORDS) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     FormItem(
                         label = { Text(stringResource(R.string.lorebook_entry_keywords)) }

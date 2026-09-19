@@ -131,12 +131,12 @@ class TextSelectionVM(
         }
     }
 
-    internal fun buildContinuationData(): QuickAskContinuationData? {
-        val currentState = state as? TextSelectionState.Result ?: return null
+    internal fun buildContinuationData(): QuickAskContinuationData {
+        val currentState = state as? TextSelectionState.Result
         return QuickAskContinuationData(
             text = inputData.text,
             attachments = inputData.attachments,
-            aiResponse = currentState.responseText.takeIf { it.isNotBlank() },
+            aiResponse = currentState?.responseText?.takeIf { it.isNotBlank() },
             userPrompt = customPrompt.takeIf {
                 lastAction == QuickAction.CUSTOM && it.isNotBlank()
             },
