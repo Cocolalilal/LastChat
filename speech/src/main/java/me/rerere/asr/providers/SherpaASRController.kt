@@ -18,9 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import android.os.SystemClock
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRState
 import me.rerere.asr.ASRStatus
+import me.rerere.asr.ConservativeSpeechEndpointDetector
 import me.rerere.asr.appendAmplitude
 import me.rerere.asr.calculateRmsAmplitude
 import me.rerere.asr.local.InstalledSherpaModel
@@ -106,6 +108,7 @@ class SherpaASRController(
         val segment = ByteArrayOutputStream()
         var speechSeen = false
         var silentBuffers = 0
+        val endpoint = ConservativeSpeechEndpointDetector()
         val readBuffer = ByteArray(BUFFER_BYTES)
         recorder.startRecording()
         _state.update { it.copy(status = ASRStatus.Listening) }
@@ -130,6 +133,9 @@ class SherpaASRController(
                     speechSeen = false
                     silentBuffers = 0
                 }
+                if (endpoint.onFrame(amplitude, SystemClock.elapsedRealtime())) {
+                    stopRequested = true
+                }
             }
         } finally {
             recorder.release()
@@ -146,6 +152,7 @@ class SherpaASRController(
         val completed = mutableListOf<String>()
         val recorder = createRecorder()
         audioRecord = recorder
+        val endpoint = ConservativeSpeechEndpointDetector()
         val readBuffer = ByteArray(BUFFER_BYTES)
         recorder.startRecording()
         _state.update { it.copy(status = ASRStatus.Listening) }
@@ -160,6 +167,9 @@ class SherpaASRController(
                 if (session.isEndpoint() && partial.isNotBlank()) {
                     completed += partial
                     session.reset()
+                }
+                if (endpoint.onFrame(amplitude, SystemClock.elapsedRealtime())) {
+                    stopRequested = true
                 }
             }
             val final = session.finish()
@@ -187,12 +197,14 @@ class SherpaASRController(
         ).also { check(it.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize microphone" } }
     }
 
-    private fun publish(text: String) {
+    private suspend fun publish(text: String) {
         _state.update { it.copy(transcript = text) }
-        scope.launch { callback?.invoke(text) }
+        kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+            callback?.invoke(text)
+        }
     }
 
-    private fun finishIdle(text: String) {
+    private suspend fun finishIdle(text: String) {
         publish(text)
         _state.update { it.copy(status = ASRStatus.Idle) }
     }
