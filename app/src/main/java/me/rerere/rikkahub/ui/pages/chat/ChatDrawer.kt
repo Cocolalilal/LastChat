@@ -317,10 +317,16 @@ fun ChatDrawerContent(
                     vm.deleteConversation(it)
                     toaster.show(
                         message = context.getString(R.string.conversation_deleted),
+                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
                         action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                             label = context.getString(R.string.undo),
                             onClick = {
-                                vm.undoDeleteConversation(it.id)
+                                if (!vm.undoDeleteConversation(it.id)) {
+                                    toaster.show(
+                                        message = context.getString(R.string.undo_no_longer_available),
+                                        type = me.rerere.rikkahub.ui.components.ui.ToastType.Error,
+                                    )
+                                }
                             }
                         )
                     )

@@ -109,6 +109,8 @@ import me.rerere.ai.ui.currentVersionMessages
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.shouldAutoSummarizeMessages
 import me.rerere.ai.ui.toMessageNode
+import me.rerere.rikkahub.data.deletion.ConversationDeletionLedger
+import me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -660,6 +662,8 @@ class ChatService(
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs
         .asStateFlow()
 
+    private val conversationDeletionLedger = ConversationDeletionLedger()
+
     private val _contextUsage = MutableStateFlow<Map<Uuid, ContextUsageBreakdown>>(emptyMap())
     val contextUsage: StateFlow<Map<Uuid, ContextUsageBreakdown>> = _contextUsage.asStateFlow()
 
@@ -1018,14 +1022,27 @@ class ChatService(
         preserveConsolidation: Boolean = false,
         syncAttachments: Boolean = true,
     ): Boolean {
+        if (conversationDeletionLedger.isTombstoned(conversation.id)) {
+            LogUtil.i(TAG, "persistConversationToRepository: refusing tombstoned ${conversation.id}")
+            return false
+        }
         val normalizedConversation = normalizeConversation(conversation)
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
         val retryDelaysMs = longArrayOf(40L, 120L, 240L)
         repeat(retryDelaysMs.size + 1) { attempt ->
             try {
+                if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
+                    return false
+                }
                 withContext(Dispatchers.IO) {
+                    if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
+                        return@withContext
+                    }
                     if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
+                        if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
+                            return@withContext
+                        }
                         conversationRepo.insertConversation(normalizedConversation)
                     } else {
                         conversationRepo.updateConversation(
@@ -1034,6 +1051,14 @@ class ChatService(
                             syncAttachments = syncAttachments,
                         )
                     }
+                }
+                if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
+                    withContext(Dispatchers.IO) {
+                        conversationRepo.getConversationById(normalizedConversation.id)?.let { existing ->
+                            conversationRepo.deleteConversation(existing, deleteFiles = false)
+                        }
+                    }
+                    return false
                 }
                 return true
             } catch (e: Exception) {
@@ -1659,6 +1684,10 @@ class ChatService(
                     _contextUsage.value = current + (conversationId to usage)
                 },
             ).onCompletion { cause ->
+                if (conversationDeletionLedger.isTombstoned(conversationId)) {
+                    LogUtil.i(TAG, "generation onCompletion: skipping persist for tombstoned $conversationId")
+                    return@onCompletion
+                }
                 // Calculate generation duration from first token (excludes TTFT)
                 val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
@@ -2276,88 +2305,85 @@ class ChatService(
         }
     }
 
-    private val conversationDeletionLock = Any()
-    private val conversationDeletionJobs = mutableMapOf<Uuid, Job>()
-    private val recentlyDeletedConversations = mutableMapOf<Uuid, Conversation>()
-
-    private fun cancelPendingConversationDeletion(conversationId: Uuid) {
-        val job = synchronized(conversationDeletionLock) {
-            conversationDeletionJobs.remove(conversationId)
-        }
-        job?.cancel()
-    }
-
-    private fun rememberDeletedConversation(conversationId: Uuid, conversation: Conversation) =
-        synchronized(conversationDeletionLock) {
-            recentlyDeletedConversations[conversationId] = conversation
-        }
-
-    private fun rememberConversationDeletionJob(conversationId: Uuid, job: Job) =
-        synchronized(conversationDeletionLock) {
-            conversationDeletionJobs[conversationId] = job
-        }
-
-    private fun forgetDeletedConversation(conversationId: Uuid) = synchronized(conversationDeletionLock) {
-        conversationDeletionJobs.remove(conversationId)
-        recentlyDeletedConversations.remove(conversationId)
-    }
-
-    private fun takeRecentlyDeletedConversation(conversationId: Uuid): Conversation? =
-        synchronized(conversationDeletionLock) {
-            val conversation = recentlyDeletedConversations[conversationId]
-            if (conversation != null) {
-                conversationDeletionJobs.remove(conversationId)
-                recentlyDeletedConversations.remove(conversationId)
-            }
-            conversation
-        }
-
     // Track recently restored conversations for fade-in animation
     private val _recentlyRestoredIds = kotlinx.coroutines.flow.MutableStateFlow<Set<Uuid>>(emptySet())
     val recentlyRestoredIds: kotlinx.coroutines.flow.StateFlow<Set<Uuid>> = _recentlyRestoredIds
 
+    /**
+     * Stops generation and blocks persist/re-insert for [conversationId]. Used by delayed
+     * assistant wipe so a streaming checkpoint cannot resurrect chats that were just deleted.
+     */
+    fun tombstoneConversation(conversationId: Uuid) {
+        conversationDeletionLedger.cancelJob(conversationId)?.cancel()
+        conversationDeletionLedger.tombstone(conversationId)
+        conversationDeletionLedger.expireUndoWindow(conversationId)
+        stopGeneration(conversationId)
+        cleanupConversation(conversationId)
+    }
+
     fun deleteConversation(conversation: Conversation) {
+        // Tombstone + cancel first so onCompletion persist cannot re-insert the row.
+        conversationDeletionLedger.cancelJob(conversation.id)?.cancel()
+        conversationDeletionLedger.tombstone(conversation.id)
+        stopGeneration(conversation.id)
+
+        val liveSnapshot = getConversationState(conversation.id)?.value
+        val expireJob = appScope.launch {
+            kotlinx.coroutines.delay(DESTRUCTIVE_UNDO_WINDOW_MS)
+            val expired = conversationDeletionLedger.expireUndoWindow(conversation.id)
+            if (expired != null) {
+                withContext(Dispatchers.IO) {
+                    if (conversationRepo.getConversationById(expired.id) == null) {
+                        conversationRepo.finalizeConversationDeletion(expired.id)
+                    }
+                }
+            }
+        }
+        if (liveSnapshot != null && (liveSnapshot.messageNodes.isNotEmpty() || liveSnapshot.title.isNotBlank())) {
+            conversationDeletionLedger.remember(conversation.id, liveSnapshot, expireJob)
+        }
+
         appScope.launch {
-            val conversationFull = withContext(Dispatchers.IO) {
+            val persisted = withContext(Dispatchers.IO) {
                 conversationRepo.getConversationById(conversation.id)
-            } ?: return@launch
-
-            // Cancel any pending deletion for this conversation
-            cancelPendingConversationDeletion(conversation.id)
-
-            // Soft delete (DB only, preserve files)
-            withContext(Dispatchers.IO) {
-                conversationRepo.deleteConversation(conversationFull, deleteFiles = false)
             }
-            rememberDeletedConversation(conversation.id, conversationFull)
-
-            // Finalize the soft-delete window after a short undo grace period.
-            val job = appScope.launch {
-                kotlinx.coroutines.delay(4000)
-                forgetDeletedConversation(conversation.id)
+            if (!conversationDeletionLedger.isTombstoned(conversation.id)) {
+                return@launch
             }
-            rememberConversationDeletionJob(conversation.id, job)
+            val snapshot = persisted ?: liveSnapshot
+            if (snapshot != null && (snapshot.messageNodes.isNotEmpty() || snapshot.title.isNotBlank())) {
+                conversationDeletionLedger.rememberIfTombstoned(conversation.id, snapshot, expireJob)
+            }
+            if (persisted != null && conversationDeletionLedger.isTombstoned(conversation.id)) {
+                withContext(Dispatchers.IO) {
+                    conversationRepo.deleteConversation(persisted, deleteFiles = false)
+                }
+            }
+            cleanupConversation(conversation.id)
         }
     }
 
-    fun undoDeleteConversation(conversationId: Uuid) {
-        cancelPendingConversationDeletion(conversationId)
-
-        val conversation = takeRecentlyDeletedConversation(conversationId)
-        if (conversation != null) {
-            appScope.launch {
-                withContext(Dispatchers.IO) {
+    fun undoDeleteConversation(conversationId: Uuid): Boolean {
+        conversationDeletionLedger.cancelJob(conversationId)?.cancel()
+        val conversation = conversationDeletionLedger.takeForUndo(conversationId) ?: return false
+        appScope.launch {
+            withContext(Dispatchers.IO) {
+                val existing = conversationRepo.getConversationById(conversation.id)
+                if (existing == null) {
                     conversationRepo.insertConversation(conversation)
+                } else {
+                    conversationRepo.updateConversation(conversation)
                 }
-
-                // Track for fade-in animation
-                _recentlyRestoredIds.value = _recentlyRestoredIds.value + conversationId
-
-                // Remove from tracking after animation completes
-                kotlinx.coroutines.delay(1000)
-                _recentlyRestoredIds.value = _recentlyRestoredIds.value - conversationId
             }
+
+            // Track for fade-in animation
+            _recentlyRestoredIds.value = _recentlyRestoredIds.value + conversationId
+
+            // Remove from tracking after animation completes
+            kotlinx.coroutines.delay(1000)
+            _recentlyRestoredIds.value = _recentlyRestoredIds.value - conversationId
         }
+        return true
     }
 
 
@@ -2488,6 +2514,7 @@ class ChatService(
 
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
+        if (conversationDeletionLedger.isTombstoned(conversationId)) return
         val normalizedConversation = normalizeConversation(conversation)
         getOrCreateConversationState(conversationId) { normalizedConversation }.value =
             normalizedConversation
@@ -2779,6 +2806,7 @@ class ChatService(
         conversation: Conversation,
         preserveConsolidation: Boolean = false,
     ) {
+        if (conversationDeletionLedger.isTombstoned(conversationId)) return
         val normalizedConversation = mergeLiveMessagesIfIncomingIsStale(
             liveConversation = getConversationState(conversationId)?.value,
             incomingConversation = normalizeConversation(conversation),

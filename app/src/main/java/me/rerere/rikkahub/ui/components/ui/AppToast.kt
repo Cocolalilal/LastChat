@@ -89,7 +89,7 @@ data class Toast(
     val id: Any = Uuid.random(),
     val message: String,
     val type: ToastType = ToastType.Normal,
-    val duration: Long = 6000L,
+    val duration: Long = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
     val action: ToastAction? = null
 )
 
@@ -114,7 +114,7 @@ class AppToasterState {
     fun show(
         message: String,
         type: ToastType = ToastType.Normal,
-        duration: Long = 6000L,
+        duration: Long = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
         action: ToastAction? = null
     ): Toast {
         val toast = Toast(message = message, type = type, duration = duration, action = action)

@@ -193,14 +193,28 @@ class ConversationRepository(
         conversationDAO.delete(
             conversationToConversationEntity(conversation)
         )
-        memoryRepository.deleteEpisodesByConversationId(conversation.id.toString())
-        chatAttachmentRepository.removeConversationReferences(conversation.id)
+        if (deleteFiles) {
+            finalizeConversationDeletion(conversation.id)
+        }
+    }
+
+    /**
+     * Removes episodic memories and attachment refs / orphan files for a conversation
+     * whose DB row is already gone. Call this after the undo window expires.
+     */
+    suspend fun finalizeConversationDeletion(conversationId: Uuid) {
+        memoryRepository.deleteEpisodesByConversationId(conversationId.toString())
+        chatAttachmentRepository.removeConversationReferences(conversationId)
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
         getConversationsOfAssistant(assistantId).first().forEach { conversation ->
             deleteConversation(conversation)
         }
+    }
+
+    suspend fun getConversationCountOfAssistant(assistantId: Uuid): Int {
+        return conversationDAO.getConversationCountOfAssistant(assistantId.toString())
     }
 
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {

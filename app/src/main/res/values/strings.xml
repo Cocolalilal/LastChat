@@ -51,6 +51,8 @@
     <string name="assistant_page_custom_headers">Custom Headers</string>
     <string name="assistant_page_default_assistant">Default Character</string>
     <string name="assistant_deleted">Character %s deleted</string>
+    <string name="assistant_delete_confirm_title">Delete character?</string>
+    <string name="assistant_delete_confirm_message">This will also delete %1$d chats and %2$d memories. You can undo for a few seconds after deleting.</string>
     <string name="assistant_page_delete">Delete</string>
     <string name="assistant_page_delete_body">Delete Body</string>
     <string name="assistant_page_delete_dialog_text">Are you sure you want to delete this character? This cannot be undone.</string>
@@ -187,6 +189,8 @@
     <string name="backup_page_restore_failed">Restore Failed: %s</string>
     <string name="backup_page_restore_now">Restore</string>
     <string name="backup_page_restore_success">Restore Success</string>
+    <string name="backup_restore_overwrite_title">Replace current data?</string>
+    <string name="backup_restore_overwrite_message">Restoring this backup will overwrite your current chats, settings, and files. This cannot be undone except by restoring another backup.</string>
     <string name="backup_page_restoring">Restoring...</string>
     <string name="backup_page_size">Size</string>
     <string name="backup_page_test_connection">Test Connection</string>
@@ -339,6 +343,7 @@
     <string name="chat_page_date_format_same_year">%1$d-%2$d</string>
     <string name="chat_page_delete">Delete</string>
     <string name="conversation_deleted">Conversation deleted</string>
+    <string name="undo_no_longer_available">Undo is no longer available</string>
     <string name="message_deleted">Message deleted</string>
     <string name="chat_page_edit_nickname">Edit Nickname</string>
     <string name="chat_page_edit_title">Edit Title</string>

@@ -586,8 +586,8 @@ class ChatVM(
         chatService.deleteConversation(conversation)
     }
 
-    fun undoDeleteConversation(conversationId: Uuid) {
-        chatService.undoDeleteConversation(conversationId)
+    fun undoDeleteConversation(conversationId: Uuid): Boolean {
+        return chatService.undoDeleteConversation(conversationId)
     }
 
     fun updatePinnedStatus(conversation: Conversation) {
