@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -69,6 +70,13 @@ enum class ItemPosition {
     FIRST,  // First item - top corners rounded
     MIDDLE, // Middle item - no corners rounded
     LAST    // Last item - bottom corners rounded
+}
+
+fun ItemPosition.listItemShape(): RoundedCornerShape = when (this) {
+    ItemPosition.ONLY -> AppShapes.ListItem
+    ItemPosition.FIRST -> AppShapes.ListItemFirst
+    ItemPosition.MIDDLE -> AppShapes.ListItemMiddle
+    ItemPosition.LAST -> AppShapes.ListItemLast
 }
 
 /**

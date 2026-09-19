@@ -140,6 +140,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
 import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
@@ -154,6 +155,7 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -458,44 +460,24 @@ fun SettingProviderPage(
             
             // Delete confirmation dialog
             if (showDeleteDialog && providerToDelete != null) {
-                AlertDialog(
-                    onDismissRequest = { 
+                LastChatDestructiveConfirmDialog(
+                    title = stringResource(R.string.confirm_delete),
+                    consequence = stringResource(
+                        if (providerToDelete is ProviderSetting.LiteRtLocal) {
+                            R.string.setting_provider_page_delete_local_dialog_text
+                        } else {
+                            R.string.setting_provider_page_delete_dialog_text
+                        }
+                    ),
+                    onDismiss = {
                         showDeleteDialog = false
                         providerToDelete = null
                     },
-                    title = {
-                        Text(stringResource(R.string.confirm_delete))
+                    onConfirm = {
+                        providerToDelete?.let { p -> vm.deleteProvider(p) }
+                        showDeleteDialog = false
+                        providerToDelete = null
                     },
-                    text = {
-                        Text(
-                            stringResource(
-                                if (providerToDelete is ProviderSetting.LiteRtLocal) {
-                                    R.string.setting_provider_page_delete_local_dialog_text
-                                } else {
-                                    R.string.setting_provider_page_delete_dialog_text
-                                }
-                            )
-                        )
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { 
-                            showDeleteDialog = false
-                            providerToDelete = null
-                        }) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                providerToDelete?.let { p -> vm.deleteProvider(p) }
-                                showDeleteDialog = false
-                                providerToDelete = null
-                            }
-                        ) {
-                            Text(stringResource(R.string.delete))
-                        }
-                    }
                 )
             }
                     }
@@ -1569,12 +1551,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             else -> ItemPosition.MIDDLE
                         }
                         
-                        val shape = when (position) {
-                            ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                            ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-                        }
+                        val shape = position.listItemShape()
                         
                         Surface(
                             onClick = {

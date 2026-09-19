@@ -102,6 +102,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.listItemShape
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -391,53 +393,40 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             )
         }
         
-        // Delete confirmation dialog
         if (showDeleteDialog && providerToDelete != null) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { 
+            LastChatDestructiveConfirmDialog(
+                title = stringResource(R.string.setting_tts_delete_title),
+                consequence = stringResource(R.string.setting_tts_delete_consequence),
+                onDismiss = {
                     showDeleteDialog = false
                     providerToDelete = null
                 },
-                title = { Text(stringResource(R.string.confirm_delete)) },
-                text = { Text(stringResource(R.string.setting_tts_delete_service)) },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showDeleteDialog = false
-                        providerToDelete = null
-                    }) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        providerToDelete?.let { p ->
-                            val removedVoiceIds = p.voices.map { it.id }.toSet()
-                            val newProviders = settings.ttsProviders - p
-                            val newSelectedId =
-                                if (settings.selectedTTSProviderId == p.id) {
-                                    newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
-                                } else {
-                                    settings.selectedTTSProviderId
-                                }
-                            val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
-                                newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
-                                    ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
-                                    ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+                onConfirm = {
+                    providerToDelete?.let { p ->
+                        val removedVoiceIds = p.voices.map { it.id }.toSet()
+                        val newProviders = settings.ttsProviders - p
+                        val newSelectedId =
+                            if (settings.selectedTTSProviderId == p.id) {
+                                newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
                             } else {
-                                settings.selectedTTSVoiceId
+                                settings.selectedTTSProviderId
                             }
-                            vm.updateSettings(settings.copy(
-                                ttsProviders = newProviders,
-                                selectedTTSProviderId = newSelectedId,
-                                selectedTTSVoiceId = newSelectedVoiceId
-                            ))
+                        val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
+                            newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
+                                ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
+                                ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+                        } else {
+                            settings.selectedTTSVoiceId
                         }
-                        showDeleteDialog = false
-                        providerToDelete = null
-                    }) {
-                        Text(stringResource(R.string.confirm))
+                        vm.updateSettings(settings.copy(
+                            ttsProviders = newProviders,
+                            selectedTTSProviderId = newSelectedId,
+                            selectedTTSVoiceId = newSelectedVoiceId
+                        ))
                     }
-                }
+                    showDeleteDialog = false
+                    providerToDelete = null
+                },
             )
         }
     }
@@ -764,53 +753,41 @@ internal fun TtsProvidersContent(
     }
 
     if (showDeleteDialog && providerToDelete != null) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_tts_delete_title),
+            consequence = stringResource(R.string.setting_tts_delete_consequence),
+            onDismiss = {
                 showDeleteDialog = false
                 providerToDelete = null
             },
-            title = { Text(stringResource(R.string.confirm_delete)) },
-            text = { Text(stringResource(R.string.setting_tts_delete_service)) },
-            dismissButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    providerToDelete = null
-                }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    providerToDelete?.let { provider ->
-                        val newProviders = settings.ttsProviders - provider
-                        val newSelectedId =
-                            if (settings.selectedTTSProviderId == provider.id) {
-                                newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
-                            } else {
-                                settings.selectedTTSProviderId
-                            }
-                        val removedVoiceIds = provider.voices.map { it.id }.toSet()
-                        val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
-                            newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
-                                ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
-                                ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+            onConfirm = {
+                providerToDelete?.let { provider ->
+                    val newProviders = settings.ttsProviders - provider
+                    val newSelectedId =
+                        if (settings.selectedTTSProviderId == provider.id) {
+                            newProviders.firstOrNull()?.id ?: DEFAULT_SYSTEM_TTS_ID
                         } else {
-                            settings.selectedTTSVoiceId
+                            settings.selectedTTSProviderId
                         }
-                        vm.updateSettings(
-                            settings.copy(
-                                ttsProviders = newProviders,
-                                selectedTTSProviderId = newSelectedId,
-                                selectedTTSVoiceId = newSelectedVoiceId
-                            )
-                        )
+                    val removedVoiceIds = provider.voices.map { it.id }.toSet()
+                    val newSelectedVoiceId = if (settings.selectedTTSVoiceId in removedVoiceIds) {
+                        newProviders.find { it.id == newSelectedId }?.voices?.firstOrNull()?.id
+                            ?: newProviders.firstOrNull()?.voices?.firstOrNull()?.id
+                            ?: DEFAULT_SYSTEM_TTS_VOICE_ID
+                    } else {
+                        settings.selectedTTSVoiceId
                     }
-                    showDeleteDialog = false
-                    providerToDelete = null
-                }) {
-                    Text(stringResource(R.string.confirm))
+                    vm.updateSettings(
+                        settings.copy(
+                            ttsProviders = newProviders,
+                            selectedTTSProviderId = newSelectedId,
+                            selectedTTSVoiceId = newSelectedVoiceId
+                        )
+                    )
                 }
-            }
+                showDeleteDialog = false
+                providerToDelete = null
+            },
         )
     }
 
@@ -1385,12 +1362,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 else -> ItemPosition.MIDDLE
                             }
 
-                            val shape = when (position) {
-                                ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                                ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-                            }
+                            val shape = position.listItemShape()
 
                             Surface(
                                 onClick = {

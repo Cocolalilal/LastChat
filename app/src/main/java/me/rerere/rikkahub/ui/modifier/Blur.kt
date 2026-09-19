@@ -1,17 +1,21 @@
 package me.rerere.rikkahub.ui.modifier
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Dp
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.blur.materials.HazeMaterials
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import me.rerere.rikkahub.ui.theme.AppSurface
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 data class LastChatBlur(
@@ -62,20 +66,40 @@ fun Modifier.lastChatBlurEffect(
     }
 }
 
+/**
+ * Charcoal floating fill. Glass alpha is applied only when blur is enabled *and*
+ * a haze source exists; otherwise the color is forced opaque so blur-off chrome
+ * is a solid floating layer, not leftover glass.
+ */
+@Composable
+fun lastChatFloatingSurfaceColor(
+    charcoal: Color = AppSurface.fill(MaterialTheme.colorScheme),
+): Color {
+    val blur = LocalLastChatBlur.current
+    return AppSurface.resolve(
+        charcoal = charcoal,
+        blurEnabled = blur.enabled && blur.hazeState != null,
+        dark = LocalDarkMode.current,
+    )
+}
+
 @Composable
 fun blurredContainerColor(
     fallback: Color,
-): Color {
-    val blur = LocalLastChatBlur.current
-    if (!blur.enabled || blur.hazeState == null) {
-        return fallback
-    }
+): Color = lastChatFloatingSurfaceColor(fallback)
 
-    val minimumAlpha = if (LocalDarkMode.current) 0.34f else 0.28f
-    val glassAlpha = if (fallback.alpha < 1f) {
-        fallback.alpha.coerceAtLeast(minimumAlpha)
-    } else {
-        minimumAlpha
-    }
-    return fallback.copy(alpha = glassAlpha)
-}
+/** Sheets stay solid charcoal (large surfaces need readable fill even when chrome is glass). */
+@Composable
+fun lastChatSheetContainerColor(): Color = AppSurface.fill(MaterialTheme.colorScheme)
+
+@Composable
+fun lastChatDialogContainerColor(): Color = lastChatFloatingSurfaceColor()
+
+@Composable
+fun lastChatSoftEdgeBorder(): BorderStroke = BorderStroke(
+    AppSurface.SoftEdgeWidth,
+    AppSurface.softEdgeColor(MaterialTheme.colorScheme),
+)
+
+@Composable
+fun lastChatSheetTonalElevation(): Dp = AppSurface.TonalElevation

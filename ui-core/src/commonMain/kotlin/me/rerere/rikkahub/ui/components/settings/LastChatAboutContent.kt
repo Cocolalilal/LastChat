@@ -101,7 +101,7 @@ fun LastChatAboutContent(
         Spacer(Modifier.height(32.dp))
         AboutSectionTitle("Links")
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth().clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             LastChatAboutItem(
@@ -117,7 +117,7 @@ fun LastChatAboutContent(
         Spacer(Modifier.height(24.dp))
         AboutSectionTitle("System Information")
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.fillMaxWidth().clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             LastChatAboutItem(

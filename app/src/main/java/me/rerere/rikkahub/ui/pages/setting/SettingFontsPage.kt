@@ -71,6 +71,7 @@ import me.rerere.rikkahub.data.datastore.normalize
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -283,6 +284,7 @@ private fun FontConfigSection(
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showDeleteFontDialog by remember { mutableStateOf(false) }
     
     val fontPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -459,14 +461,7 @@ private fun FontConfigSection(
                                     }
                                 }
                                 IconButton(onClick = {
-                                    config.customFontPath?.let { fontManager.deleteFont(it) }
-                                    onConfigChange(config.copy(
-                                        fontSource = if (isCodeFont) FontSource.SystemCode else FontSource.System,
-                                        customFontPath = null,
-                                        customFontName = null,
-                                        customAxes = emptyList(),
-                                        features = emptyList()
-                                    ), true)
+                                    showDeleteFontDialog = true
                                 }) {
                                     Icon(
                                         Icons.Rounded.Delete,
@@ -606,6 +601,28 @@ private fun FontConfigSection(
         }
     }
     
+    if (showDeleteFontDialog) {
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_fonts_delete_title),
+            consequence = stringResource(R.string.setting_fonts_delete_consequence),
+            onDismiss = { showDeleteFontDialog = false },
+            onConfirm = {
+                config.customFontPath?.let { fontManager.deleteFont(it) }
+                onConfigChange(
+                    config.copy(
+                        fontSource = if (isCodeFont) FontSource.SystemCode else FontSource.System,
+                        customFontPath = null,
+                        customFontName = null,
+                        customAxes = emptyList(),
+                        features = emptyList()
+                    ),
+                    true,
+                )
+                showDeleteFontDialog = false
+            },
+        )
+    }
+
     // Reset Dialog
     if (showResetDialog) {
         AlertDialog(

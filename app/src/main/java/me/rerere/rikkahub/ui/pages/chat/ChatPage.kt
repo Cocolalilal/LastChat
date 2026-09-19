@@ -203,6 +203,10 @@ import me.rerere.rikkahub.ui.modifier.LastChatBlur
 import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import androidx.compose.ui.draw.clip
@@ -1227,9 +1231,6 @@ private fun ChatPageContent(
     // State for user message regeneration confirmation dialog
     var showUserRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
-    // State for user message delete confirmation dialog
-    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
     var showContextUsagePopup by remember { mutableStateOf(false) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
@@ -1275,8 +1276,6 @@ private fun ChatPageContent(
         showToolbarOverflowMenu = false
         showUserRegenerateConfirmDialog = false
         pendingUserRegenerateMessage = null
-        showDeleteConfirmDialog = false
-        pendingDeleteMessage = null
         if (isChatShareSelecting) {
             isChatShareSelecting = false
             selectedChatShareItems = emptySet()
@@ -1532,26 +1531,19 @@ private fun ChatPageContent(
                                         inputState.setContents(it.parts)
                                     },
                                     onDelete = { message ->
-                                        if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                            // User message deletion removes all messages after - show confirmation
-                                            pendingDeleteMessage = message
-                                            showDeleteConfirmDialog = true
-                                        } else {
-                                            // Assistant message deletion - keep existing behavior with undo toast
-                                            scope.launch {
-                                                val backup = frameConversation
-                                                val removedIds = vm.deleteMessage(message)
-                                                toaster.show(
-                                                    message = context.getString(R.string.message_deleted),
-                                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                        label = context.getString(R.string.undo),
-                                                        onClick = {
-                                                            vm.updateConversation(backup)
-                                                            vm.markNodesAsRestored(removedIds)
-                                                        }
-                                                    )
+                                        scope.launch {
+                                            val backup = frameConversation
+                                            val removedIds = vm.deleteMessage(message)
+                                            toaster.show(
+                                                message = context.getString(R.string.message_deleted),
+                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                    label = context.getString(R.string.undo),
+                                                    onClick = {
+                                                        vm.updateConversation(backup)
+                                                        vm.markNodesAsRestored(removedIds)
+                                                    }
                                                 )
-                                            }
+                                            )
                                         }
                                     },
                                     onUpdateMessage = { newNode ->
@@ -1749,56 +1741,6 @@ private fun ChatPageContent(
                                 onClick = {
                                     showUserRegenerateConfirmDialog = false
                                     pendingUserRegenerateMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        }
-                    )
-                }
-
-                // User message delete confirmation dialog
-                if (showDeleteConfirmDialog && pendingDeleteMessage != null) {
-                    AlertDialog(
-                        onDismissRequest = {
-                            showDeleteConfirmDialog = false
-                            pendingDeleteMessage = null
-                        },
-                        title = { Text(stringResource(R.string.chat_delete_user_message_title)) },
-                        text = {
-                            Text(stringResource(R.string.chat_delete_user_message_warning))
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    pendingDeleteMessage?.let { message ->
-                                        scope.launch {
-                                            val backup = conversation
-                                            val removedIds = vm.deleteMessage(message)
-                                            toaster.show(
-                                                message = context.getString(R.string.message_deleted),
-                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                    label = context.getString(R.string.undo),
-                                                    onClick = {
-                                                        vm.updateConversation(backup)
-                                                        vm.markNodesAsRestored(removedIds)
-                                                    }
-                                                )
-                                            )
-                                        }
-                                    }
-                                    showDeleteConfirmDialog = false
-                                    pendingDeleteMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.delete))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    showDeleteConfirmDialog = false
-                                    pendingDeleteMessage = null
                                 }
                             ) {
                                 Text(stringResource(R.string.cancel))
@@ -2277,11 +2219,11 @@ private fun ChatSearchModeBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = AppSize.ChromeBar)
             .lastChatBlurEffect(containerColor, searchFieldShape),
         shape = searchFieldShape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        border = lastChatSoftEdgeBorder()
     ) {
         OutlinedTextField(
             value = query,
@@ -2330,15 +2272,15 @@ private fun ChatShareSelectionModeBar(
     onConfirm: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
-    val shape = RoundedCornerShape(999.dp)
+    val shape = AppShapes.ButtonPill
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     Surface(
         shape = shape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(AppSize.ChromeBar)
             .lastChatBlurEffect(containerColor, shape)
     ) {
         Row(
@@ -2348,7 +2290,7 @@ private fun ChatShareSelectionModeBar(
         ) {
             Tooltip(tooltip = { Text(stringResource(R.string.chat_clear_selection)) }) {
                 IconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onCancel()
@@ -2373,7 +2315,7 @@ private fun ChatShareSelectionModeBar(
 
             Tooltip(tooltip = { Text(stringResource(R.string.select_all)) }) {
                 IconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onToggleSelectAll()
@@ -2394,7 +2336,7 @@ private fun ChatShareSelectionModeBar(
 
             Tooltip(tooltip = { Text(stringResource(R.string.confirm)) }) {
                 FilledIconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     enabled = selectedCount > 0,
                     onClick = {
                         haptics.perform(HapticPattern.Success)
@@ -2427,9 +2369,9 @@ private fun ChatToolbarOverflowMenu(
 
     var dragDismissInProgress by remember { mutableStateOf(false) }
     val scrimInteractionSource = remember { MutableInteractionSource() }
-    val menuShape = RoundedCornerShape(24.dp)
+    val menuShape = AppShapes.CardMedium
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    val border = lastChatSoftEdgeBorder()
     val menuTopPadding = chatToolbarPopupTopPadding(placement)
     val menuBottomPadding = chatToolbarPopupBottomPadding(placement)
     val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -2862,7 +2804,7 @@ fun UpdatePill(
         shape = pillShape,
         color = blurredContainerColor(containerColor),
         contentColor = contentColor,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
         modifier = Modifier
             .height(height)
             .lastChatBlurEffect(containerColor, pillShape)
@@ -2925,9 +2867,9 @@ private fun ChatToolbar(
 ) {
     val scope = rememberCoroutineScope()
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-    val buttonShape = RoundedCornerShape(999.dp)
-    val topPillSize = 48.dp
+    val topContainerBorder = lastChatSoftEdgeBorder()
+    val buttonShape = AppShapes.ButtonPill
+    val topPillSize = AppSize.ChromePill
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
@@ -3554,9 +3496,9 @@ private fun ContextUsageOverlay(
 ) {
     BackHandler(onBack = onDismissRequest)
     val interactionSource = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(24.dp)
+    val shape = AppShapes.CardMedium
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    val border = lastChatSoftEdgeBorder()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -3687,15 +3629,15 @@ private fun ContextMeterButton(
         label = "context_meter_color",
     )
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val shape = RoundedCornerShape(999.dp)
+    val shape = AppShapes.ButtonPill
     Surface(
         modifier = Modifier
-            .size(48.dp)
+            .size(AppSize.ChromePill)
             .lastChatBlurEffect(containerColor, shape)
             .clickable(onClick = onClick),
         shape = shape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
     ) {
         Box(contentAlignment = Alignment.Center) {
             val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest

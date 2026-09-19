@@ -169,6 +169,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.TagsInput
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.rememberShareSheetState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -902,6 +903,7 @@ private fun ModelList(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
+    var pendingDeleteModel by remember { mutableStateOf<me.rerere.ai.provider.Model?>(null) }
     
     
     val canDelete = true
@@ -981,7 +983,7 @@ private fun ModelList(
                                 }
                             },
                             onDelete = {
-                                onUpdateProvider(providerSetting.delModel(item))
+                                pendingDeleteModel = item
                             },
                             onEdit = { editedModel ->
                                 onUpdateProvider(providerSetting.editModel(editedModel))
@@ -1103,6 +1105,18 @@ private fun ModelList(
                 parentProvider = providerSetting
             )
         }
+    }
+
+    pendingDeleteModel?.let { model ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_provider_delete_model_title),
+            consequence = stringResource(R.string.setting_provider_delete_model_consequence),
+            onDismiss = { pendingDeleteModel = null },
+            onConfirm = {
+                pendingDeleteModel = null
+                onUpdateProvider(providerSetting.delModel(model))
+            },
+        )
     }
 }
 

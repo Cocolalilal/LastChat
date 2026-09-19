@@ -115,6 +115,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -199,6 +200,7 @@ fun SettingChatStoragePage(
     var isCleaningEmbeddingCache by remember { mutableStateOf(false) }
     var showEmbeddingCacheInspector by rememberSaveable { mutableStateOf(false) }
     var pendingModelCacheDeletion by remember { mutableStateOf<String?>(null) }
+    var pendingUnusedEmbeddingsDeletion by remember { mutableStateOf(false) }
 
     val activeEmbeddingModelIds = remember(settings.embeddingModelId, settings.assistants) {
         buildSet {
@@ -475,22 +477,7 @@ fun SettingChatStoragePage(
                             FilledTonalButton(
                                 onClick = {
                                     haptics.perform(HapticPattern.Thud)
-                                    scope.launch {
-                                        isCleaningEmbeddingCache = true
-                                        val deleted = withContext(Dispatchers.IO) {
-                                            if (activeEmbeddingModelIds.isEmpty()) {
-                                                embeddingCacheDAO.deleteAllEmbeddings()
-                                            } else {
-                                                embeddingCacheDAO.deleteExceptModelIds(activeEmbeddingModelIds.toList())
-                                            }
-                                        }
-                                        isCleaningEmbeddingCache = false
-                                        loadEmbeddingCacheStats()
-                                        toaster.show(
-                                            "Deleted $deleted unused memory embeddings",
-                                            type = ToastType.Success,
-                                        )
-                                    }
+                                    pendingUnusedEmbeddingsDeletion = true
                                 },
                                 enabled = unusedCount > 0 && !isCleaningEmbeddingCache,
                                 modifier = Modifier.fillMaxWidth(),
@@ -805,35 +792,50 @@ fun SettingChatStoragePage(
         }
     }
 
-    pendingModelCacheDeletion?.let { modelId ->
-        AlertDialog(
-            onDismissRequest = { pendingModelCacheDeletion = null },
-            title = { Text("Delete cached embeddings?") },
-            text = { Text("This will remove all cached vector data for $modelId. This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val target = modelId
-                        pendingModelCacheDeletion = null
-                        scope.launch {
-                            embeddingCacheDAO.deleteByModelId(target)
-                            loadEmbeddingCacheStats()
-                            toaster.show("Cache deleted for $target")
+    if (pendingUnusedEmbeddingsDeletion) {
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_chat_storage_delete_unused_embeddings_title),
+            consequence = stringResource(R.string.setting_chat_storage_delete_unused_embeddings_consequence),
+            onDismiss = { pendingUnusedEmbeddingsDeletion = false },
+            onConfirm = {
+                pendingUnusedEmbeddingsDeletion = false
+                scope.launch {
+                    isCleaningEmbeddingCache = true
+                    val deleted = withContext(Dispatchers.IO) {
+                        if (activeEmbeddingModelIds.isEmpty()) {
+                            embeddingCacheDAO.deleteAllEmbeddings()
+                        } else {
+                            embeddingCacheDAO.deleteExceptModelIds(activeEmbeddingModelIds.toList())
                         }
-                    },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
+                    }
+                    isCleaningEmbeddingCache = false
+                    loadEmbeddingCacheStats()
+                    toaster.show(
+                        "Deleted $deleted unused memory embeddings",
+                        type = ToastType.Success,
                     )
-                ) {
-                    Text("Delete")
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { pendingModelCacheDeletion = null }) {
-                    Text("Cancel")
+        )
+    }
+
+    pendingModelCacheDeletion?.let { modelId ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_chat_storage_delete_model_cache_title),
+            consequence = stringResource(
+                R.string.setting_chat_storage_delete_model_cache_consequence,
+                modelId,
+            ),
+            onDismiss = { pendingModelCacheDeletion = null },
+            onConfirm = {
+                val target = modelId
+                pendingModelCacheDeletion = null
+                scope.launch {
+                    embeddingCacheDAO.deleteByModelId(target)
+                    loadEmbeddingCacheStats()
+                    toaster.show("Cache deleted for $target")
                 }
-            }
+            },
         )
     }
 }

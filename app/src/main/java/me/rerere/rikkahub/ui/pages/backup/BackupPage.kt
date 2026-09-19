@@ -87,13 +87,16 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSurface
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onLoading
@@ -275,6 +278,7 @@ private fun WebDavPage(
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
     var isBackingUp by remember { mutableStateOf(false) }
+    var pendingDeleteItem by remember { mutableStateOf<WebDavBackupItem?>(null) }
     var pendingRestoreItem by remember { mutableStateOf<WebDavBackupItem?>(null) }
     
     // Permission handling after restore
@@ -547,7 +551,9 @@ private fun WebDavPage(
 
     if (showBackupFiles) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = lastChatSheetContainerColor(),
+            shape = AppShapes.BottomSheet,
+            tonalElevation = AppSurface.TonalElevation,
             onDismissRequest = {
                 showBackupFiles = false
             },
@@ -578,30 +584,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             BackupItemCard(
                                 item = item,
                                 isRestoring = restoringItemId == item.displayName,
-                                onDelete = {
-                                    scope.launch {
-                                        runCatching {
-                                            vm.deleteWebDavBackupFile(item)
-                                            toaster.show(
-                                                context.getString(R.string.backup_page_delete_success),
-                                                type = ToastType.Success
-                                            )
-                                            vm.loadBackupFileItems()
-                                        }.onFailure { err ->
-                                            err.printStackTrace()
-                                            toaster.show(
-                                                context.getString(
-                                                    R.string.backup_page_delete_failed,
-                                                    err.message ?: ""
-                                                ),
-                                                type = ToastType.Error
-                                            )
-                                        }
-                                    }
-                                },
-                                onRestore = { item ->
-                                    pendingRestoreItem = item
-                                },
+                                onDelete = { pendingDeleteItem = item },
+                                onRestore = { pendingRestoreItem = item },
                             )
                         }
                     }
@@ -627,58 +611,78 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
 
-    pendingRestoreItem?.let { item ->
-        AlertDialog(
-            onDismissRequest = { pendingRestoreItem = null },
-            title = { Text(stringResource(R.string.backup_restore_overwrite_title)) },
-            text = { Text(stringResource(R.string.backup_restore_overwrite_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingRestoreItem = null
-                        scope.launch {
-                            restoringItemId = item.displayName
-                            runCatching {
-                                val result = vm.restore(item = item)
-                                restoreResult = result
-                                toaster.show(
-                                    context.getString(R.string.backup_page_restore_success),
-                                    type = ToastType.Success
-                                )
-                                showBackupFiles = false
-
-                                val missing = PermissionChecker.getMissingFeatureAccess(
-                                    context,
-                                    vm.getAssistantsSnapshot()
-                                )
-                                if (!missing.isEmpty) {
-                                    pendingFeatureAccess = missing
-                                    showPermissionDialog = true
-                                } else {
-                                    showRestartDialog = true
-                                }
-                            }.onFailure { err ->
-                                err.printStackTrace()
-                                toaster.show(
-                                    context.getString(
-                                        R.string.backup_page_restore_failed,
-                                        err.message ?: ""
-                                    ),
-                                    type = ToastType.Error
-                                )
-                            }
-                            restoringItemId = null
-                        }
+    pendingDeleteItem?.let { item ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.backup_page_delete_title),
+            consequence = stringResource(R.string.backup_page_delete_consequence),
+            onDismiss = { pendingDeleteItem = null },
+            onConfirm = {
+                pendingDeleteItem = null
+                scope.launch {
+                    runCatching {
+                        vm.deleteWebDavBackupFile(item)
+                        toaster.show(
+                            context.getString(R.string.backup_page_delete_success),
+                            type = ToastType.Success
+                        )
+                        vm.loadBackupFileItems()
+                    }.onFailure { err ->
+                        err.printStackTrace()
+                        toaster.show(
+                            context.getString(
+                                R.string.backup_page_delete_failed,
+                                err.message ?: ""
+                            ),
+                            type = ToastType.Error
+                        )
                     }
-                ) {
-                    Text(stringResource(R.string.backup_page_restore_now))
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { pendingRestoreItem = null }) {
-                    Text(stringResource(R.string.cancel))
+        )
+    }
+
+    pendingRestoreItem?.let { item ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.backup_page_restore_overwrite_title),
+            consequence = stringResource(R.string.backup_page_restore_overwrite_consequence),
+            confirmLabel = stringResource(R.string.backup_page_restore_now),
+            onDismiss = { pendingRestoreItem = null },
+            onConfirm = {
+                pendingRestoreItem = null
+                scope.launch {
+                    restoringItemId = item.displayName
+                    runCatching {
+                        val result = vm.restore(item = item)
+                        restoreResult = result
+                        toaster.show(
+                            context.getString(R.string.backup_page_restore_success),
+                            type = ToastType.Success
+                        )
+                        showBackupFiles = false
+
+                        val missing = PermissionChecker.getMissingFeatureAccess(
+                            context,
+                            vm.getAssistantsSnapshot()
+                        )
+                        if (!missing.isEmpty) {
+                            pendingFeatureAccess = missing
+                            showPermissionDialog = true
+                        } else {
+                            showRestartDialog = true
+                        }
+                    }.onFailure { err ->
+                        err.printStackTrace()
+                        toaster.show(
+                            context.getString(
+                                R.string.backup_page_restore_failed,
+                                err.message ?: ""
+                            ),
+                            type = ToastType.Error
+                        )
+                    }
+                    restoringItemId = null
                 }
-            }
+            },
         )
     }
 
@@ -872,7 +876,7 @@ private fun ImportExportPage(
 
     // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入
     var importType by remember { mutableStateOf("local") }
-    var pendingLocalRestoreConfirm by remember { mutableStateOf(false) }
+    var pendingLocalRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     // 创建文件保存的launcher
     val createDocumentLauncher = rememberLauncherForActivityResult(
@@ -920,32 +924,14 @@ private fun ImportExportPage(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { sourceUri ->
+            if (importType == "local") {
+                pendingLocalRestoreUri = sourceUri
+                return@rememberLauncherForActivityResult
+            }
             scope.launch {
                 isRestoring = true
                 runCatching {
                     when (importType) {
-                        "local" -> {
-                            // 本地备份导入：处理zip文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
-
-                            withContext(Dispatchers.IO) {
-                                context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                    tempFile.sink().buffer().outputStream().use { outputStream ->
-                                        inputStream.copyTo(outputStream)
-                                    }
-                                }
-                            }
-
-                            // 从临时文件恢复
-                            val result = vm.restoreFromLocalFile(tempFile)
-                            restoreResult = result
-
-                            // 清理临时文件
-                            withContext(Dispatchers.IO) {
-                                tempFile.delete()
-                            }
-                        }
                         "chatbox" -> {
                             val tempFile =
                                 File(context.cacheDir, "temp_chatbox_${System.currentTimeMillis()}.json")
@@ -990,19 +976,6 @@ private fun ImportExportPage(
                         context.getString(R.string.backup_page_restore_success),
                         type = ToastType.Success
                     )
-
-                    if (importType == "local") {
-                        val missing = PermissionChecker.getMissingFeatureAccess(
-                            context,
-                            vm.getAssistantsSnapshot()
-                        )
-                        if (!missing.isEmpty) {
-                            pendingFeatureAccess = missing
-                            showPermissionDialog = true
-                        } else {
-                            showRestartDialog = true
-                        }
-                    }
                 }.onFailure { e ->
                     e.printStackTrace()
                     toaster.show(
@@ -1013,6 +986,58 @@ private fun ImportExportPage(
                 isRestoring = false
             }
         }
+    }
+
+    pendingLocalRestoreUri?.let { sourceUri ->
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.backup_page_restore_overwrite_title),
+            consequence = stringResource(R.string.backup_page_restore_overwrite_consequence),
+            confirmLabel = stringResource(R.string.backup_page_restore_now),
+            onDismiss = { pendingLocalRestoreUri = null },
+            onConfirm = {
+                pendingLocalRestoreUri = null
+                scope.launch {
+                    isRestoring = true
+                    runCatching {
+                        val tempFile =
+                            File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
+                        withContext(Dispatchers.IO) {
+                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                                tempFile.sink().buffer().outputStream().use { outputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            }
+                        }
+                        val result = vm.restoreFromLocalFile(tempFile)
+                        restoreResult = result
+                        withContext(Dispatchers.IO) {
+                            tempFile.delete()
+                        }
+                        toaster.show(
+                            context.getString(R.string.backup_page_restore_success),
+                            type = ToastType.Success
+                        )
+                        val missing = PermissionChecker.getMissingFeatureAccess(
+                            context,
+                            vm.getAssistantsSnapshot()
+                        )
+                        if (!missing.isEmpty) {
+                            pendingFeatureAccess = missing
+                            showPermissionDialog = true
+                        } else {
+                            showRestartDialog = true
+                        }
+                    }.onFailure { e ->
+                        e.printStackTrace()
+                        toaster.show(
+                            context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
+                            type = ToastType.Error
+                        )
+                    }
+                    isRestoring = false
+                }
+            },
+        )
     }
 
     LazyColumn(
@@ -1064,7 +1089,8 @@ private fun ImportExportPage(
                     },
                     onClick = {
                         if (!isRestoring) {
-                            pendingLocalRestoreConfirm = true
+                            importType = "local"
+                            openDocumentLauncher.launch(arrayOf("application/zip"))
                         }
                     }
                 )
@@ -1115,30 +1141,6 @@ private fun ImportExportPage(
                 )
             }
         }
-    }
-
-    if (pendingLocalRestoreConfirm) {
-        AlertDialog(
-            onDismissRequest = { pendingLocalRestoreConfirm = false },
-            title = { Text(stringResource(R.string.backup_restore_overwrite_title)) },
-            text = { Text(stringResource(R.string.backup_restore_overwrite_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingLocalRestoreConfirm = false
-                        importType = "local"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
-                    }
-                ) {
-                    Text(stringResource(R.string.backup_page_restore_now))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingLocalRestoreConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        )
     }
 
     // Permission explanation dialog

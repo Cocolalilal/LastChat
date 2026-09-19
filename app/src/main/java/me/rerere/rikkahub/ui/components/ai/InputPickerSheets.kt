@@ -58,6 +58,7 @@ import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
@@ -110,7 +111,7 @@ internal fun SkillsPickerSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -260,7 +261,7 @@ internal fun LorebooksPickerSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -453,7 +454,7 @@ internal fun PluginsPickerSheet(
     val loading = syncingStatus.values.any { it == McpStatus.Connecting }
 
     ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,

@@ -105,6 +105,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.lazy.itemsIndexed
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
@@ -744,22 +745,7 @@ private fun AssistantItemContent(
 }
 
 private fun assistantItemShape(position: ItemPosition): RoundedCornerShape {
-    return when (position) {
-        ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-        ItemPosition.FIRST -> RoundedCornerShape(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp,
-        )
-        ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-        ItemPosition.LAST -> RoundedCornerShape(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp,
-        )
-    }
+    return position.listItemShape()
 }
 
 @Composable

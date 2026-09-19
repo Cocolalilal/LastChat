@@ -99,6 +99,8 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.listItemShape
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
@@ -537,39 +539,26 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             )
         }
         
-        // Delete confirmation dialog
         if (showDeleteDialog && serviceToDelete != null) {
-            AlertDialog(
-                onDismissRequest = { 
+            LastChatDestructiveConfirmDialog(
+                title = stringResource(R.string.setting_search_delete_title),
+                consequence = stringResource(R.string.setting_search_delete_consequence),
+                onDismiss = {
                     showDeleteDialog = false
                     serviceToDelete = null
                 },
-                title = { Text(stringResource(R.string.confirm_delete)) },
-                text = { Text(stringResource(R.string.setting_search_delete_service)) },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showDeleteDialog = false
-                        serviceToDelete = null
-                    }) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        serviceToDelete?.let { svc ->
-                            val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
-                            if (idx >= 0) {
-                                val newServices = settings.searchServices.toMutableList()
-                                newServices.removeAt(idx)
-                                vm.updateSettings(settings.copy(searchServices = newServices))
-                            }
+                onConfirm = {
+                    serviceToDelete?.let { svc ->
+                        val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
+                        if (idx >= 0) {
+                            val newServices = settings.searchServices.toMutableList()
+                            newServices.removeAt(idx)
+                            vm.updateSettings(settings.copy(searchServices = newServices))
                         }
-                        showDeleteDialog = false
-                        serviceToDelete = null
-                    }) {
-                        Text(stringResource(R.string.confirm))
                     }
-                }
+                    showDeleteDialog = false
+                    serviceToDelete = null
+                },
             )
         }
     }
@@ -950,37 +939,25 @@ internal fun SearchProvidersContent(
     }
 
     if (showDeleteDialog && serviceToDelete != null) {
-        AlertDialog(
-            onDismissRequest = {
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_search_delete_title),
+            consequence = stringResource(R.string.setting_search_delete_consequence),
+            onDismiss = {
                 showDeleteDialog = false
                 serviceToDelete = null
             },
-            title = { Text(stringResource(R.string.confirm_delete)) },
-            text = { Text(stringResource(R.string.setting_search_delete_service)) },
-            dismissButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    serviceToDelete = null
-                }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    serviceToDelete?.let { svc ->
-                        val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
-                        if (idx >= 0) {
-                            val newServices = settings.searchServices.toMutableList()
-                            newServices.removeAt(idx)
-                            vm.updateSettings(settings.copy(searchServices = newServices))
-                        }
+            onConfirm = {
+                serviceToDelete?.let { svc ->
+                    val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
+                    if (idx >= 0) {
+                        val newServices = settings.searchServices.toMutableList()
+                        newServices.removeAt(idx)
+                        vm.updateSettings(settings.copy(searchServices = newServices))
                     }
-                    showDeleteDialog = false
-                    serviceToDelete = null
-                }) {
-                    Text(stringResource(R.string.confirm))
                 }
-            }
+                showDeleteDialog = false
+                serviceToDelete = null
+            },
         )
     }
 
@@ -1242,12 +1219,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                 else -> ItemPosition.MIDDLE
                             }
                             
-                            val shape = when (position) {
-                                ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-                                ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-                            }
+                            val shape = position.listItemShape()
                             
                             Surface(
                                 onClick = {
