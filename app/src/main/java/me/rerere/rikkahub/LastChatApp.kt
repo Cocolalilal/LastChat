@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
+import me.rerere.rikkahub.data.datastore.withRecoveredAssistantsFromConversations
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
@@ -174,18 +175,33 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
         
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
+                val settingsStore = get<SettingsStore>()
+                val conversationRepo = get<me.rerere.rikkahub.data.repository.ConversationRepository>()
+                val settings = settingsStore.settingsFlow.first { !it.init }
+                val recovered = settings.withRecoveredAssistantsFromConversations(
+                    conversationRepo.getDistinctAssistantIds(),
+                )
+                if (recovered != settings) {
+                    Log.i(TAG, "Restored ${recovered.assistants.size - settings.assistants.size} assistants from existing chats")
+                    settingsStore.update(recovered)
+                }
+            }.onFailure {
+                Log.w(TAG, "Conversation assistant recovery failed", it)
+            }
+            runCatching {
                 val catalogService = get<ModelCatalogService>()
                 catalogService.warmUp()
                 val snapshot = catalogService.snapshotOrNull() ?: return@runCatching
                 val settingsStore = get<SettingsStore>()
                 val settings = settingsStore.settingsFlow.first { !it.init }
-                settingsStore.update(
-                    mergeCatalogIntoSettings(
-                        settings = settings,
-                        snapshot = snapshot,
-                        resolver = get<ModelMetadataResolver>(),
-                    )
+                val merged = mergeCatalogIntoSettings(
+                    settings = settings,
+                    snapshot = snapshot,
+                    resolver = get<ModelMetadataResolver>(),
                 )
+                if (merged != settings) {
+                    settingsStore.update(merged)
+                }
             }.onFailure {
                 Log.w(TAG, "Model catalog warm-up failed", it)
             }

@@ -52,6 +52,16 @@ class ProviderSettingsNormalizationTest {
     }
 
     @Test
+    fun `preference migration keeps providers json when strip parse fails`() = runBlocking {
+        val garbage = "{not-json"
+        val preferences = preferencesOf(SettingsStore.PROVIDERS to garbage)
+
+        val migrated = PreferenceStoreV1Migration().migrate(preferences)
+
+        assertEquals(garbage, migrated[SettingsStore.PROVIDERS])
+    }
+
+    @Test
     fun `clearMissingModelReferences clears removed local model ids`() {
         val chatModel = Model(
             id = Uuid.parse("22222222-2222-2222-2222-222222222222"),
