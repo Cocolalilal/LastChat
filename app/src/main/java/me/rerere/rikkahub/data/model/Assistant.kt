@@ -121,9 +121,13 @@ data class Assistant(
 fun Assistant.getInitialMessageNodes(): List<me.rerere.ai.ui.MessageNode> {
     val allIntros = mutableListOf<String>()
     
-    // Port old preset messages (gather all ASSISTANT ones)
-    presetMessages.filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }.map { it.toText() }.let { allIntros.addAll(it) }
-    allIntros.addAll(alternateGreetings)
+    // Port old preset messages (gather all ASSISTANT ones). Skip blank intros so a new chat
+    // never opens with an empty Generical/assistant bubble.
+    presetMessages.filter { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+        .map { it.toText().trim() }
+        .filter { it.isNotEmpty() }
+        .let { allIntros.addAll(it) }
+    allIntros.addAll(alternateGreetings.map { it.trim() }.filter { it.isNotEmpty() })
     
     if (allIntros.isEmpty()) return emptyList()
     
