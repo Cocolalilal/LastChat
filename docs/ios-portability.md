@@ -445,7 +445,8 @@ Only macOS with Xcode can perform the final link, code-sign, simulator launch,
 and screenshot comparison.
 
 `.github/workflows/ios-build.yml` performs the Kotlin/Native compile gates and
-an unsigned simulator `xcodebuild` on macOS for iOS-related pull requests.
+an unsigned simulator `xcodebuild` on macOS when run manually (`workflow_dispatch`).
+It does not run on pull requests.
 
 ## Practical Migration Order
 
