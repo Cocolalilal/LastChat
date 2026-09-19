@@ -472,8 +472,17 @@ class GoogleProvider(
 
                     val isGeminiPro =
                         params.model.modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
+                    val isGemini3 = ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)
 
-                    when (params.thinkingBudget) {
+                    if (isGemini3) {
+                        when (val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)) {
+                            ReasoningLevel.AUTO -> {}
+                            ReasoningLevel.OFF -> put("thinkingLevel", "minimal")
+                            ReasoningLevel.LOW -> put("thinkingLevel", "low")
+                            ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
+                            ReasoningLevel.HIGH, ReasoningLevel.MAX -> put("thinkingLevel", "high")
+                        }
+                    } else when (params.thinkingBudget) {
                         null, -1 -> {} // 如果是自动，不设置thinkingBudget参数
 
                         0 -> {
@@ -484,18 +493,7 @@ class GoogleProvider(
                             }
                         }
 
-                        else -> {
-                            if(ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)) {
-                                when(val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)) {
-                                    ReasoningLevel.HIGH -> put("thinkingLevel", "high")
-                                    ReasoningLevel.MEDIUM -> put("thinkingLevel", "high")
-                                    ReasoningLevel.LOW -> put("thinkingLevel", "low")
-                                    else -> error("Unknown reasoning level: $level")
-                                }
-                            } else {
-                                put("thinkingBudget", params.thinkingBudget)
-                            }
-                        }
+                        else -> put("thinkingBudget", params.thinkingBudget)
                     }
                 })
             }
