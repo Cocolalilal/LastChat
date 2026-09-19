@@ -46,7 +46,6 @@ import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.VideoFile
 import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -98,6 +97,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheModelStats
@@ -345,7 +345,7 @@ fun SettingChatStoragePage(
                                         showAllStorageCategories = !showAllStorageCategories
                                     }
                                 )
-                                AnimatedVisibility(visible = showAllStorageCategories) {
+                                ExpandableContent(visible = showAllStorageCategories) {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         secondaryCategories.forEach { category ->
                                             StorageCategoryRow(
