@@ -55,6 +55,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -417,42 +418,24 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     
     // Delete confirmation dialog
     if (showDeleteDialog && mcpToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { 
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_mcp_delete_title),
+            consequence = stringResource(R.string.setting_mcp_delete_server),
+            onDismiss = {
                 showDeleteDialog = false
                 mcpToDelete = null
             },
-            title = {
-                Text(stringResource(R.string.confirm_delete))
-            },
-            text = {
-                Text(stringResource(R.string.setting_mcp_delete_server))
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDeleteDialog = false
-                    mcpToDelete = null
-                }) {
-                    Text(stringResource(R.string.cancel))
+            onConfirm = {
+                mcpToDelete?.let { mcp ->
+                    vm.updateSettings(
+                        settings.copy(
+                            mcpServers = mcpConfigs.filter { it.id != mcp.id }
+                        )
+                    )
                 }
+                showDeleteDialog = false
+                mcpToDelete = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        mcpToDelete?.let { mcp ->
-                            vm.updateSettings(
-                                settings.copy(
-                                    mcpServers = mcpConfigs.filter { it.id != mcp.id }
-                                )
-                            )
-                        }
-                        showDeleteDialog = false
-                        mcpToDelete = null
-                    }
-                ) {
-                    Text(stringResource(R.string.delete))
-                }
-            }
         )
     }
     McpServerConfigModal(creationState)

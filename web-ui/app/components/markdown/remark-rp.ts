@@ -2,7 +2,7 @@ import { visit } from 'unist-util-visit';
 import type { Node, Parent } from 'unist';
 import type { RpStyleRule } from '~/types';
 
-const STANDARD_PATTERNS = new Set(["*", "**", "~~", "`", "#", "##", "###", "####", "#####", "######", ">"]);
+const STANDARD_PATTERNS = new Set(["*", "**", "~~", "`", "#", "##", "###", "####", "#####", "######", ">", "==", "++", "<mark>", "<u>"]);
 
 export default function remarkRp(rules?: RpStyleRule[]) {
   return (tree: Node) => {
@@ -53,7 +53,7 @@ export default function remarkRp(rules?: RpStyleRule[]) {
       if (nonOverlapping.length === 0) return;
 
       // Now create new nodes replacing this node
-      const newNodes: Node[] = [];
+      const newNodes: any[] = [];
       let currentIndex = 0;
       for (const m of nonOverlapping) {
         if (m.start > currentIndex) {

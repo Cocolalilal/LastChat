@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -78,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
@@ -489,18 +489,22 @@ fun SettingLorebookDetailPage(
                                 },
                                 onDelete = {
                                     val deletedEntry = entry
+                                    val cleanupKey = "lorebook-entry:${deletedEntry.id}"
                                     updateLorebook(lorebook.copy(
                                         entries = lorebook.entries.filter { it.id != entry.id }
                                     ))
                                     vm.cleanupFilesIfUnreferenced(
                                         fileRefs = deletedEntry.collectAttachmentFileRefs(),
-                                        delayMs = 4500L,
+                                        delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                        cleanupKey = cleanupKey,
                                     )
                                     toaster.show(
                                         message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
+                                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
                                         action = ToastAction(
                                             label = context.getString(R.string.undo),
                                             onClick = {
+                                                vm.cancelUnreferencedFileCleanup(cleanupKey)
                                                 updateLorebook(lorebook.copy(
                                                     entries = lorebook.entries.toMutableList().apply {
                                                         add(index.coerceAtMost(size), deletedEntry)
@@ -977,7 +981,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 )
             }
 
-            AnimatedVisibility(visible = activationType == LorebookActivationType.KEYWORDS) {
+            ExpandableContent(visible = activationType == LorebookActivationType.KEYWORDS) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     FormItem(
                         label = { Text(stringResource(R.string.lorebook_entry_keywords)) }

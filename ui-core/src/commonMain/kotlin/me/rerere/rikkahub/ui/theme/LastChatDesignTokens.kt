@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -12,6 +14,59 @@ import me.rerere.rikkahub.ui.core.generated.resources.Res
 import me.rerere.rikkahub.ui.core.generated.resources.google_sans_flex
 import org.jetbrains.compose.resources.Font
 
+/** Shared spacing scale. Prefer these over one-off 4/8/12/16/24 paddings. */
+object AppSpacing {
+    val xxs = 4.dp
+    val xs = 8.dp
+    val sm = 12.dp
+    val md = 16.dp
+    val lg = 24.dp
+    val xl = 28.dp
+    val xxl = 32.dp
+}
+
+/**
+ * Shared chrome sizes. Menu, status pills, composer + control, and toolbar icons
+ * use [ChromePill]. Search/share bars may use [ChromeBar].
+ */
+object AppSize {
+    val ChromePill = 48.dp
+    val ChromeBar = 56.dp
+    val ComposerAction = 36.dp
+    val Icon = 24.dp
+}
+
+/**
+ * Charcoal floating-layer recipe. True-black canvas stays on [ColorScheme.background];
+ * floating chrome/sheets/dialogs sit on [fill]. Glass alpha is applied only when blur
+ * is actually running (see [resolve]).
+ *
+ * No accent object — new accent values need Julian.
+ */
+object AppSurface {
+    const val GlassAlphaDark = 0.34f
+    const val GlassAlphaLight = 0.28f
+    const val SoftEdgeAlpha = 0.6f
+    val SoftEdgeWidth = 1.dp
+    val TonalElevation = 0.dp
+
+    fun fill(colorScheme: ColorScheme): Color = colorScheme.surfaceContainer
+
+    fun softEdgeColor(colorScheme: ColorScheme): Color =
+        colorScheme.outlineVariant.copy(alpha = SoftEdgeAlpha)
+
+    /**
+     * Blur on + haze available → tasteful glass over charcoal.
+     * Blur off (or no haze) → opaque charcoal. Never keeps a pre-alpha'd fallback.
+     */
+    fun resolve(charcoal: Color, blurEnabled: Boolean, dark: Boolean): Color {
+        val opaque = charcoal.copy(alpha = 1f)
+        if (!blurEnabled) return opaque
+        val glassAlpha = if (dark) GlassAlphaDark else GlassAlphaLight
+        return opaque.copy(alpha = glassAlpha)
+    }
+}
+
 /** Shared, platform-independent LastChat shape tokens. Android remains the visual reference. */
 object AppShapes {
     val CardLarge = RoundedCornerShape(28.dp)
@@ -20,7 +75,7 @@ object AppShapes {
     val ButtonPill = RoundedCornerShape(50)
     val ButtonRounded = RoundedCornerShape(20.dp)
     val ButtonSquared = RoundedCornerShape(12.dp)
-    val InputField = RoundedCornerShape(20.dp)
+    val InputField = RoundedCornerShape(24.dp)
     val SearchField = ButtonPill
     val Chip = RoundedCornerShape(12.dp)
     val Tag = RoundedCornerShape(50)
@@ -39,10 +94,10 @@ object AppShapes {
     val CardSmallInner8 = RoundedCornerShape(8.dp)
     val MessageBubbleInner = RoundedCornerShape(8.dp)
     val MessageOutgoing = RoundedCornerShape(
-        topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp,
+        topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp,
     )
     val MessageIncoming = RoundedCornerShape(
-        topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 20.dp,
+        topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 24.dp,
     )
 }
 

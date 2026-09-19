@@ -122,8 +122,6 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.toProviderSetting
 import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmPage
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.data.codex.CodexOAuthManager
-import me.rerere.rikkahub.data.codex.CodexOAuthStatus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
@@ -248,8 +246,6 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                             vm.beginLocalSetup(provider) {
                                 goTo(SetupPage.LocalModels)
                             }
-                        } else if (provider is ProviderSetting.Codex) {
-                            goTo(SetupPage.CodexSignIn)
                         } else if (preset?.apiKeyUrl.isNullOrBlank()) {
                             goTo(SetupPage.ManualKey)
                         } else {
@@ -340,22 +336,6 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     },
                 )
 
-                SetupPage.CodexSignIn -> CodexSignInPage(
-                    loading = manualModelsLoading,
-                    onSignedIn = {
-                        val provider = manualProvider ?: return@CodexSignInPage
-                        val enabledProvider = provider.copyProvider(enabled = true)
-                        manualProvider = enabledProvider
-                        manualModelsLoading = true
-                        vm.fetchModels(enabledProvider) { models ->
-                            manualModelsLoading = false
-                            manualModels = models
-                            selectedModels.clear()
-                            roleModels = SetupRoleModels()
-                            goTo(SetupPage.ManualModels)
-                        }
-                    },
-                )
 
                 SetupPage.ManualKeyLink -> LinkOutPage(
                     text = "Get your API key from the\n${manualProviderPreset?.name ?: "provider"} dashboard.",
@@ -915,99 +895,6 @@ private fun PasteKeyPage(
     }
 }
 
-@Composable
-private fun CodexSignInPage(
-    loading: Boolean,
-    onSignedIn: () -> Unit,
-) {
-    val oauthManager = koinInject<CodexOAuthManager>()
-    val oauthStatus by oauthManager.status.collectAsStateWithLifecycle()
-    val haptics = rememberPremiumHaptics()
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var leftApp by remember { mutableStateOf(false) }
-
-    val waiting = oauthStatus is CodexOAuthStatus.Waiting
-    val errorMessage = (oauthStatus as? CodexOAuthStatus.Error)?.message
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> leftApp = true
-                Lifecycle.Event.ON_RESUME -> leftApp = false
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            oauthManager.consumeResult()
-        }
-    }
-
-    LaunchedEffect(oauthStatus) {
-        if (oauthStatus is CodexOAuthStatus.Success) {
-            haptics.perform(HapticPattern.Success)
-            oauthManager.consumeResult()
-            onSignedIn()
-        }
-    }
-
-    SetupScaffold(
-        bottom = {
-            CenteredSetupButton(
-                text = if (errorMessage != null) "Try again" else "Sign in with OpenAI",
-                icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                enabled = !waiting && !loading,
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    oauthManager.startLogin()
-                },
-            )
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = SetupEdgePadding),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = "Codex works through your\nOpenAI account, so no\nAPI key is needed.\n\nSign in below and we’ll\nhandle the rest.",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                lineHeight = MaterialTheme.typography.titleLarge.lineHeight,
-            )
-            AnimatedVisibility(visible = waiting || loading) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(top = 24.dp),
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(28.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = if (loading) "Fetching your models…" else "Waiting for you to sign in…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 24.dp),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun ManualModelsPage(
@@ -1770,7 +1657,6 @@ private enum class SetupPage {
     GuidedKeyLink,
     GuidedPasteKey,
     LocalModels,
-    CodexSignIn,
     ManualKeyLink,
     ManualKey,
     ManualModels,
@@ -1895,7 +1781,6 @@ private fun previousPage(page: SetupPage): SetupPage? {
         SetupPage.GuidedKeyLink -> SetupPage.GuidedSignup
         SetupPage.GuidedPasteKey -> SetupPage.GuidedKeyLink
         SetupPage.LocalModels -> SetupPage.ProviderOverview
-        SetupPage.CodexSignIn -> SetupPage.ProviderOverview
         SetupPage.ManualKeyLink -> SetupPage.ProviderOverview
         SetupPage.ManualKey -> SetupPage.ManualKeyLink
         SetupPage.ManualModels -> SetupPage.ManualKey

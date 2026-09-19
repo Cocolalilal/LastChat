@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.withAutoSummaryEnabled
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -116,11 +112,7 @@ fun AssistantContextManagementSubPage(
 
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             val needsSummarizerTip = !hasSummarizerModelConfigured
-            AnimatedVisibility(
-                visible = needsSummarizerTip,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = needsSummarizerTip) {
                 SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
             }
 
@@ -140,11 +132,7 @@ fun AssistantContextManagementSubPage(
                 }
             )
 
-            AnimatedVisibility(
-                visible = assistant.autoRegenerateSummary,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = assistant.autoRegenerateSummary) {
                 val historyLimit = assistant.maxHistoryMessages ?: 10
                 var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
                 

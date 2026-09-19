@@ -25,7 +25,7 @@ import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import java.io.File

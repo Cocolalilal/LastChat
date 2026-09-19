@@ -11,6 +11,7 @@ import me.rerere.rikkahub.ui.components.chat.getBubblePosition
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class LastChatDesignTokensTest {
     @Test
@@ -27,6 +28,14 @@ class LastChatDesignTokensTest {
     @Test
     fun shapeAndPaletteTokensMatchAndroidReference() {
         assertEquals(RoundedCornerShape(28.dp), AppShapes.CardLarge)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.InputField)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.CardMedium)
+        assertEquals(48.dp, AppSize.ChromePill)
+        assertEquals(56.dp, AppSize.ChromeBar)
+        assertEquals(4.dp, AppSpacing.xxs)
+        assertEquals(16.dp, AppSpacing.md)
+        assertEquals(0.34f, AppSurface.GlassAlphaDark)
+        assertEquals(0.28f, AppSurface.GlassAlphaLight)
         assertEquals(Color(0xFF8E4955), sakuraColorScheme(false).primary)
         assertEquals(Color(0xFF0E6B58), seafoamMintColorScheme(false).primary)
         assertEquals(Color(0xFF86D6BE), seafoamMintColorScheme(true).primary)
@@ -35,6 +44,24 @@ class LastChatDesignTokensTest {
         assertEquals(Color.Black, amoledScheme.surface)
         assertEquals(sakuraColorScheme(true).surfaceContainerHighest, amoledScheme.surfaceContainerHighest)
         assertNotEquals(Color.Black, amoledScheme.surfaceContainerHighest)
+    }
+
+    @Test
+    fun floatingSurfaceIsOpaqueWhenBlurIsOff() {
+        val glassFallback = Color(0xA6261D1E)
+        val off = AppSurface.resolve(charcoal = glassFallback, blurEnabled = false, dark = true)
+        assertEquals(1f, off.alpha)
+        assertEquals(glassFallback.copy(alpha = 1f), off)
+    }
+
+    @Test
+    fun floatingSurfaceUsesGlassAlphaOnlyWhenBlurIsOn() {
+        val charcoal = Color(0xFF261D1E)
+        val darkGlass = AppSurface.resolve(charcoal = charcoal, blurEnabled = true, dark = true)
+        val lightGlass = AppSurface.resolve(charcoal = charcoal, blurEnabled = true, dark = false)
+        assertTrue(kotlin.math.abs(darkGlass.alpha - AppSurface.GlassAlphaDark) < 0.02f)
+        assertTrue(kotlin.math.abs(lightGlass.alpha - AppSurface.GlassAlphaLight) < 0.02f)
+        assertEquals(charcoal.copy(alpha = AppSurface.GlassAlphaDark), darkGlass)
     }
 
     @Test

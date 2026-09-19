@@ -251,13 +251,12 @@ class TextChunker(
     }
 
     private fun isCjk(c: Char): Boolean {
-        val block = Character.UnicodeBlock.of(c)
-        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-                block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-                block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-                block == Character.UnicodeBlock.HIRAGANA ||
-                block == Character.UnicodeBlock.KATAKANA ||
-                block == Character.UnicodeBlock.HANGUL_SYLLABLES
+        return c in '\u4E00'..'\u9FFF' ||
+                c in '\u3400'..'\u4DBF' ||
+                c in '\uF900'..'\uFAFF' ||
+                c in '\u3040'..'\u309F' ||
+                c in '\u30A0'..'\u30FF' ||
+                c in '\uAC00'..'\uD7AF'
     }
 
     companion object {

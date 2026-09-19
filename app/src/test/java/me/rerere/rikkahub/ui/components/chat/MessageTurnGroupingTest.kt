@@ -2,7 +2,7 @@ package me.rerere.rikkahub.ui.components.chat
 
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

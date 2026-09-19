@@ -103,7 +103,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
@@ -207,8 +207,10 @@ private fun buildChatStreamingFollowSignature(
     loading: Boolean
 ): String {
     if (!loading) return "idle:${conversation.messageNodes.size}"
-    val latestAssistant = conversation.currentMessages
+    val latestAssistant = conversation.messageNodes
         .asReversed()
+        .asSequence()
+        .map { it.currentMessage }
         .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
     val textLength = latestAssistant
         ?.parts
@@ -403,8 +405,10 @@ private fun SharedTransitionScope.ChatListNormal(
             if (!loadingState) {
                 0
             } else {
-                conversationUpdated.currentMessages
+                conversationUpdated.messageNodes
                     .asReversed()
+                    .asSequence()
+                    .map { it.currentMessage }
                     .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
                     ?.parts
                     ?.filterIsInstance<UIMessagePart.Text>()
@@ -515,9 +519,16 @@ private fun SharedTransitionScope.ChatListNormal(
         // key because Kotlin List.equals() deep-compares JsonElement fields inside ToolResult
         // (content/arguments), which can be huge JSON trees and causes a visible stutter on
         // first scroll in tool-heavy chats.
+        val cachedTurnGroupsHolder = remember(conversation.id) {
+            object {
+                var groups: List<MessageTurnGroup>? = null
+            }
+        }
         val turnGroupsKey = conversation.messageNodes.messageNodesSignature()
         val turnGroups = remember(turnGroupsKey) {
-            conversation.messageNodes.groupIntoTurns()
+            val nextGroups = conversation.messageNodes.groupIntoTurns(cachedTurnGroupsHolder.groups)
+            cachedTurnGroupsHolder.groups = nextGroups
+            nextGroups
         }
 
         // Check if we need a phantom loading turn (loading but no assistant response yet)
@@ -557,7 +568,56 @@ private fun SharedTransitionScope.ChatListNormal(
                 .flatMap { it.models }
                 .associateBy { it.id }
         }
+
+        val onRegenerateNode = remember(onRegenerate) {
+            { node: MessageNode -> onRegenerate(node.currentMessage) }
+        }
+        val onEditNode = remember(onEdit) {
+            { node: MessageNode -> onEdit(node.currentMessage) }
+        }
+        val onForkNode = remember(onForkMessage) {
+            { node: MessageNode -> onForkMessage(node.currentMessage) }
+        }
+        val onDeleteNode = remember(onDelete) {
+            { node: MessageNode -> onDelete(node.currentMessage) }
+        }
+        val onUpdateNode = remember(onUpdateMessage) {
+            { node: MessageNode -> onUpdateMessage(node) }
+        }
+        val onEditLorebookEntry = remember(navController) {
+            { entry: me.rerere.ai.ui.UsedLorebookEntry ->
+                navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
+            }
+        }
+        val onModeClick = remember(navController) {
+            { mode: me.rerere.ai.ui.UsedMode ->
+                navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
+            }
+        }
+        val onMemoryClick = remember(navController, conversation.assistantId) {
+            { memory: me.rerere.ai.ui.UsedMemory ->
+                navController.navigate(
+                    Screen.AssistantDetail(
+                        id = conversation.assistantId.toString(),
+                        startRoute = "memory",
+                        initialMemoryTab = memory.memoryType,
+                        scrollToMemoryId = memory.memoryId
+                    )
+                )
+            }
+        }
+        val onStreamingCodeBlockExpanded = remember {
+            {
+                if (followStreamingBottom && !state.isScrollInProgress) {
+                    requestSnapToStreamingBottom()
+                }
+            }
+        }
         
+        val truncateTargetNodeId = remember(conversation.messageNodes, conversation.truncateIndex) {
+            conversation.messageNodes.getOrNull(conversation.truncateIndex - 1)?.id
+        }
+
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             LazyColumn(
                 state = state,
@@ -606,29 +666,32 @@ private fun SharedTransitionScope.ChatListNormal(
                 ) { index, group ->
                     Column {
                         // Check if any node in group is selected
-                        val isSelected by remember(group.nodes.map { it.id }, selectedItems) {
-                            derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
+                        val isSelected = remember(group, selectedItems, selecting) {
+                            selecting && group.nodes.any { selectedItems.contains(it.id) }
                         }
-                        ListSelectableItem(
-                            isSelected = isSelected,
-                            onSelectChange = { checked ->
+                        val onSelectChange = remember(group, selectedItems, onSelectedItemsChange) {
+                            { checked: Boolean ->
                                 val groupIds = group.nodes.map { it.id }.toSet()
                                 if (checked) {
                                     onSelectedItemsChange(selectedItems + groupIds)
                                 } else {
                                     onSelectedItemsChange(selectedItems - groupIds)
                                 }
-                            },
+                            }
+                        }
+                        ListSelectableItem(
+                            isSelected = isSelected,
+                            onSelectChange = onSelectChange,
                             enabled = selecting,
                         ) {
                             val isLastTurn = index == displayGroups.lastIndex
-                            val showRegenerate by remember(group.role, isLastTurn) {
-                                derivedStateOf {
-                                    when (group.role) {
-                                        me.rerere.ai.core.MessageRole.USER -> true
-                                        else -> isLastTurn
-                                    }
-                                }
+                            val previousGroup = displayGroups.getOrNull(index - 1)
+                            val showRegenerate = remember(group.role, isLastTurn, previousGroup == null) {
+                                shouldOfferMessageRegenerate(
+                                    role = group.role,
+                                    isLastTurn = isLastTurn,
+                                    previousGroup = previousGroup,
+                                )
                             }
                             ChatMessageTurn(
                                 group = group,
@@ -637,47 +700,16 @@ private fun SharedTransitionScope.ChatListNormal(
                                 model = group.lastNode.currentMessage.modelId?.let(modelById::get),
                                 assistant = assistant,
                                 loading = loading && isLastTurn,
-                                onRegenerate = { node ->
-                                    onRegenerate(node.currentMessage)
-                                },
-                                onEdit = { node ->
-                                    onEdit(node.currentMessage)
-                                },
-                                onFork = { node ->
-                                    onForkMessage(node.currentMessage)
-                                },
-                                onDelete = { node ->
-                                    onDelete(node.currentMessage)
-                                },
-                                onUpdate = {
-                                    onUpdateMessage(it)
-                                },
-                                onEditLorebookEntry = { entry ->
-                                    navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
-                                },
-                                onModeClick = { mode ->
-                                    navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
-                                },
-                                onMemoryClick = { memory ->
-                                    navController.navigate(
-                                        Screen.AssistantDetail(
-                                            id = conversation.assistantId.toString(),
-                                            startRoute = "memory",
-                                            initialMemoryTab = memory.memoryType,
-                                            scrollToMemoryId = memory.memoryId
-                                        )
-                                    )
-                                },
+                                onRegenerate = onRegenerateNode,
+                                onEdit = onEditNode,
+                                onFork = onForkNode,
+                                onDelete = onDeleteNode,
+                                onUpdate = onUpdateNode,
+                                onEditLorebookEntry = onEditLorebookEntry,
+                                onModeClick = onModeClick,
+                                onMemoryClick = onMemoryClick,
                                 showRegenerate = showRegenerate,
-                                onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) {
-                                    {
-                                        if (followStreamingBottom && !state.isScrollInProgress) {
-                                            requestSnapToStreamingBottom()
-                                        }
-                                    }
-                                } else {
-                                    null
-                                },
+                                onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) onStreamingCodeBlockExpanded else null,
                                 modifier = if (loading && isLastTurn) {
                                     Modifier.onSizeChanged {
                                         if (followStreamingBottom && !state.isScrollInProgress) {
@@ -690,10 +722,8 @@ private fun SharedTransitionScope.ChatListNormal(
                             )
                         }
                         // Show truncate indicator if any node in this group is at the truncate point
-                        val truncateNode = group.nodes.find { node ->
-                            conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
-                        }
-                        if (truncateNode != null) {
+                        val hasTruncateNode = truncateTargetNodeId != null && group.nodes.any { it.id == truncateTargetNodeId }
+                        if (hasTruncateNode) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -987,7 +1017,7 @@ private fun BoxScope.MessageJumper(
                 shape = CircleShape,
                 tonalElevation = 4.dp,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1014,7 +1044,7 @@ private fun BoxScope.MessageJumper(
                 shape = CircleShape,
                 tonalElevation = 4.dp,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1036,7 +1066,7 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
@@ -1058,7 +1088,7 @@ private fun BoxScope.MessageJumper(
                 },
                 shape = CircleShape,
                 color = blurredContainerColor(
-                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)
+                    MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                 ),
                 modifier = Modifier.lastChatBlurEffect(
                     MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),

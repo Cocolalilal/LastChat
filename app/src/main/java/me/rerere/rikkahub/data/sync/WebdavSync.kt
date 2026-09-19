@@ -312,11 +312,6 @@ class WebdavSync(
                     }
                 }
 
-                restoreManagedFileDirectories(
-                    stagedFilesDir = stagedFilesDir,
-                    manifest = manifest,
-                    stagedManagedDirs = stagedManagedDirs,
-                )
                 restorePortableSharedPreferences(
                     stagedSnapshots = stagedPrefs,
                     manifest = manifest,
@@ -338,9 +333,23 @@ class WebdavSync(
                     settingsStore.update(cleanedSettings)
                     LogUtil.i(
                         TAG,
-                        "restoreFromBackupFile: Settings restored after file/db/prefs commit",
+                        "restoreFromBackupFile: Settings restored before file commit",
                     )
                 }
+
+                // Files last: never wipe live dirs until DB/settings have committed, and
+                // skip dirs that were listed in the manifest but missing from the zip.
+                val directoriesToRestore = resolveManagedDirsToRestore(
+                    manifest = manifest,
+                    stagedManagedDirs = stagedManagedDirs,
+                    stagedFilesDir = stagedFilesDir,
+                )
+                restoreManagedFileDirectories(
+                    liveFilesDir = context.filesDir,
+                    stagedFilesDir = stagedFilesDir,
+                    directoriesToRestore = directoriesToRestore,
+                    liveBackupDir = File(restoreTempDir, "live_files_bak"),
+                )
 
                 LogUtil.i(TAG, "restoreFromBackupFile: Restore completed successfully")
 
@@ -440,91 +449,6 @@ class WebdavSync(
         }
     }
 
-    private fun restoreManagedFileDirectories(
-        stagedFilesDir: File,
-        manifest: BackupManifest?,
-        stagedManagedDirs: Set<String>,
-    ) {
-        val directoriesToRestore = if (manifest?.formatVersion == BackupArchiveFormat.CURRENT_FORMAT_VERSION &&
-            manifest.includesFiles
-        ) {
-            manifest.managedFileDirs
-                .filter { BackupArchiveFormat.MANAGED_FILE_DIRS.contains(it) }
-                .distinct()
-        } else {
-            stagedManagedDirs
-                .filter { BackupArchiveFormat.MANAGED_FILE_DIRS.contains(it) }
-                .distinct()
-                .sorted()
-        }
-
-        directoriesToRestore.forEach { dirName ->
-            val liveDir = File(context.filesDir, dirName)
-            val stagedDir = File(stagedFilesDir, dirName)
-
-            if (dirName == BackupArchiveFormat.WORKSPACES_DIR) {
-                restoreWorkspacesDir(stagedDir, liveDir)
-                return@forEach
-            }
-
-            if (liveDir.exists()) {
-                liveDir.deleteRecursively()
-            }
-            liveDir.mkdirs()
-
-            if (stagedDir.exists()) {
-                mirrorDirectory(stagedDir, liveDir)
-            }
-        }
-    }
-
-    /**
-     * Restores the workspaces directory without disturbing the on-device Linux rootfs.
-     *
-     * Backups intentionally omit each workspace's reinstallable `linux/` rootfs (and `tmp/`
-     * scratch space), so a plain delete-and-mirror would destroy a perfectly good rootfs and
-     * force a lengthy reinstall on every restore. Instead we replace only the backed-up
-     * subtrees (e.g. `files/`) per workspace and leave the excluded subdirs untouched.
-     * Workspaces that are present in the backup but have no local rootfs are reconciled later
-     * by [WorkspaceRepository.checkIntegrity] (which flags them for reinstall).
-     */
-    private fun restoreWorkspacesDir(stagedDir: File, liveDir: File) {
-        liveDir.mkdirs()
-        if (!stagedDir.exists()) return
-
-        stagedDir.listFiles()?.forEach { stagedChild ->
-            val liveChild = File(liveDir, stagedChild.name)
-            if (stagedChild.isDirectory) {
-                // stagedChild is a workspace root (<id>); replace only its backed-up subtrees,
-                // preserving any live linux/ rootfs and tmp/ scratch space.
-                liveChild.mkdirs()
-                stagedChild.listFiles()?.forEach { stagedSub ->
-                    if (stagedSub.name in BackupArchiveFormat.WORKSPACE_EXCLUDED_SUBDIRS) {
-                        return@forEach
-                    }
-                    val liveSub = File(liveChild, stagedSub.name)
-                    if (liveSub.exists()) {
-                        liveSub.deleteRecursively()
-                    }
-                    if (stagedSub.isDirectory) {
-                        liveSub.mkdirs()
-                        mirrorDirectory(stagedSub, liveSub)
-                    } else {
-                        liveSub.parentFile?.mkdirs()
-                        stagedSub.copyTo(liveSub, overwrite = true)
-                    }
-                }
-            } else {
-                // Stray top-level file directly under workspaces/ (nothing to preserve).
-                if (liveChild.exists()) {
-                    liveChild.deleteRecursively()
-                }
-                liveChild.parentFile?.mkdirs()
-                stagedChild.copyTo(liveChild, overwrite = true)
-            }
-        }
-    }
-
     private fun restorePortableSharedPreferences(
         stagedSnapshots: Map<String, SharedPreferencesSnapshot>,
         manifest: BackupManifest?,
@@ -582,19 +506,6 @@ class WebdavSync(
 
     private fun restoreDatabase(stagedDbFile: File): DatabaseSanitizer.SanitizationResult {
         return restoreLiveDatabase(stagedDbFile)
-    }
-
-    private fun mirrorDirectory(sourceDir: File, targetDir: File) {
-        sourceDir.walkTopDown().forEach { source ->
-            val relative = source.relativeTo(sourceDir)
-            val target = File(targetDir, relative.path)
-            if (source.isDirectory) {
-                target.mkdirs()
-            } else {
-                target.parentFile?.mkdirs()
-                source.copyTo(target, overwrite = true)
-            }
-        }
     }
 }
 

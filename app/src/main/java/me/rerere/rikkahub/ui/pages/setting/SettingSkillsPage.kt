@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +87,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.InjectionPosition
@@ -1051,7 +1051,7 @@ fun SkillEditorSheet(
                                 )
                             }
                         )
-                        AnimatedVisibility(visible = !availableForAllAssistants) {
+                        ExpandableContent(visible = !availableForAllAssistants) {
                             Column(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)

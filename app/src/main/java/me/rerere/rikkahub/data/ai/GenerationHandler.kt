@@ -49,6 +49,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
@@ -130,7 +131,7 @@ internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_imag
  * the sanitized tool results (key removed) plus the image parts to inject as a follow-up
  * USER message. Non-injecting results pass through untouched.
  */
-private fun extractInjectedImageParts(
+internal fun extractInjectedImageParts(
     results: List<UIMessagePart.ToolResult>,
 ): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
     val images = mutableListOf<UIMessagePart.Image>()
@@ -181,7 +182,7 @@ internal data class SkillToolState(
     val activeSkillIds: Set<Uuid>,
 )
 
-private fun selectSmartTools(
+internal fun selectSmartTools(
     tools: List<Tool>,
     messages: List<UIMessage>,
     model: Model,
@@ -210,6 +211,7 @@ private fun selectSmartTools(
         val semanticHits = queryTerms.count { term -> searchable.contains(term) }
         val score = when {
             tool.name in recentlyUsedNames -> 10_000
+            tool.name == "look_at_screen" -> 8_000
             tool.name == SKILL_MANAGEMENT_TOOL_NAME || tool.name == "ask_user" -> 2_000
             else -> semanticHits * 100 - index
         }
@@ -759,7 +761,9 @@ class GenerationHandler(
                     if (injectedImages.isNotEmpty()) {
                         messages = messages + UIMessage(
                             role = MessageRole.USER,
-                            parts = injectedImages,
+                            parts = listOf(
+                                UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
+                            ) + injectedImages,
                         )
                     }
                     send(
@@ -785,7 +789,9 @@ class GenerationHandler(
             if (injectedImages.isNotEmpty()) {
                 messages = messages + UIMessage(
                     role = MessageRole.USER,
-                    parts = injectedImages,
+                    parts = listOf(
+                        UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
+                    ) + injectedImages,
                 )
             }
             send(
@@ -833,9 +839,19 @@ class GenerationHandler(
                 (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(1)
             } else budget
         }
+        val smartPlan = if (smartEnabled) {
+            me.rerere.ai.context.ContextPlanner.plan(
+                messages = messages,
+                model = model,
+                customBudgetTokens = maxTokens,
+                systemPromptTokens = estimateTokens(assistant.systemPrompt),
+                toolDefinitionTokens = tools.sumOf { ContextTokenEstimator.toolDefinitionTokens(it, model) },
+            )
+        } else null
+
         val effectiveTools = when {
             ModelAbility.TOOL !in model.abilities -> emptyList()
-            smartEnabled -> selectSmartTools(tools, messages, model, maxTokens)
+            smartEnabled && smartPlan?.allowToolDistillation == true -> selectSmartTools(tools, messages, model, maxTokens)
             else -> tools
         }
         var currentTokens = 0
@@ -1209,17 +1225,19 @@ class GenerationHandler(
             // Start with all summarized/recent history; the final manager compacts low-value
             // payloads and removes complete old turn groups only when the real budget requires it.
             selectedMessages.addAll(imageArchivedMessages)
-            val memorySelection = selectSmartMemoryContext(
-                candidates = effectiveMemoriesCandidates,
-                model = model,
-                inputBudgetTokens = maxTokens,
-                requiredContextTokens = currentTokens,
-                historyMessages = imageArchivedMessages,
-                contextPriority = assistant.contextPriority,
-                episodeGroup = runtimeInfo::episodicMemoryGroup,
-            )
-            selectedMemories.addAll(memorySelection.memories)
-            selectedMemoryPromptText = memorySelection.promptText
+            if (assistant.enableMemory) {
+                val memorySelection = selectSmartMemoryContext(
+                    candidates = effectiveMemoriesCandidates,
+                    model = model,
+                    inputBudgetTokens = maxTokens,
+                    requiredContextTokens = currentTokens,
+                    historyMessages = imageArchivedMessages,
+                    contextPriority = assistant.contextPriority,
+                    episodeGroup = runtimeInfo::episodicMemoryGroup,
+                )
+                selectedMemories.addAll(memorySelection.memories)
+                selectedMemoryPromptText = memorySelection.promptText
+            }
         } else {
         // Minimums
         val minChatHistory = 2.coerceAtMost(chatHistoryCandidates.size)
@@ -1316,12 +1334,14 @@ class GenerationHandler(
             }
         }
 
-        if (selectedMemories.isNotEmpty() && selectedMemoryPromptText.isBlank()) {
-            selectedMemoryPromptText = renderMemoryContextPrompt(
-                model = model,
-                memories = selectedMemories,
-                episodeGroup = runtimeInfo::episodicMemoryGroup,
-            )
+        if (assistant.enableMemory && selectedMemoryPromptText.isBlank()) {
+            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities) {
+                selectedMemoryPromptText = renderMemoryContextPrompt(
+                    model = model,
+                    memories = selectedMemories,
+                    episodeGroup = runtimeInfo::episodicMemoryGroup,
+                )
+            }
         }
         }
 
@@ -1405,35 +1425,62 @@ class GenerationHandler(
             }.joinToString(separator = "\n")
 
             if (orderedSelectedMessages.isNotEmpty()) {
-                val lastMessage = orderedSelectedMessages.last()
-                val history = orderedSelectedMessages.dropLast(1)
-                
-                val depthByInsertionIndex = depthSkills.groupBy { skill ->
-                    (history.size - skill.depth.coerceAtLeast(0)).coerceIn(0, history.size)
+                val turnGroups = orderedSelectedMessages.toTurnGroups()
+                val latestTurnGroup = turnGroups.last()
+                val historicalTurnGroups = turnGroups.dropLast(1)
+
+                // Depth injections are aligned to atomic TurnGroup boundaries to prevent interleaving inside tool exchanges
+                val depthByGroupIndex = depthSkills.groupBy { skill ->
+                    (historicalTurnGroups.size - skill.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
                 }
-                val lorebookDepthByInsertionIndex = depthEntries.groupBy { entry ->
-                    (history.size - entry.depth.coerceAtLeast(0)).coerceIn(0, history.size)
-                }
-                for (index in 0..history.size) {
-                    depthByInsertionIndex[index].orEmpty().forEach { add(skillMessage(it)) }
-                    lorebookDepthByInsertionIndex[index].orEmpty().forEach { add(lorebookMessage(it)) }
-                    if (index < history.size) add(history[index])
+                val lorebookDepthByGroupIndex = depthEntries.groupBy { entry ->
+                    (historicalTurnGroups.size - entry.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
                 }
 
+                for (groupIndex in 0..historicalTurnGroups.size) {
+                    depthByGroupIndex[groupIndex].orEmpty().forEach { add(skillMessage(it)) }
+                    lorebookDepthByGroupIndex[groupIndex].orEmpty().forEach { add(lorebookMessage(it)) }
+                    if (groupIndex < historicalTurnGroups.size) {
+                        addAll(historicalTurnGroups[groupIndex].messages)
+                    }
+                }
+
+                // Injections BEFORE the latest turn sit strictly outside the active TurnGroup
                 beforeLatestSkills.forEach { add(skillMessage(it)) }
                 beforeLatestEntries.forEach { add(lorebookMessage(it)) }
-                
-                var finalParts = lastMessage.parts
-                
-                if (allContextAttachments.isNotEmpty()) {
-                    finalParts = allContextAttachments + finalParts
+
+                // Attach dynamic context (summary, memories, time) strictly to the initiating USER message.
+                // In multi-step tool turns, attaching text to TOOL messages triggers Gemini 400 INVALID_ARGUMENT
+                // and causes OpenAI/Claude to drop/blackout memory and summary context.
+                val latestMessages = latestTurnGroup.messages
+                val initiatingUserIndex = latestMessages.indexOfFirst { it.role == MessageRole.USER }
+
+                if (initiatingUserIndex != -1) {
+                    latestMessages.forEachIndexed { idx, msg ->
+                        if (idx == initiatingUserIndex) {
+                            var userParts = msg.parts
+                            if (allContextAttachments.isNotEmpty()) {
+                                userParts = allContextAttachments + userParts
+                            }
+                            if (dynamicContext.isNotBlank()) {
+                                userParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + userParts
+                            }
+                            add(msg.copy(parts = userParts))
+                        } else {
+                            add(msg)
+                        }
+                    }
+                } else {
+                    // If the active turn has no USER message (e.g. initial assistant greeting),
+                    // prepend dynamic context as system/user before the turn messages.
+                    if (dynamicContext.isNotBlank()) {
+                        add(UIMessage.system(dynamicContext))
+                    }
+                    if (allContextAttachments.isNotEmpty()) {
+                        add(UIMessage(role = MessageRole.USER, parts = allContextAttachments))
+                    }
+                    addAll(latestMessages)
                 }
-                
-                if (dynamicContext.isNotBlank()) {
-                    finalParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + finalParts
-                }
-                
-                add(lastMessage.copy(parts = finalParts))
             } else {
                 depthSkills.forEach { add(skillMessage(it)) }
                 depthEntries.forEach { add(lorebookMessage(it)) }
@@ -2077,69 +2124,6 @@ class GenerationHandler(
         }
     }
 
-    private suspend fun buildMemoryPrompt(model: Model, memories: List<AssistantMemory>): String {
-        Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")
-        if (memories.isEmpty()) {
-            Log.w(TAG, "buildMemoryPrompt: WARNING - No memories to inject!")
-            return ""
-        }
-
-        val coreMemories = memories.filter { it.type == 0 } // CORE
-        val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
-        
-        return buildString {
-            append("## Memories\n")
-            append("These are memories that you can reference in the future conversations.\n")
-            
-            if (coreMemories.isNotEmpty()) {
-                append("### Core Memories\n")
-                coreMemories.forEach { memory ->
-                    append("- [ID: ${memory.id}] ${memory.content}\n")
-                }
-            }
-
-            if (episodicMemories.isNotEmpty()) {
-                append("### Episodic Memories\n")
-
-                val groupedEpisodes = episodicMemories.groupBy { memory ->
-                    runtimeInfo.episodicMemoryGroup(memory.timestamp)
-                }
-                
-                // Order: Today -> Yesterday -> This Week -> Older
-                listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
-                    val memoriesInGroup = groupedEpisodes[group]
-                    if (!memoriesInGroup.isNullOrEmpty()) {
-                        append("#### $group\n")
-                        memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
-                            append("- ${memory.content}\n")
-                        }
-                    }
-                }
-            }
-            
-            if (model.abilities.contains(ModelAbility.TOOL)) {
-                append(
-                    """
-                        
-                        ## Memory Tool
-                        You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
-                        Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
-                        You can use the `create_memory`, `edit_memory`, and `delete_memory` tools to create, update, or delete memories.
-                        - If there is no relevant information in memory, call `create_memory` to create a new record.
-                        - If a relevant record already exists, call `edit_memory` to update it.
-                        - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
-                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
-                        
-                        **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
-                        During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
-                        - Name/Nickname
-                        - Age/Gender/Hobbies
-                        - Plans/To-do items
-                    """.trimIndent()
-                )
-            }
-        }
-    }
 
     fun translateText(
         settings: Settings,

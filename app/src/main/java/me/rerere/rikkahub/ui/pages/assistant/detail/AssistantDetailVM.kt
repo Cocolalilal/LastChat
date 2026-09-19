@@ -277,7 +277,9 @@ class AssistantDetailVM(
 
     fun deleteMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            if (memory.id > 0) {
+            if (memory.id < 0) {
+                memoryRepository.deleteEpisode(id = -memory.id)
+            } else if (memory.id > 0) {
                 memoryRepository.deleteMemory(id = memory.id)
             }
         }

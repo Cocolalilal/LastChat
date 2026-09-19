@@ -267,14 +267,14 @@ class MemoryConsolidationWorker(
         // stale snapshot or mark it complete; the replacement/retry job will consolidate the new
         // version instead.
         val now = System.currentTimeMillis()
-        val committed = database.withTransaction {
+        val effectiveEpisodeId = database.withTransaction {
             val latestEntity = database.conversationDao()
                 .getConversationById(conversation.id.toString())
-                ?: return@withTransaction false
+                ?: return@withTransaction null
             val latestConversation = conversationRepository
                 .conversationEntityToConversation(latestEntity)
             if (!latestConversation.sameMemorySnapshotAs(conversation)) {
-                return@withTransaction false
+                return@withTransaction null
             }
 
             val existingEpisode =
@@ -305,11 +305,14 @@ class MemoryConsolidationWorker(
                 )
             }
             val episodeId = chatEpisodeDAO.insertEpisode(episode).toInt()
-            val effectiveEpisodeId = if (existingEpisode == null) episodeId else existingEpisode.id
+            val targetId = if (existingEpisode == null) episodeId else existingEpisode.id
+            if (existingEpisode != null) {
+                database.embeddingCacheDao().deleteByMemoryId(targetId, MemoryType.EPISODIC)
+            }
             if (embeddingResult != null && embeddingBlob != null) {
                 database.embeddingCacheDao().insertEmbedding(
                     EmbeddingCacheEntity(
-                        memoryId = effectiveEpisodeId,
+                        memoryId = targetId,
                         memoryType = MemoryType.EPISODIC,
                         modelId = embeddingResult.modelId,
                         embedding = "",
@@ -321,9 +324,10 @@ class MemoryConsolidationWorker(
                 conversation.id.toString(),
                 isConsolidated = true,
             )
-            true
+            targetId
         }
-        if (!committed) return ConsolidationOutcome.STALE
+        if (effectiveEpisodeId == null) return ConsolidationOutcome.STALE
+        memoryRepository.invalidateEmbeddingCache(effectiveEpisodeId, MemoryType.EPISODIC)
 
         val (_, failedRepairs) = memoryRepository.embedMissingMemories(assistant.id.toString())
         val embeddingHealthy = embeddingResult != null && failedRepairs == 0
@@ -407,25 +411,27 @@ class MemoryConsolidationWorker(
     }
 
     private fun parseEpisodeResponse(responseText: String): EpisodeResponse {
-        val jsonStart = responseText.indexOf('{')
-        val jsonEnd = responseText.lastIndexOf('}')
+        val sanitized = THINKING_REGEX.replace(responseText, "").trim()
+        val jsonCandidate = JSON_CODE_BLOCK_REGEX.find(sanitized)?.groupValues?.getOrNull(1)?.trim() ?: sanitized
+        val jsonStart = jsonCandidate.indexOf('{')
+        val jsonEnd = jsonCandidate.lastIndexOf('}')
         if (jsonStart < 0 || jsonEnd <= jsonStart) {
-            return EpisodeResponse(responseText.trim(), DEFAULT_SIGNIFICANCE)
+            return EpisodeResponse(sanitized, DEFAULT_SIGNIFICANCE)
         }
         return runCatching {
             val json = Json.parseToJsonElement(
-                responseText.substring(jsonStart, jsonEnd + 1),
+                jsonCandidate.substring(jsonStart, jsonEnd + 1),
             ).jsonObject
             EpisodeResponse(
                 summary = json["summary"]?.jsonPrimitive?.content
                     ?.takeIf { it.isNotBlank() }
-                    ?: responseText.trim(),
+                    ?: sanitized,
                 significance = json["significance"]?.jsonPrimitive?.intOrNull
                     ?.coerceIn(1, 10)
                     ?: DEFAULT_SIGNIFICANCE,
             )
         }.getOrElse {
-            EpisodeResponse(responseText.trim(), DEFAULT_SIGNIFICANCE)
+            EpisodeResponse(sanitized, DEFAULT_SIGNIFICANCE)
         }
     }
 
@@ -443,6 +449,14 @@ class MemoryConsolidationWorker(
 
     companion object {
         private const val TAG = "MemoryConsolidation"
+        private val THINKING_REGEX = Regex(
+            "<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)",
+            RegexOption.IGNORE_CASE,
+        )
+        private val JSON_CODE_BLOCK_REGEX = Regex(
+            "```(?:json)?\\s*([\\s\\S]*?)\\s*```",
+            RegexOption.IGNORE_CASE,
+        )
         private const val KEY_CONVERSATION_ID = "CONVERSATION_ID"
         private const val CONVERSATION_WORK_PREFIX = "memory_consolidation_conversation_"
         private const val CATCH_UP_WORK_NAME = "memory_consolidation_catch_up"

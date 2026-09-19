@@ -81,13 +81,6 @@ val SPECIAL_PROVIDER_PRESETS = listOf(
         baseUrl = "",
     ),
     ProviderPreset(
-        name = "Codex",
-        description = "Connect your own OpenAI account to use Codex models. Usage limits apply",
-        type = ProviderSetting.Codex::class,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
-        customIconUri = "icons/codex.svg".toCatalogIconUrl(),
-    ),
-    ProviderPreset(
         name = "ComfyUI",
         description = "Connect to your local ComfyUI for workflow-based image generation",
         type = ProviderSetting.ComfyUI::class,
@@ -118,7 +111,6 @@ fun ModelCatalogSnapshot.toProviderPresets(): List<ProviderPreset> {
 
 fun CatalogProvider.toProviderPreset(snapshot: ModelCatalogSnapshot): ProviderPreset {
     val presetType = when (type) {
-        CatalogProviderType.CODEX -> ProviderSetting.Codex::class
         CatalogProviderType.OPENAI -> ProviderSetting.OpenAI::class
         CatalogProviderType.GOOGLE -> ProviderSetting.Google::class
         CatalogProviderType.CLAUDE -> ProviderSetting.Claude::class
@@ -168,14 +160,6 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             reasoningContentReplayMode = reasoningContentReplayMode,
             promptCacheMode = promptCacheMode,
             reasoningBehavior = reasoningBehavior,
-        )
-
-        ProviderSetting.Codex::class -> ProviderSetting.Codex(
-            id = parsedId ?: Uuid.random(),
-            enabled = false,
-            name = name,
-            customIconUri = customIconUri,
-            customUrl = baseUrl,
         )
 
         ProviderSetting.Google::class -> ProviderSetting.Google(

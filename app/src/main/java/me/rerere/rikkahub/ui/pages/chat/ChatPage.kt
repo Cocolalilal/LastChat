@@ -21,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -49,8 +50,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.AlertDialog
@@ -112,6 +115,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
@@ -134,15 +138,20 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.context.ContextCountConfidence
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
+import me.rerere.ai.context.calculateMinSafeFloorTokens
 import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.context.probableTemporaryTokenReserve
 import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import kotlin.math.roundToInt
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -154,6 +163,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
 import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
+import me.rerere.rikkahub.data.ai.tools.toDefinitionPreviews
 import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
@@ -193,6 +203,10 @@ import me.rerere.rikkahub.ui.modifier.LastChatBlur
 import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
+import me.rerere.rikkahub.ui.modifier.blurredContainerColor
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import androidx.compose.ui.draw.clip
@@ -202,9 +216,50 @@ internal fun hasConversationMessages(conversation: Conversation): Boolean {
 }
 
 internal fun hasConversationPresetMessages(conversation: Conversation, assistant: Assistant): Boolean {
-    if (assistant.presetMessages.isEmpty()) return false
+    if (assistant.presetMessages.isEmpty() && assistant.alternateGreetings.isEmpty()) return false
     val presetIds = assistant.presetMessages.map { it.id }.toSet()
-    return conversation.currentMessages.any { it.id in presetIds }
+    if (conversation.currentMessages.any { it.id in presetIds }) return true
+    if (assistant.alternateGreetings.isNotEmpty()) {
+        val alternatesSet = assistant.alternateGreetings.toSet()
+        if (conversation.currentMessages.any { msg -> msg.role == me.rerere.ai.core.MessageRole.ASSISTANT && msg.toContentText() in alternatesSet }) {
+            return true
+        }
+    }
+    return false
+}
+
+internal fun shouldOfferMessageRegenerate(
+    role: me.rerere.ai.core.MessageRole,
+    isLastTurn: Boolean,
+    previousGroup: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup?,
+): Boolean {
+    if (role == me.rerere.ai.core.MessageRole.ASSISTANT && previousGroup == null) return false
+    return when (role) {
+        me.rerere.ai.core.MessageRole.USER -> true
+        else -> isLastTurn
+    }
+}
+
+internal fun isCharacterIntroMessage(
+    messages: List<me.rerere.ai.ui.UIMessage>,
+    message: me.rerere.ai.ui.UIMessage,
+): Boolean {
+    if (message.role != me.rerere.ai.core.MessageRole.ASSISTANT) return false
+    val index = messages.indexOfFirst { it.id == message.id }
+    if (index < 0) return false
+    return messages.take(index).none { it.role == me.rerere.ai.core.MessageRole.USER }
+}
+
+internal fun completedGenerationIdsAfterDone(
+    currentCompleted: Set<Uuid>,
+    finishedConversationId: Uuid,
+    viewingConversationId: Uuid,
+): Set<Uuid> {
+    return if (finishedConversationId == viewingConversationId) {
+        currentCompleted - viewingConversationId
+    } else {
+        currentCompleted + finishedConversationId
+    }
 }
 
 @Composable
@@ -462,9 +517,11 @@ private val chatTopToolbarFadeHeight = 96.dp
 private val chatBottomToolbarTopFadeHeight = 36.dp
 
 private fun latestAssistantSpeechMessage(conversation: Conversation): UIMessage? {
-    return conversation.currentMessages.lastOrNull { message ->
-        message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
-    }
+    return conversation.messageNodes.asReversed().asSequence()
+        .map { it.currentMessage }
+        .firstOrNull { message ->
+            message.role == MessageRole.ASSISTANT && message.toContentText().isNotBlank()
+        }
 }
 
 private fun speakablePrefixLength(text: String, final: Boolean): Int {
@@ -524,8 +581,19 @@ private fun ChatTtsAutoplayEffect(
     var spokenLength by remember(conversation.id) { mutableStateOf(0) }
     var wasGenerating by remember(conversation.id) { mutableStateOf(false) }
 
-    LaunchedEffect(conversation.id, conversation.currentMessages, loadingJob, mode, provider) {
-        if (mode == TtsAutoplayMode.OFF || provider == null) return@LaunchedEffect
+    // Avoid passing the full conversation.currentMessages list to LaunchedEffect,
+    // which triggers a deep O(N) List.equals comparison across 200k tokens on every chunk.
+    val ttsEnabled = mode != TtsAutoplayMode.OFF && provider != null
+    val speechTriggerKey = if (!ttsEnabled) {
+        null
+    } else if (mode == TtsAutoplayMode.AFTER_GENERATION) {
+        loadingJob == null
+    } else {
+        latestAssistantSpeechMessage(conversation)?.let { it.id to it.toContentText().length }
+    }
+
+    LaunchedEffect(conversation.id, speechTriggerKey, mode, provider) {
+        if (!ttsEnabled) return@LaunchedEffect
         if (loadingJob == null) {
             if (!wasGenerating) return@LaunchedEffect
             wasGenerating = false
@@ -1163,9 +1231,6 @@ private fun ChatPageContent(
     // State for user message regeneration confirmation dialog
     var showUserRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
-    // State for user message delete confirmation dialog
-    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
     var showContextUsagePopup by remember { mutableStateOf(false) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
@@ -1199,6 +1264,7 @@ private fun ChatPageContent(
         persistenceMode = activePersistenceMode,
         pendingParts = inputState.getContents(),
         requestUsage = requestContextUsage,
+        isGenerating = isGenerating,
     )
 
     LaunchedEffect(contextMeterUsage) {
@@ -1210,8 +1276,6 @@ private fun ChatPageContent(
         showToolbarOverflowMenu = false
         showUserRegenerateConfirmDialog = false
         pendingUserRegenerateMessage = null
-        showDeleteConfirmDialog = false
-        pendingDeleteMessage = null
         if (isChatShareSelecting) {
             isChatShareSelecting = false
             selectedChatShareItems = emptySet()
@@ -1467,26 +1531,19 @@ private fun ChatPageContent(
                                         inputState.setContents(it.parts)
                                     },
                                     onDelete = { message ->
-                                        if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                            // User message deletion removes all messages after - show confirmation
-                                            pendingDeleteMessage = message
-                                            showDeleteConfirmDialog = true
-                                        } else {
-                                            // Assistant message deletion - keep existing behavior with undo toast
-                                            scope.launch {
-                                                val backup = frameConversation
-                                                val removedIds = vm.deleteMessage(message)
-                                                toaster.show(
-                                                    message = context.getString(R.string.message_deleted),
-                                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                        label = context.getString(R.string.undo),
-                                                        onClick = {
-                                                            vm.updateConversation(backup)
-                                                            vm.markNodesAsRestored(removedIds)
-                                                        }
-                                                    )
+                                        scope.launch {
+                                            val backup = frameConversation
+                                            val removedIds = vm.deleteMessage(message)
+                                            toaster.show(
+                                                message = context.getString(R.string.message_deleted),
+                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                    label = context.getString(R.string.undo),
+                                                    onClick = {
+                                                        vm.updateConversation(backup)
+                                                        vm.markNodesAsRestored(removedIds)
+                                                    }
                                                 )
-                                            }
+                                            )
                                         }
                                     },
                                     onUpdateMessage = { newNode ->
@@ -1692,56 +1749,6 @@ private fun ChatPageContent(
                     )
                 }
 
-                // User message delete confirmation dialog
-                if (showDeleteConfirmDialog && pendingDeleteMessage != null) {
-                    AlertDialog(
-                        onDismissRequest = {
-                            showDeleteConfirmDialog = false
-                            pendingDeleteMessage = null
-                        },
-                        title = { Text(stringResource(R.string.chat_delete_user_message_title)) },
-                        text = {
-                            Text(stringResource(R.string.chat_delete_user_message_warning))
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    pendingDeleteMessage?.let { message ->
-                                        scope.launch {
-                                            val backup = conversation
-                                            val removedIds = vm.deleteMessage(message)
-                                            toaster.show(
-                                                message = context.getString(R.string.message_deleted),
-                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                    label = context.getString(R.string.undo),
-                                                    onClick = {
-                                                        vm.updateConversation(backup)
-                                                        vm.markNodesAsRestored(removedIds)
-                                                    }
-                                                )
-                                            )
-                                        }
-                                    }
-                                    showDeleteConfirmDialog = false
-                                    pendingDeleteMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.delete))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    showDeleteConfirmDialog = false
-                                    pendingDeleteMessage = null
-                                }
-                            ) {
-                                Text(stringResource(R.string.cancel))
-                            }
-                        }
-                    )
-                }
-
                 // Gradient behind floating toolbar - hidden when showing new chat content
                 androidx.compose.animation.AnimatedVisibility(
                     visible = hasConversationContent || hasAnyPresetMessages || isTemporaryChat || !showNewChatContent,
@@ -1883,6 +1890,7 @@ private fun ChatPageContent(
                         }
                     },
                     onCancelClick = {
+                        vm.stopGeneration()
                         loadingJob?.cancel()
                     },
                     enableSearch = enableWebSearch,
@@ -2022,6 +2030,12 @@ private fun ChatPageContent(
                         activity = contextManagementActivity,
                         placement = toolbarPlacement,
                         popupScale = popupScale,
+                        model = currentChatModel,
+                        onUpdateModelLimit = { newLimit ->
+                            currentChatModel?.let { model ->
+                                vm.updateModelContextLimit(model.id, newLimit)
+                            }
+                        },
                         onDismissRequest = { showContextUsagePopup = false },
                     )
                 }
@@ -2205,11 +2219,11 @@ private fun ChatSearchModeBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = AppSize.ChromeBar)
             .lastChatBlurEffect(containerColor, searchFieldShape),
         shape = searchFieldShape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        border = lastChatSoftEdgeBorder()
     ) {
         OutlinedTextField(
             value = query,
@@ -2258,15 +2272,15 @@ private fun ChatShareSelectionModeBar(
     onConfirm: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
-    val shape = RoundedCornerShape(999.dp)
+    val shape = AppShapes.ButtonPill
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     Surface(
         shape = shape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(AppSize.ChromeBar)
             .lastChatBlurEffect(containerColor, shape)
     ) {
         Row(
@@ -2276,7 +2290,7 @@ private fun ChatShareSelectionModeBar(
         ) {
             Tooltip(tooltip = { Text(stringResource(R.string.chat_clear_selection)) }) {
                 IconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onCancel()
@@ -2301,7 +2315,7 @@ private fun ChatShareSelectionModeBar(
 
             Tooltip(tooltip = { Text(stringResource(R.string.select_all)) }) {
                 IconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onToggleSelectAll()
@@ -2322,7 +2336,7 @@ private fun ChatShareSelectionModeBar(
 
             Tooltip(tooltip = { Text(stringResource(R.string.confirm)) }) {
                 FilledIconButton(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(AppSize.ChromePill),
                     enabled = selectedCount > 0,
                     onClick = {
                         haptics.perform(HapticPattern.Success)
@@ -2355,9 +2369,9 @@ private fun ChatToolbarOverflowMenu(
 
     var dragDismissInProgress by remember { mutableStateOf(false) }
     val scrimInteractionSource = remember { MutableInteractionSource() }
-    val menuShape = RoundedCornerShape(24.dp)
+    val menuShape = AppShapes.CardMedium
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    val border = lastChatSoftEdgeBorder()
     val menuTopPadding = chatToolbarPopupTopPadding(placement)
     val menuBottomPadding = chatToolbarPopupBottomPadding(placement)
     val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -2790,7 +2804,7 @@ fun UpdatePill(
         shape = pillShape,
         color = blurredContainerColor(containerColor),
         contentColor = contentColor,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
         modifier = Modifier
             .height(height)
             .lastChatBlurEffect(containerColor, pillShape)
@@ -2853,14 +2867,14 @@ private fun ChatToolbar(
 ) {
     val scope = rememberCoroutineScope()
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-    val buttonShape = RoundedCornerShape(999.dp)
-    val topPillSize = 48.dp
+    val topContainerBorder = lastChatSoftEdgeBorder()
+    val buttonShape = AppShapes.ButtonPill
+    val topPillSize = AppSize.ChromePill
     // State for assistant picker - must be at function level for proper recomposition
     var showAssistantPicker by remember { mutableStateOf(false) }
     val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
     val rawActionMode = run {
-        val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+        val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty() || currentAssistant.alternateGreetings.isNotEmpty()
         val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
         val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
             effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
@@ -3051,9 +3065,20 @@ private fun rememberContextMeterUsage(
     persistenceMode: ChatPersistenceMode,
     pendingParts: List<UIMessagePart>,
     requestUsage: ContextUsageBreakdown?,
+    isGenerating: Boolean = false,
 ): ContextUsageBreakdown? {
     if (!enabled) return null
     val activeModel = model?.takeIf { (it.contextCapacityTokens ?: 0) > 0 } ?: return null
+    var lastStableUsage by remember(conversation.id) { mutableStateOf<ContextUsageBreakdown?>(null) }
+    val hasPendingInput = pendingParts.any { part ->
+        part !is UIMessagePart.Text || part.text.isNotBlank()
+    }
+    // During active generation streaming, avoid recomputing 200k+ token breakdowns on the UI thread 40 times/sec.
+    // requestUsage contains the exact context breakdown computed at request start.
+    if (isGenerating && !hasPendingInput) {
+        if (requestUsage != null) return requestUsage
+        if (lastStableUsage != null) return lastStableUsage
+    }
     val smartActive = assistant.smartContextManagement && (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
     val messages = effectiveHistoryForContext(
@@ -3065,9 +3090,6 @@ private fun rememberContextMeterUsage(
         truncateIndex = conversation.truncateIndex,
         manualHistoryLimit = assistant.maxHistoryMessages,
     )
-    val hasPendingInput = pendingParts.any { part ->
-        part !is UIMessagePart.Text || part.text.isNotBlank()
-    }
     val memoryContextEnabled = assistant.enableMemory && persistenceMode == ChatPersistenceMode.NORMAL
     val eligibleMemoryCandidates = remember(memoryCandidates, assistant, memoryContextEnabled) {
         if (!memoryContextEnabled) {
@@ -3243,8 +3265,17 @@ private fun rememberContextMeterUsage(
         val activeMcpTools = settings.mcpServers
             .filter { server -> server.commonOptions.enable && server.id in assistant.mcpServers }
             .flatMap { server -> server.commonOptions.tools.filter { tool -> tool.enable } }
+        val localPreviews = assistant.localTools.flatMap { it.toDefinitionPreviews() }
         val definitionText = buildString {
-            assistant.localTools.forEach { tool -> appendLine(tool.toString()) }
+            localPreviews.forEach { tool ->
+                appendLine(
+                    ContextTokenEstimator.toolDefinitionText(
+                        name = tool.name,
+                        description = tool.description,
+                        schema = tool.schema,
+                    )
+                )
+            }
             activeMcpTools.forEach { tool ->
                 appendLine(
                     ContextTokenEstimator.toolDefinitionText(
@@ -3255,11 +3286,11 @@ private fun rememberContextMeterUsage(
                 )
             }
         }
-        val localTokens = assistant.localTools.sumOf { tool ->
+        val localTokens = localPreviews.sumOf { tool ->
             ContextTokenEstimator.toolDefinitionTokens(
-                name = tool.toString(),
-                description = "",
-                schema = null,
+                name = tool.name,
+                description = tool.description,
+                schema = tool.schema,
                 model = activeModel,
             ).toLong()
         }
@@ -3333,42 +3364,124 @@ private fun rememberContextMeterUsage(
     val effectiveSmartInputBudget = baseSmartInputBudget?.let { budget ->
         (budget - probableTemporaryTokens).coerceAtLeast(1)
     }
-    val pendingMessage = pendingParts.takeIf { hasPendingInput }?.let { parts ->
-        UIMessage(role = MessageRole.USER, parts = parts)
-    }
-    val messagesToCount = if (smartActive) {
-        val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
-            ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
-            fixedMemoryTokens + skillTokens + lorebookTokens +
-            toolDefinitionTokens +
-            knownContextMediaTokens
-        val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
-            .coerceAtLeast(1)
-        smartFitContext(
-            messages = messages + listOfNotNull(pendingMessage),
+
+    val baseBreakdown = remember(
+        messages,
+        activeModel,
+        systemPromptText,
+        conversation.contextSummary,
+        fixedMemoryText,
+        fixedMemoryTokens,
+        skillText,
+        lorebookText,
+        skillTokens,
+        lorebookTokens,
+        toolDefinitionText,
+        toolDefinitionTokens,
+        knownContextAttachments,
+        effectiveSmartInputBudget,
+        sourceKey,
+    ) {
+        val messagesToCount = if (smartActive) {
+            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+                ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
+                fixedMemoryTokens + skillTokens + lorebookTokens +
+                toolDefinitionTokens +
+                knownContextMediaTokens
+            val messageBudget = ((effectiveSmartInputBudget ?: Int.MAX_VALUE) - namedTokens)
+                .coerceAtLeast(1)
+            smartFitContext(
+                messages = messages,
+                model = activeModel,
+                messageBudgetTokens = messageBudget,
+            )
+        } else {
+            messages
+        }
+        ContextTokenEstimator.breakdown(
+            messages = messagesToCount,
             model = activeModel,
-            messageBudgetTokens = messageBudget,
+            systemPromptText = systemPromptText,
+            summaryText = conversation.contextSummary.orEmpty(),
+            memoryText = fixedMemoryText,
+            memoryTokensOverride = fixedMemoryTokens,
+            skillText = skillText,
+            lorebookText = lorebookText,
+            skillTokensOverride = skillTokens,
+            lorebookTokensOverride = lorebookTokens,
+            toolDefinitionText = toolDefinitionText,
+            toolDefinitionTokensOverride = toolDefinitionTokens,
+            pendingParts = knownContextAttachments,
+            usableInputTokens = effectiveSmartInputBudget,
+            sourceKey = sourceKey,
         )
-    } else {
-        messages
     }
-    return ContextTokenEstimator.breakdown(
-        messages = messagesToCount,
-        model = activeModel,
-        systemPromptText = systemPromptText,
-        summaryText = conversation.contextSummary.orEmpty(),
-        memoryText = fixedMemoryText,
-        memoryTokensOverride = fixedMemoryTokens,
-        skillText = skillText,
-        lorebookText = lorebookText,
-        skillTokensOverride = skillTokens,
-        lorebookTokensOverride = lorebookTokens,
-        toolDefinitionText = toolDefinitionText,
-        toolDefinitionTokensOverride = toolDefinitionTokens,
-        pendingParts = knownContextAttachments + if (smartActive) emptyList() else pendingParts,
-        usableInputTokens = effectiveSmartInputBudget,
-        sourceKey = sourceKey,
-    )
+
+    val computedBreakdown = if (!hasPendingInput) {
+        baseBreakdown
+    } else {
+        var pendingTextTokens = 0
+        var pendingMediaTokens = 0
+        var pendingImages = 0
+        pendingParts.forEach { part ->
+            when (part) {
+                is UIMessagePart.Image -> {
+                    pendingMediaTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                    pendingImages++
+                }
+                is UIMessagePart.Video, is UIMessagePart.Audio, is UIMessagePart.Document -> {
+                    pendingMediaTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                }
+                else -> {
+                    pendingTextTokens += ContextTokenEstimator.partTokens(part, activeModel)
+                }
+            }
+        }
+        val framingDelta = if (messages.isEmpty()) 7 else 4
+        val estimatedTotalTokens = baseBreakdown.usedTokens + pendingTextTokens + pendingMediaTokens + framingDelta
+        val budgetLimit = effectiveSmartInputBudget ?: Int.MAX_VALUE
+
+        if (smartActive && estimatedTotalTokens > budgetLimit) {
+            val pendingMessage = UIMessage(role = MessageRole.USER, parts = pendingParts)
+            val namedTokens = ContextTokenEstimator.textTokens(systemPromptText, activeModel) +
+                ContextTokenEstimator.textTokens(conversation.contextSummary.orEmpty(), activeModel) +
+                fixedMemoryTokens + skillTokens + lorebookTokens +
+                toolDefinitionTokens +
+                knownContextMediaTokens
+            val messageBudget = (budgetLimit - namedTokens).coerceAtLeast(1)
+            val messagesToCount = smartFitContext(
+                messages = messages + listOf(pendingMessage),
+                model = activeModel,
+                messageBudgetTokens = messageBudget,
+            )
+            ContextTokenEstimator.breakdown(
+                messages = messagesToCount,
+                model = activeModel,
+                systemPromptText = systemPromptText,
+                summaryText = conversation.contextSummary.orEmpty(),
+                memoryText = fixedMemoryText,
+                memoryTokensOverride = fixedMemoryTokens,
+                skillText = skillText,
+                lorebookText = lorebookText,
+                skillTokensOverride = skillTokens,
+                lorebookTokensOverride = lorebookTokens,
+                toolDefinitionText = toolDefinitionText,
+                toolDefinitionTokensOverride = toolDefinitionTokens,
+                pendingParts = knownContextAttachments,
+                usableInputTokens = effectiveSmartInputBudget,
+                sourceKey = sourceKey,
+            )
+        } else {
+            baseBreakdown.copy(
+                conversationTokens = baseBreakdown.conversationTokens + pendingTextTokens + framingDelta,
+                mediaTokens = baseBreakdown.mediaTokens + pendingMediaTokens,
+                imageCount = baseBreakdown.imageCount + pendingImages,
+                usedTokens = estimatedTotalTokens,
+            )
+        }
+    }
+    lastStableUsage = computedBreakdown
+    return computedBreakdown
 }
 
 @Composable
@@ -3377,13 +3490,15 @@ private fun ContextUsageOverlay(
     activity: ContextManagementActivity?,
     placement: ChatToolbarPlacement,
     popupScale: Float,
+    model: Model? = null,
+    onUpdateModelLimit: ((Int?) -> Unit)? = null,
     onDismissRequest: () -> Unit,
 ) {
     BackHandler(onBack = onDismissRequest)
     val interactionSource = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(24.dp)
+    val shape = AppShapes.CardMedium
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    val border = lastChatSoftEdgeBorder()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -3426,7 +3541,12 @@ private fun ContextUsageOverlay(
                     onClick = {},
                 )
         ) {
-            ContextUsagePopupContent(usage, activity)
+            ContextUsagePopupContent(
+                usage = usage,
+                activity = activity,
+                model = model,
+                onUpdateModelLimit = onUpdateModelLimit,
+            )
         }
     }
 }
@@ -3509,15 +3629,15 @@ private fun ContextMeterButton(
         label = "context_meter_color",
     )
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val shape = RoundedCornerShape(999.dp)
+    val shape = AppShapes.ButtonPill
     Surface(
         modifier = Modifier
-            .size(48.dp)
+            .size(AppSize.ChromePill)
             .lastChatBlurEffect(containerColor, shape)
             .clickable(onClick = onClick),
         shape = shape,
         color = blurredContainerColor(containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
     ) {
         Box(contentAlignment = Alignment.Center) {
             val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -3559,6 +3679,8 @@ private fun ContextMeterButton(
 private fun ContextUsagePopupContent(
     usage: ContextUsageBreakdown,
     activity: ContextManagementActivity?,
+    model: Model? = null,
+    onUpdateModelLimit: ((Int?) -> Unit)? = null,
 ) {
     val tokenAnimation = spring<Int>(dampingRatio = 0.82f, stiffness = 260f)
     val animatedUsed by animateIntAsState(usage.usedTokens, tokenAnimation, label = "context_used_tokens")
@@ -3574,6 +3696,36 @@ private fun ContextUsagePopupContent(
     val animatedToolCalls by animateIntAsState(usage.toolCallTokens, tokenAnimation, label = "context_tool_calls")
     val animatedMedia by animateIntAsState(usage.mediaTokens, tokenAnimation, label = "context_media")
     val animatedImages by animateIntAsState(usage.imageCount, tokenAnimation, label = "context_images")
+
+    val haptics = rememberPremiumHaptics()
+    var isEditingLimit by remember { mutableStateOf(false) }
+    val maxCapacityTokens = model?.baseCapacityTokens ?: maxOf(usage.totalTokens, model?.contextCapacityTokens ?: 0)
+    val isCustomLimitActive = model?.customContextLimitTokens != null ||
+        model?.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL
+
+    val minSafeFloorTokens = remember(model, usage) {
+        if (model != null) {
+            calculateMinSafeFloorTokens(
+                model = model,
+                systemPromptTokens = usage.systemPromptTokens,
+                toolDefinitionTokens = usage.toolDefinitionTokens,
+            )
+        } else {
+            1_500
+        }
+    }
+    val safeFloor = minSafeFloorTokens.coerceAtMost(maxCapacityTokens)
+
+    val currentLimit = model?.customContextLimitTokens ?: usage.totalTokens
+    var draggedTokens by remember(currentLimit, maxCapacityTokens) {
+        mutableStateOf(currentLimit.coerceIn(safeFloor, maxCapacityTokens))
+    }
+    LaunchedEffect(currentLimit, maxCapacityTokens, isEditingLimit) {
+        if (!isEditingLimit) {
+            draggedTokens = currentLimit.coerceIn(safeFloor, maxCapacityTokens)
+        }
+    }
+
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val categoryColors = if (isDark) {
         listOf(
@@ -3600,54 +3752,247 @@ private fun ContextUsagePopupContent(
         Triple(stringResource(R.string.context_meter_media), animatedMedia, categoryColors[8]),
     ).filter { it.second > 0 }
     val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-    val animatedAvailable = (animatedTotal - animatedUsed - animatedReserved).coerceAtLeast(0)
-    val remainingPercent = if (animatedTotal <= 0) 100 else
-        ((animatedAvailable.toFloat() / animatedTotal) * 100).toInt().coerceIn(0, 100)
+
+    val activeBudgetCeiling = if (isEditingLimit) draggedTokens else animatedTotal
+    val liveBudget = if (model != null) {
+        smartInputBudget(model, null, customLimitTokens = activeBudgetCeiling) ?: activeBudgetCeiling
+    } else {
+        activeBudgetCeiling
+    }
+    val liveReserve = (activeBudgetCeiling - liveBudget).coerceAtLeast(0)
+    val effectiveReserved = if (isEditingLimit) liveReserve else (if (animatedReserved > 0) animatedReserved else liveReserve)
+    val animatedEffectiveReserved by animateIntAsState(effectiveReserved, tokenAnimation, label = "context_effective_reserved")
+    val effectiveAvailable = (activeBudgetCeiling - animatedUsed - animatedEffectiveReserved).coerceAtLeast(0)
+    val remainingPercent = if (activeBudgetCeiling <= 0) 100 else
+        ((effectiveAvailable.toFloat() / activeBudgetCeiling) * 100).toInt().coerceIn(0, 100)
+
     Column(
         modifier = Modifier.padding(20.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(
-                    R.string.context_meter_used,
-                    compactTokenCount(animatedUsed),
-                    compactTokenCount(animatedTotal),
-                ),
-                style = MaterialTheme.typography.titleMedium,
+            AnimatedContent(
+                targetState = isEditingLimit,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
                 modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(R.string.context_meter_remaining, remainingPercent),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                label = "context_meter_header_text",
+            ) { editing ->
+                if (editing) {
+                    Text(
+                        text = "Target Limit: ${compactTokenCount(draggedTokens)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(
+                            R.string.context_meter_used,
+                            compactTokenCount(animatedUsed),
+                            compactTokenCount(animatedTotal),
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            }
+            AnimatedContent(
+                targetState = isEditingLimit,
+                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                label = "context_meter_sub_text",
+            ) { editing ->
+                if (editing) {
+                    Text(
+                        text = "Floor: ${compactTokenCount(safeFloor)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.context_meter_remaining, remainingPercent),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
+
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         ) {
-            segments.forEach { (_, value, color) ->
-                Spacer(
-                    Modifier
-                        .weight(value.toFloat().coerceAtLeast(1f))
-                        .fillMaxHeight()
-                        .background(color),
-                )
+            var barWidthPx by remember { mutableFloatStateOf(1f) }
+            val zoomFraction by animateFloatAsState(
+                targetValue = if (isEditingLimit && maxCapacityTokens > 0) {
+                    (draggedTokens.toFloat() / maxCapacityTokens).coerceIn(0.01f, 1f)
+                } else 1f,
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 240f),
+                label = "context_limit_zoom",
+            )
+
+            val canReset = isCustomLimitActive || (isEditingLimit && draggedTokens != maxCapacityTokens)
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(24.dp)
+                    .onGloballyPositioned { coordinates ->
+                        barWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
+                    }
+                    .then(
+                        if (isEditingLimit) {
+                            Modifier.pointerInput(safeFloor, maxCapacityTokens) {
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Selection)
+                                        val fraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                                        val computed = (fraction * maxCapacityTokens).roundToInt()
+                                        draggedTokens = computed.coerceIn(safeFloor, maxCapacityTokens)
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val fraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
+                                        val computed = (fraction * maxCapacityTokens).roundToInt()
+                                        val clamped = computed.coerceIn(safeFloor, maxCapacityTokens)
+                                        if (clamped != draggedTokens) {
+                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
+                                            draggedTokens = clamped
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                    },
+                                )
+                            }
+                        } else Modifier
+                    ),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                // Background Track (18dp height centered in 24dp container)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                ) {
+                    // Active content segments
+                    Row(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(zoomFraction)
+                            .clip(RoundedCornerShape(999.dp)),
+                    ) {
+                        segments.forEach { (_, value, color) ->
+                            Spacer(
+                                Modifier
+                                    .weight(value.toFloat().coerceAtLeast(1f))
+                                    .fillMaxHeight()
+                                    .background(color),
+                            )
+                        }
+                        if (effectiveAvailable > 0) {
+                            Spacer(Modifier.weight(effectiveAvailable.toFloat()).fillMaxHeight())
+                        }
+                        if (animatedEffectiveReserved > 0) {
+                            Spacer(
+                                Modifier
+                                    .weight(animatedEffectiveReserved.toFloat())
+                                    .fillMaxHeight()
+                                    .background(reserveColor),
+                            )
+                        }
+                    }
+
+                    // Ignored / Darkened Region on the right in Edit Mode
+                    if (isEditingLimit && zoomFraction < 0.999f) {
+                        val ignoredColor = if (isDark) Color(0xFF070709) else Color(0xFF18181E)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(1f - zoomFraction)
+                                .align(Alignment.CenterEnd)
+                                .background(ignoredColor)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(topEnd = 999.dp, bottomEnd = 999.dp),
+                                ),
+                        )
+                    }
+                }
+
+                // Tactile Draggable thumb indicator (24dp height, 8dp width, centered over the 18dp track)
+                if (isEditingLimit) {
+                    val density = LocalDensity.current
+                    val thumbWidth = 8.dp
+                    val thumbWidthPx = with(density) { thumbWidth.toPx() }
+                    val thumbOffset = ((zoomFraction * barWidthPx) - (thumbWidthPx / 2f))
+                        .coerceIn(0f, (barWidthPx - thumbWidthPx).coerceAtLeast(0f))
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .offset { androidx.compose.ui.unit.IntOffset(thumbOffset.roundToInt(), 0) }
+                            .width(thumbWidth)
+                            .height(24.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .border(1.5.dp, MaterialTheme.colorScheme.surface, RoundedCornerShape(999.dp)),
+                    )
+                }
             }
-            if (animatedAvailable > 0) {
-                Spacer(Modifier.weight(animatedAvailable.toFloat()).fillMaxHeight())
-            }
-            if (animatedReserved > 0) {
-                Spacer(
-                    Modifier
-                        .weight(animatedReserved.toFloat())
-                        .fillMaxHeight()
-                        .background(reserveColor)
-                )
+
+            // The Pencil / Close button sized to 24dp to optically balance against the bar height, with long-press reset
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(
+                        color = when {
+                            isEditingLimit -> MaterialTheme.colorScheme.surfaceContainerHighest
+                            isCustomLimitActive -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                        },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                            if (isEditingLimit) {
+                                val newLimit = if (draggedTokens >= maxCapacityTokens) null else draggedTokens
+                                onUpdateModelLimit?.invoke(newLimit)
+                                isEditingLimit = false
+                            } else {
+                                isEditingLimit = true
+                            }
+                        },
+                        onLongClick = if (canReset) {
+                            {
+                                haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Success)
+                                draggedTokens = maxCapacityTokens
+                                onUpdateModelLimit?.invoke(null)
+                                isEditingLimit = false
+                            }
+                        } else null,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedContent(
+                    targetState = isEditingLimit,
+                    transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
+                    label = "context_limit_edit_toggle",
+                ) { editing ->
+                    Icon(
+                        imageVector = if (editing) androidx.compose.material.icons.Icons.Rounded.Close else androidx.compose.material.icons.Icons.Rounded.Edit,
+                        contentDescription = if (editing) "Commit" else "Edit context limit",
+                        modifier = Modifier.size(13.dp),
+                        tint = when {
+                            editing -> MaterialTheme.colorScheme.onSurface
+                            isCustomLimitActive -> MaterialTheme.colorScheme.onPrimaryContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
         FlowRow(
@@ -3661,12 +4006,12 @@ private fun ContextUsagePopupContent(
                     Text("$label ${compactTokenCount(value)}", style = MaterialTheme.typography.labelMedium)
                 }
             }
-            if (animatedReserved > 0) {
+            if (animatedEffectiveReserved > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).background(reserveColor, RoundedCornerShape(999.dp)))
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        "${stringResource(R.string.context_meter_reserved)} ${compactTokenCount(animatedReserved)}",
+                        "${stringResource(R.string.context_meter_reserved)} ${compactTokenCount(animatedEffectiveReserved)}",
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }

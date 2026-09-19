@@ -29,6 +29,7 @@ val viewModelModule = module {
             updateChecker = get(),
             appScope = get(),
             appStorageRepository = get(),
+            modelMetadataResolver = get(),
         )
     }
     viewModel<SettingVM> {
@@ -41,6 +42,13 @@ val viewModelModule = module {
             modelCatalogService = get(),
             modelMetadataResolver = get(),
             memoryRepository = get(),
+            localModelStore = get(),
+            localModelInstall = get(),
+            liteRtRuntime = get(),
+            liteRtEmbedder = get(),
+            sherpaModelStore = get(),
+            sherpaModelInstall = get(),
+            sherpaSttRuntime = get(),
         )
     }
 

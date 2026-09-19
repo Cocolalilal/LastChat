@@ -364,6 +364,29 @@ shared use by Android.
 
 Current iOS app status:
 
+- Conversations use Android's `MessageNode` branching model. The node
+  layer (`MessageNode`, version-tag turn resolution, and the message
+  merge) is source-shared with Android from `:ai`, the iOS state file
+  migrates legacy flat conversations on load, and the chat renders the
+  same per-message action row as Android: copy, regenerate, edit
+  (branching the node like ChatService.editMessage), fork-from-message,
+  and delete (user messages truncate, assistant messages remove their
+  adjacent tool-call chain like ChatService.deleteMessage), plus the
+  version selector for multi-version nodes;
+- Android backup archives can be restored for configuration through
+  Settings → Backup → Restore from file: providers (OpenAI, Google, and
+  Claude best match per type, with API keys moved into Keychain),
+  assistants (memory modes, embedding provider resolution, local tools),
+  appearance, search services, and TTS providers. When the backup
+  includes the database, conversations are imported losslessly into the
+  shared MessageNode model (including message versions) together with
+  memories and the managed attachment/media files, whose URLs are
+  remapped to the iOS container; a pure-Kotlin read-only SQLite file
+  reader (table B-trees, records, overflow chains, rowid aliases)
+  parses the backup database with no platform dependency. Memory
+  embeddings are re-computed on iOS, and usage statistics plus
+  memory-system internals (episodes, claims) are reported as not
+  imported;
 - device, Apple Silicon simulator, and Intel simulator Kotlin targets compile;
 - SwiftUI hosts the Compose root controller without rewriting the UI in Swift;
 - UIKit haptics implement the existing shared `PlatformHaptics` contract;
@@ -422,7 +445,8 @@ Only macOS with Xcode can perform the final link, code-sign, simulator launch,
 and screenshot comparison.
 
 `.github/workflows/ios-build.yml` performs the Kotlin/Native compile gates and
-an unsigned simulator `xcodebuild` on macOS for iOS-related pull requests.
+an unsigned simulator `xcodebuild` on macOS when run manually (`workflow_dispatch`).
+It does not run on pull requests.
 
 ## Practical Migration Order
 

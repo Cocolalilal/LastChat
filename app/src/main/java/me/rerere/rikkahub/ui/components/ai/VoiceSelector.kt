@@ -79,6 +79,7 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.tts.provider.TTSProviderSetting
@@ -122,7 +123,7 @@ fun VoiceSelector(
             onDismissRequest = { showSheet = false },
             sheetState = sheetState,
             sheetGesturesEnabled = false,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = lastChatSheetContainerColor(),
             dragHandle = {
                 IconButton(
                     onClick = {

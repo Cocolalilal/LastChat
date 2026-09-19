@@ -7,6 +7,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.MessageRole
@@ -80,11 +81,15 @@ data class UIMessage(
                         if (existingReasoningPart != null) {
                             val reasoning = existingReasoningPart.reasoning + deltaPart.reasoning
                             // Prefer: (1) explicit title on delta, (2) title from the new delta text,
-                            // (3) latest title found anywhere in the accumulated text, (4) keep old title.
+                            // (3) latest title found anywhere in the accumulated text (only rescanned on newlines or if missing), (4) keep old title.
+                            val hasNewline = deltaPart.reasoning.contains('\n') || deltaPart.reasoning.contains('\r')
                             val title = deltaPart.title
                                 ?: deltaPart.reasoning.extractReasoningSummaryTitle()
-                                ?: reasoning.extractLatestReasoningSummaryTitle()
-                                ?: existingReasoningPart.title
+                                ?: if (hasNewline || existingReasoningPart.title == null) {
+                                    reasoning.extractLatestReasoningSummaryTitle() ?: existingReasoningPart.title
+                                } else {
+                                    existingReasoningPart.title
+                                }
                             acc.map { part ->
                                 if (part is UIMessagePart.Reasoning) {
                                     UIMessagePart.Reasoning(
@@ -96,7 +101,6 @@ data class UIMessage(
                                     ).also {
                                         if (deltaPart.metadata != null) {
                                             it.metadata = deltaPart.metadata // 更新metadata
-                                            println("更新metadata: ${kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }.encodeToString(deltaPart)}")
                                         }
                                     }
                                 } else part
@@ -194,6 +198,43 @@ data class UIMessage(
     }
 
     /**
+     * High-fidelity digest preserving conversation dialogue, structured tool actions, and execution results.
+     * Used by conversation summarizers so tool actions, bash commands, code edits, and search results
+     * are never lost or rendered as blank lines.
+     */
+    fun toSummarizableDigest(maxPartLength: Int = 1000): String {
+        return parts.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Text -> {
+                    if (part.text.isBlank()) null else {
+                        if (part.text.length > maxPartLength) part.text.take(maxPartLength) + "…" else part.text
+                    }
+                }
+                is UIMessagePart.ToolCall -> {
+                    val args = if (part.arguments.length > 250) part.arguments.take(247) + "…" else part.arguments
+                    "[Action: ${part.toolName}($args)]"
+                }
+                is UIMessagePart.ToolResult -> {
+                    val raw = when (val c = part.content) {
+                        is JsonPrimitive -> c.content
+                        is JsonObject -> c["receipt"]?.jsonPrimitiveOrNull?.contentOrNull ?: c.toString()
+                        else -> c.toString()
+                    }.trim()
+                    val preview = if (raw.length > 400) raw.take(397).trimEnd() + "…" else raw
+                    "[Action Result: ${part.toolName} -> $preview]"
+                }
+                is UIMessagePart.Document -> "[Document: ${part.fileName} (${part.mime})]"
+                is UIMessagePart.Image -> "[Image attachment]"
+                is UIMessagePart.Audio -> "[Audio attachment]"
+                is UIMessagePart.Video -> "[Video attachment]"
+                is UIMessagePart.Reasoning -> part.title?.takeIf { it.isNotBlank() }?.let { "[Reasoning Summary: $it]" }
+                is UIMessagePart.Thinking -> null
+                else -> null
+            }
+        }.filter { it.isNotBlank() }.joinToString(separator = "\n")
+    }
+
+    /**
      * Extract only text content, excluding reasoning/thinking parts.
      * Use this for background tasks where reasoning output should not be included.
      */
@@ -201,7 +242,7 @@ data class UIMessage(
         val text = parts.filterIsInstance<UIMessagePart.Text>()
             .joinToString(separator = "\n") { it.text }
         
-        return text.replace(Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)", RegexOption.DOT_MATCHES_ALL), "").trim()
+        return text.replace(Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)"), "").trim()
     }
 
     fun getToolCalls() = parts.filterIsInstance<UIMessagePart.ToolCall>()
@@ -676,27 +717,35 @@ fun String.extractReasoningSummaryTitle(): String? {
     return extractTitleFromLine(firstLine, hasMultipleLines = this.contains('\n') || this.contains('\r'))
 }
 
+private val LIST_PREFIX_REGEX = Regex("^(?:[-*+]|\\d+\\.)\\s+")
+private val HEADING_PREFIX_REGEX = Regex("^#+\\s*")
+
 /**
  * Scans the full accumulated reasoning text and returns the title from the LAST
  * heading/bold line found. This allows the pill to track the current reasoning
  * section as new blocks stream in.
+ *
+ * Scans backwards from the end of the text without allocating intermediate line collections.
  */
 fun String.extractLatestReasoningSummaryTitle(): String? {
     val hasMultipleLines = this.contains('\n') || this.contains('\r')
-    // Walk lines in reverse, return the first (i.e. latest) title we find.
-    return lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .toList()
-        .asReversed()
-        .firstNotNullOfOrNull { line ->
-            extractTitleFromLine(line, hasMultipleLines)
+    var endIndex = length
+    while (endIndex > 0) {
+        val lastNewline = lastIndexOfAny(charArrayOf('\n', '\r'), endIndex - 1)
+        val lineStart = if (lastNewline == -1) 0 else lastNewline + 1
+        val line = substring(lineStart, endIndex).trim()
+        if (line.isNotBlank()) {
+            val title = extractTitleFromLine(line, hasMultipleLines)
+            if (title != null) return title
         }
+        endIndex = if (lastNewline == -1) 0 else lastNewline
+    }
+    return null
 }
 
 private fun extractTitleFromLine(line: String, hasMultipleLines: Boolean): String? {
     val trimmedLine = line.trim()
-        .replace(Regex("^(?:[-*+]|\\d+\\.)\\s+"), "")
+        .replace(LIST_PREFIX_REGEX, "")
         .trim()
 
     val stripped = when {
@@ -709,7 +758,7 @@ private fun extractTitleFromLine(line: String, hasMultipleLines: Boolean): Strin
             if (idx >= 0) trimmedLine.substring(2, idx).trim() else null
         }
         trimmedLine.startsWith("#") -> {
-            if (hasMultipleLines) trimmedLine.replace(Regex("^#+\\s*"), "") else null
+            if (hasMultipleLines) trimmedLine.replace(HEADING_PREFIX_REGEX, "") else null
         }
         else -> null
     }?.trim()?.trimEnd(':')?.trim()

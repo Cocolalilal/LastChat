@@ -348,6 +348,42 @@ internal fun Settings.normalizeLocalProvider(): Settings {
     return if (normalized == providers) this else copy(providers = normalized)
 }
 
+/**
+ * Replaces the old Bing HTML scraper with Keyless (a router over free search backends) and
+ * turns search on for Generical when that migration happens.
+ */
+internal fun Settings.normalizeSearchServices(): Settings {
+    var convertedBing = false
+    val migratedServices = searchServices.map { service ->
+        if (service is SearchServiceOptions.BingLocalOptions) {
+            convertedBing = true
+            SearchServiceOptions.KeylessOptions(id = service.id)
+        } else {
+            service
+        }
+    }.ifEmpty { listOf(SearchServiceOptions.DEFAULT) }
+    val migratedAssistants = if (convertedBing) {
+        assistants.map { assistant ->
+            if (assistant.id == DEFAULT_ASSISTANT_ID && assistant.searchMode is AssistantSearchMode.Off) {
+                assistant.copy(searchMode = AssistantSearchMode.Provider(0))
+            } else {
+                assistant
+            }
+        }
+    } else {
+        assistants
+    }
+    return if (migratedServices == searchServices && migratedAssistants == assistants) {
+        this
+    } else {
+        copy(
+            searchServices = migratedServices,
+            assistants = migratedAssistants,
+            searchServiceSelected = searchServiceSelected.coerceIn(0, migratedServices.lastIndex),
+        )
+    }
+}
+
 @Serializable
 enum class ProviderViewMode {
     LIST,
@@ -679,6 +715,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         uiSettings = me.rerere.rikkahub.data.model.AssistantUISettings(newChatShowAvatar = false),
         enableTimeAwareness = true,
+        searchMode = AssistantSearchMode.Provider(0),
         systemPrompt = """
             You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
 

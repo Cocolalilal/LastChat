@@ -189,7 +189,6 @@ class OnboardingVM(
 
     fun providerWithKey(provider: ProviderSetting, apiKey: String): ProviderSetting {
         return when (provider) {
-            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Google -> provider.copy(apiKey = apiKey)
             is ProviderSetting.Claude -> provider.copy(apiKey = apiKey)

@@ -472,8 +472,17 @@ class GoogleProvider(
 
                     val isGeminiPro =
                         params.model.modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
+                    val isGemini3 = ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)
 
-                    when (params.thinkingBudget) {
+                    if (isGemini3) {
+                        when (val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)) {
+                            ReasoningLevel.AUTO -> {}
+                            ReasoningLevel.OFF -> put("thinkingLevel", "minimal")
+                            ReasoningLevel.LOW -> put("thinkingLevel", "low")
+                            ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
+                            ReasoningLevel.HIGH, ReasoningLevel.MAX -> put("thinkingLevel", "high")
+                        }
+                    } else when (params.thinkingBudget) {
                         null, -1 -> {} // 如果是自动，不设置thinkingBudget参数
 
                         0 -> {
@@ -484,18 +493,7 @@ class GoogleProvider(
                             }
                         }
 
-                        else -> {
-                            if(ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)) {
-                                when(val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)) {
-                                    ReasoningLevel.HIGH -> put("thinkingLevel", "high")
-                                    ReasoningLevel.MEDIUM -> put("thinkingLevel", "high")
-                                    ReasoningLevel.LOW -> put("thinkingLevel", "low")
-                                    else -> error("Unknown reasoning level: $level")
-                                }
-                            } else {
-                                put("thinkingBudget", params.thinkingBudget)
-                            }
-                        }
+                        else -> put("thinkingBudget", params.thinkingBudget)
                     }
                 })
             }
@@ -982,8 +980,12 @@ private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {
     return filter { it.name.isNotBlank() }.associate { it.name to it.value }
 }
 
-private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, String> {
-    return when (baseUrl.urlHostOrNull()) {
+private fun Map<String, String>.withReferHeaders(
+    baseUrl: String,
+    sessionId: String? = null,
+): Map<String, String> {
+    val host = baseUrl.urlHostOrNull()?.lowercase()
+    var headers = when (host) {
         "aihubmix.com" -> this + ("APP-Code" to "DKHA9468")
         "openrouter.ai" -> this + mapOf(
             "X-Title" to "LastChat",
@@ -991,6 +993,13 @@ private fun Map<String, String>.withReferHeaders(baseUrl: String): Map<String, S
         )
         else -> this
     }
+    if (host == "opencode.ai" || host?.endsWith(".opencode.ai") == true) {
+        if (headers.keys.none { it.equals("x-opencode-session", ignoreCase = true) }) {
+            val session = sessionId?.trim()?.takeIf { it.isNotEmpty() } ?: Uuid.random().toString()
+            headers = headers + ("x-opencode-session" to session)
+        }
+    }
+    return headers
 }
 
 private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {

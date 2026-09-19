@@ -41,6 +41,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.datastore.ConversationContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -85,6 +86,7 @@ class ChatVM(
     val updateChecker: UpdateChecker,
     private val appScope: me.rerere.rikkahub.AppScope,
     private val appStorageRepository: AppStorageRepository,
+    private val modelMetadataResolver: ModelMetadataResolver,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -319,6 +321,10 @@ class ChatVM(
     // 生成完成 (从ChatService获取)
     val generationDoneFlow: SharedFlow<Uuid> = chatService.generationDoneFlow
 
+    fun stopGeneration() {
+        chatService.stopGeneration(_conversationId)
+    }
+
     // MCP管理器 (从ChatService获取)
     val mcpManager = chatService.mcpManager
 
@@ -361,6 +367,49 @@ class ChatVM(
         updateConversationAssistant(
             assistant.copy(chatModelId = model.id)
         )
+    }
+
+    // 更新模型上下文限制
+    fun updateModelContextLimit(modelId: kotlin.uuid.Uuid, customLimitTokens: Int?) {
+        viewModelScope.launch {
+            settingsStore.update { current ->
+                val updatedProviders = current.providers.map { provider ->
+                    if (provider.models.any { it.id == modelId }) {
+                        val targetModel = provider.models.first { it.id == modelId }
+                        val resolvedCatalogModel = modelMetadataResolver.applyToModel(targetModel)
+                        val rawBase = targetModel.contextWindowTokens?.takeIf { it > 0 }
+                            ?: targetModel.maxInputTokens?.takeIf { it > 0 }
+                            ?: resolvedCatalogModel.contextWindowTokens?.takeIf { it > 0 }
+                            ?: resolvedCatalogModel.maxInputTokens?.takeIf { it > 0 }
+                            ?: 32_000
+
+                        val isCustom = customLimitTokens != null && customLimitTokens < rawBase
+                        val effectiveCustomLimit = if (isCustom) customLimitTokens else null
+
+                        val catalogCapacity = resolvedCatalogModel.contextWindowTokens?.takeIf { it > 0 }
+                        val restoredBaseCapacity = if (catalogCapacity != null && catalogCapacity > rawBase) {
+                            catalogCapacity
+                        } else {
+                            rawBase
+                        }
+
+                        val updatedModel = targetModel.copy(
+                            contextWindowTokens = restoredBaseCapacity,
+                            customContextLimitTokens = effectiveCustomLimit,
+                            contextLimitSource = if (effectiveCustomLimit != null) {
+                                me.rerere.ai.provider.ContextLimitSource.MANUAL
+                            } else {
+                                if (targetModel.contextLimitSource == me.rerere.ai.provider.ContextLimitSource.MANUAL) null else targetModel.contextLimitSource
+                            },
+                        )
+                        provider.editModel(updatedModel)
+                    } else {
+                        provider
+                    }
+                }
+                current.copy(providers = updatedProviders)
+            }
+        }
     }
 
     fun setSelectedAssistant(assistantId: Uuid) {
@@ -537,8 +586,8 @@ class ChatVM(
         chatService.deleteConversation(conversation)
     }
 
-    fun undoDeleteConversation(conversationId: Uuid) {
-        chatService.undoDeleteConversation(conversationId)
+    fun undoDeleteConversation(conversationId: Uuid): Boolean {
+        return chatService.undoDeleteConversation(conversationId)
     }
 
     fun updatePinnedStatus(conversation: Conversation) {

@@ -1,7 +1,18 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-08-30",
+  "updated_at": "2026-09-19",
   "search_providers": [
+    {
+      "id": "keyless",
+      "name": "Keyless",
+      "aliases": [
+        "keyless search",
+        "free search"
+      ],
+      "description": "Free keyless search router over DuckDuckGo, Wikipedia, and Bing.",
+      "icon": "icons/searxng.svg",
+      "preset": true
+    },
     {
       "id": "bing",
       "name": "Bing",
@@ -11,7 +22,7 @@
       ],
       "description": "Local Bing web search.",
       "icon": "icons/bing.svg",
-      "preset": true
+      "preset": false
     },
     {
       "id": "perplexity",
@@ -1959,7 +1970,6 @@
             "gemini.*thinking",
             "gemini-2\\.0-pro-exp",
             "gemini-2\\.5-(?:flash|pro)",
-            "gemini-3.*",
             "gemini-deep-research"
           ],
           "abilities": [
@@ -1978,6 +1988,31 @@
               16000,
               32768,
               65536
+            ]
+          },
+          "context_window": 1000000,
+          "max_images_in_context": 3600
+        },
+        {
+          "id": "gemini-3",
+          "aliases": [
+            "gemini-3"
+          ],
+          "match_patterns": [
+            "gemini-3"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "off",
+              "auto",
+              "low",
+              "medium",
+              "high"
             ]
           },
           "context_window": 1000000,
@@ -2109,13 +2144,10 @@
           ],
           "context_window": 128000,
           "reasoning_config": {
-            "type": "effort",
+            "type": "binary",
             "supported_levels": [
               "off",
-              "auto",
-              "low",
-              "high",
-              "max"
+              "auto"
             ]
           }
         },
@@ -2156,13 +2188,10 @@
       ],
       "context_window": 1000000,
       "reasoning_config": {
-        "type": "effort",
+        "type": "binary",
         "supported_levels": [
           "off",
-          "auto",
-          "low",
-          "high",
-          "max"
+          "auto"
         ]
       }
     },
@@ -3153,12 +3182,10 @@
       ],
       "context_window": 1000000,
       "reasoning_config": {
-        "type": "effort",
+        "type": "binary",
         "supported_levels": [
           "off",
-          "auto",
-          "low",
-          "high"
+          "auto"
         ]
       }
     },
@@ -3328,12 +3355,10 @@
       ],
       "context_window": 1000000,
       "reasoning_config": {
-        "type": "effort",
+        "type": "binary",
         "supported_levels": [
           "off",
-          "auto",
-          "low",
-          "high"
+          "auto"
         ]
       }
     },
@@ -3508,13 +3533,10 @@
       ],
       "context_window": 256000,
       "reasoning_config": {
-        "type": "effort",
+        "type": "binary",
         "supported_levels": [
           "off",
-          "auto",
-          "low",
-          "medium",
-          "high"
+          "auto"
         ]
       }
     },

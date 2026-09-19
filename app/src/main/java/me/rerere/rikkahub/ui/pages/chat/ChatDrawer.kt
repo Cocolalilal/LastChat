@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -141,11 +142,19 @@ fun ChatDrawerContent(
         initialValue = emptyMap(),
     )
     var completedGenerationIds by remember { mutableStateOf(emptySet<Uuid>()) }
+    val viewingConversationId by rememberUpdatedState(current.id)
 
     LaunchedEffect(vm) {
         vm.generationDoneFlow.collect { conversationId ->
-            completedGenerationIds = completedGenerationIds + conversationId
+            completedGenerationIds = completedGenerationIdsAfterDone(
+                currentCompleted = completedGenerationIds,
+                finishedConversationId = conversationId,
+                viewingConversationId = viewingConversationId,
+            )
         }
+    }
+    LaunchedEffect(current.id) {
+        completedGenerationIds = completedGenerationIds - current.id
     }
     LaunchedEffect(conversationJobs.keys.toSet()) {
         completedGenerationIds = completedGenerationIds - conversationJobs.keys
@@ -308,10 +317,16 @@ fun ChatDrawerContent(
                     vm.deleteConversation(it)
                     toaster.show(
                         message = context.getString(R.string.conversation_deleted),
+                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
                         action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                             label = context.getString(R.string.undo),
                             onClick = {
-                                vm.undoDeleteConversation(it.id)
+                                if (!vm.undoDeleteConversation(it.id)) {
+                                    toaster.show(
+                                        message = context.getString(R.string.undo_no_longer_available),
+                                        type = me.rerere.rikkahub.ui.components.ui.ToastType.Error,
+                                    )
+                                }
                             }
                         )
                     )
@@ -577,7 +592,7 @@ fun CollapsedChatSideRail(
                 size = 48.dp
             )
             Column(
-                modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                modifier = Modifier.clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 DrawerAction(

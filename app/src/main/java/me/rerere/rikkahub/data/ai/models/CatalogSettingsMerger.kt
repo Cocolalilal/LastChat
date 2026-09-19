@@ -61,9 +61,6 @@ private fun ProviderSetting.withCatalogManagedIcon(
     val catalogIcon = catalogProvider.icon?.toCatalogIconUrl()
     val resolvedIcon = customIconUri.catalogIconDefault(catalogIcon)
     return when (this) {
-        is ProviderSetting.Codex -> copy(
-            customIconUri = resolvedIcon,
-        )
         is ProviderSetting.OpenAI -> copy(
             customIconUri = resolvedIcon,
         )
@@ -82,14 +79,6 @@ private fun CatalogProvider.toProviderSetting(): ProviderSetting? {
     val parsedId = uuidOrNull() ?: return null
     val iconUri = icon?.toCatalogIconUrl()
     return when (type) {
-        CatalogProviderType.CODEX -> ProviderSetting.Codex(
-            id = parsedId,
-            name = name,
-            customIconUri = iconUri,
-            builtIn = builtIn,
-            customUrl = baseUrl,
-        )
-
         CatalogProviderType.OPENAI -> ProviderSetting.OpenAI(
             id = parsedId,
             name = name,
@@ -131,7 +120,6 @@ private val CatalogProvider.matchType: CatalogProviderType
 
 private val ProviderSetting.matchType: CatalogProviderType
     get() = when (this) {
-        is ProviderSetting.Codex -> CatalogProviderType.CODEX
         is ProviderSetting.OpenAI -> CatalogProviderType.OPENAI
         is ProviderSetting.Google -> CatalogProviderType.GOOGLE
         is ProviderSetting.Claude -> CatalogProviderType.CLAUDE
@@ -141,7 +129,6 @@ private val ProviderSetting.matchType: CatalogProviderType
 
 private fun ProviderSetting.baseUrlForCatalogMatch(): String {
     return when (this) {
-        is ProviderSetting.Codex -> "https://chatgpt.com/backend-api/codex"
         is ProviderSetting.OpenAI -> baseUrl
         is ProviderSetting.Google -> baseUrl
         is ProviderSetting.Claude -> baseUrl

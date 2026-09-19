@@ -2,20 +2,6 @@ name: iOS Build
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'shared/**'
-      - 'common/**'
-      - 'ai/**'
-      - 'search/**'
-      - 'tts/**'
-      - 'ui-core/**'
-      - 'iosApp/**'
-      - 'gradle/**'
-      - 'gradle.properties'
-      - 'settings.gradle.kts'
-      - 'build.gradle.kts'
-      - '.github/workflows/ios-build.yml'
 
 jobs:
   build:

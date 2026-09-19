@@ -22,7 +22,7 @@ import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -193,14 +193,28 @@ class ConversationRepository(
         conversationDAO.delete(
             conversationToConversationEntity(conversation)
         )
-        memoryRepository.deleteEpisodesByConversationId(conversation.id.toString())
-        chatAttachmentRepository.removeConversationReferences(conversation.id)
+        if (deleteFiles) {
+            finalizeConversationDeletion(conversation.id)
+        }
+    }
+
+    /**
+     * Removes episodic memories and attachment refs / orphan files for a conversation
+     * whose DB row is already gone. Call this after the undo window expires.
+     */
+    suspend fun finalizeConversationDeletion(conversationId: Uuid) {
+        memoryRepository.deleteEpisodesByConversationId(conversationId.toString())
+        chatAttachmentRepository.removeConversationReferences(conversationId)
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
         getConversationsOfAssistant(assistantId).first().forEach { conversation ->
             deleteConversation(conversation)
         }
+    }
+
+    suspend fun getConversationCountOfAssistant(assistantId: Uuid): Int {
+        return conversationDAO.getConversationCountOfAssistant(assistantId.toString())
     }
 
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
@@ -242,9 +256,14 @@ class ConversationRepository(
     }
 
     fun conversationEntityToConversation(conversationEntity: ConversationEntity): Conversation {
-        val messageNodes = JsonInstant
-            .decodeFromString<List<MessageNode>>(conversationEntity.nodes)
-            .filter { it.messages.isNotEmpty() }
+        val messageNodes = runCatching {
+            JsonInstant
+                .decodeFromString<List<MessageNode>>(conversationEntity.nodes)
+                .filter { it.messages.isNotEmpty() }
+        }.getOrElse { error ->
+            Log.e(TAG, "Failed to decode conversation nodes for ${conversationEntity.id}", error)
+            emptyList()
+        }
         val enabledModeIds = try {
             JsonInstant.decodeFromString<List<String>>(conversationEntity.enabledModeIds)
                 .map { Uuid.parse(it) }
@@ -263,6 +282,9 @@ class ConversationRepository(
                 null
             }
         }
+        val chatSuggestions = runCatching {
+            JsonInstant.decodeFromString<List<String>>(conversationEntity.chatSuggestions)
+        }.getOrDefault(emptyList())
         return Conversation(
             id = Uuid.parse(conversationEntity.id),
             title = conversationEntity.title,
@@ -271,7 +293,7 @@ class ConversationRepository(
             updateAt = Instant.ofEpochMilli(conversationEntity.updateAt),
             assistantId = Uuid.parse(conversationEntity.assistantId),
             truncateIndex = conversationEntity.truncateIndex,
-            chatSuggestions = JsonInstant.decodeFromString(conversationEntity.chatSuggestions),
+            chatSuggestions = chatSuggestions,
             isPinned = conversationEntity.isPinned,
             isConsolidated = conversationEntity.isConsolidated,
             enabledModeIds = enabledModeIds,
@@ -311,12 +333,32 @@ class ConversationRepository(
     fun getAllConversations(): Flow<List<Conversation>> {
         return conversationDAO.getAll()
             .map { list ->
-                list.map { conversationEntityToConversation(it) }
+                list.map { entity ->
+                    runCatching { conversationEntityToConversation(entity) }.getOrElse { error ->
+                        Log.e(TAG, "Failed to load conversation ${entity.id}", error)
+                        conversationSummaryToConversation(
+                            LightConversationEntity(
+                                id = entity.id,
+                                assistantId = entity.assistantId,
+                                title = entity.title,
+                                isPinned = entity.isPinned,
+                                createAt = entity.createAt,
+                                updateAt = entity.updateAt,
+                                isConsolidated = entity.isConsolidated,
+                                isFork = entity.isFork,
+                            )
+                        )
+                    }
+                }
             }
     }
 
     suspend fun hasSuccessfulAssistantReply(): Boolean = withContext(Dispatchers.IO) {
         conversationDAO.hasUserAssistantConversation()
+    }
+
+    suspend fun getDistinctAssistantIds(): List<String> = withContext(Dispatchers.IO) {
+        conversationDAO.getDistinctAssistantIds()
     }
 
     // ===== Daily Activity Tracking (for the activity heatmap) =====

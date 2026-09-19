@@ -42,7 +42,7 @@ import me.rerere.rikkahub.data.db.entity.MemorySourceV3Entity
 import me.rerere.rikkahub.data.db.entity.MemorySourceV3FtsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -530,6 +530,17 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.i(TAG, "migrate: start migrate from 32 to 33")
                 db.execSQL("ALTER TABLE ConversationEntity ADD COLUMN last_model_id TEXT NOT NULL DEFAULT ''")
                 Log.i(TAG, "migrate: migrate from 32 to 33 success")
+            }
+        }
+
+        /**
+         * A brief experiment shipped DB v40, then was reverted to v39. Without this path Room
+         * cannot open a v40 file. Never use fallbackToDestructiveMigrationOnDowngrade.
+         */
+        val MIGRATION_40_39 = object : Migration(40, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: downgrade from 40 to 39")
+                db.execSQL("DROP INDEX IF EXISTS index_MemoryEntity_assistant_id")
             }
         }
     }

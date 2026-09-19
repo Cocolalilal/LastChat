@@ -121,11 +121,11 @@ class IosTtsAudioPlayer : TtsAudioPlayer {
         mutablePlaybackState.update {
             it.copy(
                 totalChunks = totalChunks,
-                status = if (player?.isPlaying == true) PlaybackStatus.Playing else PlaybackStatus.Buffering
+                status = if (player?.isPlaying() == true) PlaybackStatus.Playing else PlaybackStatus.Buffering
             )
         }
 
-        if (player == null || player?.isPlaying != true) {
+        if (player == null || player?.isPlaying() != true) {
             playNextQueued()
         }
     }

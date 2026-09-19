@@ -105,6 +105,7 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.lazy.itemsIndexed
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.heroAnimation
@@ -126,6 +127,34 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    var pendingAssistantDelete by remember { mutableStateOf<Assistant?>(null) }
+    var pendingAssistantImpact by remember { mutableStateOf<AssistantDeleteImpact?>(null) }
+
+    fun showAssistantDeletedToast(assistant: Assistant) {
+        toaster.show(
+            message = context.getString(R.string.assistant_deleted, assistant.name),
+            duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+            action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                label = context.getString(R.string.undo),
+                onClick = {
+                    if (!vm.undoRemoveAssistant(assistant)) {
+                        toaster.show(
+                            message = context.getString(R.string.undo_no_longer_available),
+                            type = me.rerere.rikkahub.ui.components.ui.ToastType.Error,
+                        )
+                    }
+                }
+            )
+        )
+    }
+
+    fun requestDeleteAssistant(assistant: Assistant) {
+        scope.launch {
+            pendingAssistantImpact = vm.loadDeleteImpact(assistant)
+            pendingAssistantDelete = assistant
+        }
+    }
 
     // Import state
     var pendingImportResult by remember { mutableStateOf<AssistantExportImport.ImportResult.Configurable?>(null) }
@@ -272,16 +301,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                     position = position,
                                     deleteEnabled = canDelete,
                                     onDelete = {
-                                        vm.removeAssistant(assistant)
-                                        toaster.show(
-                                            message = context.getString(R.string.assistant_deleted, assistant.name),
-                                            action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                label = context.getString(R.string.undo),
-                                                onClick = {
-                                                    vm.undoRemoveAssistant(assistant)
-                                                }
-                                            )
-                                        )
+                                        requestDeleteAssistant(assistant)
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) { _ ->
@@ -404,16 +424,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                     }
                                 },
                                 onDelete = {
-                                    vm.removeAssistant(assistant)
-                                    toaster.show(
-                                        message = context.getString(R.string.assistant_deleted, assistant.name),
-                                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.undoRemoveAssistant(assistant)
-                                            }
-                                        )
-                                    )
+                                    requestDeleteAssistant(assistant)
                                 },
                                 modifier = Modifier
                                     .scale(if (isDragging) 0.95f else 1f)
@@ -460,6 +471,48 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             }
             
         }
+    }
+
+    pendingAssistantDelete?.let { assistant ->
+        val impact = pendingAssistantImpact
+        AlertDialog(
+            onDismissRequest = {
+                pendingAssistantDelete = null
+                pendingAssistantImpact = null
+            },
+            title = { Text(stringResource(R.string.assistant_delete_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.assistant_delete_confirm_message,
+                        impact?.conversationCount ?: 0,
+                        impact?.memoryCount ?: 0,
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingAssistantDelete = null
+                        pendingAssistantImpact = null
+                        vm.removeAssistant(assistant)
+                        showAssistantDeletedToast(assistant)
+                    }
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingAssistantDelete = null
+                        pendingAssistantImpact = null
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 
     if (pendingImportResult != null) {
@@ -692,22 +745,7 @@ private fun AssistantItemContent(
 }
 
 private fun assistantItemShape(position: ItemPosition): RoundedCornerShape {
-    return when (position) {
-        ItemPosition.ONLY -> RoundedCornerShape(24.dp)
-        ItemPosition.FIRST -> RoundedCornerShape(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 10.dp,
-            bottomEnd = 10.dp,
-        )
-        ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-        ItemPosition.LAST -> RoundedCornerShape(
-            topStart = 10.dp,
-            topEnd = 10.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp,
-        )
-    }
+    return position.listItemShape()
 }
 
 @Composable

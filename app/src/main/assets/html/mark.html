@@ -142,6 +142,19 @@
             text-decoration: underline;
         }
 
+        /* Mark/Highlight */
+        mark {
+            background-color: color-mix(in srgb, {{PRIMARY_COLOR}} 22%, transparent);
+            color: inherit;
+            border-radius: 3px;
+            padding: 0.1em 0.3em;
+        }
+
+        /* Underline */
+        u, ins {
+            text-decoration: underline;
+        }
+
         /* Images */
         img {
             max-width: 100%;
@@ -265,6 +278,10 @@
         });
         // Convert \( ... \) to $ ... $ for LaTeX inline math
         markdownContent = markdownContent.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+        // Convert ==highlight== to <mark>highlight</mark>
+        markdownContent = markdownContent.replace(/(?<![=\\])==(?![=\s])([^=\n]+?)(?<![\s=\\])==(?!=)/g, '<mark>$1</mark>');
+        // Convert ++underline++ to <u>underline</u>
+        markdownContent = markdownContent.replace(/(?<![\+\\])\+\+(?![\+\s])([^\+\n]+?)(?<![\s\+\\])\+\+(?!\+)/g, '<u>$1</u>');
 
         // Render markdown with markdown-it
         async function renderMarkdown() {

@@ -58,6 +58,11 @@ class AssistantOverlayVM(
         chatService.sendMessage(conversationId = id, content = parts)
     }
 
+    fun stopGeneration() {
+        val id = _conversationId.value ?: return
+        chatService.stopGeneration(id)
+    }
+
     /** Regenerate the assistant reply for [message] (re-runs that turn). */
     fun regenerate(message: UIMessage) {
         val id = _conversationId.value ?: return

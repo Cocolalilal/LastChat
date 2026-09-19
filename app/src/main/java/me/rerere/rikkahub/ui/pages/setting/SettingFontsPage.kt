@@ -5,11 +5,6 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.FontConfig
 import me.rerere.rikkahub.data.datastore.FontSettings
 import me.rerere.rikkahub.data.datastore.FontSource
@@ -71,6 +67,7 @@ import me.rerere.rikkahub.data.datastore.normalize
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -200,11 +197,7 @@ internal fun FontSettingsContent(
         }
 
         item {
-            AnimatedVisibility(
-                visible = !normalizedFontSettings.usePhoneSystemFont,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = !normalizedFontSettings.usePhoneSystemFont) {
                 FontConfigSection(
                     title = stringResource(R.string.setting_fonts_app_font),
                     subtitle = stringResource(R.string.setting_fonts_app_font_desc),
@@ -233,11 +226,7 @@ internal fun FontSettingsContent(
         }
 
         item {
-            AnimatedVisibility(
-                visible = !normalizedFontSettings.usePhoneSystemFont,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
+            ExpandableContent(visible = !normalizedFontSettings.usePhoneSystemFont) {
                 FontConfigSection(
                     title = stringResource(R.string.setting_fonts_code_blocks),
                     subtitle = stringResource(R.string.setting_fonts_code_blocks_desc),
@@ -283,6 +272,7 @@ private fun FontConfigSection(
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showDeleteFontDialog by remember { mutableStateOf(false) }
     
     val fontPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -368,7 +358,7 @@ private fun FontConfigSection(
                 }
                 
                 // Expanded content
-                AnimatedVisibility(visible = expanded) {
+                ExpandableContent(visible = expanded) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Spacer(Modifier.height(4.dp))
                         
@@ -459,14 +449,7 @@ private fun FontConfigSection(
                                     }
                                 }
                                 IconButton(onClick = {
-                                    config.customFontPath?.let { fontManager.deleteFont(it) }
-                                    onConfigChange(config.copy(
-                                        fontSource = if (isCodeFont) FontSource.SystemCode else FontSource.System,
-                                        customFontPath = null,
-                                        customFontName = null,
-                                        customAxes = emptyList(),
-                                        features = emptyList()
-                                    ), true)
+                                    showDeleteFontDialog = true
                                 }) {
                                     Icon(
                                         Icons.Rounded.Delete,
@@ -606,6 +589,28 @@ private fun FontConfigSection(
         }
     }
     
+    if (showDeleteFontDialog) {
+        LastChatDestructiveConfirmDialog(
+            title = stringResource(R.string.setting_fonts_delete_title),
+            consequence = stringResource(R.string.setting_fonts_delete_consequence),
+            onDismiss = { showDeleteFontDialog = false },
+            onConfirm = {
+                config.customFontPath?.let { fontManager.deleteFont(it) }
+                onConfigChange(
+                    config.copy(
+                        fontSource = if (isCodeFont) FontSource.SystemCode else FontSource.System,
+                        customFontPath = null,
+                        customFontName = null,
+                        customAxes = emptyList(),
+                        features = emptyList()
+                    ),
+                    true,
+                )
+                showDeleteFontDialog = false
+            },
+        )
+    }
+
     // Reset Dialog
     if (showResetDialog) {
         AlertDialog(

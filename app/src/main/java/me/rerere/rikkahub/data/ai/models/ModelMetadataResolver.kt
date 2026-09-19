@@ -289,7 +289,6 @@ private fun ModelCatalogEntry.matchesProviderSlug(providerSlug: String?): Boolea
 
 private fun ModelCatalogEntry.matchesProviderHint(providerHint: ProviderSetting?): Boolean {
     val allowedProviders = when (providerHint) {
-        is ProviderSetting.Codex -> setOf("openai")
         is ProviderSetting.Claude -> setOf("anthropic")
         is ProviderSetting.Google -> {
             if (providerHint.vertexAI) {

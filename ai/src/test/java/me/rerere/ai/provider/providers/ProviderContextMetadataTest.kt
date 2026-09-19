@@ -3,6 +3,8 @@ package me.rerere.ai.provider.providers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.provider.ContextLimitSource
+import me.rerere.ai.provider.baseCapacityTokens
+import me.rerere.ai.provider.contextCapacityTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -63,5 +65,35 @@ class ProviderContextMetadataTest {
         assertEquals(65_536, limits.maxOutputTokens)
         assertEquals(1_114_112, limits.contextWindowTokens)
         assertEquals(ContextLimitSource.PROVIDER, limits.source)
+    }
+
+    @Test
+    fun modelPreservesBaseCapacityWhenCustomLimitIsAppliedOrRemoved() {
+        val baseModel = me.rerere.ai.provider.Model(
+            modelId = "claude-sonnet-4-5",
+            contextWindowTokens = 200_000,
+            maxOutputTokens = 8_192,
+        )
+
+        assertEquals(200_000, baseModel.baseCapacityTokens)
+        assertEquals(200_000, baseModel.contextCapacityTokens)
+
+        // Custom limit applied
+        val customizedModel = baseModel.copy(
+            customContextLimitTokens = 32_000,
+            contextLimitSource = ContextLimitSource.MANUAL,
+        )
+        // Base capacity remains 200k, effective capacity is capped to 32k
+        assertEquals(200_000, customizedModel.baseCapacityTokens)
+        assertEquals(32_000, customizedModel.contextCapacityTokens)
+
+        // Custom limit removed / reset to max
+        val resetModel = customizedModel.copy(
+            customContextLimitTokens = null,
+            contextLimitSource = null,
+        )
+        // Never loses base capacity
+        assertEquals(200_000, resetModel.baseCapacityTokens)
+        assertEquals(200_000, resetModel.contextCapacityTokens)
     }
 }

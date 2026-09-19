@@ -1,0 +1,935 @@
+0700b627 | feat(ios): import conversations and memories from Android backup database
+Completes the data tier of cross-platform backup restore. When the
+backup manifest includes the database, the restore now imports:
+
+- conversations: the rikka_hub ConversationEntity rows are decoded into
+  the shared MessageNode model (versions, tool turns, attachments in
+  parts), replacing local conversations like Android's restore does,
+  with the most recently updated conversation selected;
+- memories: MemoryEntity rows map onto the iOS memory model; embeddings
+  are re-computed on iOS rather than converted (different storage
+  format), which the report states explicitly;
+- managed files: the backup's upload/images/avatars/... entries are
+  extracted into the app container and Android file:// part URLs are
+  remapped to the staged iOS file URLs (percent-decoded), so imported
+  images, video, audio, and documents render.
+
+The backup database is parsed by a new pure-Kotlin read-only SQLite
+file reader (IosSqliteFile): table B-tree walks, record serial types,
+overflow-page payload chains, CREATE TABLE column parsing for
+backtick/double-quote/bracket identifiers, and INTEGER PRIMARY KEY
+rowid-alias substitution. Pure Kotlin means no cinterop, no platform
+dependency, and the reader runs in commonTest on every platform.
+
+Verification: a real 24 KB SQLite fixture (generated with the Android
+schema, including a >4 KB nodes payload spanning overflow pages) is
+committed as base64 and asserted in commonTest; the reader was also
+compiled as a standalone Kotlin/Native executable and run against the
+fixture on this machine, confirming every row and the rowid fix.
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+2c139952 | feat(ios): message edit, fork, delete and action row with branching
+Completes the iOS message lifecycle to match Android's chat UX:
+
+- message actions row under every bubble, mirroring Android's action
+  bar: copy, regenerate (last assistant turn), edit, fork-from-message,
+  delete, and the version selector for multi-version nodes, with
+  Android-matching haptics (Tick/Pop/Thud)
+- editMessage branches the node exactly like ChatService.editMessage:
+  new version inherits the original versionTag, selectIndex moves to it,
+  and non-text parts are preserved
+- deleteMessage ports ChatService.deleteMessage + deleteMessageInternal
+  verbatim: user messages remove their version (multi-version nodes) or
+  truncate from the node onward; assistant/tool messages remove the
+  adjacent tool-call/result chain by version tag within the turn
+- forkConversation ports buildForkConversationSnapshot: copies nodes up
+  to the target message into a new selected conversation; attachment
+  URLs are shared since iOS never garbage-collects attachment files
+- transformations live as pure file-level functions (withEditedMessage,
+  withDeletedMessage, buildIosForkConversation) and are covered by new
+  commonTest cases: edit branching, user truncation, tool-chain
+  deletion, and fork snapshots
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+17f7f86b | feat(ios): adopt Android MessageNode branching for conversations
+Ports the conversation branching foundation so iOS and Android execute
+the same node logic:
+
+- move the node layer from :app into :ai as shared code: MessageNode,
+  currentVersionMessages (version-tag turn resolution), the id-based
+  message merge extracted from Conversation.updateCurrentMessages, and
+  the version-selection helpers; Conversation now delegates to them and
+  its dedicated test moves alongside
+- IosConversation stores messageNodes and exposes currentMessages with
+  Android's exact resolution semantics; legacy flat state files migrate
+  on load; every controller write path (send, streaming, tool loop,
+  cancellation, questionnaire resume) now merges through the shared
+  function, and cancellation removes only the blank placeholder while
+  restoring the previous version when one exists
+- regenerateResponse re-runs the trailing assistant turn into a tagged
+  placeholder version, so the shared turn resolution shows the new
+  reply while old snapshots stay selectable; updateNodeSelection wires
+  version switching
+- the chat renders Android's branch selector above assistant bubbles
+  (chevrons + n/m + regenerate, with Tick/Pop haptics) and statistics
+  and menu counts read the version-resolved view
+- tests: :ai merge/version-selection unit tests and an iosApp commonTest
+  suite covering migration, merge, placeholder cleanup on cancel, and
+  inactive-version hiding; all iOS targets and Android compile green
+
+Remaining for full lifecycle parity: message edit, delete, truncate,
+and fork flows (tracked in the iOS parity ledger).
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+b415fbd2 | feat(ios): restore Android backup configuration from a zip archive
+Implements the configuration tier of cross-platform backup restore, the
+keystone of Android/iOS data parity: an iOS device can now import the
+settings section of a LastChat Android backup (LastChat_backup_*.zip).
+
+- backup package in :iosApp: a minimal zip reader (central-directory
+  parsing, raw-deflate inflation via platform.zlib, pure-Kotlin CRC32)
+  that only extracts the requested entries, plus Android settings.json
+  mapping into the iOS state model
+- IosAppController.restoreAndroidBackup applies the import through the
+  existing mutex-serialized state paths, writes provider/search/TTS API
+  keys into Keychain, refreshes the TTS controller, and reschedules
+  adaptive memory for imported assistants
+- mapping is faithful where the models match: provider base URLs and
+  models, assistant names/system prompts/memory modes/RAG params/local
+  tools (python_engine reported as unsupported), theme id and font size,
+  search provider selection and result size, TTS provider/voice/emotion
+  settings. Vertex AI, SearXNG, system TTS, and extra per-type providers
+  are reported instead of silently dropped
+- Settings → Backup replaces the unavailable placeholder with a local
+  restore flow: file picker, confirmation dialog, and an honest
+  imported/notes/not-yet-imported report, mirroring Android's restore
+  report semantics
+- commonTest suite covers the zip reader (store + real deflate fixture,
+  corruption detection) and the full settings mapping; tests execute on
+  macOS CI (:iosApp:iosSimulatorArm64Test), targets compile on Windows
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+794e052d | fix(tts): port CJK detection and audio-player playback check for iOS
+Replace java.lang.Character.UnicodeBlock usage in TextChunker with
+equivalent portable Unicode range checks, and call AVAudioPlayer's
+isPlaying() through method syntax so :tts compiles for the iOS targets
+again. Both files were broken for :iosApp compile gates.
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+9ec8e640 | revert: drop Antigravity parallel iOS UI and Android behavior changes
+Reverts the "1:1 pixel-perfect UI parity" session that invented a
+Samsung OneUI-style parallel component set instead of porting the real
+Android screens, and changed Android-only behavior along the way:
+
+- e13563e5 iOS CF bridging, keychain & env tweaks
+- 9f6b1ff7 Refactor startup routing and onboarding flow
+- 8b0f5706 feat: 1:1 pixel-perfect cross-platform UI parity, iOS preset
+  theme, and backup support
+
+Removes the parallel :ui-core LastChat* components, OneUITopAppBar,
+ActivityPill, the IosTheme Android preset, machine-specific
+gradle.properties/gradlew toolchain hacks, the bogus MIGRATION_40_39
+downgrade migration with fallbackToDestructiveMigrationOnDowngrade, and
+the startup-routing/onboarding/WebApi rewrites. Tree is byte-identical
+to cd0670ea.
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
+---
+2ecde9b7 | Revert "Restore gradlew execute permission"
+This reverts commit 80624ad032de32a19a7f148a6ce45bf4abefc48b.
+---
+80624ad0 | Restore gradlew execute permission
+Restore the executable bit on the Gradle wrapper so the project can be built and run normally from the command line and CI environments.
+---
+f223042d | Revert "Add iOS UI components and appearance prefs"
+This reverts commit aa6655a0c53ba3f679c007df7b08004abf622c45.
+---
+aa6655a0 | Add iOS UI components and appearance prefs
+Introduce a set of iOS Compose UI screens and helpers and wire them into the iOS app: new Assistant detail, Drawer content, Chat bottom controls, New chat hero content, Context usage meter, Display/MCP/Storage settings pages. Extend IosAppearancePreferences (amoledBlack, useDynamicColor) and provide saveAppearance overload. Integrate context meter & generical avatar artwork into LastChatIosApp. Add default_generical_pfp resource and expose it via LastChatResources; update ui-core Gradle sync and resource config. Minor gradle file permission normalization.
+---
+e13563e5 | iOS CF bridging, keychain & env tweaks
+Add local environment hints and improve iOS interoperability and Keychain handling.
+
+- gradle.properties: set org.gradle.java.home for local JDK path.
+- gradlew: made executable and export local JAVA_HOME/node paths when present.
+- Info.plist: enable CADisableMinimumFrameDurationOnPhone.
+- LastChatIOSApp.swift: remove redundant KotlinUnit() returns from background task callbacks.
+- IosPlatformJwtSigner: use CFBridgingRetain/CFBridgingRelease, NSMutableDictionary and explicit CFRelease to fix CF memory bridging and safely convert signature to NSData.
+- IosSecureSettingsStore: rewrite Keychain calls to build CFMutableDictionary via withCFDictionary helper, use CFBridgingRetain/Release, add logging and more tolerant error handling to avoid crashes on keychain failures.
+
+These changes improve memory management and stability for iOS platform interop and add developer environment conveniences.
+---
+9f6b1ff7 | Refactor startup routing and onboarding flow
+Rework initial screen resolution in RouteActivity: replace initialChatScreen/hasSuccessfulReplyBeforeSetup with a single initialScreen and use settingsFlow.first + conversationRepo checks to decide whether to show Setup or the default chat, handling deep links/spontaneous targets and deferring navigation until NavHost is ready. Add a MIGRATION_40_39 (drops an index) and register it in Room migrations; enable fallbackToDestructiveMigrationOnDowngrade to avoid downgrade crashes. Tweak onboarding (popUpTo target, back handler guard, ripple drawing optimization) and make OnboardingVM read non-dummy settings via a helper. Restrict WebApi icon fallback to known catalog names, move setup icon to drawable-nodpi, and update two tests accordingly.
+---
+8b0f5706 | feat: 1:1 pixel-perfect cross-platform UI parity, iOS preset theme, and backup support
+---
+cd0670ea | Remove Codex provider support
+This removes the deprecated Codex provider implementation, OAuth/account flow, and provider-specific model/catalog plumbing. The change strips the Codex provider type, related UI and preset configuration, account storage and sign-in code, and the associated tests and assets. This simplifies provider handling and avoids carrying legacy OpenAI-account-specific Codex support in the app.
+---
+c6a550d3 | Use catalog context metadata and freshness
+This change lets resolved model metadata fall back to catalog context-window and image limits when a model entry leaves them unset, while still preserving explicit per-model overrides. It also tracks catalog schemaVersion/updatedAt in the snapshot and prefers the bundled catalog when it is newer or equivalent to the downloaded copy. The tests were updated to cover both fallback and precedence behavior, and the bundled catalog entries for several Qwen models were normalized to alias/match-based metadata.
+---
+368a5d97 | Update catalog: add model capacities & modalities
+Enrich catalog metadata across many models/providers: add context_window and max_images_in_context fields, set type/input_modalities/output_modalities where missing, and normalize image limits for image/chat models. Add new model entries (e.g. gpt-4.1, gemini-1.5-pro, claude-3-5-haiku, mistral-medium-3.5, codestral, devstral-2) and enhance existing entries with context and modality info. Increase several reasoning_config.max_tokens and preset token lists. Mark STT models (whisper variants, others) with AUDIO→TEXT modalities. Also add context_window defaults for some provider entries and fix EOF newline.
+---
+34fa60ac | Add DeepSeek vision & expand Qwen models
+Add DeepSeek V4 vision variant and introduce multiple Qwen family entries in the model catalog (qwen3 covering 3.8/3.5, qwen-vl, qwen-long, qwen-plus, qwen-turbo, qwen-max, qwen-omni, etc.). Update context window sizes, vision/input modalities and abilities for affected models. Sync human-facing docs by updating .agents/skills/lastchat-catalog/SKILL.md. Update app unit tests (ModelCatalogTest) to assert the new catalog entries and their expected capabilities.
+---
+2968c16d | Add structured reasoning model metadata
+This change adds catalog-driven reasoning configuration and MAX effort support across shared model metadata, provider payloads, and the reasoning picker UI. It also refreshes the 2026 model catalog and registry heuristics, improves reasoning timeline/live-state handling, and moves the Coil singleton image loader setup into Application for safer initialization.
+---
+2ac1fefb | local-llm: neutralize model recommendations and add new LiteRT models
+- Remove opinionated starter recommendations from strings and catalog
+
+- Remove dead recommendedModel heuristic from LiteRtCatalog
+
+- Bump allowlist reference to 1_0_19
+
+- Add Phi-4 Mini 3.8B, Qwen2.5 Coder 3B, DeepSeek R1 Distill 7B, and SmolLM2 360M
+---
+2303ca0f | Improve ThinkTag transformer, regex cache, tests
+Refactor ThinkTagTransformer to correctly parse multiple <think> tags, produce UIMessagePart.Reasoning parts, and finish open reasoning when streaming ends. Replace LruCache-based regex cache with a synchronized LinkedHashMap cache and an invalid-regex sentinel; add clearCompiledRegexCache() and call it on memory pressure. Optimize Transformer.visualTransforms list handling, make ImeAutoScroller robust to cancellations, and coalesce streaming snap requests in ChatList. Tighten JSON expression fast-path handling, clamp cosine similarity to [-1,1], add CMake links for c++ static libs, and include unit tests for these features.
+---
+4070c0f3 | Stabilize streaming memory and UI perf
+This change reduces native memory pressure and improves rendering stability under streaming updates. It lowers image/logging caches, adds regex and highlight caches, fixes visual-only transforms for the latest message, tightens memory-search and vector math normalization, and makes chat auto-scroll/IME handling safer. It also adds guarded cleanup on low-memory events and skips attachment syncing during streaming persistence.
+---
+adb60cd2 | Improve DNS racing, MCP presets, onboarding
+Add a RacingDns resolver (concurrent race across system + Cloudflare/Google/AliDNS with IPv6 bootstrap) and reduce DoH timeout to improve DNS reliability. Introduce McpServerConfig.endpointUrl and findMcpConnectionPreset helpers; add McpServerIcon and enhanced McpServerFavicon composables that prefer preset icons and provide a fallback. Ensure manual/configured providers are enabled by default during onboarding and provider configuration (copyProvider(enabled = true)). Improve Codex OAuth error messaging to detect DNS vs timeout causes. Add unit tests for RacingDns, MCP preset matching, and onboarding provider behavior.
+---
+c8cbd043 | Store embeddings on memory updates and UI tweaks
+Compute and persist embeddings when updating core/episodic memories: chunk text, call embeddingService.embedBatch, store embeddingBlob/modelId, update EmbeddingCacheDAO and in-memory embeddingCache, and invalidate old caches. MemoryConsolidationWorker now persists embedding cache for consolidated episodes using the effective episode id. UI: ContextStackIndicator and LorebookStackIndicator badges now adapt width into a pill for >=10, center text, remove extra clipping, and refine layout. Memory recall logic simplified in MemoryVectorMath.passesRecallThreshold (tests updated). Also normalize gradlew mode, add a web-ui lockfile dependency, and set workspace compileSdk to 36.
+---
+2dce87bb | Finalize LastChat cleanup and rebrand
+This commit removes legacy app code and unused configuration while rebranding the remaining RikkaHub references to LastChat. It strips stale banner state, screenshot tooling, legacy DAO/repository APIs, and obsolete Android permissions/dependencies; updates ProGuard and Gradle wiring for the current build; and adds the web UI Node/npm install step to the release workflow. The web UI labels and metadata were also refreshed to match LastChat branding and the current search provider list.
+---
+4e8649d2 | Improve activity timeline UI and fade behavior
+Refactor activity pill & timeline UI and make fades animatable. Key changes: direct-open single completed reasoning entries and ExpandedReasoning support; compact/expanded pill animations and grouping logic simplified; timeline sheet uses accordion layout for multi-step non-live timelines, improved shapes and padding, and copy uses app toaster; ChatMessage click handling now dismisses timeline; fadeEdges now supports animated top/bottom progress (and a boolean overload) with larger default fade. Added tests to cover parsing and single-completed activity behavior.
+---
+64abee43 | fix(chat): prevent spontaneous notification from wiping persisted chat on app re-entry
+---
+db2f92f3 | Merge pull request #209 from Cocolalilal/LastChat
+Remove Star History section and update dav4jvm dependency---
+15b4c6fd | tts: queued gapless playback, chunker & controller refactor
+Overhaul TTS pipeline: add queued/gapless playback API (enqueue, skipNext, setTotalChunks) and update TtsAudioPlayer interface. iOS and Android players now support queued playback and chunk-index tracking. Rewrite TextChunker (better paragraph/sentence/CJK handling, avoid breaking decimals/abbrev) and expand unit tests. Refactor TtsController to use enqueue/prefetch model and simplified worker. Misc fixes: MessageUtils.limitContext behavior, improved speakablePrefixLength logic and autoplay guard in ChatPage, and pin dav4jvm full revision in libs.versions.toml.
+---
+9d2eb7d1 | chore: bump dav4jvm and refresh web-ui lockfile
+Update the dav4jvm dependency to the newer pinned commit hash and refresh the web-ui/package-lock.json metadata. This keeps the Android dependency aligned with the current upstream commit and removes stale peer flag entries generated during the lockfile refresh.
+---
+65273016 | Add DoH fallback for Codex DNS resolution
+Introduce a DNS-over-HTTPS fallback for Codex network calls to mitigate broken/polluted system DNS or private DNS issues. Adds createCodexDnsResolver() (CodexDnsResolver.kt) which tries system DNS → Google DoH → AliDNS DoH with an 8s timeout, and wires it into the Codex OkHttp client in DataSourceModule. Handle UnknownHostException in CodexOAuthManager to show a user-friendly string resource. Adds okhttp-dnsoverhttps dependency and new localized error string.
+
+Files: + app/src/main/java/.../CodexDnsResolver.kt, M app/src/main/java/.../CodexOAuthManager.kt, M app/src/main/java/.../DataSourceModule.kt, M app/src/main/res/values/strings.xml, M app/build.gradle.kts, M gradle/libs.versions.toml
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+c70e246f | Add EmptyStateCard and unify empty states
+Introduce a reusable EmptyStateCard composable and replace multiple ad-hoc empty-state UIs with it for a consistent look (ModelList, AssistantLorebooksSubPage, AssistantSkillsSubPage, SettingProviderDetailPage, SettingLocalLlmPage, WorkspacePage, SettingMcpPage). Also add a Codex OAuth sign-in step in onboarding (CodexSignInPage, wiring in Setup flow) and filter out ComfyUI presets in OnboardingVM. Purpose: DRY the UI, improve consistency and simplify future empty-state updates.
+---
+9c5a05a6 | Reject binary/large docs; MCP & empty-state UI
+Stop embedding archives/binaries or very large files into prompts by adding detection helpers (MAX_TEXT_FILE_SIZE_BYTES, ARCHIVE_AND_BINARY_EXTENSIONS, EXPLICIT_BINARY_MIME_TYPES) and isSupportedTextDocument/isArchiveOrBinaryFile. UnsupportedFileTransformer now advises binding a Linux Workspace. UI: show a WorkspaceRequiredCard in MinimalChatInput for attached unsupported archives. Improve MCP UI (favicon, status tags, icons, pull-to-refresh behavior) and add nicer empty-state cards for Provider/Search/TTS pages. Tweak ActivityPill animations/layout and simplify reasoning display; fix reasoning detection in ChatMessageV2. Guard searchSelected index in PreferencesStore. Add unit test for archive/binary detection and new i18n strings.
+---
+e3387de1 | Use CLEAR_TOP for OAuth redirect activities
+Replace FLAG_ACTIVITY_REORDER_TO_FRONT usage with FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP in CodexOAuthRedirectActivity and McpOAuthRedirectActivity to correctly resume the existing RouteActivity instance after OAuth redirects (fixes crash when provider ID was treated as route). Also add .commandcode/taste/workflow/taste.md to .gitignore and update the taste.md content (preferences and workflow notes). Files changed: CodexOAuthRedirectActivity.kt, McpOAuthRedirectActivity.kt, .gitignore, .commandcode/taste/workflow/taste.md.
+---
+a49850c6 | Improve OAuth flows and polish UI/colors
+Retry OAuth client registration with heuristic client names and clearer failures; add resolveOAuthClientNames and loop/register fallback logic in McpOAuthManager, and add unit test. Improve Codex OAuth callback flow: show richer HTML success/error page, surface detailed messages, and correct auth endpoints (auth.openai.com). Small UI polish: switch pill animations to springs, adjust pill colors/spacing in ActivityPill, and refine dark-mode tints and outlined text field colors in MCP settings. Minor test added for client-name resolution. Overall: better error UX, more robust OAuth registration, and visual polishing.
+---
+520294dc | Update Codex OAuth to Auth0; remove Command Code
+Switch CodexOAuthManager OAuth endpoints to auth0.openai.com. Remove the preset "Command Code" provider from catalog/lastchat_catalog.json. Add .commandcode/taste/workflow/taste.md to document a cross-agent taste-learning workflow (session import intent).
+---
+42a29bad | Improve memory/context planning & streaming UI
+Add a MemoryContextPlanner and integrate deterministic memory selection into GenerationHandler and ChatService; include memoryRevision in context usage keys to ensure cache invalidation. Refactor context accounting (token caps, budget fractions, saturated tool token sum, safety margin logic) and improve SmartContextManager/limitContext to preserve recent tool call/result chains. Add streaming blur visuals to Markdown streaming reveal and tests. Expand backup/restore portable tables (skills, tool_outputs) and DatabaseSanitizer.PORTABLE_TABLES, update WebDAV tests, MCP preset badges to "OAuth", and bump app version to 1.4.6.
+---
+57b8e114 | Little fix
+---
+8f1c1ca5 | Added a dev apk when building the app
+---
+5926fd42 | Restore advanced memory runtime guarantees
+---
+5eceeca5 | Make memory recall diagnostics actionable
+---
+e0c7e56b | Repair memory embedding and retrieval pipeline
+---
+6a8003fa | Expose context capacity and improve live activity timeline behavior
+---
+ce25e32e | Fix Codex requests and lock wallpaper crop ratio
+---
+ac28de6f | Track provider-specific context token limits
+---
+1cc11c56 | Animate chat context usage popup from its placement origin
+---
+9c0c7b2d | Refine context budgeting and skill accounting
+---
+756e7b57 | Center chat toolbar overflow menu scaling
+---
+1222b1e0 | Harden context budgeting and preserve tool dependencies
+---
+88eb66c1 | Remove projected temporary context from usage meter
+---
+803b58a2 | Fix smart history limits and add MCP plugin picker
+---
+5d45be09 | Improve context accounting and provider token counting
+---
+16d234a1 | Improve smart context budgeting and local model metadata sync
+---
+08465470 | Add model context limits and smart context management
+---
+7d09e1ad | Improve dark-theme primary content contrast
+---
+69d12c77 | Add custom Material You colors and initialize QuickJS safely
+---
+52c5d54b | fix(memory): align advanced mode with stable
+---
+c8ef59fd | revert(memory): restore core and episodic consolidation
+---
+93a6ee5c | Implement model catalog enhancements
+---
+f6fe836f | Refine chat drawer layout and scrolling overlays
+---
+18d0afaa | Refactor application architecture and simplify implementation
+---
+e9c4d01b | Expand MCP presets and harden OAuth refresh and discovery
+---
+26bda44d | Improve conversation loading and selection states
+---
+45efd709 | Allow local models on advisory memory shortfalls
+---
+aa0f28ed | Fix contextSummary injection for long conversations
+---
+1a90031b | fix: improve dark mode color contrast in Provider, Search, and TTS settings pages
+---
+4adc493f | UI refinements: fix disclaimer corner radius, speech recognition UI consistency, dark mode polish, and remove file picker divider
+---
+f8ec80c4 | Add bottom padding to grouped file upload buttons for consistent spacing
+---
+002b47db | Remove separator divider below grouped file picker buttons
+---
+1a5c4561 | Show attachment import progress and refine export sheet styling
+---
+83f76b41 | Make time-based memory recall evidence-first
+---
+21560c4a | Prevent local inference memory pressure and OOMs
+---
+47ef3276 | Standardize UI container colors
+---
+ff1d2a96 | fix(memory): surface recalled context entries
+---
+2d2a6d16 | Feat: iOS parity vertical slice - memory, TTS, tools, settings
+Extract Android implementations to portable shared code enabling iOS feature parity:
+
+**Shared/portable code**:
+- MemoryVectorMath, PortableMemoryChunker, buildTemporalMemoryExtractionPrompt moved to :shared
+- TtsAudioPlayer interface and CloudTtsManager dispatch abstraction for platform-independent playback
+- 8 UI components extracted to :ui-core (memory cards, About page, settings panes, model pickers, form rows)
+- MemorySettings, LocalTools configuration with Keychain-only API keys
+
+**iOS implementation**:
+- IosAppController with 1700+ lines: full chat generation, tools (notifications, TTS, ask_user, image generation), Adaptive memory background tasks, scheduled messages, search integration
+- IosLocalNotificationPlatform and IosUserNotificationPlatform using UserNotifications
+- Complete settings UI with 14 search providers, 8 TTS providers, adaptive memory modes, assistant memory management
+- BGAppRefreshTask integration for Adaptive memory consolidation and scheduled-message delivery
+- Image generation gallery with aspect ratio/count configuration
+- Questionnaire UI for character questions in composer
+
+**Android refactors**:
+- TtsController now takes platform-agnostic TtsSpeechGenerator + TtsAudioPlayer
+- MemoryChunker and VectorEngine delegate to portable utilities
+- ModelList and settings components migrate to :ui-core implementations
+- SettingsAdaptiveScaffold navigation pane extracted verbatim to :ui-core
+
+**Tests**:
+- 8 new shared/iOS unit tests covering memory state, search/TTS preferences, background deadlines, ask-user parsing
+- iOS simulator background task triggers documented in iosApp/README.md
+---
+b94ce700 | Restore configurable memory recall controls
+---
+e7b54de3 | Debounce adaptive memory extraction
+---
+1319cd1f | Make memory processing fully automatic
+---
+a77a933f | Implement temporal memory v3 without graph UI
+---
+66971797 | Remove graph-memory subsystem and bump DB to v38
+Remove the graph-based (Mem0) memory subsystem: deleted GraphMemoryRepository, MemoryGraphDao, graph entities, transfer/ingest workers, Graph UI and shared Mem0 code. Add Room auto-migration Migration_37_38 and new schema (version 38) that drops graph tables. Simplify memory paths across the app (GenerationHandler, ChatService, MemorySearchService, EmbeddingService, DI modules, export/import, tests). Introduce memory consolidation UI/controls and worker integration (AssistantMemoryConsolidationSubPage, consolidation triggers in VMs and drawer). Update strings and related UI to reflect the simplified consolidation-based memory flow.
+---
+03f193dd | Remove async particle loading in graph memory
+Previously, graph particles were created asynchronously via Dispatchers.Default, causing the graph preview to blank repeatedly when Room emitted multiple snapshots in quick succession. This commit removes the async loading state and progress indicator, computing particles synchronously instead. The synchronous approach keeps the visual model stable while Room updates, preventing fragile UI flickering during rapid data changes.
+---
+480c5509 | Enhance graph memory with relations, locking, and robust extraction
+Upgrade memory system from v36→v37 with per-scope concurrency control to prevent ingest races, add memory-to-memory relation tracking, and improve extraction robustness via defensive JSON parsing. Enhance entity linking with batch operations and vector caching; add fallback per-item embedding on batch failure. Refactor NativeEntityExtractor to extract quoted text and technical identifiers. Improve search scoring with detailed hit metadata. Add orphan entity cleanup.
+---
+826833d0 | Enhance memory graph interactivity and visuals
+Add camera animation system with zoom controls (in/out/center) and node focus. Improve node selection UX with multi-tap interactions—first tap focuses, second tap opens details. Change colors to theme palette instead of hardcoded values. Fix uniform graph scaling on all devices. Add loading indicator and async particle generation. Improve label placement with boundary constraints and better spacing. Add animated hint and selected node info panel. Enhance accessibility with semantic descriptions. Better gesture handling with multi-touch support and bounded translation. Sort links by node degree for better hub-based visibility in bounded previews.
+---
+3b87bf96 | Add PlatformAttachmentOpener and shared settings UI
+Introduce a portable attachment-opening contract and shared settings UI primitives. Adds PlatformAttachmentOpener (shared) and IosPlatformAttachmentOpener (UIKit UIDocumentInteractionController) and wires it into MainViewController/LastChatIosApp/MessageBubble to present Quick Look/Open In with haptics. Extend iOS file picker to accept general data (UTTypeData). Move SettingsGroup/SettingGroupItem into ui-core as LastChatSettingsGroup/LastChatSettingGroupItem, update app to use them, and import material icons. Update docs (ios-parity-matrix, ios-portability, iosApp README) to reflect these portability and UI changes.
+---
+e75de92e | Extract shared UI components to :ui-core for iOS support
+Move production UI composables to a new KMP :ui-core module for iOS/Android code sharing. Components include the assistant picker sheet, composer row/actions/attachments, back button, drawer actions/search/quick-actions, menu button, modal drawer sheet, and activity heatmap card. Android adapters delegate to these shared shells while retaining platform-specific behavior (haptics, navigation, resource strings). iOS now uses the same visual tree. Updates documentation to reflect new parity status.
+---
+9e00ee21 | Add iOS targets, ui-core and multiplatform adapters
+Add iOS application target and broad multiplatform support: new iosApp module, Darwin platform adapters (HttpClient, FileStore, JwtSigner, MediaEncoder, Haptics, SecureSettingsStore, FilePicker), and Provider/Dispatcher expect/actuals for ai/search/tts. Introduce ui-core shared Compose module and move shared UI primitives (GroupedMessageBubble, TypingIndicator, ConversationRowSurface, stat card, theme tokens) there. Convert several modules (ai, common, search, tts) to Kotlin Multiplatform, replace JVM-only JSON/Org usage with kotlinx.serialization helpers, add utility functions/tests (number formatting, PKCS#8 reader, AndroidFileStore test), and update Gradle settings/plugins to enable cross-platform compilation. This enables building an unsigned iOS simulator app and sharing core UI + provider logic.
+---
+d8ebc325 | Fix recent chats reference & modernize gesture handling
+- Exclude active conversation from recent chat references to prevent self-reference, and fetch extra results to maintain three prior conversations even when current is filtered out.
+- Replace deprecated pointerInteropFilter with pointerInput and awaitEachGesture for modern Compose gesture handling, eliminating manual MotionEvent processing and GraphGestureState class.
+---
+133d57e5 | Add graph memory deep-linking and UX improvements
+Add support for scrolling to and highlighting specific graph memory nodes when navigating to assistant memory tabs. Improvements include:
+- New `scrollToGraphMemoryId` parameter for graph memory targeting
+- Auto-open memory browser and scroll to target when navigating
+- Highlight visited memory nodes in memory browser
+- Stabilize graph particle positions during physics simulation
+- Add viewport bounds clamping to prevent graph panning too far
+- Fix reheat token logic to only trigger when nodes are dragged
+- Differentiate between regular and graph memory scroll parameters in chat list navigation
+---
+96b55ee6 | Refactor skill auto-invocation and memory persistence
+Major changes to skill management, memory handling, and MCP OAuth:
+
+- **Skill Management**: Add `enableAutomaticSkillInvocation` toggle to allow models to discover unselected skills. Refactor `manage_skills` tool to move skill summaries from system prompt to tool description, simplify schema (required 'skills' array), and reduce token usage with shorter descriptions.
+
+- **Memory Persistence**: Remove manual memory creation/edit/delete tools. Auto-flush conversation memory (both Graph and Simple engines) when exiting a chat via new `flushMemoryOnConversationExit` in ChatService. Filter graph memory queries by scope_kind='ASSISTANT'. Remove manual consolidation UI and toggles.
+
+- **MCP OAuth**: Replace deep-link-based OAuth with embedded HTTP callback server on ports 1460-1462. Add `redirectUri` to client registration and refactor `finishAuthorization` to accept explicit parameters.
+
+- **MCP Protocol**: Add protocol version negotiation in StreamableHttpClientTransport, extracting and storing negotiated version from InitializeResult.
+
+- **Skill Package Editor**: Add ability to list, read, edit, add, and delete skill package files (text files ≤1MB). Support inline SKILL.md editing with metadata sync.
+
+- **Graph Visualization**: Switch to pointerInteropFilter for better multi-touch gesture handling, improve physics parameters and node labeling, fix viewport scaling calculations.
+
+- **UI**: Add 'Automatic skill selection' toggle in assistant settings. Fix MCP settings padding. Remove consolidation UI remnants.
+---
+9c72325c | Add interactive graph visualization and refactor memory prompt placement
+Implement force-directed graph layout with interactive pinch-zoom, pan, and node dragging for memory graph visualization. Add new `placeMemoryPrompt()` function to organize memory/context placement in system vs. dynamic prompts based on memory engine type. Update list item shapes with softer 10dp seams between grouped rows.
+---
+a6d0580a | Fix stale queued jobs and improve installation progress UX
+Add recovery mechanism for stale QUEUED transfers that fail to start, and improve UI feedback for long-running operations.
+
+- MemoryTransferManager: Add recoverStaleQueued() to retry jobs stuck in QUEUED state; update resume() to mark stage as RETRYING
+- MemoryTransferWorker: Persist job state to RUNNING before calling setForeground() to prevent stuck QUEUED state; add foreground service type for Android Q+
+- GraphMemoryOverview: Add 30s auto-recovery timer for stale transfers; show "Retry" button for QUEUED state; display indeterminate progress when job total is unknown
+- Sherpa download: Add SherpaDownloadPhase enum (DOWNLOADING/INSTALLING); show indeterminate progress during installation; update notification text to reflect phase
+---
+1c5d7ffd | Implement graph-based memory system with Mem0-compatible hybrid search
+Adds a sophisticated graph memory engine as an alternative to simple vector-based memory. Includes:
+
+- Graph memory repository with semantic + BM25 hybrid search (Mem0 OSS 2.0.11 compatible)
+- Three memory engines (OFF, SIMPLE, GRAPH) with unified coordinator interface
+- Entity extraction, linking, and deduplication by content hash
+- Background memory ingest and engine transfer workers
+- Session-scoped and assistant-scoped memory scopes
+- Comprehensive UI for browsing, editing, and visualizing memory graphs
+- Memory batching with configurable presets (responsive/balanced/efficient)
+- Support for exporting/importing graph memories alongside simple memories
+- Database v35→v36 with 17 new tables for graph structures, transfers, and activity tracking
+
+Retains backward compatibility: legacy assistants resolve to SIMPLE engine until explicitly switched via UI.
+---
+f3f345ab | revert(memory): remove hybrid memory redesign
+---
+cd638b37 | Refactor memory UI with bottom sheets and components
+Extract memory overview components (stats, graph, processing banner) into a reusable file. Replace AlertDialogs with ModalBottomSheets for better mobile UX. Add collapsible memory settings sections, improve graph visualization with labels and importance weighting, and update memory item actions to use dropdown menus.
+---
+9fae7ff0 | Improve model metadata resolution and Sherpa STT support
+Prefer catalog metadata when resolving model fields (type, modalities, capabilities, imageGenerationMethod, reasoningBehavior) and add null-safety guards in ModelMetadataResolver. Simplify provider model sync logic and update provider detail usages. Add unit tests to ensure endpoint models pick up catalog metadata or preserve endpoint metadata when no match. Expand Sherpa STT catalog with additional models; add onlineModelType to metadata/installed types. Make installer resilient (resume/reuse/restart plan, handle HTTP 416) and add move/rename/store helpers. Update runtime to require model files and use published onlineModelType. Refactor STT UI: reorderable list, drag handle, improved cards and modal settings sheet. Update tests accordingly.
+---
+3e62a7ef | Add hybrid document-based memory system with continuity digests and knowledge graph
+Introduces a comprehensive memory upgrade supporting both entry-based (legacy) and document-based memory systems. New features:
+
+- Document-based memory: User Profile and Character Memory living documents with revision history
+- Continuity digests: Automatic conversation summaries with importance ranking and manual pinning
+- Memory knowledge graph: Entity and relationship extraction from conversations with user-controlled corrections
+- Incremental conversion: Non-destructive bidirectional conversion between entry-based and document-based systems
+- Background processing: Autonomous indexing, embedding, and digestion via WorkManager workers
+- Hybrid search: FTS + vector similarity combining multiple memory sources
+- Full export/import: Complete bundle support preserving all memory hierarchies during character export
+
+Database migration v35→v36 with 10 new tables. Backward compatible: existing entry-based setups continue working; new assistants default to document-based. Memory recall tool always enabled for document systems. Stable conversation snapshots prevent stale memory injection during regeneration.
+---
+7e93f645 | Add MCP OAuth support and presets
+Introduce MCP OAuth flow and curated connection presets. Adds McpOAuthManager (discovery, client registration, PKCE, token storage via SecretKeyManager), redirect Activity and manifest entry, and UI flows in SettingMcpPage (connections sheet, sign-in buttons, status tags). Transport factories updated to attach auth headers via headersProvider; McpManager now refreshes/disconnects OAuth tokens. Add McpConnectionPresets and tests. Also: local-llm media handling fix (prepareLiteRtConversationMessages) with tests, ContextUtil intent flag fix, and R8 consumer rule for sherpa JNI.
+---
+295f10b9 | Remove star history chart from README
+Removed star history chart and related HTML elements from README.---
+3c54a5d2 | Update Star History Chart links in README
+---
+432eacb7 | Remove Star History section from README
+Removed the Star History section from the README.---
+f6e41ac6 | Update Star History section in README
+---
+dae4120f | Support skill package import/export and workspace use
+Add full package handling for Agent Skills: import/export ZIP packages, validate archive paths/sizes, and persist packages under app-private files/skills. Extend SkillExportImport with ZIP import/export, installPackage/sync/delete helpers and safety checks; add unit tests for package import. Extend Skill model with packageRoot, metadata, license, compatibility and helper workspaceDirectory/safePackageRoot. GenerationHandler now syncs managed skills, exposes packaged resources in prompts, and supports new injection positions (TOP_OF_CHAT, BEFORE_LATEST, AT_DEPTH) and depth-based insertion. Workspace tools allow read access to /skills via workspace root; skills UI pages updated to install/sync packages, export full package, filter user-invocable skills, and edit new skill fields.
+---
+17e19b19 | Preserve user model config during catalog sync
+Refactor model metadata resolution to preserve user's saved configuration (type, capabilities, modalities, imageGenerationMethod, reasoning behavior) when syncing from catalog or refreshing from API. This prevents unintended model capability changes.
+
+Improve assistant turn regeneration with version tagging (`versionTag`) to prevent mixing nodes from different regeneration attempts. Add `currentVersionMessages()` to resolve visible messages within a single regenerated turn version.
+
+Add explicit secret deletion handling in `SecretKeyManager.handleExplicitSecretDeletions()` to ensure deleted provider secrets don't restore when re-adding the same provider preset.
+
+Consolidate local STT (speech-to-text) model management into SettingLocalLlmPage instead of separate dedicated screen.
+
+Refactor `syncFreshModelMetadata()` to preserve display name and configuration; only update icon, canonicalModelId, and providerSlug from fresh API models.
+---
+324087dc | Add local STT support and simplify Codex to single account
+Adds on-device speech recognition via sherpa-onnx with model download/management UI. Refactors Codex provider from multi-account round-robin to single-account mode. Updates onboarding to support local model setup during initial configuration.
+---
+798a15ef | Local LLM: user-managed provider & chat-backend
+Make the on-device LiteRT provider user-managed (can be added/reordered/removed) and add a LiteRT preset. Limit the "backend" model flag to CHAT models and update all UI/DTO filtering accordingly (pickers, settings, web API). Add local-llm UX: reorderable installed models, drag handle, swipe-to-delete, imported-downloads list, delete confirmation, backend toggle per local chat model, and ViewModel/store support (move, setChatModelBackend). Persist imported download metadata. Improve assistant overlay hand-off: pass assistant+conversation IDs and defer navigation to avoid stale state. Force Codex Responses API store=false and add Codex usage indicators in model picker.
+---
+871c0732 | Fix Codex OAuth redirect and remove broken navigation
+Remove the attempt to navigate to Codex provider settings after OAuth, which was crashing because `Screen.SettingProviderDetail` requires a valid UUID, not the provider type "codex". Instead, simply return to the main RouteActivity.
+
+Also:
+- Remove unnecessary network blocking check (`awaitNetworkUnblocked`)
+- Fix branding: replace "RikkaHub" with "LastChat" in OAuth callback HTML
+- Simplify callback page (remove meta refresh, consolidate messaging)
+- Update activity flags to `FLAG_ACTIVITY_REORDER_TO_FRONT` for cleaner navigation
+---
+ee4299f9 | Remove add-provider description text
+Remove the secondary description Text (stringResource R.string.setting_provider_page_add_custom_provider_desc) from the Add Custom Provider card in SettingProviderPage.kt to simplify the UI and reduce visual clutter. No functional changes.
+---
+95846465 | Remove description texts from TTS settings
+Remove the helper text describing OpenAI /audio/speech protocol support and the preset description display from the TTS settings page UI, simplifying the layout.
+---
+e9483705 | Remove default provider seeding and fix UI/token handling
+- Change DEFAULT_PROVIDERS to empty list; users add providers via first-time setup instead of being seeded
+- Refactor normalizeLocalProvider() to only deduplicate LiteRtLocal instances, never auto-insert missing ones
+- Link character avatar toggle to also control name visibility in getEffectiveDisplaySetting()
+- Update UI strings to clarify "Show Character Avatar" now controls both avatar and name
+- Fix Hugging Face token handling by trimming whitespace before validation
+- Correct license requirements for Gemma-4-E4B-it and Gemma-3n-E2B-it models (false instead of true)
+---
+868d35ca | Add Codex provider with OAuth and backend model filtering
+Implement full integration with OpenAI's Codex API:
+
+- New ProviderSetting.Codex provider type with OAuth authentication via CodexOAuthManager
+- CodexAccountRepository for multi-account management with token refresh and usage tracking
+- Encrypted credential store (CodexCredentialStore) for secure token storage
+- CodexProvider implementation wrapping OpenAI ResponseAPI with Codex-specific handling
+- Add Model.backend flag to hide models from user-facing pickers (chat, assistant) while allowing them in backend pickers (title, summarizer, subagent, suggestions, translate, OCR)
+- Update ModelSelector with allowBackendModels parameter
+- New CodexProviderConfigure UI component for account management and usage display
+- Integrate Codex provider into DI, catalog, and settings migration layers
+- Improve local LLM catalog reconciliation and model metadata restoration
+- Fix AssistantOverlayScreen layout issues and add separate display/tool image quality
+- Add ProGuard rules for LiteRT-LM and Tasks GenAI
+---
+01512c57 | Tweak assistant overlay UI and physics improvements
+---
+d7b39d2a | feat(overlay): wave origin picker + regenerate + overlay UI improvements
+- Add WaveOriginPickerDialog for choosing glow wave origin point
+- Add waveOriginX/waveOriginY to AssistantOverlayConfig
+- Add regenerate function to AssistantOverlayVM
+- Improve overlay layout: bottom-anchored column, keyboard handling
+- Add copy/refresh/stop actions to overlay transcript
+---
+a6ac99bf | Integrate ChatService into overlay, add look_at_screen tool
+Refactor the assistant overlay to use a real ChatService conversation instead of one-shot generation, enabling full multi-turn back-and-forth, tools, MCP, search, and tool-approval. Add a new `look_at_screen` tool that captures screenshots; for vision models it injects the image as a follow-up USER message via a special tool-result key, and for non-vision models it falls back to OCR. Update overlay UI with better animations, transcript display, and activity pills. Simplify AssistantOverlayVM to delegate to ChatService. Update border colors across UI from `background` to `outlineVariant.copy(alpha=0.6f)` for visual consistency.
+---
+04b56fec | Assistant overlay: full tools, screen look, animations, predictive back, open-in-app continuation
+- Overlay VM: built-in tools (search, screenshot/OCR, workspace), MCP tools, skill tools
+- look_at_screen tool returns screenshot data URL or OCR text fallback
+- Open in app: searches existing conversation with same assistant, appends or creates new
+- Selects and marks assistant as used when continuing in app
+- Predictive back handler with scale-fade animation
+- Dismissal: spring slide-down + fade-out
+- Dot grid: wider spacing (20dp) to reduce per-frame computation
+- Glow: larger blob radius (0.34h) and further edge offset for liquid stretch
+- Entrance wave: bottom-to-top reveal already implemented
+- Input field: removed scaleIn that clipped top, smoother spring
+- Reply panel drag: easier 30% expand threshold, softer spring
+- Settings sync: overlay updates propagate to main app via shared settingsStore
+- Model picker: dark mode background fix
+- Compile verified
+---
+6b983e68 | fix(local-llm): downgrade litertlm 0.13.1 → 0.11.0 (match Edge Gallery)
+Root cause of native crash: JNI method resolution failure.
+
+logcat showed:
+  JNI DETECTED ERROR IN APPLICATION: mid == null
+    in call to CallIntMethodV
+    from nativeCreateConversation(...)
+
+The native liblitertlm_jni.so in 0.13.1 tries to call a Java method
+that doesn't exist in the packaged Kotlin wrapper, causing SIGABRT.
+Gallery uses 0.11.0 and works perfectly on the same device.
+
+The crash happens in Engine.createConversation() — engine.initialize()
+works fine, but creating the conversation triggers the JNI abort.
+---
+aa4b5d18 | Split rootfs and Python install into separate buttons
+Previously the rootfs install automatically also installed Python + pip
+as a single combined operation. This separates them into two distinct
+buttons in the workspace detail page:
+
+- Install Rootfs: downloads + extracts the Linux rootfs, runs smoke test
+- Install Python: installs Python 3 + pip via apt-get (requires rootfs)
+
+Changes:
+- WorkspaceRepository: split bootstrapRootfs into smokeTestRootfs +
+  installPythonInternal, added public installPython(id) method
+- WorkspaceDetailVM: added pythonInstalling/pythonInstallError state
+  flows and installPython()/dismissPythonInstallError() methods
+- WorkspaceDetailPage: added second button in the Enable Shell card,
+  Python install confirmation dialog, and error dialog
+- strings.xml: added new string resources for Python install UI,
+  updated rootfs desc to no longer mention Python
+
+🤖 Generated with [Hermes Agent](https://hermes-agent.nousresearch.com)
+Co-Authored-By: Hermes Agent <noreply@nousresearch.com>
+---
+da00f76e | fix(local-llm): match Edge Gallery's EngineConfig & memory check exactly
+Root cause: LastChat's MemoryGuard checked *available* RAM (model size + KV
+cache estimate + 1GB headroom) and blocked loads when availableMem < required.
+Edge Gallery only checks totalMem >= model.minDeviceMemoryInGb — available RAM
+fluctuates with background processes and is not a reliable indicator.
+
+Fixes:
+1. MemoryGuard: replace available-RAM check with Gallery's total-RAM check
+   against the model's minDeviceMemoryInGb from the catalog allowlist.
+   Secondary safety: block if model file alone >80% of total RAM.
+
+2. EngineConfig: match Gallery exactly:
+   - Remove maxNumImages (Gallery doesn't pass it; let model default apply)
+   - cacheDir = null for normal models (Gallery only sets it for /data/local/tmp)
+   - ExperimentalFlags.enableSpeculativeDecoding = false before & after init
+
+3. GPU crash marker race condition: make init{} use commit() (synchronous) and
+   markGpuCrashedBlocking() actually blocking (was fire-and-forget Thread).
+   The old code could retry GPU before the crash flag was persisted.
+
+4. InstalledLocalModel: add minDeviceMemoryGb field, mapped from
+   LocalModelMetadata.minDeviceMemoryInGb during download.
+
+Resolves: Gemma 4 E2B 'insufficient_memory' error and Gemma 3 1B crash.
+---
+2670fc2c | fix: use 10dp inner corner radius for pinned LiteRT provider card
+The pinned LiteRT provider card used 4dp for its bottom corners when
+grouped with other providers, while every other grouped item uses 10dp
+(PhysicsSwipeToDelete default, preset list, SettingsGroup). Aligns the
+inner radius so the grouping looks consistent.
+---
+b48d263f | fix(ui): migrate isSystemInDarkTheme to LocalDarkMode and stabilize overlay nav
+Replace isSystemInDarkTheme() with LocalDarkMode.current across Blur.kt,
+OnboardingPage.kt, SettingProviderPage.kt, and ModelList.kt so dark mode
+follows the app's ColorMode setting (SYSTEM/LIGHT/DARK) instead of only
+the system setting. Unify ModelList item backgrounds to surfaceContainerHigh
+and fix ModelIcon contentColor to respect selection state.
+
+Provide a no-op NavHostController via LocalNavController in
+AssistantOverlayActivity so composables that read LocalNavController
+(e.g. ModelList long-press) don't crash with "No NavController provided".
+
+Remove obsolete memory-system-v3-plan.md planning doc.
+---
+bd07beb3 | fix(local-llm): resolve OOM crashes by using maxTokens for KV cache instead of full context window
+Root cause: EngineConfig.maxNumTokens controls KV cache allocation, not the
+context window ceiling. LastChat was passing the model's full contextLength
+(up to 32K tokens for Gemma 4), allocating gigabytes of KV cache and causing
+OOM crashes. Google's Edge Gallery app passes maxTokens (1024-4096) instead.
+
+Fixes:
+- LiteRtRuntime: new resolveKvCacheSize() defaults to maxTokens (matching
+  Gallery behavior); user-explicit contextLength override is honored but
+  capped at model's maxContextLength
+- MemoryGuard: || changed to && (OR allowed loads when available RAM was
+  too low but total RAM was sufficient); now accounts for KV cache cost;
+  uses advertisedMem on API 34+
+- AndroidManifest: added android:largeHeap=true (critical for multi-GB
+  model loads)
+- LocalModelTypes: updated contextLength KDoc to reflect new behavior
+---
+560e730e | fix(assistant): don't kill main app when opening assistant overlay
+Replace FLAG_ACTIVITY_CLEAR_TASK with FLAG_ACTIVITY_NO_USER_ACTION so
+launching the assistant overlay no longer clears the main task (which
+killed RouteActivity when the overlay was dismissed).
+
+Also add a separate taskAffinity to AssistantOverlayActivity so it runs
+in its own task, fully isolating it from the main app task.
+---
+32e52db6 | fix: apply blur effect to STT recording overlay in MinimalChatInput
+The STT recording overlay Surface was using plain surfaceContainer color
+without the blur treatment, causing it to lose the glass/blur effect when
+STT mode was active. Now uses blurredContainerColor + lastChatBlurEffect
+to match the parent input capsule.
+
+Fixes both main chat and assistant overlay (which reuses MinimalChatInput
+and provides LocalLastChatBlur).
+---
+40f07589 | Unify assistant overlay with main chat input UI
+Replace the overlay's custom input UI with MinimalChatInput, aligning it with the app's real input system. This enables the overlay to support all input features (file pickers, STT/TTS, search, etc.) without duplication.
+
+Key changes:
+- Remove modal bottom sheet for model/file selection; use MinimalChatInput instead
+- Replace manual input state (inputText + attachments) with ChatInputState
+- Update send() to accept UIMessagePart list instead of raw text
+- Integrate blur effect system (haze + blurred container)
+- Add backdrop image from summon-time capture for blur sampling
+- Redesign edge glow as "silk" dot grid with Material You colors, masked by blob field
+- Inject STT state via CompositionLocal for unified voice handling
+- Simplify conversation/model updates via callbacks
+---
+7f0f6f0d | feat(overlay): sketch-faithful redesign — edge glow, dark pill, drag panel
+Rebuilds the assistant overlay to match the design sketches:
+
+UI:
+- Remove blurred backdrop; underlying app stays fully visible behind a
+  light 22% scrim (was 55% dim + 28dp blur)
+- Replace bottom-only radial glow with EdgeGlow: soft Material You color
+  blobs (primary/secondary/tertiary) drifting along all four screen
+  edges on a 12s organic cycle, revealed bottom→top (~900ms entrance)
+- Glow swells via spring while speaking or listening
+- Split input into a floating "+" circle (opens model picker / file
+  attach / open-in-app sheet) beside a dark pill with the assistant's
+  real avatar as the voice button; both rise with spring(0.7, 300)
+- Send arrow replaces avatar only when text is present
+- Reply panel: drag handle snaps 170dp ↔ 72% screen height, assistant
+  avatar + activity pill, "Open in app" chip, MarkdownBlock rendering,
+  top text fade via offscreen compositing, auto-scroll while streaming
+- Attachment chips for file picker results
+
+Data:
+- Add modelId (Uuid?) to AssistantOverlayConfig for per-overlay model
+  override; cleared in clearMissingModelReferences via ensureValidOrNull
+- VM.send() accepts attachments, resolves modelId override → falls back
+  to assistant's chat model
+- QuickAskContinuationData carries attachments for continuation
+
+Activity pill: hide when done (null label) instead of showing "Done"
+---
+f3c75820 | docs: fix 12 stale/incorrect claims in AGENTS.md
+- Fix moveMove→moveModel (false typo claim removed)
+- Fix Room v33→v35 (both mentions + schema path)
+- Fix baseline profile path: release/→main/
+- Add :local-llm module to Modules table
+- Add service/assist/ to package layout
+- Note AssistantOverlayActivity as 2nd Compose host
+- Fix normalization stages: 5→6 (add normalizeLocalProvider), lines 491-496→500-506
+- Fix importers/→importer/ (singular)
+- Fix Screen sealed interface line: ~1282→~1284
+- Fix strings.xml count: ~1402→~1421
+- Note AppToast.kt Icons.Default exception, update counts
+---
+f8fe1b7b | feat(local-llm): HF license gating + protobuf dep + memory v3 plan
+- Add requiresLicense field to LocalModelMetadata; mark gated Gemma models
+- UI: show lock icon + 'Needs HF Token' for licensed models, link to
+  HF license acceptance page on 403 download failure
+- Add protobuf-javalite dependency to local-llm module
+- Add docs/memory-system-v3-plan.md
+- Gitignore temp_aar/ (binary extraction artifacts)
+---
+119424fd | fix(local-llm): exclude org.json from localagents-rag to prevent NoSuchMethodError during Firebase init
+---
+09d3c15d | Add on-device embeddings (EmbeddingGemma) support
+Integrates on-device text embeddings (EmbeddingGemma) into the local-llm stack. Adds localagents-rag dependency and ProGuard keep rules; introduces LiteRtEmbedder (ABI-gated to arm64-v8a) and wires it into the provider and DI. Extends model types/metadata (LocalModelKind, tokenizer, embeddingDimension) and catalog with an EmbeddingGemma entry. ModelInstall now downloads tokenizer files and supports HuggingFace auth (token provider). Exposes HuggingFace token in SecretKeyManager and UI (settings page). LiteRtProvider implements createEmbedding delegating to the embedder. Also hides generation controls for embedding models and filters recommendations accordingly.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+d84fc981 | fix(db): add migrations to handle downgraded schema from memory v2 revert
+---
+f0bc31d7 | Add digital assistant overlay
+Implement system-level assist gesture overlay that allows LastChat to be set as the device's default digital assistant. Features include:
+
+- VoiceInteractionService + VoiceInteractionSessionService integration for system hookup
+- Floating overlay UI with Material You design (glow, reply panel, input bar)
+- STT/TTS support with auto-start and auto-send options
+- Screenshot capture of trigger-time screen with optional model attachment
+- Settings UI for overlay configuration (assistant character, auto-behaviors, attachment)
+- AssistScreenshotTool for model-initiated screen access
+- New service: LastChatRecognitionService (stub for framework requirement)
+
+Also includes minor UI fixes in LocalLlmPage (border radius consistency) and improved MemoryGuard logic for better RAM availability checks during model loading.
+---
+d0cb4885 | Fix local model download progress and add Koin BOM
+Use the correct progress field (bytesDownloaded) in LocalModelDownloadService to accurately accumulate downloaded bytes. Add Koin BOM to local-llm module dependencies to align Koin versions. Also adjust imports in SettingLocalLlmPage (itemsIndexed, RoundedCornerShape) for upcoming UI changes.
+---
+6b093199 | Fix attachment transformer and input line counting
+UnsupportedFileTransformer: remove the previous role==USER guard so document/image fallbacks are applied for all message roles (ensures non-user attachments from tools/assistant are handled).
+
+MinimalChatInput: add a remembered visualLineCount updated from TextField.onTextLayout and use maxOf(text.lines, visualLineCount) for lineCount to avoid height/line-count mismatches during layout.
+---
+868b205d | Enhance local LLM UI with catalog icons and foreground download service
+Improves the local LLM page by:
+- Adding foreground service (LocalModelDownloadService) with persistent notifications for model downloads
+- Integrating catalog metadata to display model icons from the catalog
+- Making provider presets dynamic via withSpecialProviderPresets()
+- Adjusting UI card shapes for better list grouping
+- Removing hardcoded 'recommended' model logic in favor of catalog-driven discovery
+- Relaxing file size validation from exact match to within 10MB tolerance
+- Adding Koin dependency to local-llm module for service injection
+---
+da7a824e | Add on-device LiteRT-LM provider (local-llm)
+Introduce a new local-llm module and integrate an on-device LiteRT-LM provider.
+
+- Add new :local-llm module (catalog, runtime, provider bridge, tool bridge, installer, download manager, model store, memory guard, tests, assets).
+- New ProviderSetting.LiteRtLocal and ProviderManager/DI registration to expose the provider (registered at startup).
+- UI: SettingLocalLlm page + ViewModel, routing entry, provider list pinned top item (non-reorderable), provider detail tweaks.
+- Backup/restore: exclude workspace linux/tmp from backups and implement safe workspace restore.
+- Persistence: sync installed models into settings, DataStore for local models, SecretKeyManager adjustments.
+- Misc: add litertlm dependency, update app build files/strings/web DTOs/AIIcon/AppShortcutManager decoding improvements.
+
+Enables running curated models on-device via LiteRT-LM; pins a built-in local provider and avoids bundling huge reinstallable rootfs in backups.
+---
+f15c5d71 | Reapply "fix(test): replace removed PythonSandbox in androidTest"
+This reverts commit f8d5eab88b46d32483361f81de1d2f20761caf53.
+---
+f8d5eab8 | Revert "fix(test): replace removed PythonSandbox in androidTest"
+This reverts commit 8aa2afc2ed8a4656f63bab8dc2c90f0cb3539812.
+---
+c618a77c | Revert "docs(memory): add v2 session plan and refine v2 plan"
+This reverts commit 115ba19980ea28ca302f3fc57a9dcbfdac52e952.
+---
+5b0ac6da | Revert "feat(memory): add Memory v2 graph store foundation (P1a)"
+This reverts commit fecb53bdd2f9e356778994cbeed73135aef26d53.
+---
+8aa2afc2 | fix(test): replace removed PythonSandbox in androidTest
+PythonSandbox was deleted with the legacy Python executor, leaving two
+androidTest files referencing it and breaking :app:compileDebugAndroidTestKotlin
+(blocking all instrumented tests).
+
+- ContextUtilAndroidTest: create the owned file via importOwnedFile
+  (OwnedFileStorage) instead of PythonSandbox; still exercises
+  openOwnedUriInputStream.
+- WebdavSyncBackupRoundTripTest: seed the generated tool-output file
+  directly under the workspaces/ managed backup dir and derive its URI,
+  preserving the same backup/restore round-trip assertions.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+115ba199 | docs(memory): add v2 session plan and refine v2 plan
+Add docs/memory-system-v2-sessions.md (per-session starter prompts / P1..P11
+breakdown, companion to the plan) and refine docs/memory-system-v2-plan.md.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+fecb53bd | feat(memory): add Memory v2 graph store foundation (P1a)
+Implements phase P1a of the Memory v2 plan (docs/memory-system-v2-plan.md
+§4, §16.1): the graph store schema, with no behavior changes anywhere and
+the legacy memory system untouched.
+
+- 14 additive Room tables (plan §4): memory_node, memory_alias, memory_fact,
+  memory_fact_link, memory_episode, memory_mention, memory_frame,
+  memory_provenance, memory_fts (FTS4 unicode61 remove_diacritics=2 per §19.6),
+  memory_goal, memory_activity, memory_budget_ledger, memory_conversation_state,
+  memory_store_meta, plus int-code objects (MemoryGraphCodes) and 10 DAOs.
+- Kotlin model layer data/model/MemoryGraph.kt: read-side domain models +
+  entity mappers + the closed sealed MemoryOp vocabulary (§6.3).
+- Room v34 via AutoMigration(33->34); 34.json committed.
+- Every new table added to DatabaseSanitizer's allowlist (§11.3, critical).
+- MigrationTestHelper 33->34 test + room-testing dep + androidTest schema assets.
+
+Note: the plan's `memory_entity` table is named `memory_node` here to avoid a
+Room codegen identifier clash with the legacy `MemoryEntity` table (which stays
+until v35). Domain concept is unchanged.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+8dd22798 | Remove lucide, legacy APIs, and memory entities
+Cleanup: removed unused Lucide icon dependency and references (build.gradle.kts, libs.versions.toml). Deleted legacy/stub API interfaces and implementations (LastChatAPI, RikkaHubAPI, SponsorAPI + Sponsor model) and unregistered SponsorAPI from DI. Removed MemoryItemEntity and its FTS entity (memory DB types), and the legacy Python executor. Small runtime fixes: adjust MinimalChatInput padding and trim/cleanup logic in TextChunker. Added graphify agent rules/workflow and a Codex pretool hook. Minor docs update (iOS portability). These changes remove dead/unused code and tidy dependencies.
+---
+db5548b7 | feat: memory v2 plan, graphify hooks, and proot fix
+Add the comprehensive Memory v2 design and supporting developer tooling updates.
+
+- Add docs/memory-system-v2-plan.md — full Memory v2 design, phases, and implementation plan.
+- Add .claude/settings.json with graphify PreToolUse hooks to enforce running graphify before source reads.
+- Update CLAUDE.md and .gitignore (ignore graphify-out/).
+- WorkspaceDetailPage.kt: prefer Alpine armv7 minirootfs for armeabi-v7a/armeabi builds (fix rootfs URL mapping).
+- ProotShellRunner.kt: replace occurrences of "--root-id" with "-0" to use the correct proot flag.
+
+These changes add planning/docs and small runtime fixes to improve development workflows and ARM compatibility.
+---
+df434064 | Revert "Commit by Ideavo AI"
+This reverts commit 86e4893a604a8a615c1b7b50e2e6d2f032f75bae.
+---
+d625ab81 | Revert "Initial template setup"
+This reverts commit b24e4ea9a211c831e6306fc52b0c27d419e04ef9.
+---
+86e4893a | Commit by Ideavo AI
+---
+b24e4ea9 | Initial template setup
+---
+3aeb3e86 | Update Buy Me A Coffee button text in README
+---
+97b326be | Update README with support links and formatting
+---
+d5163be0 | Merge pull request #187 from Cocolalilal/LastChat_dev
+Enhance and consolidate agent documentation and fix typos---
+a52a6cc2 | Fix moveModel typo and documentation corrections
+Fixes a method naming typo `moveMove` → `moveModel` in ProviderSetting.kt implementations, removes unused i18n dependency (@ai-sdk/openai), and updates extensive documentation across AGENTS.md files and web-ui/AGENTS.md for accuracy. Key corrections: clarified activity/navigation/catalog structure, fixed Korean locale key mapping (ko → ko-rKR), documented 5 file URL resolution cases, corrected API endpoint details, and removed trailing references to deprecated/unsupported tooling (ESLint/Prettier → oxlint/oxfmt for Android builds).
+---
+5fbd9668 | docs: consolidate and enhance agent guidance
+Reorganize agent documentation across the repository:
+
+- Root AGENTS.md: Expanded from 92 to 245 lines with comprehensive architecture, modules, build, AI integration, UI conventions, state rules, database, i18n, web UI integration, catalog, iOS portability, and anti-patterns
+- CLAUDE.md files: Simplified to delegate to AGENTS.md (single source of truth)
+- i18n/AGENTS.md: New 130-line guide for the i18n TUI tool (Bun + React 19 + Ink 6)
+- web-ui/AGENTS.md: Expanded from placeholder to 222 lines with React Router 7, Tailwind v4, shadcn/ui, Zustand, API client, file handling, message parts, and web UI specifics
+
+Improves maintainability and provides module-specific guidance while maintaining a unified core reference.
+---
+d49d046c | Revise README to update AI model references
+Updated description and credits in README.md to reflect changes in AI models used.---
+8e3f0d38 | Merge pull request #186 from Cocolalilal/LastChat_dev
+Last chat dev---
+8cb94b68 | Merge pull request #185 from Cocolalilal/jules-11140696697803289727-eb9ff380
+Add ARMv7 (32-bit) support for PRoot Linux Workspace---
+cb823a38 | Add ARMv7 (32-bit) support for PRoot Linux Workspace
+Co-authored-by: Cocolalilal <109036699+Cocolalilal@users.noreply.github.com>
+---
+cb67657e | Merge pull request #183 from Cocolalilal/fix-preset-providers-reappearing-14507660807533728896
+Fix preset providers automatically re-adding---
+e00a37f7 | Fix preset providers automatically re-adding
+Change the default value of `includeMissingCatalogProviders` to `false` in `mergeCatalogIntoSettings`. This prevents the catalog refresh logic from periodically re-adding deleted/deselected preset providers back into the user's active providers list. Cleaned up explicit parameter passes where `false` was previously used.
+
+Co-authored-by: Cocolalilal <109036699+Cocolalilal@users.noreply.github.com>
+---
+df1bf06a | Add memory entities and improve search robustness
+Introduces MemoryItemEntity and MemoryItemFtsEntity for the unified memory system with FACT/EVENT types, scopes (SHARED_USER/CHARACTER), and status tracking. Improves Conversation.getMessageNodeByMessage to prioritize ID-based lookup for updated messages. Adds RSS fallback to Bing search client when HTML parsing yields no results, with improved header abstraction and XML parsing utilities.
+---
+f9f38e71 | Order memories and sync embedding cache
+Update MemoryDAO to return assistant memories ordered by last_accessed_at and created_at (most-recent-first) when limited. In MemoryRepository, ensure the in-memory embeddingCache is pruned when embeddings are invalidated or deleted (remove keys with matching memory type/id) so it stays consistent with embeddingCacheDAO. Also add a guard in deleteMemory to prevent deleting episodic memories via this tool (episodic IDs are negative) and clear cache on core-memory deletion. Files: MemoryDAO.kt, MemoryRepository.kt.
+---
+d8f24bf5 | Fix message range indexing and optimize markdown rendering
+Fix incorrect message range indices in ChatService from firstAssistantIndex to lastUserIndex (lines 1340, 1389). Add markdown AST and image dimension caching to prevent UI jank and scroll jumps when rendering large messages or images. Implement onSizeResolved callback in ZoomableAsyncImage to capture loaded image dimensions. Separate 'later' and 'dismiss' actions in UpdateDialog to properly track version dismissals.
+---
+2b54c96c | Optimize chat list, refresh update pill & settings route
+• Add messageNodesSignature() to compute a cheap fingerprint of MessageNode lists to avoid deep JsonElement.equals() comparisons; use it to memoize grouping into turns and eliminate scroll stutter in tool-heavy chats.
+• Fix initial/animated scrolling by using Int.MAX_VALUE (Compose clamps to last item) because LazyColumn items are turn-groups, not raw nodes.
+• Revamp update pill/update dialog flow: always collect updateState for smooth AnimatedVisibility transitions, simplify version/ignored checks, and show/hide pill reliably.
+• Polish UpdatePill visuals: extract pill shape, use blurred container color, adjust border and apply lastChat blur effect.
+• Extend settings pane detection to include "Workspace" routes.
+---
+b9a3aed8 | Change app version
+---
+e67ce7ca | Merge branch 'LastChat_dev' of https://github.com/Cocolalilal/LastChat into LastChat_dev
+---
+5fa3483a | Optimize chat rendering & improve update experience
+Performance optimizations:
+- ChatMessageV2: Replace expensive JSON comparisons with lightweight signature hashing to prevent UI stutters during scrolling
+- Use primitive-based remember keys instead of complex object comparisons
+
+Update experience improvements:
+- Add REQUEST_INSTALL_PACKAGES permission for seamless updates
+- Implement install permission checking and handling
+- Centralize update UI to chat page with better state management
+- Polish UpdateDialog with improved download status handling and haptics
+- Simplify UpdateChecker flow logic with checkTrigger
+
+Other fixes:
+- ConversationList: Only show unconsolidated dot for eligible chats (≥4 nodes)
+- Replace Toast with custom toaster in SettingAboutPage
+---
+2a8e0ba8 | Merge pull request #180 from Cocolalilal/LastChat
+cleanup---
+ef195fd9 | Refactor update system with dialog UI and progress tracking
+Replace UpdateCard with UpdateDialog modal component featuring download progress tracking, update dismissal, and force check capability. Add UpdatePill banner notification. Integrate Workspaces into settings navigation. Fix animation conditions for message timeline and improve base64 image caching performance.
+---

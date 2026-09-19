@@ -53,6 +53,8 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -160,7 +162,7 @@ fun SearchPickerButton(
 
     if (showSearchPicker) {
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = lastChatSheetContainerColor(),
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -272,12 +274,12 @@ private fun AppSearchSettings(
     
     // Position-based corner shape calculator
     fun getItemShape(index: Int, totalCount: Int, isSelected: Boolean): RoundedCornerShape {
-        if (isSelected) return RoundedCornerShape(50) // Selected = fully round
+        if (isSelected) return AppShapes.ButtonPill
         return when {
-            totalCount == 1 -> RoundedCornerShape(24.dp) // Single item
-            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-            index == totalCount - 1 -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-            else -> RoundedCornerShape(10.dp)
+            totalCount == 1 -> AppShapes.ListItem
+            index == 0 -> AppShapes.ListItemFirst
+            index == totalCount - 1 -> AppShapes.ListItemLast
+            else -> AppShapes.ListItemMiddle
         }
     }
     
@@ -292,7 +294,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
+                shape = AppShapes.ListItem,
                 isAmoled = isAmoled,
                 isDarkMode = isDarkMode
             )
@@ -304,7 +306,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
+                shape = AppShapes.ListItem,
                 isAmoled = isAmoled,
                 isDarkMode = isDarkMode
             )

@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.model.ModeAttachment
 import me.rerere.rikkahub.data.model.TavernCharacterBook
 import me.rerere.rikkahub.data.model.TavernCharacterBookEntry
 import me.rerere.rikkahub.data.model.toTavernCharacterBook
+import me.rerere.rikkahub.data.model.toLorebook
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -332,7 +333,8 @@ object AssistantExportImport : KoinComponent {
                 mesExample = "", 
                 systemPrompt = assistant.systemPrompt, 
                 characterBook = characterBook,
-                tags = assistant.tags.map { it.toString() } 
+                tags = assistant.tags.map { it.toString() },
+                alternateGreetings = assistant.alternateGreetings
             )
         )
 
@@ -621,35 +623,89 @@ object AssistantExportImport : KoinComponent {
             val contentBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return ImportResult.Error("Failed to read file")
             
-            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            val isPng = mimeType == "image/png" || contentBytes.take(8).toByteArray().contentEquals(PNG_HEADER)
-
             var jsonContent: String? = null
             var avatarBytes: ByteArray? = null
 
+            // Determine type by magic bytes
+            val isPng = contentBytes.size >= 8 && contentBytes.take(8).toByteArray().contentEquals(PNG_HEADER)
+            val isWebp = contentBytes.size >= 12 && String(contentBytes, 0, 4) == "RIFF" && String(contentBytes, 8, 4) == "WEBP"
+            val isZip = contentBytes.size >= 4 && contentBytes[0] == 0x50.toByte() && contentBytes[1] == 0x4B.toByte() && contentBytes[2] == 0x03.toByte() && contentBytes[3] == 0x04.toByte()
+
             if (isPng) {
-                // Parse PNG chunks for tEXT/zTXt
                 val chunks = extractPngChunks(contentBytes)
-                // Look for 'chara' (Tavern) or 'ccv3' (V3 spec)
-                val characterData = chunks["chara"] ?: chunks["ccv3"]
+                val preferredKeys = listOf("chara", "ccv3", "character", "card", "ccv2", "card_data", "tavern", "sillytavern", "character_card")
+                var characterData: String? = null
+                for (k in preferredKeys) {
+                    val found = chunks.entries.firstOrNull { it.key.equals(k, ignoreCase = true) }?.value
+                    if (found != null) {
+                        characterData = found
+                        break
+                    }
+                }
+                
+                // Fallback: search any chunk for base64 JSON or direct JSON containing name/data/spec
+                if (characterData == null) {
+                    for ((_, value) in chunks) {
+                        val decodedBytes = decodeBase64OrNull(value)
+                        val candidateStr = if (decodedBytes != null) {
+                            try { String(decodedBytes, Charsets.UTF_8) } catch (e: Exception) { null }
+                        } else {
+                            value
+                        }
+                        if (candidateStr != null && (candidateStr.contains("\"name\"") || candidateStr.contains("\"data\"") || candidateStr.contains("\"spec\""))) {
+                            characterData = value
+                            break
+                        }
+                    }
+                }
+
                 if (characterData != null) {
-                     jsonContent = String(base64Decode(characterData))
-                     avatarBytes = contentBytes // The whole PNG is the avatar
+                    val decodedBytes = decodeBase64OrNull(characterData)
+                    jsonContent = if (decodedBytes != null) {
+                        try { String(decodedBytes, Charsets.UTF_8) } catch (e: Exception) { characterData }
+                    } else {
+                        characterData
+                    }
+                    avatarBytes = contentBytes
                 } else {
                     return ImportResult.Error("No character data found in PNG")
                 }
+            } else if (isWebp) {
+                val characterData = extractWebpData(contentBytes)
+                if (characterData != null) {
+                    jsonContent = characterData
+                    avatarBytes = contentBytes
+                } else {
+                    return ImportResult.Error("No character data found in WebP")
+                }
+            } else if (isZip) {
+                val extracted = extractZipData(contentBytes)
+                if (extracted.first != null) {
+                    jsonContent = extracted.first
+                    avatarBytes = extracted.second
+                } else {
+                    return ImportResult.Error("No character data found in ZIP/CharX")
+                }
             } else {
-                // Assume JSON
-                jsonContent = String(contentBytes)
+                var text = String(contentBytes, Charsets.UTF_8)
+                if (text.startsWith("\uFEFF")) {
+                    text = text.substring(1)
+                }
+                text = text.trim()
+                if (text.startsWith("ey") && !text.startsWith("{") && !text.startsWith("[")) {
+                    val decoded = decodeBase64OrNull(text)
+                    if (decoded != null) {
+                        try { text = String(decoded, Charsets.UTF_8) } catch (e: Exception) {}
+                    }
+                }
+                jsonContent = text
             }
 
             if (jsonContent == null) return ImportResult.Error("Unknown file format")
 
-            // Determine JSON format and deserialize
             try {
                 if (jsonContent.contains("\"format\": \"lastchat_assistant\"") || jsonContent.contains("\"format\":\"lastchat_assistant\"")) {
                     val export = json.decodeFromString<AssistantExportV1>(jsonContent)
-                    // LastChat Bundle
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
@@ -658,22 +714,21 @@ object AssistantExportImport : KoinComponent {
                         missingModels = checkMissingModels(export.assistant)
                     )
                 } else {
-                    // Try to parse as Character Card (V2 or V1)
-                    val assistant = parseCharacterCard(jsonContent, avatarBytes, context)
-                    if (assistant != null) {
+                    val parseRes = parseCharacterCard(jsonContent, avatarBytes, context)
+                    if (parseRes != null) {
                         return ImportResult.Configurable(
-                            assistant = assistant,
-                            exportV1 = null,
+                            assistant = parseRes.first,
+                            exportV1 = parseRes.second,
                             hasMemories = false,
-                            hasLorebooks = false,
-                            missingModels = checkMissingModels(assistant)
+                            hasLorebooks = parseRes.second?.lorebooks?.isNotEmpty() == true,
+                            missingModels = checkMissingModels(parseRes.first)
                         )
                     } else {
-                        return ImportResult.Error("Unsupported JSON format")
+                        return ImportResult.Error("Unsupported character card or JSON format")
                     }
                 }
             } catch (e: Exception) {
-                return ImportResult.Error("JSON Parse Error: ${e.message}")
+                return ImportResult.Error("JSON Parse Error: ${e.message ?: ""}")
             }
             
         } catch (e: Exception) {
@@ -681,8 +736,88 @@ object AssistantExportImport : KoinComponent {
             ImportResult.Error(e.message ?: "Unknown Parsing Error")
         }
     }
-    
-    // Revised Parse Logic Helper
+
+    private fun extractWebpData(bytes: ByteArray): String? {
+        var offset = 12
+        while (offset + 8 <= bytes.size) {
+            val type = String(bytes, offset, 4)
+            val size = (bytes[offset + 4].toInt() and 0xFF) or
+                       ((bytes[offset + 5].toInt() and 0xFF) shl 8) or
+                       ((bytes[offset + 6].toInt() and 0xFF) shl 16) or
+                       ((bytes[offset + 7].toInt() and 0xFF) shl 24)
+            offset += 8
+            if (offset + size > bytes.size) break
+
+            val data = bytes.copyOfRange(offset, offset + size)
+            
+            if (type == "EXIF" || type == "XMP ") {
+                val contentStr = String(data, Charsets.UTF_8)
+                val ccv3Match = Regex("(?i)(chara|ccv3|character|card|ccv2)\\0(.*)").find(contentStr)
+                if (ccv3Match != null) {
+                    try { return String(base64Decode(ccv3Match.groupValues[2].trim())) } catch(e: Exception) {}
+                }
+                val base64Match = Regex("(ey[a-zA-Z0-9\\+/\\r\\n\\s]+={0,2})").find(contentStr)
+                if (base64Match != null) {
+                    try { 
+                        val b64clean = base64Match.groupValues[1].replace("\\s+".toRegex(), "")
+                        val decoded = String(base64Decode(b64clean))
+                        if (decoded.contains("name") || decoded.contains("data")) return decoded
+                    } catch(e: Exception) {}
+                }
+            }
+            // Add custom chunks (chara, ccv3)
+            if (type.lowercase() in listOf("chara", "ccv3", "character", "card", "ccv2")) {
+                try { return String(base64Decode(String(data))) } catch(e: Exception) { return String(data) }
+            }
+            
+            offset += size + (size % 2) // padding
+        }
+        
+        // Brute force base64 search as last resort
+        val contentStr = String(bytes, Charsets.UTF_8)
+        val base64Match = Regex("(ey[a-zA-Z0-9\\+/\\r\\n\\s]{20,}={0,2})").findAll(contentStr)
+        for (match in base64Match) {
+            try { 
+                val b64clean = match.groupValues[1].replace("\\s+".toRegex(), "")
+                val decoded = String(base64Decode(b64clean))
+                if ((decoded.contains("\"name\"") || decoded.contains("\"char_name\"")) && 
+                    (decoded.contains("\"description\"") || decoded.contains("\"personality\"") || decoded.contains("\"data\""))) {
+                    return decoded
+                }
+            } catch(e: Exception) {}
+        }
+        return null
+    }
+
+    private fun extractZipData(bytes: ByteArray): Pair<String?, ByteArray?> {
+        try {
+            val zis = java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes))
+            var entry = zis.nextEntry
+            var jsonStr: String? = null
+            var imageBytes: ByteArray? = null
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val name = entry.name.lowercase()
+                    if (name.endsWith(".json")) {
+                        val content = zis.readBytes().toString(Charsets.UTF_8)
+                        if (jsonStr == null || name.endsWith("card.json") || name.endsWith("character.json") || name.endsWith("data.json")) {
+                            jsonStr = content
+                        }
+                    } else if (name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+                        if (imageBytes == null || name.contains("card") || name.contains("avatar") || name.contains("chara")) {
+                            imageBytes = zis.readBytes()
+                        }
+                    }
+                }
+                entry = zis.nextEntry
+            }
+            zis.close()
+            return Pair(jsonStr, imageBytes)
+        } catch (e: Exception) {
+            return Pair(null, null)
+        }
+    }
+
     private fun checkMissingModels(assistant: Assistant): List<String> {
         val settings = settingsStore.settingsFlow.value
         val missing = mutableListOf<String>()
@@ -841,136 +976,309 @@ object AssistantExportImport : KoinComponent {
     }
     
     /**
-     * Parse character card JSON (V1, V2, or V3 format).
+     * Parse character card JSON (V1, V2, or V3 format, Chub wrappers, CharX, etc.).
      * Returns null if parsing fails.
      */
-    private fun parseCharacterCard(jsonContent: String, avatarBytes: ByteArray?, context: Context): Assistant? {
+    private fun parseCharacterCard(jsonContent: String, avatarBytes: ByteArray?, context: Context? = null): Pair<Assistant, AssistantExportV1?>? {
         return try {
-            val jsonElement = json.parseToJsonElement(jsonContent)
-            val jsonObj = jsonElement.jsonObject
-            
-            // Check spec field for V2/V3
-            val spec = jsonObj["spec"]?.jsonPrimitive?.contentOrNull
-            
-            val assistant = when {
-                spec == "chara_card_v2" || spec == "chara_card_v3" -> {
-                    // V2 or V3 format - parse with data model
-                    val card = json.decodeFromString<CharacterCardV2>(jsonContent)
-                    card.toAssistant()
-                }
-                jsonObj.containsKey("data") -> {
-                    // Has data field but no spec - try V2 anyway
-                    val card = json.decodeFromString<CharacterCardV2>(jsonContent)
-                    card.toAssistant()
-                }
-                jsonObj.containsKey("name") || jsonObj.containsKey("char_name") -> {
-                    // V1 format (flat structure)
-                    parseV1Card(jsonObj)
-                }
-                else -> null
+            val trimmed = jsonContent.trim().removePrefix("\uFEFF")
+            val rawJson = if (trimmed.startsWith("ey") && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+                decodeBase64OrNull(trimmed)?.let {
+                    try { String(it, Charsets.UTF_8) } catch (e: Exception) { null }
+                } ?: trimmed
+            } else {
+                trimmed
             }
-            
-            // Attach avatar if present
-            if (assistant != null && avatarBytes != null) {
+
+            val jsonElement = try {
+                json.parseToJsonElement(rawJson)
+            } catch (e: Exception) {
+                decodeBase64OrNull(rawJson)?.let {
+                    try { json.parseToJsonElement(String(it, Charsets.UTF_8)) } catch(ex: Exception) { null }
+                } ?: return null
+            }
+
+            var currentObj: JsonObject = if (jsonElement is kotlinx.serialization.json.JsonArray) {
+                jsonElement.firstOrNull { it is JsonObject } as? JsonObject ?: return null
+            } else if (jsonElement is JsonObject) {
+                jsonElement
+            } else {
+                return null
+            }
+
+            // Check if there's a base64 "chara" field
+            val charaB64 = currentObj["chara"].asStringOrNull()
+            if (charaB64 != null && charaB64.startsWith("ey")) {
+                decodeBase64OrNull(charaB64)?.let {
+                    try {
+                        val parsed = json.parseToJsonElement(String(it, Charsets.UTF_8))
+                        if (parsed is JsonObject) currentObj = parsed
+                    } catch (e: Exception) {}
+                }
+            }
+
+            // Descend into common container wrappers
+            val wrapperKeys = listOf("character", "definition", "card", "bot", "chara", "character_data", "char")
+            var unwrapped = true
+            while (unwrapped) {
+                unwrapped = false
+                for (key in wrapperKeys) {
+                    val child = currentObj[key]
+                    if (child is JsonObject && (
+                        child.containsKey("data") || 
+                        child.containsKey("name") || 
+                        child.containsKey("char_name") || 
+                        child.containsKey("first_mes") || 
+                        child.containsKey("spec") || 
+                        child.containsKey("definition") ||
+                        child.containsKey("description")
+                    )) {
+                        currentObj = child
+                        unwrapped = true
+                        break
+                    }
+                }
+            }
+
+            // Handle stringified "data"
+            val dataChild = currentObj["data"]
+            if (dataChild is kotlinx.serialization.json.JsonPrimitive && dataChild.isString) {
+                try {
+                    val parsed = json.parseToJsonElement(dataChild.content)
+                    if (parsed is JsonObject) {
+                        val mutable = currentObj.toMutableMap()
+                        mutable["data"] = parsed
+                        currentObj = JsonObject(mutable)
+                    }
+                } catch (e: Exception) {}
+            }
+
+            val dataObj = (currentObj["data"] as? JsonObject) ?: currentObj
+
+            val name = dataObj["name"].asStringOrNull()
+                ?: dataObj["char_name"].asStringOrNull()
+                ?: dataObj["character_name"].asStringOrNull()
+                ?: dataObj["title"].asStringOrNull()
+                ?: dataObj["bot_name"].asStringOrNull()
+                ?: currentObj["name"].asStringOrNull()
+                ?: currentObj["char_name"].asStringOrNull()
+                ?: "Imported Character"
+
+            val description = dataObj["description"].asStringOrNull()
+                ?: dataObj["char_persona"].asStringOrNull()
+                ?: dataObj["persona"].asStringOrNull()
+                ?: dataObj["character_persona"].asStringOrNull()
+                ?: dataObj["char_description"].asStringOrNull()
+                ?: dataObj["about"].asStringOrNull()
+                ?: currentObj["description"].asStringOrNull()
+                ?: currentObj["char_persona"].asStringOrNull()
+                ?: ""
+
+            val personality = dataObj["personality"].asStringOrNull()
+                ?: dataObj["char_personality"].asStringOrNull()
+                ?: currentObj["personality"].asStringOrNull()
+                ?: ""
+
+            val scenario = dataObj["scenario"].asStringOrNull()
+                ?: dataObj["world_scenario"].asStringOrNull()
+                ?: dataObj["char_scenario"].asStringOrNull()
+                ?: currentObj["scenario"].asStringOrNull()
+                ?: currentObj["world_scenario"].asStringOrNull()
+                ?: ""
+
+            val systemPrompt = dataObj["system_prompt"].asStringOrNull()
+                ?: dataObj["main_prompt"].asStringOrNull()
+                ?: dataObj["custom_system_prompt"].asStringOrNull()
+                ?: dataObj["prompt"].asStringOrNull()
+                ?: currentObj["system_prompt"].asStringOrNull()
+                ?: ""
+
+            val mesExample = dataObj["mes_example"].asStringOrNull()
+                ?: dataObj["example_dialogs"].asStringOrNull()
+                ?: dataObj["example_dialogue"].asStringOrNull()
+                ?: dataObj["examples"].asStringOrNull()
+                ?: currentObj["mes_example"].asStringOrNull()
+                ?: currentObj["example_dialogs"].asStringOrNull()
+                ?: ""
+
+            val firstMes = dataObj["first_mes"].asStringOrNull()
+                ?: dataObj["first_message"].asStringOrNull()
+                ?: dataObj["char_greeting"].asStringOrNull()
+                ?: dataObj["greeting"].asStringOrNull()
+                ?: dataObj["initial_message"].asStringOrNull()
+                ?: currentObj["first_mes"].asStringOrNull()
+                ?: currentObj["first_message"].asStringOrNull()
+                ?: currentObj["greeting"].asStringOrNull()
+                ?: ""
+
+            val postHistory = dataObj["post_history_instructions"].asStringOrNull()
+                ?: dataObj["post_history"].asStringOrNull()
+                ?: dataObj["jailbreak"].asStringOrNull()
+                ?: currentObj["post_history_instructions"].asStringOrNull()
+                ?: ""
+
+            val altGreetingsRaw = dataObj["alternate_greetings"]
+                ?: dataObj["alt_greetings"]
+                ?: dataObj["group_only_greetings"]
+                ?: currentObj["alternate_greetings"]
+
+            val alternateGreetings = when (altGreetingsRaw) {
+                is kotlinx.serialization.json.JsonArray -> altGreetingsRaw.mapNotNull { elem ->
+                    elem.asStringOrNull() ?: (elem as? JsonObject)?.let { obj ->
+                        obj["content"].asStringOrNull()
+                            ?: obj["message"].asStringOrNull()
+                            ?: obj["text"].asStringOrNull()
+                            ?: obj["greeting"].asStringOrNull()
+                    }
+                }.filter { it.isNotBlank() }
+                is kotlinx.serialization.json.JsonPrimitive -> altGreetingsRaw.contentOrNull?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                else -> emptyList()
+            }
+
+            val systemPromptBuilder = StringBuilder()
+            if (systemPrompt.isNotBlank()) {
+                systemPromptBuilder.append(systemPrompt.trim()).append("\n\n")
+            }
+            if (description.isNotBlank()) {
+                systemPromptBuilder.append("Description:\n").append(description.trim()).append("\n\n")
+            }
+            if (personality.isNotBlank()) {
+                systemPromptBuilder.append("Personality:\n").append(personality.trim()).append("\n\n")
+            }
+            if (scenario.isNotBlank()) {
+                systemPromptBuilder.append("Scenario:\n").append(scenario.trim()).append("\n\n")
+            }
+            if (mesExample.isNotBlank()) {
+                systemPromptBuilder.append("Examples:\n").append(mesExample.trim()).append("\n\n")
+            }
+            if (postHistory.isNotBlank()) {
+                systemPromptBuilder.append("Instructions:\n").append(postHistory.trim()).append("\n\n")
+            }
+
+            val presetMessages = if (firstMes.isNotBlank()) {
+                listOf(me.rerere.ai.ui.UIMessage(
+                    role = me.rerere.ai.core.MessageRole.ASSISTANT,
+                    parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = firstMes))
+                ))
+            } else {
+                emptyList()
+            }
+
+            var assistant = Assistant(
+                name = name.ifBlank { "Imported Character" },
+                systemPrompt = systemPromptBuilder.toString().trim(),
+                presetMessages = presetMessages,
+                alternateGreetings = alternateGreetings
+            )
+
+            // Avatar handling
+            if (avatarBytes != null && context != null) {
                 val fileName = "avatar_${assistant.id}_${System.currentTimeMillis()}.png"
                 val file = File(context.filesDir, "avatars/$fileName")
                 file.parentFile?.mkdirs()
                 file.writeBytes(avatarBytes)
-                assistant.copy(avatar = Avatar.Image(url = Uri.fromFile(file).toString()))
+                assistant = assistant.copy(
+                    avatar = Avatar.Image(url = Uri.fromFile(file).toString()),
+                    useAssistantAvatar = true
+                )
             } else {
-                assistant
+                val avatarUrl = dataObj["avatar"].asStringOrNull() ?: currentObj["avatar"].asStringOrNull()
+                if (avatarUrl != null && (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://"))) {
+                    assistant = assistant.copy(
+                        avatar = Avatar.Image(url = avatarUrl),
+                        useAssistantAvatar = true
+                    )
+                }
             }
+
+            // Lorebook handling
+            val charBookObj = (dataObj["character_book"] as? JsonObject)
+                ?: (currentObj["character_book"] as? JsonObject)
+
+            val lorebooks = if (charBookObj != null) {
+                parseTavernCharacterBookSafely(charBookObj)?.let { lb ->
+                    if (lb.entries.isNotEmpty()) {
+                        listOf(LorebookExportV2(version = 2, format = "lastchat", lorebook = lb, entryAttachments = emptyMap()))
+                    } else null
+                } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
+            if (lorebooks.isNotEmpty()) {
+                assistant = assistant.copy(enabledLorebookIds = lorebooks.map { it.lorebook.id }.toSet())
+            }
+
+            val exportV1 = if (lorebooks.isNotEmpty()) {
+                AssistantExportV1(assistant = assistant, lorebooks = lorebooks)
+            } else {
+                null
+            }
+
+            Pair(assistant, exportV1)
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
     }
-    
-    /**
-     * Parse V1 format character card (flat structure, no data wrapper).
-     */
-    private fun parseV1Card(jsonObj: JsonObject): Assistant {
-        val name = jsonObj["name"]?.jsonPrimitive?.contentOrNull
-            ?: jsonObj["char_name"]?.jsonPrimitive?.contentOrNull
-            ?: "Imported Character"
-        val description = jsonObj["description"]?.jsonPrimitive?.contentOrNull
-            ?: jsonObj["char_persona"]?.jsonPrimitive?.contentOrNull
-            ?: ""
-        val personality = jsonObj["personality"]?.jsonPrimitive?.contentOrNull ?: ""
-        val scenario = jsonObj["scenario"]?.jsonPrimitive?.contentOrNull
-            ?: jsonObj["world_scenario"]?.jsonPrimitive?.contentOrNull
-            ?: ""
-        val firstMes = jsonObj["first_mes"]?.jsonPrimitive?.contentOrNull
-            ?: jsonObj["char_greeting"]?.jsonPrimitive?.contentOrNull
-            ?: ""
-        val mesExample = jsonObj["mes_example"]?.jsonPrimitive?.contentOrNull
-            ?: jsonObj["example_dialogue"]?.jsonPrimitive?.contentOrNull
-            ?: ""
-        
-        val systemPromptBuilder = StringBuilder()
-        if (description.isNotBlank()) {
-            systemPromptBuilder.append("Description:\n$description\n\n")
+
+    private fun parseTavernCharacterBookSafely(charBookObj: JsonObject): Lorebook? {
+        // 1. Try standard decodeFromJsonElement
+        try {
+            val book = json.decodeFromJsonElement(me.rerere.rikkahub.data.model.TavernCharacterBook.serializer(), charBookObj)
+            val lorebook = book.toLorebook()
+            if (lorebook.entries.isNotEmpty()) return lorebook
+        } catch (e: Exception) {}
+
+        // 2. Fallback manual extraction
+        try {
+            val name = charBookObj["name"].asStringOrNull() ?: "Imported Lorebook"
+            val desc = charBookObj["description"].asStringOrNull() ?: ""
+            val entriesArray = charBookObj["entries"] as? kotlinx.serialization.json.JsonArray ?: return null
+            val entries = entriesArray.mapNotNull { elem ->
+                val entryObj = elem as? JsonObject ?: return@mapNotNull null
+                val content = entryObj["content"].asStringOrNull() 
+                    ?: entryObj["prompt"].asStringOrNull() 
+                    ?: ""
+                if (content.isBlank()) return@mapNotNull null
+                
+                val keys = when (val k = entryObj["keys"]) {
+                    is kotlinx.serialization.json.JsonArray -> k.mapNotNull { it.asStringOrNull() }
+                    is kotlinx.serialization.json.JsonPrimitive -> k.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                    else -> emptyList()
+                }
+                
+                val enabled = (entryObj["enabled"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull() ?: true
+                val caseSensitive = (entryObj["case_sensitive"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull() ?: false
+                val position = entryObj["position"].asStringOrNull() ?: "after_char"
+                
+                me.rerere.rikkahub.data.model.LorebookEntry(
+                    name = entryObj["name"].asStringOrNull() ?: keys.firstOrNull() ?: "Entry",
+                    prompt = content,
+                    enabled = enabled,
+                    injectionPosition = if (position == "before_char") me.rerere.rikkahub.data.model.InjectionPosition.BEFORE_SYSTEM else me.rerere.rikkahub.data.model.InjectionPosition.AFTER_SYSTEM,
+                    activationType = me.rerere.rikkahub.data.model.LorebookActivationType.KEYWORDS,
+                    keywords = keys,
+                    caseSensitive = caseSensitive
+                )
+            }
+            if (entries.isEmpty()) return null
+            return me.rerere.rikkahub.data.model.Lorebook(
+                name = name.ifBlank { "Imported Lorebook" },
+                description = desc,
+                entries = entries
+            )
+        } catch (e: Exception) {
+            return null
         }
-        if (personality.isNotBlank()) {
-            systemPromptBuilder.append("Personality:\n$personality\n\n")
-        }
-        if (scenario.isNotBlank()) {
-            systemPromptBuilder.append("Scenario:\n$scenario\n\n")
-        }
-        if (mesExample.isNotBlank()) {
-            systemPromptBuilder.append("Examples:\n$mesExample\n\n")
-        }
-        
-        val presetMessages = if (firstMes.isNotBlank()) {
-            listOf(me.rerere.ai.ui.UIMessage(
-                role = me.rerere.ai.core.MessageRole.ASSISTANT,
-                parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = firstMes))
-            ))
-        } else {
-            emptyList()
-        }
-        
-        return Assistant(
-            name = name,
-            systemPrompt = systemPromptBuilder.toString().trim(),
-            presetMessages = presetMessages
-        )
     }
 
-    private fun CharacterCardV2.toAssistant(): Assistant {
-        val data = this.data
-        val systemPromptBuilder = StringBuilder()
-        
-        if (data.description.isNotBlank()) {
-            systemPromptBuilder.append("Description:\n${data.description}\n\n")
+    private fun kotlinx.serialization.json.JsonElement?.asStringOrNull(): String? {
+        return try {
+            if (this is kotlinx.serialization.json.JsonPrimitive) this.contentOrNull else null
+        } catch (e: Exception) {
+            null
         }
-        if (data.personality.isNotBlank()) {
-            systemPromptBuilder.append("Personality:\n${data.personality}\n\n")
-        }
-        if (data.scenario.isNotBlank()) {
-            systemPromptBuilder.append("Scenario:\n${data.scenario}\n\n")
-        }
-        if (data.systemPrompt.isNotBlank()) {
-             systemPromptBuilder.append("System:\n${data.systemPrompt}\n\n")
-        }
-        if (data.mesExample.isNotBlank()) {
-            systemPromptBuilder.append("Examples:\n${data.mesExample}\n\n")
-        }
-        
-        val presetMessages = if (data.firstMes.isNotBlank()) {
-            listOf(me.rerere.ai.ui.UIMessage(
-                role = me.rerere.ai.core.MessageRole.ASSISTANT,
-                parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = data.firstMes))
-            ))
-        } else {
-            emptyList()
-        }
-        
-        return Assistant(
-            name = data.name.ifBlank { "Imported Character" },
-            systemPrompt = systemPromptBuilder.toString().trim(),
-            presetMessages = presetMessages
-        )
     }
 }
 
@@ -978,4 +1286,29 @@ object AssistantExportImport : KoinComponent {
 private fun base64Encode(bytes: ByteArray): String = Base64.encode(bytes)
 
 @OptIn(ExperimentalEncodingApi::class)
-private fun base64Decode(value: String): ByteArray = Base64.decode(value)
+private fun base64Decode(value: String): ByteArray {
+    return decodeBase64OrNull(value) ?: Base64.decode(value)
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+internal fun decodeBase64OrNull(value: String): ByteArray? {
+    try {
+        val result = android.util.Base64.decode(value, android.util.Base64.DEFAULT)
+        if (result != null && result.isNotEmpty()) return result
+    } catch (e: Throwable) {}
+
+    val cleaned = value.replace("\r", "").replace("\n", "").replace(" ", "").trim()
+    val missingPadding = (4 - (cleaned.length % 4)) % 4
+    val padded = if (missingPadding in 1..3) cleaned + "=".repeat(missingPadding) else cleaned
+
+    try {
+        return Base64.Mime.decode(padded)
+    } catch (e: Throwable) {}
+
+    try {
+        return Base64.Default.decode(padded)
+    } catch (e: Throwable) {}
+
+    return null
+}
+

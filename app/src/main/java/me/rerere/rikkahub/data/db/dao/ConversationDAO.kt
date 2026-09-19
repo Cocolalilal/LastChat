@@ -85,6 +85,12 @@ interface ConversationDAO {
     @Query("SELECT COUNT(*) FROM conversationentity")
     fun getConversationCountFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId")
+    suspend fun getConversationCountOfAssistant(assistantId: String): Int
+
+    @Query("SELECT DISTINCT assistant_id FROM conversationentity")
+    suspend fun getDistinctAssistantIds(): List<String>
+
     @Query(
         """
         SELECT EXISTS(

@@ -2,6 +2,8 @@ package me.rerere.rikkahub.ui.components.ai
 
 import android.net.Uri
 import android.util.Log
+import android.view.View
+import android.view.Window
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -101,8 +103,6 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ViewModule
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -121,6 +121,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -138,11 +139,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -150,9 +153,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.R
@@ -187,12 +192,16 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionMicrophone
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.LocalSTTState
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.mergeCommittedSttTranscript
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.shouldApplyPendingSttTranscript
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
@@ -329,6 +338,7 @@ fun MinimalChatInput(
     var sttDraft by remember { mutableStateOf("") }
     var acceptSttWhenIdle by remember { mutableStateOf(false) }
     var discardSttWhenIdle by remember { mutableStateOf(false) }
+    var sttEpochAtStop by remember { mutableIntStateOf(0) }
     val sttRecording = sttState.isRecording
     val sttFinalizing = sttState.status == me.rerere.asr.ASRStatus.Stopping
 
@@ -347,6 +357,7 @@ fun MinimalChatInput(
         sttDraft = ""
         acceptSttWhenIdle = false
         discardSttWhenIdle = false
+        sttEpochAtStop = state.sttCommitEpoch
         keyboardController?.hide()
         stt.start { transcript ->
             sttDraft = transcript
@@ -354,6 +365,7 @@ fun MinimalChatInput(
     }
 
     fun stopSttRecording(accept: Boolean) {
+        sttEpochAtStop = state.sttCommitEpoch
         acceptSttWhenIdle = accept
         discardSttWhenIdle = !accept
         stt.stop()
@@ -367,17 +379,31 @@ fun MinimalChatInput(
 
     LaunchedEffect(sttRecording, sttFinalizing, acceptSttWhenIdle, discardSttWhenIdle) {
         if (!sttRecording && !sttFinalizing && (acceptSttWhenIdle || discardSttWhenIdle)) {
-            if (acceptSttWhenIdle) {
+            if (
+                shouldApplyPendingSttTranscript(
+                    accept = acceptSttWhenIdle,
+                    epochAtCapture = sttEpochAtStop,
+                    epochNow = state.sttCommitEpoch,
+                )
+            ) {
                 delay(220)
-                val transcript = sttDraft.trim()
-                
-                if (transcript.isNotBlank()) {
-                    val prefix = state.textContent.text.toString()
-                    state.setMessageText(
-                        if (prefix.isBlank()) transcript else "$prefix $transcript"
+                if (
+                    shouldApplyPendingSttTranscript(
+                        accept = true,
+                        epochAtCapture = sttEpochAtStop,
+                        epochNow = state.sttCommitEpoch,
                     )
-                    
-                    runCatching { state.focusRequester.requestFocus() }
+                ) {
+                    val transcript = sttDraft.trim()
+                    if (transcript.isNotBlank()) {
+                        state.setMessageText(
+                            mergeCommittedSttTranscript(
+                                existing = state.textContent.text.toString(),
+                                transcript = transcript,
+                            )
+                        )
+                        runCatching { state.focusRequester.requestFocus() }
+                    }
                 }
             }
             sttDraft = ""
@@ -769,7 +795,7 @@ fun MinimalChatInput(
                         },
                         containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(AppSize.ChromePill)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
                     ) {
                         Icon(
@@ -787,7 +813,7 @@ fun MinimalChatInput(
                     containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)  // Matches plus button, allows 4dp padding all around
+                        .heightIn(min = AppSize.ChromePill)
                         .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, inputShape),
                 ) {
                     Column(
@@ -1124,6 +1150,25 @@ fun MinimalChatInput(
                 decorFitsSystemWindows = false
             )
         ) {
+            val dialogView = LocalView.current
+            val isDarkTheme = LocalDarkMode.current
+            val backgroundColor = MaterialTheme.colorScheme.background
+
+            SideEffect {
+                val dialogWindow = findDialogWindow(dialogView)
+                dialogWindow?.let { window ->
+                    window.setDimAmount(0f)
+                    @Suppress("DEPRECATION")
+                    window.statusBarColor = android.graphics.Color.TRANSPARENT
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = backgroundColor.luminance() > 0.5f
+                        isAppearanceLightNavigationBars = !isDarkTheme
+                    }
+                }
+            }
+
             val transitionState = remember { MutableTransitionState(false) }
             LaunchedEffect(Unit) {
                 transitionState.targetState = true
@@ -1158,9 +1203,7 @@ fun MinimalChatInput(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            if (amoledMode) Color.Black else MaterialTheme.colorScheme.background
-                        )
+                        .background(backgroundColor)
                         .statusBarsPadding()
                         .imePadding()
                 ) {
@@ -1233,7 +1276,7 @@ fun MinimalChatInput(
                             ) {
                                 AttachmentImportAction(
                                     isImporting = isImportingAttachments,
-                                    modifier = Modifier.size(56.dp),
+                                    modifier = Modifier.size(AppSize.ChromePill),
                                 ) {
                                     val currentAction = when {
                                     isQuestionnaireActive && isFinalQuestion ->
@@ -1259,7 +1302,7 @@ fun MinimalChatInput(
                                             else -> Unit
                                         }
                                     },
-                                    modifier = Modifier.size(56.dp),
+                                    modifier = Modifier.size(AppSize.ChromePill),
                                     containerColorOverride = if (currentAction == LastChatComposerAction.Picker) {
                                         MaterialTheme.colorScheme.surfaceVariant
                                     } else {
@@ -1384,7 +1427,7 @@ private fun WorkspaceRequiredCard(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -1453,7 +1496,7 @@ private fun CharacterQuestionsCard(
     val canGoNext = currentIndex < questionnaire.questions.lastIndex
 
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -1623,7 +1666,7 @@ private fun ToolApprovalCard(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainer,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth()
@@ -2579,7 +2622,7 @@ private fun MinimalFileButtonCompact(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),  // Optically round with 40dp outer container
+        shape = AppShapes.CardMedium,  // Optically round with 40dp outer container
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.height(72.dp)
     ) {
@@ -3056,4 +3099,15 @@ private fun ExpandButtonOverlay(
             )
         }
     }
+}
+
+private fun findDialogWindow(view: View): Window? {
+    var current: Any? = view
+    while (current != null) {
+        if (current is DialogWindowProvider) {
+            return current.window
+        }
+        current = (current as? View)?.parent
+    }
+    return null
 }

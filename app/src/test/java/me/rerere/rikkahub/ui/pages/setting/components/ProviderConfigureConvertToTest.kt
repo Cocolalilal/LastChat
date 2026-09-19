@@ -142,15 +142,4 @@ class ProviderConfigureConvertToTest {
         assertEquals("model.safetensors", comfy.models.single().modelId)
     }
 
-    @Test
-    fun `codex preset should create codex provider`() {
-        val provider = SPECIAL_PROVIDER_PRESETS.single { it.name == "Codex" }.toProviderSetting()
-
-        assertTrue(provider is ProviderSetting.Codex)
-        val codex = provider as ProviderSetting.Codex
-        assertEquals("Codex", codex.name)
-        assertFalse(codex.enabled)
-        assertEquals("https://chatgpt.com/backend-api/codex", codex.customUrl)
-        assertEquals("icons/codex.svg".toCatalogIconUrl(), codex.customIconUri)
-    }
 }

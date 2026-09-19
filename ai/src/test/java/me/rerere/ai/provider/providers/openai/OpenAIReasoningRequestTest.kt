@@ -29,11 +29,42 @@ import me.rerere.common.platform.PlatformMediaEncoder
 import me.rerere.common.platform.PlatformServerEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class OpenAIReasoningRequestTest {
+    private class RecordingPlatformHttpClient : PlatformHttpClient {
+        var lastRequest: PlatformHttpRequest? = null
+
+        override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse {
+            lastRequest = request
+            return PlatformHttpResponse(
+                statusCode = 200,
+                headers = emptyMap(),
+                body = """
+                    {
+                        "id": "test",
+                        "model": "test-model",
+                        "choices": [{
+                            "index": 0,
+                            "message": { "role": "assistant", "content": "Hello" },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {}
+                    }
+                """.trimIndent().encodeToByteArray(),
+            )
+        }
+
+        override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> {
+            lastRequest = request
+            return emptyFlow()
+        }
+    }
+
     private val responseHttpClient = object : PlatformHttpClient {
         override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse {
             error("Network is not used by these reflection tests")
@@ -332,6 +363,104 @@ class OpenAIReasoningRequestTest {
         )
 
         assertEquals("conversation-123", body["prompt_cache_key"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun chatCompletionsSendsOpenCodeSessionHeader() = runBlocking {
+        val recordingClient = RecordingPlatformHttpClient()
+        val api = ChatCompletionsAPI(
+            httpClient = recordingClient,
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            },
+            mediaEncoder = mediaEncoder,
+        )
+
+        api.generateText(
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1"),
+            messages = messages,
+            params = TextGenerationParams(
+                model = reasoningModel,
+                sessionId = "conv-stable-456",
+            ),
+        )
+
+        val header = recordingClient.lastRequest?.headers?.get("x-opencode-session")
+        assertEquals("conv-stable-456", header)
+    }
+
+    @Test
+    fun chatCompletionsGeneratesFallbackSessionHeaderForOpenCodeWhenMissing() = runBlocking {
+        val recordingClient = RecordingPlatformHttpClient()
+        val api = ChatCompletionsAPI(
+            httpClient = recordingClient,
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            },
+            mediaEncoder = mediaEncoder,
+        )
+
+        api.generateText(
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1"),
+            messages = messages,
+            params = TextGenerationParams(
+                model = reasoningModel,
+                sessionId = null,
+            ),
+        )
+
+        val header = recordingClient.lastRequest?.headers?.get("x-opencode-session")
+        assertNotNull(header)
+        assertTrue(header!!.isNotBlank())
+    }
+
+    @Test
+    fun chatCompletionsPreservesCustomOpenCodeSessionHeader() = runBlocking {
+        val recordingClient = RecordingPlatformHttpClient()
+        val api = ChatCompletionsAPI(
+            httpClient = recordingClient,
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            },
+            mediaEncoder = mediaEncoder,
+        )
+
+        api.generateText(
+            providerSetting = providerSetting.copy(baseUrl = "https://opencode.ai/zen/go/v1"),
+            messages = messages,
+            params = TextGenerationParams(
+                model = reasoningModel,
+                sessionId = "conv-ignored",
+                customHeaders = listOf(me.rerere.ai.provider.CustomHeader("x-opencode-session", "custom-session-789")),
+            ),
+        )
+
+        val header = recordingClient.lastRequest?.headers?.get("x-opencode-session")
+        assertEquals("custom-session-789", header)
+    }
+
+    @Test
+    fun chatCompletionsDoesNotSendOpenCodeSessionHeaderToOtherHosts() = runBlocking {
+        val recordingClient = RecordingPlatformHttpClient()
+        val api = ChatCompletionsAPI(
+            httpClient = recordingClient,
+            keyRoulette = object : KeyRoulette {
+                override fun next(keys: String): String = keys
+            },
+            mediaEncoder = mediaEncoder,
+        )
+
+        api.generateText(
+            providerSetting = providerSetting.copy(baseUrl = "https://api.openai.com/v1"),
+            messages = messages,
+            params = TextGenerationParams(
+                model = reasoningModel,
+                sessionId = "conv-stable-456",
+            ),
+        )
+
+        val header = recordingClient.lastRequest?.headers?.get("x-opencode-session")
+        assertNull(header)
     }
 
     @Test

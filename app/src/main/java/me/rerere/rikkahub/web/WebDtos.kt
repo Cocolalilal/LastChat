@@ -36,7 +36,7 @@ import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Lorebook
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Skill
@@ -458,6 +458,7 @@ data class WebProviderModelDto(
     val contextWindowTokens: Int? = null,
     val maxInputTokens: Int? = null,
     val maxOutputTokens: Int? = null,
+    val customContextLimitTokens: Int? = null,
     val contextLimitSource: ContextLimitSource? = null,
     val maxImagesInContext: Int? = null,
 )
@@ -925,6 +926,7 @@ private fun me.rerere.rikkahub.data.ai.mcp.McpServerConfig.toWebMcpServerDto(): 
 
 private fun me.rerere.search.SearchServiceOptions.toWebSearchServiceDto(): WebSearchServiceDto {
     val type = when (this) {
+        is me.rerere.search.SearchServiceOptions.KeylessOptions -> "keyless"
         is me.rerere.search.SearchServiceOptions.BingLocalOptions -> "bing_local"
         is me.rerere.search.SearchServiceOptions.ZhipuOptions -> "zhipu"
         is me.rerere.search.SearchServiceOptions.TavilyOptions -> "tavily"
@@ -954,7 +956,6 @@ private fun ProviderSetting.toWebProviderDto(
     return WebProviderDto(
         id = id.toString(),
         type = when (this) {
-            is ProviderSetting.Codex -> "codex"
             is ProviderSetting.OpenAI -> "openai"
             is ProviderSetting.Google -> "google"
             is ProviderSetting.Claude -> "claude"
@@ -1012,6 +1013,7 @@ private fun Model.toWebProviderModelDto(
         contextWindowTokens = contextWindowTokens,
         maxInputTokens = maxInputTokens,
         maxOutputTokens = maxOutputTokens,
+        customContextLimitTokens = customContextLimitTokens,
         contextLimitSource = contextLimitSource,
         maxImagesInContext = maxImagesInContext,
     )

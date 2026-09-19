@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -37,8 +36,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSize
+import me.rerere.rikkahub.ui.theme.AppSurface
 
-val LastChatComposerInputShape = RoundedCornerShape(24.dp)
+val LastChatComposerInputShape = AppShapes.InputField
 
 enum class LastChatComposerAction {
     Picker,
@@ -61,7 +63,7 @@ fun LastChatComposerRow(
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(me.rerere.rikkahub.ui.theme.AppSpacing.xs),
         content = content,
     )
 }
@@ -72,7 +74,7 @@ fun LastChatComposerRow(
 fun LastChatComposerAddButton(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier.size(48.dp),
+    modifier: Modifier = Modifier.size(AppSize.ChromePill),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     content: @Composable () -> Unit,
 ) {
@@ -80,8 +82,8 @@ fun LastChatComposerAddButton(
         shape = CircleShape,
         color = containerColor,
         border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            AppSurface.SoftEdgeWidth,
+            AppSurface.softEdgeColor(MaterialTheme.colorScheme),
         ),
         modifier = modifier,
     ) {
@@ -99,7 +101,7 @@ fun LastChatComposerAddButton(
 /** The production 24 dp input capsule; text, attachments, and actions are slotted inside. */
 @Composable
 fun RowScope.LastChatComposerCapsule(
-    modifier: Modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+    modifier: Modifier = Modifier.weight(1f).heightIn(min = AppSize.ChromePill),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     content: @Composable () -> Unit,
 ) {
@@ -107,10 +109,10 @@ fun RowScope.LastChatComposerCapsule(
         shape = LastChatComposerInputShape,
         color = containerColor,
         border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            AppSurface.SoftEdgeWidth,
+            AppSurface.softEdgeColor(MaterialTheme.colorScheme),
         ),
-        modifier = modifier.defaultMinSize(minHeight = 48.dp),
+        modifier = modifier.defaultMinSize(minHeight = AppSize.ChromePill),
     ) {
         content()
     }
@@ -121,7 +123,7 @@ fun RowScope.LastChatComposerCapsule(
 fun LastChatComposerActionButton(
     action: LastChatComposerAction,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier.size(36.dp),
+    modifier: Modifier = Modifier.size(AppSize.ComposerAction),
     containerColorOverride: Color? = null,
     content: @Composable (LastChatComposerAction) -> Unit,
 ) {

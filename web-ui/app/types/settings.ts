@@ -1,4 +1,12 @@
 import type { MessageDto } from "./dto";
+
+export interface RpStyleRule {
+  id: string;
+  pattern: string;
+  colorHex: string;
+  enabled: boolean;
+}
+
 /**
  * Display settings
  * @see app/src/main/java/me/rerere/rikkahub/data/datastore/PreferencesStore.kt - DisplaySetting
@@ -28,6 +36,7 @@ export interface DisplaySetting {
   newChatHeaderStyle?: string;
   newChatContentStyle?: string;
   newChatShowAvatar?: boolean;
+  rpStyleRules?: RpStyleRule[];
   [key: string]: unknown;
 }
 

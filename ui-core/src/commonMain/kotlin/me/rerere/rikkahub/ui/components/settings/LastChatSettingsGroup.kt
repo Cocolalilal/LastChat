@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,7 +47,7 @@ fun LastChatSettingsGroup(
             modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp),
         )
         Column(
-            modifier = Modifier.padding(horizontal = horizontalPadding).clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.padding(horizontal = horizontalPadding).clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             content = content,
         )
@@ -88,7 +87,7 @@ fun LastChatSettingGroupItem(
         } else {
             MaterialTheme.colorScheme.surfaceContainerHighest
         },
-        shape = RoundedCornerShape(10.dp),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.ListItemMiddle,
         interactionSource = interactionSource,
         modifier = Modifier.fillMaxWidth().graphicsLayer {
             scaleX = scale
@@ -141,7 +140,7 @@ fun LastChatSettingGroupInputItem(
         } else {
             MaterialTheme.colorScheme.surfaceContainerHighest
         },
-        shape = RoundedCornerShape(10.dp),
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.ListItemMiddle,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(

@@ -13,7 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test

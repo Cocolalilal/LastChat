@@ -421,21 +421,25 @@ fun LorebooksPageContent(
                                 },
                                 onDelete = {
                                     val deletedLorebook = lorebook
+                                    val cleanupKey = "lorebook:${deletedLorebook.id}"
                                     vm.updateSettings(
                                         settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id })
                                     )
                                     vm.cleanupFilesIfUnreferenced(
                                         fileRefs = deletedLorebook.collectMediaFileRefs(),
-                                        delayMs = 4500L,
+                                        delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                        cleanupKey = cleanupKey,
                                     )
                                     toaster.show(
                                         message = context.getString(
                                             R.string.lorebooks_page_deleted,
                                             lorebook.name.ifEmpty { context.getString(R.string.lorebooks_page_unnamed) }
                                         ),
+                                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
                                         action = ToastAction(
                                             label = context.getString(R.string.undo),
                                             onClick = {
+                                                vm.cancelUnreferencedFileCleanup(cleanupKey)
                                                 vm.updateSettings(
                                                     settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
                                                         add(index.coerceAtMost(size), deletedLorebook)

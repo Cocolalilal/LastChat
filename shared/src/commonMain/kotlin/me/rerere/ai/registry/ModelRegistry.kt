@@ -18,7 +18,7 @@ object ModelRegistry {
     val GEMINI_FLASH_LATEST = ModelMatcher.exact("gemini-flash-latest")
     val GEMINI_PRO_LATEST = ModelMatcher.exact("gemini-pro-latest")
     val GEMINI_LATEST = GEMINI_FLASH_LATEST + GEMINI_PRO_LATEST
-    val GEMINI_3_SERIES = GEMINI_3_PRO + GEMINI_3_FLASH
+    val GEMINI_3_SERIES = ModelMatcher.containsRegex("gemini-3")
     val GEMINI_SERIES = GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST
 
     private val CLAUDE_SONNET_3_5 = ModelMatcher.containsRegex("claude-3.5-sonnet")

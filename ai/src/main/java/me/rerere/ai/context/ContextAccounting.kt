@@ -4,9 +4,11 @@ import kotlinx.serialization.encodeToString
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.limitContext
+import me.rerere.ai.ui.snapToTurnGroupBoundary
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
@@ -410,6 +412,9 @@ fun probableTemporaryTokenReserve(
  * Projects the raw chat history to the portion that can actually be sent before dynamic context is
  * added. This is shared by request assembly and the live meter so summaries and truncation cannot
  * disagree between them.
+ *
+ * Enforces the Continuous Summary Bridge (S_raw <= E_summary + 1) and snaps boundaries strictly to
+ * atomic TurnGroups so intermediate tool call/result pairs are never separated.
  */
 fun effectiveHistoryForContext(
     messages: List<UIMessage>,
@@ -425,15 +430,21 @@ fun effectiveHistoryForContext(
         0
     }
     val explicitStart = truncateIndex.takeIf { it in messages.indices } ?: 0
-    val start = maxOf(summaryStart, explicitStart)
-    val retained = if (start >= messages.size) {
+    // Continuous Summary Bridge:
+    // When smart management is active and a summary is present, the raw retention start index
+    // begins at summaryStart (E_summary + 1) to eliminate the amnesia gap, unless explicitly truncated by the user.
+    val rawStart = maxOf(summaryStart, explicitStart)
+
+    // Align boundary strictly to atomic TurnGroups so tool call/result pairs are never separated.
+    val alignedStart = messages.snapToTurnGroupBoundary(rawStart, preferEarlier = true)
+    val retained = if (alignedStart >= messages.size) {
         emptyList()
-    } else if (start <= 0) {
+    } else if (alignedStart <= 0) {
         messages
     } else {
         // limitContext moves the boundary backwards when necessary to avoid separating a tool
         // result from the call it depends on.
-        messages.limitContext(messages.size - start)
+        messages.limitContext(messages.size - alignedStart)
     }
     return if (!smartManagement && (manualHistoryLimit ?: 0) > 0) {
         retained.limitContext(manualHistoryLimit ?: retained.size)
@@ -463,22 +474,24 @@ fun List<UIMessage>.limitImagesForModel(model: Model): List<UIMessage> {
  * Last-resort compaction for a retained context slice. It keeps every message (and therefore
  * tool-call/result IDs and ordering) while shrinking verbose payloads until the hard input budget
  * is respected. Normal history selection happens before this and is preferred whenever possible.
+ *
+ * Cryptographically signed Thinking/Reasoning blocks are NEVER mutated to avoid signature mismatches.
+ * Tool arguments are NEVER wiped to preserve agent execution context.
  */
 fun List<UIMessage>.compactToTokenBudget(model: Model, budget: Int): List<UIMessage> {
     if (budget <= 0) return emptyList()
     var result = this
     if (ContextTokenEstimator.messagesTokens(result, model) <= budget) return result
 
-    // Tool/search payloads and hidden reasoning are the least useful verbatim history.
+    // Tool payloads are compacted to structured semantic receipts while preserving arguments.
+    // Reasoning/Thinking blocks are never mutated.
     result = result.map { message ->
         message.copy(parts = message.parts.map { part ->
             when (part) {
                 is UIMessagePart.ToolResult -> part.copy(
-                    content = JsonPrimitive("[Older tool result compacted for context]"),
-                    arguments = JsonPrimitive("{}"),
+                    content = createSemanticToolReceipt(part),
+                    arguments = part.arguments,
                 )
-                is UIMessagePart.Thinking -> part.copy(thinking = compactText(part.thinking, 160))
-                is UIMessagePart.Reasoning -> part.copy(reasoning = compactText(part.reasoning, 160))
                 else -> part
             }
         })
@@ -486,19 +499,15 @@ fun List<UIMessage>.compactToTokenBudget(model: Model, budget: Int): List<UIMess
     if (ContextTokenEstimator.messagesTokens(result, model) <= budget) return result
 
     // Progressively reduce textual payloads without removing the latest turn or dependency nodes.
+    // Never mutate signed thinking/reasoning blocks.
     var characterLimit = 1_024
     while (characterLimit >= 64 && ContextTokenEstimator.messagesTokens(result, model) > budget) {
         val limit = characterLimit
         result = result.map { message ->
+            if (message.role == me.rerere.ai.core.MessageRole.SYSTEM) return@map message
             message.copy(parts = message.parts.map { part ->
                 when (part) {
                     is UIMessagePart.Text -> part.copy(text = compactText(part.text, limit))
-                    is UIMessagePart.Thinking -> part.copy(thinking = compactText(part.thinking, limit))
-                    is UIMessagePart.Reasoning -> part.copy(reasoning = compactText(part.reasoning, limit))
-                    is UIMessagePart.ToolCall -> part.copy(
-                        toolName = compactText(part.toolName, 96),
-                        arguments = if (part.arguments.length > limit) "{}" else part.arguments,
-                    )
                     else -> part
                 }
             })
@@ -532,14 +541,20 @@ private fun compactText(value: String, maxCharacters: Int): String {
     return value.take(prefix) + marker + value.takeLast(available - prefix)
 }
 
-fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 }
+fun smartInputBudget(
+    model: Model,
+    requestedOutputTokens: Int?,
+    customLimitTokens: Int? = null,
+): Int? {
+    val effectiveWindow = customLimitTokens?.takeIf { it > 0 }
+        ?: model.contextCapacityTokens?.takeIf { it > 0 }
+        ?: model.contextWindowTokens?.takeIf { it > 0 }
     val independentInputLimit = model.maxInputTokens?.takeIf { it > 0 }
-    if (window == null && independentInputLimit == null) return null
-    val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: return null
+    if (effectiveWindow == null && independentInputLimit == null) return null
+    val outputReserve = smartOutputTokenBudget(model, requestedOutputTokens, customLimitTokens = effectiveWindow) ?: return null
     // Covers provider-specific message framing, tokenizer mismatch, and small transformations that
     // occur after context assembly. A visible unused sliver is preferable to a context overflow.
-    val availableAfterOutput = window
+    val availableAfterOutput = effectiveWindow
         ?.let { (it - outputReserve).coerceAtLeast(0) }
         ?: independentInputLimit.orEmptyTokenLimit()
     val rawInputCeiling = listOfNotNull(
@@ -553,9 +568,31 @@ fun smartInputBudget(model: Model, requestedOutputTokens: Int?): Int? {
     return (rawInputCeiling - safetyMargin).coerceAtLeast(0)
 }
 
+/**
+ * Calculates the absolute minimum safe floor for a custom context limit slider.
+ * Prevents setting impossible limits that starve system prompts, tools, or responses.
+ */
+fun calculateMinSafeFloorTokens(
+    model: Model,
+    systemPromptTokens: Int = 0,
+    toolDefinitionTokens: Int = 0,
+    requestedOutputTokens: Int? = null,
+): Int {
+    val reserve = smartOutputTokenBudget(model, requestedOutputTokens) ?: 1_024
+    val fixed = (systemPromptTokens + toolDefinitionTokens + reserve).coerceAtLeast(0)
+    val maxCap = model.baseCapacityTokens ?: model.contextCapacityTokens ?: Int.MAX_VALUE
+    return maxOf(1_500, fixed + 512).coerceAtMost(maxCap)
+}
+
 /** The response ceiling paired with [smartInputBudget], so input + output use the same contract. */
-fun smartOutputTokenBudget(model: Model, requestedOutputTokens: Int?): Int? {
-    val window = model.contextWindowTokens?.takeIf { it > 0 }
+fun smartOutputTokenBudget(
+    model: Model,
+    requestedOutputTokens: Int?,
+    customLimitTokens: Int? = null,
+): Int? {
+    val window = customLimitTokens?.takeIf { it > 0 }
+        ?: model.contextCapacityTokens?.takeIf { it > 0 }
+        ?: model.contextWindowTokens?.takeIf { it > 0 }
     val independentOutputLimit = model.maxOutputTokens?.takeIf { it > 0 }
     val reference = window
         ?: independentOutputLimit

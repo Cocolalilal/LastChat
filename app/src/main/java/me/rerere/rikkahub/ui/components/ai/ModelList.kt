@@ -104,9 +104,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.codex.CodexAccountRepository
-import me.rerere.rikkahub.data.codex.CodexTokenStatus
-import me.rerere.rikkahub.data.codex.CodexUsageWindow
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
@@ -614,15 +611,11 @@ internal fun ColumnScope.ModelList(
                             ModelSectionHeader(
                                 title = item.provider.name
                             ) {
-                                if (item.provider is ProviderSetting.Codex) {
-                                    CodexUsageLimits(item.provider)
-                                } else {
-                                    ProviderBalanceText(
-                                        providerSetting = item.provider,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
+                                ProviderBalanceText(
+                                    providerSetting = item.provider,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
                             }
                         }
                         is ProviderListItem.ModelEntry -> {
@@ -947,74 +940,6 @@ private fun ModelSectionHeader(
     }
 }
 
-/** Displays the active Codex account's rolling request limits in the model picker. */
-@Composable
-private fun CodexUsageLimits(provider: ProviderSetting.Codex) {
-    val repository = koinInject<CodexAccountRepository>()
-    val accounts by repository.accounts.collectAsStateWithLifecycle()
-    val account = accounts.singleOrNull()
-    LaunchedEffect(provider.id, account?.id) {
-        account?.let { runCatching { repository.refreshAccount(it.id) } }
-    }
-    if (account?.tokenStatus == CodexTokenStatus.INVALID || account?.usage == null) return
-
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        account.usage?.primary?.let { window ->
-            CodexUsageLimitIndicator(
-                window = window,
-                fallbackName = stringResource(R.string.codex_five_hour_limit),
-            )
-        }
-        account.usage?.secondary?.let { window ->
-            CodexUsageLimitIndicator(
-                window = window,
-                fallbackName = stringResource(R.string.codex_weekly_limit),
-            )
-        }
-    }
-}
-
-@Composable
-private fun CodexUsageLimitIndicator(
-    window: CodexUsageWindow,
-    fallbackName: String,
-) {
-    val remainingPercent = (100.0 - window.usedPercent).coerceIn(0.0, 100.0)
-    val name = when (window.windowMinutes) {
-        300L -> stringResource(R.string.codex_five_hour_limit)
-        10_080L -> stringResource(R.string.codex_weekly_limit)
-        43_200L -> stringResource(R.string.codex_monthly_limit)
-        null -> fallbackName
-        else -> stringResource(R.string.codex_minute_limit, window.windowMinutes)
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        CircularProgressIndicator(
-            progress = { (remainingPercent / 100.0).toFloat() },
-            modifier = Modifier.size(22.dp),
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 3.dp,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(
-                    R.string.codex_percent_remaining,
-                    remainingPercent.roundToInt(),
-                ),
-                style = MaterialTheme.typography.labelSmall,
-            )
-        }
-    }
-}
 
 @Composable
 private fun ModelItem(

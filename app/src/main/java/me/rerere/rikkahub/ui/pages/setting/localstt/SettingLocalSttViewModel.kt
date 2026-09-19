@@ -24,6 +24,7 @@ import me.rerere.asr.local.SherpaModelMetadata
 import me.rerere.asr.local.SherpaModelStore
 import me.rerere.asr.local.SherpaSttRuntime
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.withSyncedLocalProviderModels
 
 data class LocalSttUiState(
     val installed: List<InstalledSherpaModel> = emptyList(),
@@ -129,26 +130,24 @@ class SettingLocalSttViewModel(
 
     private suspend fun syncModelsToLocalProvider(installed: List<InstalledSherpaModel>) {
         val settings = settingsStore.settingsFlow.value
-        val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull() ?: return
-        val existingByModelId = local.models.associateBy { it.modelId }
+        if (settings.init) return
+        val local = settings.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+        if (local == null && installed.isEmpty()) return
+        val existingByModelId = local?.models.orEmpty().associateBy { it.modelId }
         val sttModels = installed.map { model -> model.toAiModel(existingByModelId[model.id]) }
-        val preservedModels = local.models.filter { it.type != ModelType.STT }
-        val mergedModels = preservedModels + sttModels
-        if (mergedModels == local.models) return
-        val providers = settings.providers.map { provider ->
-            if (provider is ProviderSetting.LiteRtLocal) provider.copy(models = mergedModels) else provider
-        }
+        val preservedModels = local?.models.orEmpty().filter { it.type != ModelType.STT }
+        val updated = settings.withSyncedLocalProviderModels(
+            llmAndEmbeddingModels = preservedModels,
+            sttModels = sttModels,
+        )
         val installedIds = installed.mapTo(mutableSetOf()) { it.id }
         val selectedLocalModel = settings.sttModelId?.let { selectedId ->
-            local.models.firstOrNull { it.id == selectedId && it.type == ModelType.STT }
+            local?.models?.firstOrNull { it.id == selectedId && it.type == ModelType.STT }
         }
         val selectedStillExists = selectedLocalModel == null || selectedLocalModel.modelId in installedIds
-        settingsStore.update(
-            settings.copy(
-                providers = providers,
-                sttModelId = settings.sttModelId.takeIf { selectedStillExists },
-            )
-        )
+        val sttModelId = settings.sttModelId.takeIf { selectedStillExists }
+        if (updated.providers == settings.providers && sttModelId == settings.sttModelId) return
+        settingsStore.update(updated.copy(sttModelId = sttModelId))
     }
 
     private fun InstalledSherpaModel.toAiModel(existing: Model?): Model = (existing ?: Model()).copy(

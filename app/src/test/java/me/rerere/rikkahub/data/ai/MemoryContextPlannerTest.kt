@@ -73,4 +73,45 @@ class MemoryContextPlannerTest {
                 ContextTokenEstimator.textTokens(withoutTools, model)
         )
     }
+
+    @Test
+    fun renderedMemoryPromptIncludesToolInstructionsEvenWhenMemoriesEmpty() {
+        val toolModel = model.copy(abilities = listOf(ModelAbility.TOOL))
+
+        val withoutTools = renderMemoryContextPrompt(model, emptyList()) { "Older" }
+        val withTools = renderMemoryContextPrompt(toolModel, emptyList()) { "Older" }
+
+        assertEquals("", withoutTools)
+        assertTrue(withTools.contains("## Memory Tool"))
+    }
+
+    @Test
+    fun smartMemoryContextIncludesToolInstructionsWhenCandidatesEmpty() {
+        val toolModel = model.copy(abilities = listOf(ModelAbility.TOOL))
+
+        val nonToolPlan = selectSmartMemoryContext(
+            candidates = emptyList(),
+            model = model,
+            inputBudgetTokens = 4_000,
+            requiredContextTokens = 500,
+            historyMessages = listOf(UIMessage.user("hello")),
+            contextPriority = ContextPriority.BALANCED,
+            episodeGroup = { "Older" },
+        )
+        assertEquals("", nonToolPlan.promptText)
+        assertEquals(0, nonToolPlan.promptTokens)
+
+        val toolPlan = selectSmartMemoryContext(
+            candidates = emptyList(),
+            model = toolModel,
+            inputBudgetTokens = 4_000,
+            requiredContextTokens = 500,
+            historyMessages = listOf(UIMessage.user("hello")),
+            contextPriority = ContextPriority.BALANCED,
+            episodeGroup = { "Older" },
+        )
+        assertTrue(toolPlan.promptText.contains("## Memory Tool"))
+        assertTrue(toolPlan.promptTokens > 0)
+        assertEquals(ContextTokenEstimator.textTokens(toolPlan.promptText, toolModel), toolPlan.promptTokens)
+    }
 }

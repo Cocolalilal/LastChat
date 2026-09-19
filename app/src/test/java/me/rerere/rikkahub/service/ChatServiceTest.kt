@@ -6,7 +6,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -204,131 +204,6 @@ class ChatServiceTest {
                 lastPersistMs = 10_000L,
             )
         )
-    }
-
-    @Test
-    fun needsAssistantReplyAfterToolResultDetectsTrailingToolResult() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("search it")),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = listOf(
-                            UIMessagePart.ToolCall(
-                                toolCallId = "call-1",
-                                toolName = "search_web",
-                                arguments = """{"query":"kotlin"}""",
-                            )
-                        ),
-                    )
-                ),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = listOf(
-                            UIMessagePart.ToolResult(
-                                toolCallId = "call-1",
-                                toolName = "search_web",
-                                content = JsonPrimitive("result"),
-                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
-                            )
-                        ),
-                    )
-                ),
-            ),
-        )
-
-        assertTrue(conversation.needsAssistantReplyAfterToolResult())
-    }
-
-    @Test
-    fun needsAssistantReplyAfterToolResultDetectsBlankAssistantAfterToolResult() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("search it")),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = listOf(
-                            UIMessagePart.ToolResult(
-                                toolCallId = "call-1",
-                                toolName = "search_web",
-                                content = JsonPrimitive("result"),
-                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
-                            )
-                        ),
-                    )
-                ),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = emptyList(),
-                    )
-                ),
-            ),
-        )
-
-        assertTrue(conversation.needsAssistantReplyAfterToolResult())
-    }
-
-    @Test
-    fun needsAssistantReplyAfterToolResultIgnoresVisibleAssistantReply() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("search it")),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = listOf(
-                            UIMessagePart.ToolResult(
-                                toolCallId = "call-1",
-                                toolName = "search_web",
-                                content = JsonPrimitive("result"),
-                                arguments = JsonPrimitive("""{"query":"kotlin"}"""),
-                            )
-                        ),
-                    )
-                ),
-                MessageNode.of(UIMessage.assistant("Here is the answer.")),
-            ),
-        )
-
-        assertFalse(conversation.needsAssistantReplyAfterToolResult())
-    }
-
-    @Test
-    fun canAutoResumeAssistantReplyAllowsVisiblePartialReply() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("hi")),
-                MessageNode.of(UIMessage.assistant("partial reply")),
-            ),
-        )
-
-        assertTrue(conversation.canAutoResumeAssistantReply())
-    }
-
-    @Test
-    fun canAutoResumeAssistantReplyAllowsReasoningOnlyStall() {
-        val conversation = Conversation.ofId(
-            id = Uuid.random(),
-            messages = listOf(
-                MessageNode.of(UIMessage.user("hi")),
-                MessageNode.of(
-                    UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = listOf(UIMessagePart.Reasoning("thinking hard")),
-                    )
-                ),
-            ),
-        )
-
-        assertTrue(conversation.canAutoResumeAssistantReply())
     }
 
     @Test

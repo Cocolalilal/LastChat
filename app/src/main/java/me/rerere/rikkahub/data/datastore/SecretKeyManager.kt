@@ -298,7 +298,6 @@ class SecretKeyManager(
      */
     private fun migrateProviderSecrets(provider: ProviderSetting): ProviderSetting {
         return when (provider) {
-            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> {
                 if (provider.apiKey.isNotBlank()) {
                     setApiKey(provider.id, provider.apiKey)
@@ -471,7 +470,6 @@ class SecretKeyManager(
      */
     private fun populateProviderSecrets(provider: ProviderSetting): ProviderSetting {
         return when (provider) {
-            is ProviderSetting.Codex -> provider
             is ProviderSetting.OpenAI -> {
                 provider.copy(apiKey = getApiKey(provider.id, provider.apiKey))
             }

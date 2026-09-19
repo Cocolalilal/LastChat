@@ -14,7 +14,7 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

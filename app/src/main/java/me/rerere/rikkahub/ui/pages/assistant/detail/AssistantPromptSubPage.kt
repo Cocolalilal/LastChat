@@ -1,9 +1,7 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.animation.animateContentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -12,32 +10,31 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
@@ -87,7 +84,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantRegex
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.QuickMessage
-import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.ai.ui.toMessageNode
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -96,6 +93,8 @@ import androidx.compose.ui.text.font.FontFamily
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onSuccess
 import org.koin.compose.koinInject
@@ -123,6 +122,236 @@ fun AssistantPromptSubPage(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        // ═══════════════════════════════════════════════════════════════════
+        // INTROS
+        // ═══════════════════════════════════════════════════════════════════
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+            val intros = remember(assistant.presetMessages, assistant.alternateGreetings) {
+                val list = mutableListOf<String>()
+                assistant.presetMessages.filter { it.role == MessageRole.ASSISTANT }.forEach { list.add(it.toText()) }
+                list.addAll(assistant.alternateGreetings)
+                list
+            }
+            val updateIntros = { newIntros: List<String> ->
+                if (newIntros.isEmpty()) {
+                    onUpdate(assistant.copy(presetMessages = emptyList(), alternateGreetings = emptyList()))
+                } else {
+                    onUpdate(
+                        assistant.copy(
+                            presetMessages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Text(newIntros.first())))),
+                            alternateGreetings = newIntros.drop(1)
+                        )
+                    )
+                }
+            }
+
+            var introsExpanded by remember { mutableStateOf(intros.isNotEmpty()) }
+            var introPendingDelete by remember { mutableStateOf<Int?>(null) }
+            LaunchedEffect(intros.isNotEmpty()) {
+                if (intros.isNotEmpty()) introsExpanded = true
+            }
+
+            introPendingDelete?.let { pendingIndex ->
+                AlertDialog(
+                    onDismissRequest = { introPendingDelete = null },
+                    title = { Text("Delete intro?") },
+                    text = { Text("This intro will be removed from the character.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Error)
+                                val newList = intros.toMutableList()
+                                if (pendingIndex in newList.indices) {
+                                    newList.removeAt(pendingIndex)
+                                    updateIntros(newList)
+                                }
+                                introPendingDelete = null
+                            }
+                        ) {
+                            Text(stringResource(R.string.delete))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { introPendingDelete = null }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                )
+            }
+
+            if (intros.isEmpty()) {
+                OutlinedButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        updateIntros(listOf(""))
+                        introsExpanded = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(Icons.Rounded.Add, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add intro to this character")
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    else
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    haptics.perform(HapticPattern.Tick)
+                                    introsExpanded = !introsExpanded
+                                }
+                        ) {
+                            Text(
+                                text = "Intros",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Icon(
+                                if (introsExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = null
+                            )
+                        }
+
+                        ExpandableContent(visible = introsExpanded) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                ) {
+                                    intros.forEachIndexed { index, intro ->
+                                        var isEditing by remember { mutableStateOf(false) }
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
+                                            shadowElevation = 1.dp,
+                                            modifier = Modifier
+                                                .width(280.dp)
+                                                .height(140.dp)
+                                                .clickable {
+                                                    haptics.perform(HapticPattern.Pop)
+                                                    isEditing = true
+                                                }
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        "Intro #${index + 1}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(Modifier.weight(1f))
+                                                    IconButton(
+                                                        onClick = {
+                                                            haptics.perform(HapticPattern.Tick)
+                                                            introPendingDelete = index
+                                                        },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    text = intro.ifEmpty { "Tap to write intro..." },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 4,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = if (intro.isEmpty())
+                                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                                    else
+                                                        MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+
+                                        if (isEditing) {
+                                            FullScreenSystemPromptEditor(
+                                                systemPrompt = intro,
+                                                onUpdate = { newText ->
+                                                    val newList = intros.toMutableList()
+                                                    newList[index] = newText
+                                                    updateIntros(newList)
+                                                },
+                                                onDone = { isEditing = false }
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardSmall,
+                                        modifier = Modifier
+                                            .width(100.dp)
+                                            .height(140.dp)
+                                            .clickable {
+                                                haptics.perform(HapticPattern.Pop)
+                                                updateIntros(intros + "")
+                                            }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Add,
+                                                null,
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                            Text(
+                                                "Add Intro",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (intros.size > 1) {
+                                    FormItem(
+                                        label = { Text("Cycle through intros on new chats") },
+                                        tail = {
+                                            HapticSwitch(
+                                                checked = assistant.cycleIntrosOnNewChat,
+                                                onCheckedChange = {
+                                                    onUpdate(assistant.copy(cycleIntrosOnNewChat = it))
+                                                }
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ═══════════════════════════════════════════════════════════════════
         // SYSTEM PROMPT
         // ═══════════════════════════════════════════════════════════════════
@@ -243,185 +472,75 @@ fun AssistantPromptSubPage(
                         }
                     }
 
+                    var variablesExpanded by remember { mutableStateOf(false) }
                     Column {
-                        Text(
-                            text = stringResource(R.string.assistant_page_available_variables),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { variablesExpanded = !variablesExpanded }
+                                .padding(vertical = 4.dp)
                         ) {
-                            var pendingInsertion by remember { mutableStateOf<String?>(null) }
-                            val permissionLauncher = rememberLauncherForActivityResult(
-                                ActivityResultContracts.RequestMultiplePermissions()
-                            ) {
-                                pendingInsertion?.let { text ->
-                                    systemPromptValue.insertAtCursor(text)
-                                }
-                                pendingInsertion = null
-                            }
-
-                            DefaultPlaceholderProvider.placeholders.forEach { (k, info) ->
-                                Tag(
-                                    onClick = {
-                                        val textToInsert = "{{$k}}"
-                                        val permissions = mutableListOf<String>()
-                                        if (k == "location") {
-                                            permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                                            permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-                                        } else if (k == "calendar") {
-                                            permissions.add(android.Manifest.permission.READ_CALENDAR)
-                                        }
-
-                                        if (permissions.isNotEmpty()) {
-                                            pendingInsertion = textToInsert
-                                            permissionLauncher.launch(permissions.toTypedArray())
-                                        } else {
-                                            systemPromptValue.insertAtCursor(textToInsert)
-                                        }
-                                    }
-                                ) {
-                                    info.displayName()
-                                    Text(": {{$k}}")
-                                }
-                            }
+                            Text(
+                                text = stringResource(R.string.assistant_page_available_variables),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Icon(
+                                if (variablesExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
-                    }
-                }
-            }
-        }
-
-
-        // ═══════════════════════════════════════════════════════════════════
-        // PRESET MESSAGES
-        // ═══════════════════════════════════════════════════════════════════
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.assistant_page_preset_messages),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.assistant_page_preset_messages_desc),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    assistant.presetMessages.fastForEachIndexed { index, presetMessage ->
-                        // Each preset message in its own card
-                        Surface(
-                            color = MaterialTheme.colorScheme.background,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ExpandableContent(visible = variablesExpanded) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                var pendingInsertion by remember { mutableStateOf<String?>(null) }
+                                val permissionLauncher = rememberLauncherForActivityResult(
+                                    ActivityResultContracts.RequestMultiplePermissions()
                                 ) {
-                                    Select(
-                                        options = listOf(MessageRole.USER, MessageRole.ASSISTANT),
-                                        selectedOption = presetMessage.role,
-                                        onOptionSelected = { role ->
-                                            onUpdate(
-                                                assistant.copy(
-                                                    presetMessages = assistant.presetMessages.mapIndexed { i, msg ->
-                                                        if (i == index) {
-                                                            msg.copy(role = role)
-                                                        } else {
-                                                            msg
-                                                        }
-                                                    }
-                                                )
-                                            )
-                                        },
-                                        modifier = Modifier.width(160.dp)
-                                    )
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    IconButton(
+                                    pendingInsertion?.let { text ->
+                                        systemPromptValue.insertAtCursor(text)
+                                    }
+                                    pendingInsertion = null
+                                }
+
+                                DefaultPlaceholderProvider.placeholders.forEach { (k, info) ->
+                                    Tag(
                                         onClick = {
-                                            onUpdate(
-                                                assistant.copy(
-                                                    presetMessages = assistant.presetMessages.filterIndexed { i, _ ->
-                                                        i != index
-                                                    }
-                                                )
-                                            )
+                                            val textToInsert = "{{$k}}"
+                                            val permissions = mutableListOf<String>()
+                                            if (k == "location") {
+                                                permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                                permissions.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                                            } else if (k == "calendar") {
+                                                permissions.add(android.Manifest.permission.READ_CALENDAR)
+                                            }
+
+                                            if (permissions.isNotEmpty()) {
+                                                pendingInsertion = textToInsert
+                                                permissionLauncher.launch(permissions.toTypedArray())
+                                            } else {
+                                                systemPromptValue.insertAtCursor(textToInsert)
+                                            }
                                         }
                                     ) {
-                                        Icon(Icons.Rounded.Close, null)
+                                        info.displayName()
+                                        Text(": {{$k}}")
                                     }
                                 }
-                                DebouncedTextField(
-                                    value = presetMessage.toText(),
-                                    onValueChange = { text ->
-                                        onUpdate(
-                                            assistant.copy(
-                                                presetMessages = assistant.presetMessages.mapIndexed { i, msg ->
-                                                    if (i == index) {
-                                                        msg.copy(parts = listOf(UIMessagePart.Text(text)))
-                                                    } else {
-                                                        msg
-                                                    }
-                                                }
-                                            )
-                                        )
-                                    },
-                                    stateKey = "preset_$index",
-                                    modifier = Modifier.fillMaxWidth(),
-                                    maxLines = 6
-                                )
                             }
                         }
-                    }
-                    Button(
-                        onClick = {
-                            val lastRole = assistant.presetMessages.lastOrNull()?.role ?: MessageRole.ASSISTANT
-                            val nextRole = when (lastRole) {
-                                MessageRole.USER -> MessageRole.ASSISTANT
-                                MessageRole.ASSISTANT -> MessageRole.USER
-                                else -> MessageRole.USER
-                            }
-                            onUpdate(
-                                assistant.copy(
-                                    presetMessages = assistant.presetMessages + UIMessage(
-                                        role = nextRole,
-                                        parts = listOf(UIMessagePart.Text(""))
-                                    )
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Add, null)
                     }
                 }
             }
         }
-
 
 
     }
 }
+
 
 @OptIn(FlowPreview::class)
 @Composable

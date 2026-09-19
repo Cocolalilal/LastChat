@@ -3,8 +3,8 @@ package me.rerere.rikkahub.data.ai
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.ai.ui.MessageNode
+import me.rerere.ai.ui.toMessageNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
