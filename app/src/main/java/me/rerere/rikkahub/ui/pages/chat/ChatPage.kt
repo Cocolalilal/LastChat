@@ -1231,9 +1231,6 @@ private fun ChatPageContent(
     // State for user message regeneration confirmation dialog
     var showUserRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingUserRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
-    // State for user message delete confirmation dialog
-    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingDeleteMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var showToolbarOverflowMenu by remember { mutableStateOf(false) }
     var showContextUsagePopup by remember { mutableStateOf(false) }
     var isChatShareSelecting by rememberSaveable { mutableStateOf(false) }
@@ -1279,8 +1276,6 @@ private fun ChatPageContent(
         showToolbarOverflowMenu = false
         showUserRegenerateConfirmDialog = false
         pendingUserRegenerateMessage = null
-        showDeleteConfirmDialog = false
-        pendingDeleteMessage = null
         if (isChatShareSelecting) {
             isChatShareSelecting = false
             selectedChatShareItems = emptySet()
@@ -1536,26 +1531,19 @@ private fun ChatPageContent(
                                         inputState.setContents(it.parts)
                                     },
                                     onDelete = { message ->
-                                        if (message.role == me.rerere.ai.core.MessageRole.USER) {
-                                            // User message deletion removes all messages after - show confirmation
-                                            pendingDeleteMessage = message
-                                            showDeleteConfirmDialog = true
-                                        } else {
-                                            // Assistant message deletion - keep existing behavior with undo toast
-                                            scope.launch {
-                                                val backup = frameConversation
-                                                val removedIds = vm.deleteMessage(message)
-                                                toaster.show(
-                                                    message = context.getString(R.string.message_deleted),
-                                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                                        label = context.getString(R.string.undo),
-                                                        onClick = {
-                                                            vm.updateConversation(backup)
-                                                            vm.markNodesAsRestored(removedIds)
-                                                        }
-                                                    )
+                                        scope.launch {
+                                            val backup = frameConversation
+                                            val removedIds = vm.deleteMessage(message)
+                                            toaster.show(
+                                                message = context.getString(R.string.message_deleted),
+                                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                                    label = context.getString(R.string.undo),
+                                                    onClick = {
+                                                        vm.updateConversation(backup)
+                                                        vm.markNodesAsRestored(removedIds)
+                                                    }
                                                 )
-                                            }
+                                            )
                                         }
                                     },
                                     onUpdateMessage = { newNode ->
@@ -1758,38 +1746,6 @@ private fun ChatPageContent(
                                 Text(stringResource(R.string.cancel))
                             }
                         }
-                    )
-                }
-
-                // User message delete confirmation dialog
-                if (showDeleteConfirmDialog && pendingDeleteMessage != null) {
-                    me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog(
-                        title = stringResource(R.string.chat_delete_user_message_title),
-                        consequence = stringResource(R.string.chat_delete_user_message_warning),
-                        onDismiss = {
-                            showDeleteConfirmDialog = false
-                            pendingDeleteMessage = null
-                        },
-                        onConfirm = {
-                            pendingDeleteMessage?.let { message ->
-                                scope.launch {
-                                    val backup = conversation
-                                    val removedIds = vm.deleteMessage(message)
-                                    toaster.show(
-                                        message = context.getString(R.string.message_deleted),
-                                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.updateConversation(backup)
-                                                vm.markNodesAsRestored(removedIds)
-                                            }
-                                        )
-                                    )
-                                }
-                            }
-                            showDeleteConfirmDialog = false
-                            pendingDeleteMessage = null
-                        },
                     )
                 }
 

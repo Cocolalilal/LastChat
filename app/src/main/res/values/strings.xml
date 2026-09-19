@@ -715,6 +715,8 @@
     <string name="setting_fonts_delete_consequence">The custom font file will be deleted from this device.</string>
     <string name="setting_chat_storage_delete_unused_embeddings_title">Delete unused embeddings?</string>
     <string name="setting_chat_storage_delete_unused_embeddings_consequence">Cached vectors that no longer match an active model will be removed.</string>
+    <string name="setting_chat_storage_delete_model_cache_title">Delete cached embeddings?</string>
+    <string name="setting_chat_storage_delete_model_cache_consequence">This will remove all cached vector data for %1$s. This action cannot be undone.</string>
     <string name="setting_provider_page_embedding_model">Embedding</string>
     <string name="setting_provider_page_enable">Enable</string>
     <string name="setting_provider_page_enabled">Enabled</string>

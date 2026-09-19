@@ -821,8 +821,11 @@ fun SettingChatStoragePage(
 
     pendingModelCacheDeletion?.let { modelId ->
         LastChatDestructiveConfirmDialog(
-            title = "Delete cached embeddings?",
-            consequence = "This will remove all cached vector data for $modelId. This action cannot be undone.",
+            title = stringResource(R.string.setting_chat_storage_delete_model_cache_title),
+            consequence = stringResource(
+                R.string.setting_chat_storage_delete_model_cache_consequence,
+                modelId,
+            ),
             onDismiss = { pendingModelCacheDeletion = null },
             onConfirm = {
                 val target = modelId
