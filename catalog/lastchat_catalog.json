@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-09-19",
+  "updated_at": "2026-09-20",
   "search_providers": [
     {
       "id": "keyless",
@@ -9,7 +9,7 @@
         "keyless search",
         "free search"
       ],
-      "description": "Free keyless search router over DuckDuckGo, Wikipedia, and Bing.",
+      "description": "Free multi-source router for weather, news, web, and images. No API key.",
       "icon": "icons/searxng.svg",
       "preset": true
     },
