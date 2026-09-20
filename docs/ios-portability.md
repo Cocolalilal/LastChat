@@ -408,7 +408,8 @@ Current iOS app status:
   injection / JSON-RPC engines. iOS settings now create/edit/delete/enable
   skills and lorebook entries in place (injection position, depth,
   ALWAYS/KEYWORDS/RAG, keywords) on the shared `PortableSkill` /
-  `PortableLorebook` models. `manage_skills` activates turn-scoped skills
+  `PortableLorebook` models. Skill zip packages (`SKILL.md` plus assets) import
+  and export through `PortableSkillPackage` / `PortableZip`. `manage_skills` activates turn-scoped skills
   with Android's available/active/unmatched payload. MCP add/edit can pick
   SSE or streamable HTTP; tools are discovered over PlatformHttpClient and
   enter the same 256-step tool loop. Developer settings show the shared
@@ -548,9 +549,13 @@ Current iOS app status:
   variable fonts. SillyTavern/Chub character cards (JSON V1/V2 and PNG
   `tEXt`/`zTXt`/`iTXt` `chara`) import through shared
   `PortableCharacterCardParser`; compressed chunks reuse the existing
-  `inflateDeflate` inflater (`raw=false` zlib windowBits 15). Remaining 1:1
+  `inflateDeflate` inflater (`raw=false` zlib windowBits 15). Skills import and
+  export Claude `SKILL.md` zip packages through shared `PortableSkillPackage`
+  (store zip + the same raw-deflate inflater). Assistant regex find/replace
+  rules persist on iOS and use shared `replacePortableRegexes` for generation
+  and visual scopes. Remaining 1:1
   gaps: Simulator/Xcode screenshot QA, live LiteRT-LM / PRoot inference,
-  Android Assist activity chrome, SKILL.md zip package import/export, and
+  Android Assist activity chrome, and
   pixel-level drawer/settings screenshot sign-off.
   The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep

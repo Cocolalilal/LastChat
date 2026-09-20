@@ -107,7 +107,9 @@ OLED behavior without Material You. The chat composer Picker opens the same
 model sheet used in Settings. Assistants can import SillyTavern/Chub JSON V1/V2 or
 PNG `tEXt`/`zTXt`/`iTXt` character cards through `PortableCharacterCardParser`.
 Skills and lorebooks have in-place create/edit/delete/enable editors (injection
-position, ALWAYS/KEYWORDS/RAG). MCP servers can use SSE or streamable HTTP.
+position, ALWAYS/KEYWORDS/RAG). Skills import/export Claude `SKILL.md` zip
+packages (frontmatter plus assets). Assistant regex find/replace rules persist
+and apply to generation and visual chat text. MCP servers can use SSE or streamable HTTP.
 Developer settings show the shared AI request-log ring (last 10) plus the
 portable debug ring.
 Workspaces lists LiteRT/Sherpa catalogs and can download/delete files through
