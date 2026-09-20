@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import me.rerere.document.inflateZlib
 import me.rerere.rikkahub.data.prompt.LorebookActivationKind
 import me.rerere.rikkahub.data.prompt.PortableLorebook
 import me.rerere.rikkahub.data.prompt.PortableLorebookEntry
@@ -25,7 +26,7 @@ data class PortableCharacterImport(
 
 /**
  * SillyTavern / Chub character-card parser shared by Android and iOS.
- * Accepts JSON V1/V2 wrappers plus PNG `tEXt`/`iTXt` `chara` payloads.
+ * Accepts JSON V1/V2 wrappers plus PNG `tEXt`/`zTXt`/`iTXt` `chara` payloads.
  */
 object PortableCharacterCardParser {
     private val json = Json {
@@ -41,6 +42,8 @@ object PortableCharacterCardParser {
     private val pngKeys = listOf(
         "chara", "ccv3", "character", "card", "ccv2", "card_data", "tavern", "sillytavern", "character_card",
     )
+
+    private const val PNG_TEXT_INFLATE_MAX = 8 * 1024 * 1024
 
     fun parse(bytes: ByteArray, fileName: String = "", avatarBytes: ByteArray? = null): PortableCharacterImport? {
         val name = fileName.lowercase()
@@ -149,18 +152,38 @@ object PortableCharacterCardParser {
                             latin1(data, separator + 1, data.size - separator - 1)
                     }
                 }
+                "zTXt" -> {
+                    val separator = data.indexOf(0)
+                    if (separator > 0 && separator + 1 < data.size) {
+                        val keyword = latin1(data, 0, separator)
+                        val compressionMethod = data[separator + 1].toInt() and 0xFF
+                        if (compressionMethod == 0) {
+                            val inflated = inflateZlib(
+                                data.copyOfRange(separator + 2, data.size),
+                                PNG_TEXT_INFLATE_MAX,
+                            )
+                            if (inflated != null) {
+                                result[keyword] = latin1(inflated, 0, inflated.size)
+                            }
+                        }
+                    }
+                }
                 "iTXt" -> {
                     val separator = data.indexOf(0)
                     if (separator > 0 && separator + 3 < data.size) {
                         val keyword = latin1(data, 0, separator)
                         val compressionFlag = data[separator + 1].toInt() and 0xFF
-                        if (compressionFlag == 0) {
-                            var cursor = separator + 3
-                            val langEnd = data.indexOf(0, cursor).takeIf { it >= 0 } ?: continue
-                            cursor = langEnd + 1
-                            val translatedEnd = data.indexOf(0, cursor).takeIf { it >= 0 } ?: continue
-                            result[keyword] = data.decodeToString(translatedEnd + 1, data.size)
+                        var cursor = separator + 3
+                        val langEnd = data.indexOf(0, cursor).takeIf { it >= 0 } ?: continue
+                        cursor = langEnd + 1
+                        val translatedEnd = data.indexOf(0, cursor).takeIf { it >= 0 } ?: continue
+                        val payload = data.copyOfRange(translatedEnd + 1, data.size)
+                        val text = if (compressionFlag == 1) {
+                            inflateZlib(payload, PNG_TEXT_INFLATE_MAX)?.decodeToString()
+                        } else {
+                            payload.decodeToString()
                         }
+                        if (text != null) result[keyword] = text
                     }
                 }
             }

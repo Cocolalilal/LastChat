@@ -21,10 +21,11 @@ import platform.zlib.inflateInit2_
 import platform.zlib.z_stream
 
 @OptIn(ExperimentalForeignApi::class)
-internal actual fun inflateRawDeflate(data: ByteArray, maxBytes: Int): ByteArray? {
+internal actual fun inflateDeflate(data: ByteArray, maxBytes: Int, raw: Boolean): ByteArray? {
     memScoped {
         val stream = alloc<z_stream>()
-        if (inflateInit2_(stream.ptr, -15, ZLIB_VERSION, sizeOf<z_stream>().toInt()) != Z_OK) {
+        val windowBits = if (raw) -15 else 15
+        if (inflateInit2_(stream.ptr, windowBits, ZLIB_VERSION, sizeOf<z_stream>().toInt()) != Z_OK) {
             return null
         }
         try {

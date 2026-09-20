@@ -3,8 +3,8 @@ package me.rerere.document
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 
-internal actual fun inflateRawDeflate(data: ByteArray, maxBytes: Int): ByteArray? {
-    val inflater = Inflater(true)
+internal actual fun inflateDeflate(data: ByteArray, maxBytes: Int, raw: Boolean): ByteArray? {
+    val inflater = Inflater(raw)
     return try {
         inflater.setInput(data)
         val chunks = mutableListOf<ByteArray>()

@@ -98,7 +98,14 @@ object PortableDocumentText {
     }
 }
 
-internal expect fun inflateRawDeflate(data: ByteArray, maxBytes: Int): ByteArray?
+internal fun inflateRawDeflate(data: ByteArray, maxBytes: Int): ByteArray? =
+    inflateDeflate(data, maxBytes, raw = true)
+
+/** zlib-wrapped deflate used by PNG `zTXt` / compressed `iTXt`. Same inflater as ZIP raw deflate. */
+internal fun inflateZlib(data: ByteArray, maxBytes: Int): ByteArray? =
+    inflateDeflate(data, maxBytes, raw = false)
+
+internal expect fun inflateDeflate(data: ByteArray, maxBytes: Int, raw: Boolean): ByteArray?
 
 private const val EOCD_SIGNATURE = 0x06054b50L
 private const val CEN_SIGNATURE = 0x02014b50L
