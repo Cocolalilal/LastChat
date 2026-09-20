@@ -92,17 +92,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
-import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -1275,9 +1274,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    AutoAIIconWithUrl(
+                                    SearchProviderIcon(
                                         name = preset.name,
-                                        customIconUri = catalogSnapshot?.searchProviderIconUri(preset.name),
+                                        catalogSnapshot = catalogSnapshot,
                                         modifier = Modifier.size(40.dp),
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -1344,9 +1343,10 @@ private fun SearchServiceItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AutoAIIconWithUrl(
+        SearchProviderIcon(
             name = serviceName,
-            customIconUri = catalogSnapshot?.searchProviderIconUri(serviceName),
+            service = service,
+            catalogSnapshot = catalogSnapshot,
             modifier = Modifier.size(40.dp)
         )
         

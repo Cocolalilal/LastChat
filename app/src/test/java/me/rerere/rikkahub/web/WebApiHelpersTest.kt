@@ -77,9 +77,16 @@ class WebApiHelpersTest {
     }
 
     @Test
+    fun resolveAiIconAssetPath_doesNotUseBrandMarkForKeyless() {
+        assertNull(resolveAiIconAssetPath(name = "Keyless"))
+        assertNull(resolveAiIconAssetPath(name = "keyless search"))
+        assertEquals("firecrawl.svg", resolveAiIconAssetPath(name = "Firecrawl"))
+    }
+
+    @Test
     fun resolveAiIconAssetPath_fallsBackForUnknownNames() {
-        assertNull(resolveAiIconAssetPath(name = "Mystery Provider"))
-        assertNull(resolveAiIconAssetPath(name = "ignored", icon = "../openai.svg"))
+        assertEquals("mystery.svg", resolveAiIconAssetPath(name = "Mystery Provider"))
+        assertNull(resolveAiIconAssetPath(name = "x", icon = "../openai.svg"))
     }
 
     @Test

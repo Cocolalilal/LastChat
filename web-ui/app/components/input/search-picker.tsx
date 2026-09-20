@@ -31,6 +31,7 @@ const SEARCH_TOOL_NAME = "search";
 
 const SEARCH_SERVICE_LABELS: Record<string, string> = {
   bing_local: "Bing",
+  keyless: "Keyless",
   zhipu: "智谱",
   tavily: "Tavily",
   exa: "Exa",
@@ -92,6 +93,34 @@ function getServiceType(service: SearchServiceOption): string | null {
 
   const value = service.type.trim().toLowerCase();
   return value.length > 0 ? value : null;
+}
+
+function isKeylessService(service: SearchServiceOption): boolean {
+  return getServiceType(service) === "keyless";
+}
+
+function SearchServiceGlyph({
+  service,
+  t,
+  sizeClassName,
+}: {
+  service: SearchServiceOption;
+  t: TFunction;
+  sizeClassName: string;
+}) {
+  if (isKeylessService(service)) {
+    return <Earth className={sizeClassName} />;
+  }
+
+  return (
+    <AIIcon
+      name={getServiceLabel(service, t)}
+      size={sizeClassName.includes("size-4") ? 16 : 20}
+      className="bg-transparent"
+      imageClassName="h-full w-full"
+      allowNameIconFallback
+    />
+  );
 }
 
 function getServiceLabel(service: SearchServiceOption, t: TFunction): string {
@@ -175,13 +204,7 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
           {toggleSearchEnabledMutation.isPending || toggleBuiltInSearchMutation.isPending ? (
             <LoaderCircle className="size-4 animate-spin" />
           ) : searchEnabled && currentService ? (
-            <AIIcon
-              name={getServiceLabel(currentService, t)}
-              size={16}
-              className="bg-transparent"
-              imageClassName="h-full w-full"
-              allowNameIconFallback
-            />
+            <SearchServiceGlyph service={currentService} t={t} sizeClassName="size-4" />
           ) : builtInSearchEnabled ? (
             <Search className="size-4" />
           ) : (
@@ -269,13 +292,7 @@ export function SearchPickerButton({ disabled = false, className }: SearchPicker
                               selectServiceMutation.mutate({ index });
                             }}
                           >
-                            <AIIcon
-                              name={getServiceLabel(service, t)}
-                              size={20}
-                              className="bg-transparent"
-                              imageClassName="h-full w-full"
-                              allowNameIconFallback
-                            />
+                            <SearchServiceGlyph service={service} t={t} sizeClassName="size-5" />
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-medium">
                                 {getServiceLabel(service, t)}
