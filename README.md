@@ -72,10 +72,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 ## Credits
 * Original Project: [RikkaHub](https://github.com/re-ovo/RikkaHub)
 * Image cropper is an edited version of the image editor found in [LavenderPhotos](https://github.com/kaii-lb/LavenderPhotos)
-* Made with **AI Agents** based on:
-    * **Claude**
-    * **Codex**
-    * **Antigravity**
+* Made with various **AI Agents**
 
 ##
 *Note: This project is a fork and may contain modifications or features not present in the original RikkaHub repository.*
