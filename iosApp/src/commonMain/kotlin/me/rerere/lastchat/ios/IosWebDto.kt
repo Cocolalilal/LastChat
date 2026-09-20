@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.generation.PortableConversationPage
 import me.rerere.ai.generation.PortableMessageSearchHit
 import me.rerere.ai.core.MessageRole
@@ -374,6 +375,22 @@ internal object IosWebDto {
         put("fontSize", config.fontSize.toDouble())
         put("lineHeight", config.lineHeight.toDouble())
         put("letterSpacing", config.letterSpacing.toDouble())
+        if (config.customAxes.isNotEmpty()) {
+            putJsonArray("customAxes") {
+                config.customAxes.forEach { axis ->
+                    add(
+                        buildJsonObject {
+                            put("tag", axis.tag)
+                            put("name", axis.name)
+                            put("minValue", axis.minValue.toDouble())
+                            put("maxValue", axis.maxValue.toDouble())
+                            put("defaultValue", axis.defaultValue.toDouble())
+                            put("currentValue", axis.currentValue.toDouble())
+                        },
+                    )
+                }
+            }
+        }
     }
 
     private fun provider(provider: ProviderSetting) = buildJsonObject {

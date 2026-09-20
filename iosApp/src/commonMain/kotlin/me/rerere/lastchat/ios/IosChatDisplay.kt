@@ -101,18 +101,27 @@ internal fun iosFontFamilyChoice(
     lastChatFamily: androidx.compose.ui.text.font.FontFamily,
     settings: IosFontSettings,
     usePhoneSystemFont: Boolean,
+    customFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    codeFamily: androidx.compose.ui.text.font.FontFamily? = null,
 ): androidx.compose.ui.text.font.FontFamily {
     val font = settings.normalize().headerFont
     return when {
         usePhoneSystemFont || settings.usePhoneSystemFont -> androidx.compose.ui.text.font.FontFamily.Default
-        font.fontSource == IosFontSource.SYSTEM_CODE -> androidx.compose.ui.text.font.FontFamily.Monospace
+        font.fontSource == IosFontSource.CUSTOM && customFamily != null -> customFamily
+        font.fontSource == IosFontSource.SYSTEM_CODE -> codeFamily ?: androidx.compose.ui.text.font.FontFamily.Monospace
         else -> lastChatFamily
     }
 }
 
-internal fun iosCodeFontFamily(settings: IosFontSettings): androidx.compose.ui.text.font.FontFamily {
-    return when (settings.normalize().codeFont.fontSource) {
-        IosFontSource.SYSTEM_CODE, IosFontSource.CUSTOM -> androidx.compose.ui.text.font.FontFamily.Monospace
+internal fun iosCodeFontFamily(
+    settings: IosFontSettings,
+    customFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    codeFamily: androidx.compose.ui.text.font.FontFamily? = null,
+): androidx.compose.ui.text.font.FontFamily {
+    val font = settings.normalize().codeFont
+    return when (font.fontSource) {
+        IosFontSource.CUSTOM -> customFamily ?: codeFamily ?: androidx.compose.ui.text.font.FontFamily.Monospace
+        IosFontSource.SYSTEM_CODE -> codeFamily ?: androidx.compose.ui.text.font.FontFamily.Monospace
         IosFontSource.SYSTEM -> androidx.compose.ui.text.font.FontFamily.Default
     }
 }

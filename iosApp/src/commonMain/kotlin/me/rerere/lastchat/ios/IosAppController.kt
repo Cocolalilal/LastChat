@@ -96,6 +96,7 @@ import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.asr.CloudSpeechTranscription
 import me.rerere.asr.CloudSpeechTranscriptionRequest
+import me.rerere.common.font.PortableCustomFontStore
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
@@ -131,6 +132,7 @@ import me.rerere.document.PortableDocumentText
 import me.rerere.rikkahub.data.mcp.PortableMcpClient
 import me.rerere.rikkahub.data.mcp.PortableMcpServer
 import me.rerere.rikkahub.data.mcp.withDiscoveredTools
+import me.rerere.rikkahub.data.model.PortableCharacterCardParser
 import me.rerere.rikkahub.data.prompt.PortableLorebook
 import me.rerere.rikkahub.data.prompt.PortableSkill
 import me.rerere.rikkahub.data.sync.PortableWebDavClient
@@ -217,6 +219,7 @@ data class IosFontConfig(
     val fontSize: Float = 1.0f,
     val lineHeight: Float = 1.0f,
     val letterSpacing: Float = 0f,
+    val customAxes: List<me.rerere.common.font.PortableFontAxis> = emptyList(),
 ) {
     companion object {
         val DEFAULT_EXPRESSIVE = IosFontConfig(fontSource = IosFontSource.SYSTEM, roundness = 100f)
@@ -724,6 +727,7 @@ class IosAppController(
     private val mcpClient = PortableMcpClient(httpClient, json)
     private val webDavClient = PortableWebDavClient(httpClient)
     private val webServer = IosLocalWebServer()
+    private val customFonts = PortableCustomFontStore(fileStore)
     private val catalogService = ModelCatalogService(
         httpClient = httpClient,
         fileStore = fileStore,
@@ -1842,6 +1846,105 @@ class IosAppController(
                 usePhoneSystemFont = normalized.usePhoneSystemFont,
                 fontSettings = normalized,
             )
+        }
+    }
+
+    fun importCustomFont(storagePath: String, displayName: String, forCode: Boolean = false) {
+        scope.launch {
+            val bytes = fileStore.readBytes(storagePath)
+            if (bytes == null) {
+                mutableState.update { it.copy(error = "The selected font could not be read") }
+                return@launch
+            }
+            val imported = customFonts.import(bytes, displayName)
+            if (imported == null) {
+                mutableState.update { it.copy(error = "That file is not a TTF or OTF font") }
+                return@launch
+            }
+            saveFontSettings(
+                mutableState.value.appearance.fontSettings.let { fonts ->
+                    val next = fonts.headerFont.copy(
+                        fontSource = IosFontSource.CUSTOM,
+                        customFontPath = imported.storagePath,
+                        customFontName = imported.displayName,
+                        customAxes = imported.axes,
+                    )
+                    if (forCode) {
+                        fonts.copy(
+                            codeFont = fonts.codeFont.copy(
+                                fontSource = IosFontSource.CUSTOM,
+                                customFontPath = imported.storagePath,
+                                customFontName = imported.displayName,
+                                customAxes = imported.axes,
+                            ),
+                        )
+                    } else {
+                        fonts.copy(headerFont = next).normalize()
+                    }
+                },
+            )
+        }
+    }
+
+    suspend fun loadCustomFontBytes(path: String?): ByteArray? {
+        if (path.isNullOrBlank()) return null
+        return customFonts.load(path) ?: fileStore.readBytes(path)
+    }
+
+    fun importCharacterCard(storagePath: String, displayName: String = storagePath) {
+        scope.launch {
+            val bytes = fileStore.readBytes(storagePath)
+            if (bytes == null) {
+                mutableState.update { it.copy(error = "The selected character card could not be read") }
+                return@launch
+            }
+            val imported = PortableCharacterCardParser.parse(bytes, displayName)
+            if (imported == null) {
+                mutableState.update { it.copy(error = "Unsupported character card") }
+                return@launch
+            }
+            val assistantId = Uuid.random().toString()
+            var avatar: IosAvatar = IosAvatar.Dummy
+            imported.avatarBytes?.takeIf { it.isNotEmpty() }?.let { avatarBytes ->
+                val path = "avatars/$assistantId.png"
+                fileStore.writeBytes(path, avatarBytes)
+                avatar = IosAvatar.Image(fileStore.localUrl(path) ?: path)
+            } ?: imported.avatarUrl?.let { url ->
+                avatar = IosAvatar.Image(url)
+            }
+            val lorebook = imported.lorebook
+            val greeting = imported.firstMes.trim()
+            val greetingMessage = if (greeting.isNotBlank()) {
+                UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Text(greeting)))
+            } else {
+                null
+            }
+            val conversation = IosConversation(
+                assistantId = assistantId,
+                title = imported.name,
+                messages = emptyList(),
+                messageNodes = listOfNotNull(greetingMessage?.toMessageNode()),
+            )
+            val assistant = IosAssistantPreferences(
+                id = assistantId,
+                name = imported.name,
+                systemPrompt = imported.systemPrompt,
+                avatar = avatar,
+                useAssistantAvatar = avatar !is IosAvatar.Dummy,
+                enabledLorebookIds = setOfNotNull(lorebook?.id),
+            )
+            mutableState.update { current ->
+                current.copy(
+                    assistants = current.assistants + assistant,
+                    selectedAssistantId = assistant.id,
+                    lorebooks = current.lorebooks + listOfNotNull(lorebook),
+                    conversations = listOf(conversation) + current.conversations,
+                    selectedConversationId = conversation.id,
+                    error = null,
+                )
+            }
+            persist()
+            refreshAdaptiveBackgroundSchedule()
         }
     }
 

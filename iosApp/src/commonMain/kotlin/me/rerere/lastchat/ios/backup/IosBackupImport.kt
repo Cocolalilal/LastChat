@@ -822,6 +822,18 @@ internal object IosBackupImporter {
             fontSize = obj.float("fontSize") ?: fallback.fontSize,
             lineHeight = obj.float("lineHeight") ?: fallback.lineHeight,
             letterSpacing = obj.float("letterSpacing") ?: fallback.letterSpacing,
+            customAxes = (obj["customAxes"] as? JsonArray)?.mapNotNull { element ->
+                val axis = element as? JsonObject ?: return@mapNotNull null
+                val tag = axis.string("tag")?.takeIf { it.length == 4 } ?: return@mapNotNull null
+                me.rerere.common.font.PortableFontAxis(
+                    tag = tag,
+                    name = axis.string("name") ?: tag,
+                    minValue = axis.float("minValue") ?: 0f,
+                    maxValue = axis.float("maxValue") ?: 100f,
+                    defaultValue = axis.float("defaultValue") ?: 0f,
+                    currentValue = axis.float("currentValue") ?: axis.float("defaultValue") ?: 0f,
+                )
+            }.orEmpty(),
         )
     }
 

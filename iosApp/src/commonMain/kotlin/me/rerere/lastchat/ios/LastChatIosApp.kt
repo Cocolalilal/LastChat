@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package me.rerere.lastchat.ios
 
 import androidx.compose.animation.AnimatedContent
@@ -248,7 +250,10 @@ import me.rerere.rikkahub.ui.components.settings.LastChatProvidersBottomBar
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.Shapes
 import me.rerere.rikkahub.ui.theme.buildLastChatTypography
+import me.rerere.rikkahub.ui.theme.customFontVariationSettings
+import me.rerere.rikkahub.ui.theme.fontFamilyFromBytes
 import me.rerere.rikkahub.ui.theme.presetColorScheme
+import me.rerere.rikkahub.ui.theme.rememberLastChatCodeFontFamily
 import me.rerere.rikkahub.ui.theme.rememberLastChatFontFamily
 import me.rerere.rikkahub.ui.theme.withLastChatAmoledSurface
 import coil3.compose.AsyncImage
@@ -318,12 +323,71 @@ fun LastChatIosApp(
         IosColorMode.DARK -> true
     }
     val colorScheme = presetColorScheme(state.appearance.themeId, useDarkTheme)
-    val lastChatFontFamily = rememberLastChatFontFamily()
     val fontSettings = state.appearance.fontSettings.normalize()
+    val headerFont = fontSettings.headerFont
+    val lastChatFontFamily = rememberLastChatFontFamily(
+        width = headerFont.width,
+        roundness = headerFont.roundness,
+        grade = headerFont.grade,
+    )
+    val codeFontFamily = rememberLastChatCodeFontFamily()
+    var customFontBytes by remember(headerFont.customFontPath, headerFont.fontSource) {
+        mutableStateOf<ByteArray?>(null)
+    }
+    var customCodeFontBytes by remember(
+        fontSettings.codeFont.customFontPath,
+        fontSettings.codeFont.fontSource,
+    ) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(headerFont.fontSource, headerFont.customFontPath) {
+        customFontBytes = if (headerFont.fontSource == IosFontSource.CUSTOM) {
+            controller.loadCustomFontBytes(headerFont.customFontPath)
+        } else {
+            null
+        }
+    }
+    LaunchedEffect(fontSettings.codeFont.fontSource, fontSettings.codeFont.customFontPath) {
+        customCodeFontBytes = if (fontSettings.codeFont.fontSource == IosFontSource.CUSTOM) {
+            controller.loadCustomFontBytes(fontSettings.codeFont.customFontPath)
+        } else {
+            null
+        }
+    }
+    val customFontFamily = remember(
+        customFontBytes,
+        headerFont.width,
+        headerFont.roundness,
+        headerFont.grade,
+        headerFont.customAxes,
+        headerFont.customFontPath,
+    ) {
+        customFontBytes?.let { bytes ->
+            fontFamilyFromBytes(
+                headerFont.customFontPath ?: "custom-header",
+                bytes,
+                customFontVariationSettings(
+                    headerFont.width,
+                    headerFont.roundness,
+                    headerFont.grade,
+                    headerFont.customAxes,
+                ),
+            )
+        }
+    }
+    val customCodeFontFamily = remember(
+        customCodeFontBytes,
+        fontSettings.codeFont.customFontPath,
+        fontSettings.codeFont.customAxes,
+    ) {
+        customCodeFontBytes?.let { bytes ->
+            fontFamilyFromBytes(fontSettings.codeFont.customFontPath ?: "custom-code", bytes)
+        }
+    }
     val appFontFamily = iosFontFamilyChoice(
         lastChatFontFamily,
         fontSettings,
         state.appearance.usePhoneSystemFont,
+        customFamily = customFontFamily,
+        codeFamily = codeFontFamily,
     )
     MaterialTheme(
         colorScheme = colorScheme.withLastChatAmoledSurface(useDarkTheme),
@@ -423,6 +487,11 @@ fun LastChatIosApp(
                                 controller.forkConversation(id, messageId)
                             }
                         },
+                        resolvedCodeFontFamily = iosCodeFontFamily(
+                            fontSettings,
+                            customFamily = customCodeFontFamily,
+                            codeFamily = codeFontFamily,
+                        ),
                     )
                 }
                 IosRoute.Settings -> SettingsPage(
@@ -443,6 +512,8 @@ fun LastChatIosApp(
                     onSaveImageGeneration = controller::saveImageGeneration,
                     onSaveAppearance = controller::saveAppearance,
                     onSaveFontSettings = controller::saveFontSettings,
+                    onImportCustomFont = controller::importCustomFont,
+                    onImportCharacterCard = controller::importCharacterCard,
                     onSaveUiCustomization = controller::saveUiCustomization,
                     onSaveDisplayKnobs = controller::saveDisplayKnobs,
                     onSaveAppearancePreferences = { controller.saveAppearancePreferences(it) },
@@ -550,6 +621,7 @@ private fun ChatPage(
     onEditMessage: (String, List<UIMessagePart>) -> Unit,
     onDeleteMessage: (String) -> Unit,
     onForkMessage: (String) -> Unit,
+    resolvedCodeFontFamily: androidx.compose.ui.text.font.FontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
 ) {
     val inputState = remember { TextFieldState() }
     val playingAudioUrl by audioPlayer.playingUrl.collectAsState()
@@ -999,6 +1071,7 @@ private fun ChatPage(
                             },
                             onSpeak = onSpeak,
                             onStopSpeaking = onStopSpeaking,
+                            resolvedCodeFontFamily = resolvedCodeFontFamily,
                         )
                         IosMessageActionsRow(
                             message = message,
@@ -1258,6 +1331,7 @@ private fun MessageBubble(
     assistantAvatar: IosAvatar = IosAvatar.Dummy,
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
+    resolvedCodeFontFamily: FontFamily = FontFamily.Monospace,
 ) {
     val styledText = remember(message.text, appearance.rpStyleRules) {
         buildIosRoleplayText(message.text, appearance.rpStyleRules)
@@ -1392,7 +1466,7 @@ private fun MessageBubble(
                     fontSizeRatio = fontSizeRatio,
                     wrapCode = appearance.codeBlockAutoWrap,
                     collapseCode = appearance.codeBlockAutoCollapse,
-                    codeFontFamily = iosCodeFontFamily(appearance.fontSettings),
+                    codeFontFamily = resolvedCodeFontFamily,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             } else {
@@ -1407,7 +1481,7 @@ private fun MessageBubble(
                         fontSizeRatio = fontSizeRatio,
                         wrapCode = appearance.codeBlockAutoWrap,
                         collapseCode = appearance.codeBlockAutoCollapse,
-                        codeFontFamily = iosCodeFontFamily(appearance.fontSettings),
+                        codeFontFamily = resolvedCodeFontFamily,
                     )
                 }
             }
@@ -2521,6 +2595,8 @@ private fun SettingsPage(
     onSaveImageGeneration: (IosImageGenerationPreferences) -> Unit,
     onSaveAppearance: (String, IosColorMode) -> Unit,
     onSaveFontSettings: (Boolean) -> Unit,
+    onImportCustomFont: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    onImportCharacterCard: (String, String) -> Unit = { _, _ -> },
     onSaveUiCustomization: (Boolean, Float, Boolean, Boolean, Boolean, Boolean) -> Unit,
     onSaveDisplayKnobs: (Boolean, Boolean, Boolean, Boolean) -> Unit,
     onSaveAppearancePreferences: (IosAppearancePreferences) -> Unit,
@@ -3138,6 +3214,14 @@ private fun SettingsPage(
                                         }
                                     }
                                     TextButton(onClick = onNewAssistant) { Text("New assistant") }
+                                    TextButton(
+                                        onClick = {
+                                            onPickAvatarFile { result ->
+                                                val picked = result.getOrNull() ?: return@onPickAvatarFile
+                                                onImportCharacterCard(picked.storagePath, picked.displayName)
+                                            }
+                                        },
+                                    ) { Text("Import card") }
                                 }
                             }
                             LastChatFormItem(label = { Text("Name") }) {
@@ -4933,20 +5017,50 @@ private fun SettingsPage(
                                     valueRange = 0f..100f,
                                 )
                                 Text(
-                                    "Width and roundness persist for Android backup parity. Compose Multiplatform applies weight, size, line height, and tracking.",
+                                    "Width (wdth) and roundness (ROND) apply through Compose FontVariation on Google Sans Flex and imported variable fonts.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             LastChatSettingGroupInputItem(
                                 title = "App font",
-                                subtitle = if (usePhoneSystemFont) {
-                                    "iOS system font"
-                                } else {
-                                    "Google Sans Flex · Material 3 Expressive"
+                                subtitle = when {
+                                    usePhoneSystemFont -> "iOS system font"
+                                    fontSettings.headerFont.fontSource == IosFontSource.CUSTOM ->
+                                        fontSettings.headerFont.customFontName ?: "Imported TTF/OTF"
+                                    else -> "Google Sans Flex · Material 3 Expressive"
                                 },
                                 darkTheme = darkTheme,
                             ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        IosFontSource.SYSTEM to "Flex",
+                                        IosFontSource.CUSTOM to "Custom",
+                                    ).forEach { (source, label) ->
+                                        if (fontSettings.headerFont.fontSource == source) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                persistAppearance {
+                                                    copy(
+                                                        fontSettings = fontSettings.copy(
+                                                            headerFont = fontSettings.headerFont.copy(fontSource = source),
+                                                        ).normalize(),
+                                                    )
+                                                }
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        onPickAvatarFile { result ->
+                                            val picked = result.getOrNull() ?: return@onPickAvatarFile
+                                            onImportCustomFont(picked.storagePath, picked.displayName, false)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Import TTF or OTF") }
                                 Text(
                                     "LastChat",
                                     style = MaterialTheme.typography.headlineMedium,
@@ -4963,10 +5077,11 @@ private fun SettingsPage(
                             }
                             LastChatSettingGroupInputItem(
                                 title = "Code blocks",
-                                subtitle = if (fontSettings.codeFont.fontSource == IosFontSource.SYSTEM_CODE) {
-                                    "Native monospace font"
-                                } else {
-                                    "System font"
+                                subtitle = when (fontSettings.codeFont.fontSource) {
+                                    IosFontSource.SYSTEM_CODE -> "Google Sans Code"
+                                    IosFontSource.CUSTOM ->
+                                        fontSettings.codeFont.customFontName ?: "Imported monospace"
+                                    IosFontSource.SYSTEM -> "System font"
                                 },
                                 darkTheme = darkTheme,
                             ) {
@@ -4974,6 +5089,7 @@ private fun SettingsPage(
                                     listOf(
                                         IosFontSource.SYSTEM_CODE to "Mono",
                                         IosFontSource.SYSTEM to "System",
+                                        IosFontSource.CUSTOM to "Custom",
                                     ).forEach { (source, label) ->
                                         if (fontSettings.codeFont.fontSource == source) {
                                             Button(onClick = {}) { Text(label) }
@@ -4992,6 +5108,15 @@ private fun SettingsPage(
                                         }
                                     }
                                 }
+                                Button(
+                                    onClick = {
+                                        onPickAvatarFile { result ->
+                                            val picked = result.getOrNull() ?: return@onPickAvatarFile
+                                            onImportCustomFont(picked.storagePath, picked.displayName, true)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Import code font") }
                                 Text(
                                     "fun main() = println(\"LastChat\")",
                                     fontFamily = iosCodeFontFamily(fontSettings),
