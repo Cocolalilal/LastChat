@@ -183,8 +183,9 @@ class IosMemoryStateTest {
     fun imageGenerationSelectionPersistsWithoutCredentials() {
         val preferences = IosImageGenerationPreferences(
             enabled = true,
-            providerType = IosImageProviderType.GOOGLE,
+            providerId = "google-provider",
             modelId = "imagen-3.0-generate-002",
+            method = ImageGenerationMethod.DIFFUSION,
         )
         val encoded = Json.encodeToString(preferences)
         assertEquals(preferences, Json.decodeFromString<IosImageGenerationPreferences>(encoded))
@@ -196,19 +197,15 @@ class IosMemoryStateTest {
     fun comfyUiImageWorkflowPersistsWithoutCredentials() {
         val preferences = IosImageGenerationPreferences(
             enabled = true,
-            providerType = IosImageProviderType.COMFY_UI,
+            providerId = "comfy-provider",
             modelId = "dreamshaper.safetensors",
-            comfyUi = IosComfyUiPreferences(
-                baseUrl = "http://192.168.1.10:8188",
-                workflowJson = """{"3":{"class_type":"KSampler","inputs":{}}}""",
-                promptNodeId = "6",
-                modelNodeId = "4",
-            ),
+            method = ImageGenerationMethod.DIFFUSION,
         )
         val encoded = Json.encodeToString(preferences)
         assertEquals(preferences, Json.decodeFromString<IosImageGenerationPreferences>(encoded))
         assertFalse(encoded.contains("apiKey", ignoreCase = true))
         assertFalse(encoded.contains("secret", ignoreCase = true))
+        assertFalse(encoded.contains("8188"))
     }
 
     @Test
