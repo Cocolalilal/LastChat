@@ -324,7 +324,7 @@ internal fun parseFirecrawlKeylessSearch(json: String): KeylessFetch? {
         val url = obj.string("url")
         val title = obj.string("title").ifBlank { url }
         if (url.isBlank() || title.isBlank()) return@forEach
-        items.putIfAbsent(
+        items.putAbsent(
             normalizeResultUrl(url),
             SearchResultItem(
                 title = title,
@@ -341,7 +341,7 @@ internal fun parseFirecrawlKeylessSearch(json: String): KeylessFetch? {
         if (url.isBlank() || title.isBlank()) return@forEach
         val snippet = obj.string("snippet").ifBlank { obj.string("description") }.asSearchSnippet()
         val date = obj.string("date")
-        items.putIfAbsent(
+        items.putAbsent(
             normalizeResultUrl(url),
             SearchResultItem(
                 title = title,
@@ -359,7 +359,7 @@ internal fun parseFirecrawlKeylessSearch(json: String): KeylessFetch? {
         val obj = element.jsonObjectOrNull ?: return@forEach
         val imageUrl = obj.string("imageUrl").ifBlank { obj.string("url") }
         if (!isUsableImageUrl(imageUrl)) return@forEach
-        images.putIfAbsent(
+        images.putAbsent(
             normalizeResultUrl(imageUrl),
             searchResultImage(
                 url = imageUrl,
@@ -491,7 +491,7 @@ private fun walkQwant(
             if (isResult) {
                 if (isUsableImageUrl(media) || looksLikeImageUrl(url)) {
                     val imageUrl = if (isUsableImageUrl(media)) media else url
-                    images.putIfAbsent(
+                    images.putAbsent(
                         normalizeResultUrl(imageUrl),
                         searchResultImage(
                             url = imageUrl,
@@ -501,7 +501,7 @@ private fun walkQwant(
                         )
                     )
                 } else if (url.isNotBlank()) {
-                    items.putIfAbsent(
+                    items.putAbsent(
                         normalizeResultUrl(url),
                         SearchResultItem(
                             title = title,
@@ -620,3 +620,7 @@ private val ITEM_REGEX = Regex(
     "<item\\b[^>]*>(.*?)</item>",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
+
+internal fun <K, V> MutableMap<K, V>.putAbsent(key: K, value: V) {
+    if (key !in this) this[key] = value
+}

@@ -241,16 +241,16 @@ internal fun mergeKeylessResults(
         val key = normalizeResultUrl(item.url)
         if (key.isBlank()) return
         if (encyclopedia || isWikipediaUrl(item.url)) {
-            wikiItems.putIfAbsent(key, item)
+            wikiItems.putAbsent(key, item)
         } else {
-            liveItems.putIfAbsent(key, item)
+            liveItems.putAbsent(key, item)
         }
     }
 
     fun addImage(image: SearchResultImage) {
         val key = normalizeResultUrl(image.url)
         if (key.isBlank()) return
-        images.putIfAbsent(key, image)
+        images.putAbsent(key, image)
     }
 
     fetches.forEach { fetch ->
