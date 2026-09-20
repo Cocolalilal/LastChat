@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import me.rerere.ai.core.InputSchema
+import me.rerere.common.http.normalizeHttpUrl
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -127,6 +128,12 @@ class McpManager(
             removeClient(configInput)
             return
         }
+        if (desired.endpointUrl.normalizeHttpUrl() == null) {
+            removeClient(desired)
+            setStatus(desired.id, McpStatus.Error("MCP server URL must be an absolute http or https URL"))
+            Log.w(TAG, "Skipping MCP server ${desired.id} with invalid URL: '${desired.endpointUrl}'")
+            return
+        }
         if (desired.commonOptions.authMode == McpAuthMode.OAUTH &&
             !oauthManager.hasCredentials(desired.id)
         ) {
@@ -167,6 +174,7 @@ class McpManager(
             .filter {
                 it.commonOptions.enable &&
                     it.commonOptions.name.isNotBlank() &&
+                    it.endpointUrl.normalizeHttpUrl() != null &&
                     (it.commonOptions.authMode != McpAuthMode.OAUTH || oauthManager.hasCredentials(it.id))
             }
             .associateBy { it.id }
@@ -203,6 +211,10 @@ class McpManager(
                 val latest = settingsStore.settingsFlow.value.mcpServers.find { it.id == requested.id }
                     ?: return@withLock
                 if (!latest.commonOptions.enable || latest.commonOptions.name.isBlank()) return@withLock
+                if (latest.endpointUrl.normalizeHttpUrl() == null) {
+                    setStatus(latest.id, McpStatus.Error("MCP server URL must be an absolute http or https URL"))
+                    return@withLock
+                }
                 session.config = latest
 
                 oauthManager.refreshIfNeeded(latest.id)
