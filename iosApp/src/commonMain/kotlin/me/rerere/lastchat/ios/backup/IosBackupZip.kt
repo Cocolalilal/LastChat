@@ -83,75 +83,8 @@ internal object IosBackupZip {
         return entries
     }
 
-    fun writeStoreArchive(files: Map<String, ByteArray>): ByteArray {
-        val locals = mutableListOf<ByteArray>()
-        val centrals = mutableListOf<ByteArray>()
-        var offset = 0
-        files.forEach { (rawName, data) ->
-            val name = rawName.replace('\\', '/').trimStart('/').encodeToByteArray()
-            val crc = Crc32.of(data)
-            val local = ByteArray(30 + name.size + data.size)
-            writeU32(local, 0, LOC_SIGNATURE)
-            writeU16(local, 4, 20)
-            writeU16(local, 6, 0)
-            writeU16(local, 8, METHOD_STORE)
-            writeU16(local, 10, 0)
-            writeU16(local, 12, 0)
-            writeU32(local, 14, crc)
-            writeU32(local, 18, data.size.toLong())
-            writeU32(local, 22, data.size.toLong())
-            writeU16(local, 26, name.size)
-            writeU16(local, 28, 0)
-            name.copyInto(local, 30)
-            data.copyInto(local, 30 + name.size)
-            locals += local
-
-            val central = ByteArray(46 + name.size)
-            writeU32(central, 0, CEN_SIGNATURE)
-            writeU16(central, 4, 20)
-            writeU16(central, 6, 20)
-            writeU16(central, 8, 0)
-            writeU16(central, 10, METHOD_STORE)
-            writeU16(central, 12, 0)
-            writeU16(central, 14, 0)
-            writeU32(central, 16, crc)
-            writeU32(central, 20, data.size.toLong())
-            writeU32(central, 24, data.size.toLong())
-            writeU16(central, 28, name.size)
-            writeU16(central, 30, 0)
-            writeU16(central, 32, 0)
-            writeU16(central, 34, 0)
-            writeU16(central, 36, 0)
-            writeU32(central, 38, 0)
-            writeU32(central, 42, offset.toLong())
-            name.copyInto(central, 46)
-            centrals += central
-            offset += local.size
-        }
-        val centralSize = centrals.sumOf { it.size }
-        val eocd = ByteArray(22)
-        writeU32(eocd, 0, EOCD_SIGNATURE)
-        writeU16(eocd, 4, 0)
-        writeU16(eocd, 6, 0)
-        writeU16(eocd, 8, files.size)
-        writeU16(eocd, 10, files.size)
-        writeU32(eocd, 12, centralSize.toLong())
-        writeU32(eocd, 16, offset.toLong())
-        writeU16(eocd, 20, 0)
-        val total = offset + centralSize + eocd.size
-        val archive = ByteArray(total)
-        var cursor = 0
-        locals.forEach { chunk ->
-            chunk.copyInto(archive, cursor)
-            cursor += chunk.size
-        }
-        centrals.forEach { chunk ->
-            chunk.copyInto(archive, cursor)
-            cursor += chunk.size
-        }
-        eocd.copyInto(archive, cursor)
-        return archive
-    }
+    fun writeStoreArchive(files: Map<String, ByteArray>): ByteArray =
+        me.rerere.document.PortableZip.writeStoreArchive(files)
 
     private fun findEndOfCentralDirectory(archive: ByteArray): Int? {
         val lowestOffset = maxOf(0, archive.size - 22 - 65535)
@@ -192,16 +125,6 @@ internal object IosBackupZip {
     private fun readU32(data: ByteArray, offset: Int): Long {
         if (offset + 4 > data.size) return 0
         return (readU16(data, offset).toLong()) or (readU16(data, offset + 2).toLong() shl 16)
-    }
-
-    private fun writeU16(data: ByteArray, offset: Int, value: Int) {
-        data[offset] = (value and 0xFF).toByte()
-        data[offset + 1] = ((value ushr 8) and 0xFF).toByte()
-    }
-
-    private fun writeU32(data: ByteArray, offset: Int, value: Long) {
-        writeU16(data, offset, (value and 0xFFFF).toInt())
-        writeU16(data, offset + 2, ((value ushr 16) and 0xFFFF).toInt())
     }
 }
 

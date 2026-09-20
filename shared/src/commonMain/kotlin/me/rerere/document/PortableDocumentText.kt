@@ -59,43 +59,8 @@ object PortableDocumentText {
         return paragraphs.joinToString("\n\n").ifBlank { unescapeXml(body.replace(Regex("<[^>]+>"), " ")).trim() }
     }
 
-    internal fun extractZipEntry(archive: ByteArray, name: String): ByteArray? {
-        val eocd = findEndOfCentralDirectory(archive) ?: return null
-        val entryCount = readU16(archive, eocd + 10)
-        val directorySize = readU32(archive, eocd + 12)
-        val directoryOffset = readU32(archive, eocd + 16)
-        if (directoryOffset <= 0 || directoryOffset + directorySize > archive.size) return null
-        var offset = directoryOffset.toInt()
-        var remaining = entryCount
-        while (remaining > 0 && offset + 46 <= archive.size) {
-            if (readU32(archive, offset) != CEN_SIGNATURE) return null
-            val method = readU16(archive, offset + 10)
-            val compressedSize = readU32(archive, offset + 20)
-            val uncompressedSize = readU32(archive, offset + 24)
-            val nameLength = readU16(archive, offset + 28)
-            val extraLength = readU16(archive, offset + 30)
-            val commentLength = readU16(archive, offset + 32)
-            val localHeaderOffset = readU32(archive, offset + 42).toInt()
-            val entryName = archive.decodeToString(offset + 46, offset + 46 + nameLength)
-            if (entryName == name) {
-                if (localHeaderOffset + 30 > archive.size) return null
-                val localNameLength = readU16(archive, localHeaderOffset + 26)
-                val localExtraLength = readU16(archive, localHeaderOffset + 28)
-                val dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength
-                val dataEnd = dataStart + compressedSize.toInt()
-                if (dataEnd > archive.size) return null
-                val compressed = archive.copyOfRange(dataStart, dataEnd)
-                return when (method) {
-                    METHOD_STORE -> compressed
-                    METHOD_DEFLATE -> inflateRawDeflate(compressed, uncompressedSize.toInt().coerceAtLeast(compressed.size))
-                    else -> null
-                }
-            }
-            offset += 46 + nameLength + extraLength + commentLength
-            remaining--
-        }
-        return null
-    }
+    internal fun extractZipEntry(archive: ByteArray, name: String): ByteArray? =
+        PortableZip.extractEntry(archive, name)
 }
 
 internal fun inflateRawDeflate(data: ByteArray, maxBytes: Int): ByteArray? =
@@ -106,32 +71,6 @@ internal fun inflateZlib(data: ByteArray, maxBytes: Int): ByteArray? =
     inflateDeflate(data, maxBytes, raw = false)
 
 internal expect fun inflateDeflate(data: ByteArray, maxBytes: Int, raw: Boolean): ByteArray?
-
-private const val EOCD_SIGNATURE = 0x06054b50L
-private const val CEN_SIGNATURE = 0x02014b50L
-private const val METHOD_STORE = 0
-private const val METHOD_DEFLATE = 8
-
-private fun findEndOfCentralDirectory(archive: ByteArray): Int? {
-    val min = (archive.size - 22 - 65_535).coerceAtLeast(0)
-    for (offset in archive.size - 22 downTo min) {
-        if (readU32(archive, offset) == EOCD_SIGNATURE) return offset
-    }
-    return null
-}
-
-private fun readU16(data: ByteArray, offset: Int): Int {
-    if (offset + 1 >= data.size) return 0
-    return (data[offset].toInt() and 0xff) or ((data[offset + 1].toInt() and 0xff) shl 8)
-}
-
-private fun readU32(data: ByteArray, offset: Int): Long {
-    if (offset + 3 >= data.size) return 0
-    return (data[offset].toLong() and 0xff) or
-        ((data[offset + 1].toLong() and 0xff) shl 8) or
-        ((data[offset + 2].toLong() and 0xff) shl 16) or
-        ((data[offset + 3].toLong() and 0xff) shl 24)
-}
 
 private fun unescapeXml(value: String): String = value
     .replace("&amp;", "&")
