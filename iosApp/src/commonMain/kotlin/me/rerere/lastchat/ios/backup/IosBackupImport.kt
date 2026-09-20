@@ -23,7 +23,18 @@ import me.rerere.lastchat.ios.IosSearchProviderType
 import me.rerere.lastchat.ios.IosTtsPreferences
 import me.rerere.lastchat.ios.IosTtsProviderType
 import me.rerere.lastchat.ios.displayName
+import me.rerere.lastchat.ios.IosSttPreferences
+import me.rerere.lastchat.ios.IosWebDavPreferences
+import me.rerere.lastchat.ios.IosWebPreferences
 import me.rerere.search.SearchServiceOptions
+import me.rerere.rikkahub.data.mcp.PortableMcpServer
+import me.rerere.rikkahub.data.mcp.PortableMcpTool
+import me.rerere.rikkahub.data.mcp.PortableMcpTransport
+import me.rerere.rikkahub.data.prompt.LorebookActivationKind
+import me.rerere.rikkahub.data.prompt.PortableLorebook
+import me.rerere.rikkahub.data.prompt.PortableLorebookEntry
+import me.rerere.rikkahub.data.prompt.PortableSkill
+import me.rerere.rikkahub.data.prompt.PromptInjectionPosition
 import me.rerere.tts.provider.TTSProviderSetting
 
 @Serializable
@@ -47,6 +58,13 @@ internal data class IosBackupImportPlan(
     val searchApiKeys: Map<IosSearchProviderType, String> = emptyMap(),
     val tts: IosTtsPreferences? = null,
     val ttsApiKeys: Map<IosTtsProviderType, String> = emptyMap(),
+    val skills: List<PortableSkill> = emptyList(),
+    val lorebooks: List<PortableLorebook> = emptyList(),
+    val mcpServers: List<PortableMcpServer> = emptyList(),
+    val web: IosWebPreferences? = null,
+    val webPassword: String? = null,
+    val webDav: IosWebDavPreferences? = null,
+    val webDavPassword: String? = null,
     val applied: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
     val skipped: List<String> = emptyList(),
@@ -117,6 +135,13 @@ internal object IosBackupImporter {
             searchApiKeys = collectSearchApiKeys(searchServices),
             tts = mapTts(settings, ttsProviders, applied, warnings, skipped),
             ttsApiKeys = collectTtsApiKeys(ttsProviders),
+            skills = mapSkills(settings, applied),
+            lorebooks = mapLorebooks(settings, applied),
+            mcpServers = mapMcpServers(settings, applied, skipped),
+            web = mapWeb(settings, applied),
+            webPassword = settings.string("webServerAccessPassword")?.takeIf { it.isNotBlank() },
+            webDav = mapWebDav(settings, applied),
+            webDavPassword = (settings["webDavConfig"] as? JsonObject)?.string("password")?.takeIf { it.isNotBlank() },
             applied = applied,
             warnings = warnings,
             skipped = skipped,
@@ -273,6 +298,8 @@ internal object IosBackupImporter {
             ragSimilarityThreshold = element.float("ragSimilarityThreshold") ?: 0.45f,
             ragLimit = element.int("ragLimit") ?: 10,
             localTools = localTools,
+            enabledSkillIds = uuidSet(element, "enabledSkillIds"),
+            enabledLorebookIds = uuidSet(element, "enabledLorebookIds"),
         )
     }
 
@@ -303,7 +330,7 @@ internal object IosBackupImporter {
         val selected = searchServices[selectedIndex]
         val providerType = searchProviderType(selected)
         if (providerType == null) {
-            skipped += "Selected search service (SearXNG) is not available on iOS; kept the current iOS search provider"
+            skipped += "Selected search service is not available on iOS; kept the current iOS search provider"
         } else {
             applied += "Search: selected ${providerType.displayName()}"
         }
@@ -312,10 +339,15 @@ internal object IosBackupImporter {
             warnings += "Search: enabled flag missing in the backup; kept the current iOS value"
         }
         val resultSize = (settings["searchCommonOptions"] as? JsonObject)?.int("resultSize")
+        val searxng = selected as? SearchServiceOptions.SearXNGOptions
         return IosSearchPreferences(
             enabled = enabled ?: false,
             provider = providerType ?: IosSearchProviderType.BING,
             resultSize = resultSize ?: 5,
+            searxngUrl = searxng?.url.orEmpty(),
+            searxngEngines = searxng?.engines.orEmpty(),
+            searxngLanguage = searxng?.language.orEmpty(),
+            searxngUsername = searxng?.username.orEmpty(),
         )
     }
 
@@ -481,7 +513,7 @@ internal object IosBackupImporter {
         is SearchServiceOptions.OllamaOptions -> IosSearchProviderType.OLLAMA
         is SearchServiceOptions.GrokOptions -> IosSearchProviderType.GROK
         is SearchServiceOptions.NanoGPTOptions -> IosSearchProviderType.NANOGPT
-        is SearchServiceOptions.SearXNGOptions -> null
+        is SearchServiceOptions.SearXNGOptions -> IosSearchProviderType.SEARXNG
     }
 
     private fun searchApiKey(options: SearchServiceOptions): String? = when (options) {
@@ -498,6 +530,7 @@ internal object IosBackupImporter {
         is SearchServiceOptions.OllamaOptions -> options.apiKey
         is SearchServiceOptions.GrokOptions -> options.apiKey
         is SearchServiceOptions.NanoGPTOptions -> options.apiKey
+        is SearchServiceOptions.SearXNGOptions -> options.password.takeIf { it.isNotBlank() }
         else -> null
     }
 
@@ -511,6 +544,157 @@ internal object IosBackupImporter {
         is TTSProviderSetting.Cartesia -> provider.apiKey
         is TTSProviderSetting.PlayHT -> provider.apiKey
         is TTSProviderSetting.SystemTTS -> null
+    }
+
+    private fun mapSkills(settings: JsonObject, applied: MutableList<String>): List<PortableSkill> {
+        val elements = settings["skills"] as? JsonArray ?: return emptyList()
+        val skills = elements.mapNotNull { entry ->
+            val element = entry as? JsonObject ?: return@mapNotNull null
+            val instructions = element.string("instructions").orEmpty()
+            val name = element.string("name").orEmpty()
+            if (instructions.isBlank() && name.isBlank()) return@mapNotNull null
+            PortableSkill(
+                id = element.string("id")?.takeIf { it.isNotBlank() } ?: Uuid.random().toString(),
+                name = name,
+                description = element.string("description").orEmpty(),
+                instructions = instructions,
+                enabled = element.boolean("enabled") ?: true,
+                alwaysEnabled = element.boolean("always_enabled") ?: element.boolean("alwaysEnabled") ?: false,
+                availableForAllAssistants = element.boolean("available_for_all_assistants")
+                    ?: element.boolean("availableForAllAssistants")
+                    ?: true,
+                availableAssistantIds = uuidSet(element, "availableAssistantIds"),
+                injectionPosition = injectionPosition(element.string("injectionPosition")),
+                depth = element.int("depth") ?: 0,
+                disableModelInvocation = element.boolean("disable_model_invocation")
+                    ?: element.boolean("disableModelInvocation")
+                    ?: false,
+            )
+        }
+        if (skills.isNotEmpty()) applied += "Skills: imported ${skills.size}"
+        return skills
+    }
+
+    private fun mapLorebooks(settings: JsonObject, applied: MutableList<String>): List<PortableLorebook> {
+        val elements = settings["lorebooks"] as? JsonArray ?: return emptyList()
+        val books = elements.mapNotNull { entry ->
+            val element = entry as? JsonObject ?: return@mapNotNull null
+            val entries = (element["entries"] as? JsonArray).orEmpty().mapNotNull { item ->
+                val child = item as? JsonObject ?: return@mapNotNull null
+                PortableLorebookEntry(
+                    id = child.string("id")?.takeIf { it.isNotBlank() } ?: Uuid.random().toString(),
+                    name = child.string("name").orEmpty(),
+                    prompt = child.string("prompt").orEmpty(),
+                    enabled = child.boolean("enabled") ?: true,
+                    injectionPosition = injectionPosition(child.string("injectionPosition")),
+                    depth = child.int("depth") ?: 0,
+                    activationType = lorebookActivation(child.string("activationType")),
+                    keywords = (child["keywords"] as? JsonArray)?.mapNotNull { keyword ->
+                        (keyword as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                    }.orEmpty(),
+                    caseSensitive = child.boolean("caseSensitive") ?: false,
+                    useRegex = child.boolean("useRegex") ?: false,
+                    scanDepth = child.int("scanDepth") ?: 10,
+                )
+            }
+            PortableLorebook(
+                id = element.string("id")?.takeIf { it.isNotBlank() } ?: Uuid.random().toString(),
+                name = element.string("name").orEmpty().ifBlank { "Lorebook" },
+                description = element.string("description").orEmpty(),
+                entries = entries,
+                enabled = element.boolean("enabled") ?: true,
+            )
+        }
+        if (books.isNotEmpty()) applied += "Lorebooks: imported ${books.size}"
+        return books
+    }
+
+    private fun mapMcpServers(
+        settings: JsonObject,
+        applied: MutableList<String>,
+        skipped: MutableList<String>,
+    ): List<PortableMcpServer> {
+        val elements = settings["mcpServers"] as? JsonArray ?: return emptyList()
+        val servers = elements.mapNotNull { entry ->
+            val element = entry as? JsonObject ?: return@mapNotNull null
+            val common = element["commonOptions"] as? JsonObject
+            val url = element.string("url").orEmpty()
+            if (url.isBlank()) {
+                skipped += "MCP server skipped: missing URL"
+                return@mapNotNull null
+            }
+            val type = element.string("type")?.lowercase().orEmpty()
+            val transport = when {
+                type.contains("sse") -> PortableMcpTransport.SSE
+                else -> PortableMcpTransport.STREAMABLE_HTTP
+            }
+            val tools = ((common?.get("tools") ?: element["tools"]) as? JsonArray).orEmpty().mapNotNull { toolEntry ->
+                val tool = toolEntry as? JsonObject ?: return@mapNotNull null
+                val name = tool.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                PortableMcpTool(
+                    name = name,
+                    description = tool.string("description"),
+                    enable = tool.boolean("enable") ?: true,
+                )
+            }
+            val headers = ((common?.get("headers") ?: element["headers"]) as? JsonArray).orEmpty().mapNotNull { header ->
+                val pair = header as? JsonArray ?: return@mapNotNull null
+                val name = (pair.getOrNull(0) as? JsonPrimitive)?.content ?: return@mapNotNull null
+                val value = (pair.getOrNull(1) as? JsonPrimitive)?.content.orEmpty()
+                name to value
+            }
+            PortableMcpServer(
+                id = element.string("id")?.takeIf { it.isNotBlank() } ?: Uuid.random().toString(),
+                name = common?.string("name") ?: element.string("name").orEmpty(),
+                url = url,
+                enable = common?.boolean("enable") ?: element.boolean("enable") ?: true,
+                transport = transport,
+                headers = headers,
+                tools = tools,
+            )
+        }
+        if (servers.isNotEmpty()) applied += "MCP: imported ${servers.size} servers"
+        return servers
+    }
+
+    private fun mapWeb(settings: JsonObject, applied: MutableList<String>): IosWebPreferences? {
+        val enabled = settings.boolean("webServerEnabled") ?: return null
+        val port = settings.int("webServerPort") ?: 8080
+        applied += "Web server: enabled=$enabled port=$port"
+        return IosWebPreferences(enabled = enabled, port = port)
+    }
+
+    private fun mapWebDav(settings: JsonObject, applied: MutableList<String>): IosWebDavPreferences? {
+        val config = settings["webDavConfig"] as? JsonObject ?: return null
+        val url = config.string("url").orEmpty()
+        if (url.isBlank()) return null
+        applied += "WebDAV: imported remote URL"
+        return IosWebDavPreferences(
+            url = url,
+            username = config.string("username").orEmpty(),
+            path = config.string("path")?.ifBlank { "lastchat_backups" } ?: "lastchat_backups",
+        )
+    }
+
+    private fun uuidSet(element: JsonObject, key: String): Set<String> {
+        val array = element[key] as? JsonArray ?: return emptySet()
+        return array.mapNotNull { item ->
+            (item as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+        }.toSet()
+    }
+
+    private fun injectionPosition(raw: String?): PromptInjectionPosition = when (raw?.lowercase()) {
+        "before_system" -> PromptInjectionPosition.BEFORE_SYSTEM
+        "top_of_chat" -> PromptInjectionPosition.TOP_OF_CHAT
+        "before_latest" -> PromptInjectionPosition.BEFORE_LATEST
+        "at_depth" -> PromptInjectionPosition.AT_DEPTH
+        else -> PromptInjectionPosition.AFTER_SYSTEM
+    }
+
+    private fun lorebookActivation(raw: String?): LorebookActivationKind = when (raw?.lowercase()) {
+        "always" -> LorebookActivationKind.ALWAYS
+        "rag" -> LorebookActivationKind.RAG
+        else -> LorebookActivationKind.KEYWORDS
     }
 
     private fun parseUuid(value: String?): Uuid? {

@@ -29,6 +29,8 @@ private val controller = run {
         ),
         ttsController = TtsController(ttsManager, IosTtsAudioPlayer()),
         notificationPlatform = IosUserNotificationPlatform(),
+        speechRecorder = platformServices.speechRecorder,
+        documentParser = platformServices.documentParser,
     )
 }
 

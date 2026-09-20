@@ -108,6 +108,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -142,6 +143,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.versionSelectionIndices
@@ -235,8 +237,16 @@ private enum class IosSettingsSection(val title: String) {
     Models("Default model"),
     Search("Search service"),
     Tts("Text-to-speech"),
+    Speech("Speech-to-text"),
+    Skills("Skills"),
+    Lorebooks("Lorebooks"),
+    Mcp("MCP"),
+    Web("Web server"),
+    Workspaces("Workspaces"),
+    AndroidIntegration("Android integration"),
     Data("Data"),
     Backup("Backup"),
+    BackupWebDav("WebDAV backup"),
     About("About"),
     Unavailable("Unavailable"),
 }
@@ -333,6 +343,8 @@ fun LastChatIosApp(
                         onRemovePendingAttachment = controller::removePendingAttachment,
                         onSpeak = controller::speak,
                         onStopSpeaking = controller::stopTts,
+                        onStartSpeech = controller::startSpeechRecognition,
+                        onStopSpeech = controller::stopSpeechRecognition,
                         platformHaptics = platformHaptics,
                         attachmentOpener = attachmentOpener,
                         onOpenMenu = { scope.launch { drawerState.open() } },
@@ -390,6 +402,18 @@ fun LastChatIosApp(
                     onDeleteMemory = controller::deleteMemory,
                     onRegenerateMemoryEmbeddings = controller::regenerateMemoryEmbeddings,
                     onSaveLocalTools = controller::saveLocalTools,
+                    onSavePromptInjections = controller::savePromptInjections,
+                    onSaveMcpServers = controller::saveMcpServers,
+                    onRefreshMcpTools = controller::refreshMcpTools,
+                    onSaveStt = controller::saveStt,
+                    onClearSttApiKey = controller::clearSttApiKey,
+                    onSaveWeb = controller::saveWebPreferences,
+                    onSaveWebDav = controller::saveWebDav,
+                    onTestWebDav = controller::testWebDav,
+                    onListWebDav = controller::listWebDavBackups,
+                    onBackupWebDav = controller::backupToWebDav,
+                    onRestoreWebDav = controller::restoreFromWebDav,
+                    onDeleteWebDav = controller::deleteWebDavBackup,
                     onPickBackupFile = { filePicker.pickFile(it) },
                     onRestoreBackup = controller::restoreAndroidBackup,
                     platformHaptics = platformHaptics,
@@ -428,6 +452,8 @@ private fun ChatPage(
     onRemovePendingAttachment: (String) -> Unit,
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
+    onStartSpeech: () -> Unit,
+    onStopSpeech: ((String) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
     attachmentOpener: PlatformAttachmentOpener,
     onOpenMenu: () -> Unit,
@@ -658,8 +684,10 @@ private fun ChatPage(
                                         LastChatComposerAction.QuestionnaireNext
                                     pendingQuestionnaire != null -> LastChatComposerAction.QuestionnaireSubmit
                                     state.generating -> LastChatComposerAction.Loading
+                                    state.sttRecording -> LastChatComposerAction.SttRecording
                                     inputState.text.isNotBlank() || state.pendingAttachments.isNotEmpty() ->
                                         LastChatComposerAction.Send
+                                    state.stt.enabled && state.hasSttApiKey -> LastChatComposerAction.Stt
                                     else -> LastChatComposerAction.Picker
                                 }
                                 LastChatComposerActionButton(
@@ -678,6 +706,22 @@ private fun ChatPage(
                                             }
                                             LastChatComposerAction.QuestionnaireSubmit ->
                                                 submitQuestionnaire(dismissed = false)
+                                            LastChatComposerAction.Stt -> {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onStartSpeech()
+                                            }
+                                            LastChatComposerAction.SttRecording -> {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                onStopSpeech { transcript ->
+                                                    if (transcript.isNotBlank()) {
+                                                        inputState.setTextAndPlaceCursorAtEnd(
+                                                            listOf(inputState.text.toString(), transcript)
+                                                                .filter { it.isNotBlank() }
+                                                                .joinToString(" "),
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             LastChatComposerAction.Picker -> {
                                                 platformHaptics.perform(PlatformHapticPattern.Pop)
                                                 onOpenSettings()
@@ -1731,7 +1775,17 @@ private fun SettingsPage(
     onClearProviderApiKey: (String) -> Unit,
     onClearApiKey: () -> Unit,
     onSelectDefaultModel: (String, String) -> Unit,
-    onSaveSearch: (IosSearchProviderType, Boolean, Int, String) -> Unit,
+    onSaveSearch: (
+        IosSearchProviderType,
+        Boolean,
+        Int,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) -> Unit,
     onClearSearchApiKey: () -> Unit,
     onSaveTts: (IosTtsPreferences, String) -> Unit,
     onClearTtsApiKey: () -> Unit,
@@ -1750,6 +1804,18 @@ private fun SettingsPage(
     onDeleteMemory: (Int) -> Unit,
     onRegenerateMemoryEmbeddings: () -> Unit,
     onSaveLocalTools: (Set<IosLocalToolOption>) -> Unit,
+    onSavePromptInjections: (List<me.rerere.rikkahub.data.prompt.PortableSkill>, List<me.rerere.rikkahub.data.prompt.PortableLorebook>, Set<String>, Set<String>) -> Unit,
+    onSaveMcpServers: (List<me.rerere.rikkahub.data.mcp.PortableMcpServer>, Set<String>) -> Unit,
+    onRefreshMcpTools: (String) -> Unit,
+    onSaveStt: (IosSttPreferences, String) -> Unit,
+    onClearSttApiKey: () -> Unit,
+    onSaveWeb: (IosWebPreferences, String) -> Unit,
+    onSaveWebDav: (IosWebDavPreferences, String) -> Unit,
+    onTestWebDav: () -> Unit,
+    onListWebDav: () -> Unit,
+    onBackupWebDav: () -> Unit,
+    onRestoreWebDav: (String) -> Unit,
+    onDeleteWebDav: (String) -> Unit,
     onPickBackupFile: ((Result<PlatformPickedFile?>) -> Unit) -> Unit,
     onRestoreBackup: (String, (Result<IosBackupImportReport>) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
@@ -1771,6 +1837,11 @@ private fun SettingsPage(
         mutableStateOf(state.search.resultSize.toString())
     }
     var searchApiKey by remember { mutableStateOf("") }
+    var searxngUrl by remember(state.search.searxngUrl) { mutableStateOf(state.search.searxngUrl) }
+    var searxngEngines by remember(state.search.searxngEngines) { mutableStateOf(state.search.searxngEngines) }
+    var searxngLanguage by remember(state.search.searxngLanguage) { mutableStateOf(state.search.searxngLanguage) }
+    var searxngUsername by remember(state.search.searxngUsername) { mutableStateOf(state.search.searxngUsername) }
+    var searxngPassword by remember { mutableStateOf("") }
     var ttsPreferences by remember(state.tts) { mutableStateOf(state.tts) }
     var imageGeneration by remember(state.imageGeneration) { mutableStateOf(state.imageGeneration) }
     var ttsApiKey by remember { mutableStateOf("") }
@@ -1836,8 +1907,16 @@ private fun SettingsPage(
             "Models" -> section = IosSettingsSection.Models
             "Search" -> section = IosSettingsSection.Search
             "Tts" -> section = IosSettingsSection.Tts
+            "SpeechToText" -> section = IosSettingsSection.Speech
+            "PromptInjections", "Skills" -> section = IosSettingsSection.Skills
+            "Lorebooks" -> section = IosSettingsSection.Lorebooks
+            "Mcp" -> section = IosSettingsSection.Mcp
+            "Web" -> section = IosSettingsSection.Web
+            "Workspaces" -> section = IosSettingsSection.Workspaces
+            "AndroidIntegration" -> section = IosSettingsSection.AndroidIntegration
             "ChatStorage" -> section = IosSettingsSection.Data
             "Backup", "BackupLocal" -> section = IosSettingsSection.Backup
+            "BackupWebDav" -> section = IosSettingsSection.BackupWebDav
             "About" -> section = IosSettingsSection.About
             else -> {
                 unavailableDestinationId = destinationId
@@ -1858,8 +1937,16 @@ private fun SettingsPage(
             IosSettingsSection.Models -> "Models"
             IosSettingsSection.Search -> "Search"
             IosSettingsSection.Tts -> "Tts"
+            IosSettingsSection.Speech -> "SpeechToText"
+            IosSettingsSection.Skills -> "Skills"
+            IosSettingsSection.Lorebooks -> "Lorebooks"
+            IosSettingsSection.Mcp -> "Mcp"
+            IosSettingsSection.Web -> "Web"
+            IosSettingsSection.Workspaces -> "Workspaces"
+            IosSettingsSection.AndroidIntegration -> "AndroidIntegration"
             IosSettingsSection.Data -> activeDestinationId.ifBlank { "ChatStorage" }
             IosSettingsSection.Backup -> activeDestinationId.ifBlank { "Backup" }
+            IosSettingsSection.BackupWebDav -> "BackupWebDav"
             IosSettingsSection.About -> "About"
             IosSettingsSection.Unavailable -> unavailableDestinationId
             IosSettingsSection.Home -> ""
@@ -2927,7 +3014,57 @@ private fun SettingsPage(
                                     singleLine = true,
                                 )
                             }
-                            if (searchProvider != IosSearchProviderType.BING) {
+                            if (searchProvider == IosSearchProviderType.SEARXNG) {
+                                LastChatFormItem(label = { Text("SearXNG URL") }) {
+                                    OutlinedTextField(
+                                        value = searxngUrl,
+                                        onValueChange = { searxngUrl = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Engines") }) {
+                                    OutlinedTextField(
+                                        value = searxngEngines,
+                                        onValueChange = { searxngEngines = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Language") }) {
+                                    OutlinedTextField(
+                                        value = searxngLanguage,
+                                        onValueChange = { searxngLanguage = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Username") }) {
+                                    OutlinedTextField(
+                                        value = searxngUsername,
+                                        onValueChange = { searxngUsername = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Password (Keychain)") }) {
+                                    OutlinedTextField(
+                                        value = searxngPassword,
+                                        onValueChange = { searxngPassword = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            if (searchProvider != IosSearchProviderType.BING &&
+                                searchProvider != IosSearchProviderType.SEARXNG &&
+                                searchProvider != IosSearchProviderType.KEYLESS
+                            ) {
                                 LastChatFormItem(
                                     label = {
                                         Text(
@@ -2964,8 +3101,14 @@ private fun SettingsPage(
                                         searchEnabled,
                                         searchResultSize.toIntOrNull() ?: 5,
                                         searchApiKey,
+                                        searxngUrl,
+                                        searxngEngines,
+                                        searxngLanguage,
+                                        searxngUsername,
+                                        searxngPassword,
                                     )
                                     searchApiKey = ""
+                                    searxngPassword = ""
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Save search settings") }
@@ -3513,7 +3656,7 @@ private fun SettingsPage(
                     ) {
                         LastChatSettingGroupInputItem(
                             title = "Restore backup",
-                            subtitle = "Import providers, assistants, appearance, search and TTS settings from a LastChat Android backup (.zip).",
+                            subtitle = "Import providers, assistants, appearance, search, TTS, skills, lorebooks, MCP, and WebDAV settings from a LastChat Android backup (.zip).",
                             darkTheme = darkTheme,
                         ) {
                             Button(
@@ -3533,6 +3676,41 @@ private fun SettingsPage(
                         }
                     }
                 }
+            }
+            if (section == IosSettingsSection.BackupWebDav) {
+                item {
+                    IosWebDavSettings(
+                        state = state,
+                        darkTheme = darkTheme,
+                        onSave = onSaveWebDav,
+                        onTest = onTestWebDav,
+                        onList = onListWebDav,
+                        onBackup = onBackupWebDav,
+                        onRestore = onRestoreWebDav,
+                        onDelete = onDeleteWebDav,
+                    )
+                }
+            }
+            if (section == IosSettingsSection.Skills) {
+                item { IosSkillsSettings(state, darkTheme, onSavePromptInjections) }
+            }
+            if (section == IosSettingsSection.Lorebooks) {
+                item { IosLorebookSettings(state, darkTheme, onSavePromptInjections) }
+            }
+            if (section == IosSettingsSection.Mcp) {
+                item { IosMcpSettings(state, darkTheme, onSaveMcpServers, onRefreshMcpTools) }
+            }
+            if (section == IosSettingsSection.Speech) {
+                item { IosSttSettings(state, darkTheme, onSaveStt, onClearSttApiKey) }
+            }
+            if (section == IosSettingsSection.Web) {
+                item { IosWebSettings(state, darkTheme, onSaveWeb) }
+            }
+            if (section == IosSettingsSection.Workspaces) {
+                item { IosWorkspaceSettings(darkTheme) }
+            }
+            if (section == IosSettingsSection.AndroidIntegration) {
+                item { IosAndroidIntegrationSettings(darkTheme) }
             }
             if (section == IosSettingsSection.Unavailable) {
                 item {
@@ -4094,6 +4272,7 @@ private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
         LastChatSettingsPaneEntry("ProviderModels", "Provider models", Icons.Rounded.Cloud),
         LastChatSettingsPaneEntry("Search", "Search service", Icons.Rounded.Public),
         LastChatSettingsPaneEntry("Tts", "Text-to-speech", Icons.AutoMirrored.Rounded.VolumeUp),
+        LastChatSettingsPaneEntry("SpeechToText", "Speech-to-text", Icons.Rounded.Mic),
     )
     val promptChildren = listOf(
         LastChatSettingsPaneEntry("Skills", "Skills", Icons.Rounded.Code),
@@ -4157,7 +4336,7 @@ private fun iosSettingsMainDestination(destinationId: String): String = when (de
     "AssistantMemory" -> "Assistants"
     "AssistantTools" -> "Assistants"
     "Fonts", "UiCustomization", "RpOptimizations" -> "Display"
-    "ProviderModels", "Search", "Tts" -> "Providers"
+    "ProviderModels", "Search", "Tts", "SpeechToText" -> "Providers"
     "Skills", "Lorebooks" -> "PromptInjections"
     "BackupWebDav", "BackupLocal" -> "Backup"
     else -> destinationId

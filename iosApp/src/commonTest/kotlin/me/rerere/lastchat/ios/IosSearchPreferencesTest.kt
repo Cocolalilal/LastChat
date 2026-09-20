@@ -30,6 +30,7 @@ class IosSearchPreferencesTest {
                 IosSearchProviderType.OLLAMA -> assertIs<SearchServiceOptions.OllamaOptions>(options)
                 IosSearchProviderType.GROK -> assertIs<SearchServiceOptions.GrokOptions>(options)
                 IosSearchProviderType.NANOGPT -> assertIs<SearchServiceOptions.NanoGPTOptions>(options)
+                IosSearchProviderType.SEARXNG -> assertIs<SearchServiceOptions.SearXNGOptions>(options)
             }
         }
     }
@@ -38,8 +39,13 @@ class IosSearchPreferencesTest {
     fun onlyKeylessProvidersSkipKeychainRequirement() {
         assertFalse(IosSearchProviderType.KEYLESS.requiresApiKey())
         assertFalse(IosSearchProviderType.BING.requiresApiKey())
+        assertFalse(IosSearchProviderType.SEARXNG.requiresApiKey())
         IosSearchProviderType.entries
-            .filterNot { it == IosSearchProviderType.KEYLESS || it == IosSearchProviderType.BING }
+            .filterNot {
+                it == IosSearchProviderType.KEYLESS ||
+                    it == IosSearchProviderType.BING ||
+                    it == IosSearchProviderType.SEARXNG
+            }
             .forEach { assertTrue(it.requiresApiKey(), it.displayName()) }
     }
 

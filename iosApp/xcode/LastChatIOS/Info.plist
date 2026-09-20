@@ -20,6 +20,14 @@
     <string>1.4.5</string>
     <key>CFBundleVersion</key>
     <string>34</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>LastChat records short voice clips so cloud speech-to-text can fill the composer.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>LastChat can host a local web API so other devices on your network can reach this iPhone.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_http._tcp</string>
+    </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>BGTaskSchedulerPermittedIdentifiers</key>

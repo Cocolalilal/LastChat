@@ -199,6 +199,19 @@ fun LastChatComposerDefaultActionContent(
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.onErrorContainer,
         )
+        LastChatComposerAction.Stt,
+        LastChatComposerAction.SttFinalizing -> Icon(
+            RoundedMicIcon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LastChatComposerAction.SttRecording -> Icon(
+            RoundedMicIcon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onPrimary,
+        )
         else -> Unit
     }
 }
@@ -269,5 +282,12 @@ private val RoundedStopIcon by lazy {
     composerIcon(
         "Rounded.Stop",
         "M8,6h8c1.1,0 2,0.9 2,2v8c0,1.1 -0.9,2 -2,2H8c-1.1,0 -2,-0.9 -2,-2V8c0,-1.1 0.9,-2 2,-2z",
+    )
+}
+
+private val RoundedMicIcon by lazy {
+    composerIcon(
+        "Rounded.Mic",
+        "M12,14c1.66,0 3,-1.34 3,-3V5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3z M17.91,11c-0.49,0 -0.9,0.36 -0.98,0.85C16.52,14.06 14.47,16 12,16s-4.52,-1.94 -4.93,-4.15c-0.08,-0.49 -0.49,-0.85 -0.98,-0.85c-0.61,0 -1.09,0.54 -1,1.14C5.56,14.99 8.48,18 12,18s6.44,-3.01 6.92,-5.86c0.09,-0.6 -0.39,-1.14 -1.01,-1.14z M12,20c-0.55,0 -1,0.45 -1,1v1h2v-1c0,-0.55 -0.45,-1 -1,-1z",
     )
 }

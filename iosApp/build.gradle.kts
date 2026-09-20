@@ -48,6 +48,10 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.coil.compose)
         }
+        iosMain.dependencies {
+            implementation(libs.ktor.server.core)
+            implementation(libs.ktor.server.cio)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }

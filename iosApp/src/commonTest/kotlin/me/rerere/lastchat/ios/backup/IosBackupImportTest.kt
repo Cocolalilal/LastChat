@@ -58,6 +58,14 @@ class IosBackupImportTest {
     }
 
     @Test
+    fun writeStoreArchiveRoundTripsThroughTheReader() {
+        val payload = """{"ok":true}""".encodeToByteArray()
+        val archive = IosBackupZip.writeStoreArchive(mapOf("settings.json" to payload))
+        val entries = assertNotNull(IosBackupZip.read(archive, wanted = setOf("settings.json")))
+        assertEquals(payload.decodeToString(), assertNotNull(entries.single().data).decodeToString())
+    }
+
+    @Test
     fun importPlanMapsProvidersAssistantsSearchAndTts() {
         val settings = AndroidFixtures.settingsJson()
         val plan = IosBackupImporter.buildImportPlan(settings)

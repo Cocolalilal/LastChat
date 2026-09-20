@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -49,12 +50,29 @@ import me.rerere.ai.ui.mergeCurrentVersionMessages
 import me.rerere.ai.ui.toMessageNode
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.asr.CloudSpeechTranscription
+import me.rerere.asr.CloudSpeechTranscriptionRequest
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
+import me.rerere.common.platform.PlatformSpeechRecorder
 import me.rerere.common.platform.SecureSettingsStore
+import me.rerere.common.platform.UnavailableSpeechRecorder
+import me.rerere.document.PlatformDocumentParser
+import me.rerere.document.PortableDocumentText
+import me.rerere.rikkahub.data.mcp.PortableMcpClient
+import me.rerere.rikkahub.data.mcp.PortableMcpServer
+import me.rerere.rikkahub.data.mcp.withDiscoveredTools
+import me.rerere.rikkahub.data.prompt.PortableLorebook
+import me.rerere.rikkahub.data.prompt.PortableSkill
+import me.rerere.rikkahub.data.prompt.PromptInjectionEngine
+import me.rerere.rikkahub.data.sync.PortableWebDavClient
+import me.rerere.rikkahub.data.sync.PortableWebDavConfig
+import me.rerere.rikkahub.data.sync.PortableWebDavItem
+import me.rerere.rikkahub.data.web.PortableWebApiRouter
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_MANIFEST_ENTRY
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_SETTINGS_ENTRY
 import me.rerere.lastchat.ios.backup.IosBackupDataImporter
@@ -128,6 +146,9 @@ data class IosAssistantPreferences(
     val ragSimilarityThreshold: Float = 0.45f,
     val ragLimit: Int = 10,
     val localTools: Set<IosLocalToolOption> = emptySet(),
+    val enabledSkillIds: Set<String> = emptySet(),
+    val enabledLorebookIds: Set<String> = emptySet(),
+    val enabledMcpServerIds: Set<String> = emptySet(),
     /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
     val embeddingProviderType: IosProviderType? = null,
 )
@@ -162,7 +183,7 @@ data class IosMemoryRecord(
 @Serializable
 enum class IosSearchProviderType {
     KEYLESS, BING, TAVILY, EXA, BRAVE, PERPLEXITY, FIRECRAWL, JINA, LINKUP,
-    ZHIPU, METASO, BOCHA, OLLAMA, GROK, NANOGPT,
+    ZHIPU, METASO, BOCHA, OLLAMA, GROK, NANOGPT, SEARXNG,
 }
 
 @Serializable
@@ -170,6 +191,10 @@ data class IosSearchPreferences(
     val enabled: Boolean = false,
     val provider: IosSearchProviderType = IosSearchProviderType.KEYLESS,
     val resultSize: Int = 5,
+    val searxngUrl: String = "",
+    val searxngEngines: String = "",
+    val searxngLanguage: String = "",
+    val searxngUsername: String = "",
 )
 
 @Serializable
@@ -222,6 +247,8 @@ data class IosConversation(
     val isPinned: Boolean = false,
     val updatedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
     val memoryLastMessageId: String? = null,
+    val enabledSkillIds: Set<String>? = null,
+    val enabledLorebookIds: Set<String>? = null,
 ) {
     /** The visible message path, resolved with the same version-selection semantics as Android. */
     val currentMessages: List<UIMessage>
@@ -317,10 +344,23 @@ data class IosAppState(
     val notificationHistory: List<IosNotificationRecord> = emptyList(),
     val pendingQuestionnaire: IosPendingQuestionnaire? = null,
     val pendingAttachments: List<PlatformPickedFile> = emptyList(),
+    val skills: List<PortableSkill> = emptyList(),
+    val lorebooks: List<PortableLorebook> = emptyList(),
+    val mcpServers: List<PortableMcpServer> = emptyList(),
+    val stt: IosSttPreferences = IosSttPreferences(),
+    val web: IosWebPreferences = IosWebPreferences(),
+    val webDav: IosWebDavPreferences = IosWebDavPreferences(),
+    val workspace: IosWorkspacePreferences = IosWorkspacePreferences(),
     val hasApiKey: Boolean = false,
     val hasSearchApiKey: Boolean = false,
     val hasTtsApiKey: Boolean = false,
+    val hasSttApiKey: Boolean = false,
+    val hasWebDavPassword: Boolean = false,
+    val webDavItems: List<PortableWebDavItem> = emptyList(),
+    val webDavBusy: Boolean = false,
+    val webApiRunning: Boolean = false,
     val ttsSpeaking: Boolean = false,
+    val sttRecording: Boolean = false,
     val ttsPlaybackState: PlaybackState = PlaybackState(),
     val error: String? = null,
 ) {
@@ -381,6 +421,8 @@ class IosAppController(
     private val providerManager: ProviderManager,
     private val ttsController: TtsController,
     private val notificationPlatform: IosLocalNotificationPlatform,
+    private val speechRecorder: PlatformSpeechRecorder = UnavailableSpeechRecorder(),
+    private val documentParser: PlatformDocumentParser? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json {
@@ -402,6 +444,10 @@ class IosAppController(
     private val persistMutex = Mutex()
     private val adaptiveMemoryMutex = Mutex()
     private val scheduledMessageMutex = Mutex()
+    private val mcpClient = PortableMcpClient(httpClient, json)
+    private val webDavClient = PortableWebDavClient(httpClient)
+    private val webServer = IosLocalWebServer()
+    private val turnScopedSkillIds = mutableMapOf<String, MutableSet<String>>()
     val state: StateFlow<IosAppState> = mutableState.asStateFlow()
 
     init {
@@ -470,6 +516,8 @@ class IosAppController(
             val selectedProviderId = selectedModel?.first?.id?.toString()
             val ttsPreferences = stored?.tts ?: IosTtsPreferences()
             val ttsApiKey = secureStore.readString(ttsApiKeyName(ttsPreferences.type)).orEmpty()
+            val sttPreferences = stored?.stt ?: IosSttPreferences()
+            val sttApiKey = secureStore.readString(STT_API_KEY_NAME).orEmpty()
             mutableState.value = IosAppState(
                 loading = false,
                 conversations = conversations,
@@ -499,11 +547,20 @@ class IosAppController(
                         )
                     }
                 },
+                skills = stored?.skills.orEmpty(),
+                lorebooks = stored?.lorebooks.orEmpty(),
+                mcpServers = stored?.mcpServers.orEmpty(),
+                stt = sttPreferences,
+                web = stored?.web ?: IosWebPreferences(),
+                webDav = stored?.webDav ?: IosWebDavPreferences(),
+                workspace = stored?.workspace ?: IosWorkspacePreferences(),
                 hasApiKey = selectedProviderId?.let { providerId ->
                     secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not()
                 } ?: false,
                 hasSearchApiKey = hasSearchApiKey(stored?.search ?: IosSearchPreferences()),
                 hasTtsApiKey = ttsApiKey.isNotBlank(),
+                hasSttApiKey = sttApiKey.isNotBlank(),
+                hasWebDavPassword = !secureStore.readString(WEBDAV_PASSWORD_KEY).isNullOrBlank(),
             )
             ttsController.setProvider(
                 ttsPreferences.takeIf { it.enabled && ttsApiKey.isNotBlank() }
@@ -518,6 +575,7 @@ class IosAppController(
             refreshAdaptiveBackgroundSchedule()
             mutableState.value.scheduledMessages.forEach(::scheduleMessageInProcess)
             refreshScheduledMessageBackgroundSchedule()
+            refreshWebServer()
         }
     }
 
@@ -784,6 +842,11 @@ class IosAppController(
         enabled: Boolean,
         resultSize: Int,
         apiKey: String,
+        searxngUrl: String = "",
+        searxngEngines: String = "",
+        searxngLanguage: String = "",
+        searxngUsername: String = "",
+        searxngPassword: String = "",
     ) {
         scope.launch {
             val existingKey = secureStore.readString(searchApiKeyName(provider))
@@ -796,10 +859,17 @@ class IosAppController(
             if (apiKey.isNotBlank()) {
                 secureStore.writeString(searchApiKeyName(provider), apiKey.trim())
             }
+            if (provider == IosSearchProviderType.SEARXNG && searxngPassword.isNotBlank()) {
+                secureStore.writeString(SEARXNG_PASSWORD_KEY, searxngPassword.trim())
+            }
             val preferences = IosSearchPreferences(
                 enabled = enabled,
                 provider = provider,
                 resultSize = resultSize.coerceIn(1, 10),
+                searxngUrl = searxngUrl.trim(),
+                searxngEngines = searxngEngines.trim(),
+                searxngLanguage = searxngLanguage.trim(),
+                searxngUsername = searxngUsername.trim(),
             )
             mutableState.update {
                 it.copy(
@@ -938,6 +1008,48 @@ class IosAppController(
         ttsController.speak(text)
     }
 
+    fun startSpeechRecognition() {
+        val snapshot = mutableState.value
+        if (snapshot.generating || snapshot.sttRecording) return
+        if (!snapshot.stt.enabled || !snapshot.hasSttApiKey) {
+            mutableState.update { it.copy(error = "Enable and configure speech-to-text in Settings first") }
+            return
+        }
+        scope.launch {
+            val started = runCatching { speechRecorder.start() }.getOrDefault(false)
+            if (!started) {
+                mutableState.update { it.copy(error = "Microphone permission is required for speech-to-text") }
+                return@launch
+            }
+            mutableState.update { it.copy(sttRecording = true, error = null) }
+        }
+    }
+
+    fun stopSpeechRecognition(onTranscript: (String) -> Unit) {
+        if (!mutableState.value.sttRecording) return
+        scope.launch {
+            mutableState.update { it.copy(sttRecording = false) }
+            val wav = runCatching { speechRecorder.stop() }.getOrNull()
+            if (wav == null || wav.isEmpty()) return@launch
+            val snapshot = mutableState.value
+            val apiKey = secureStore.readString(STT_API_KEY_NAME).orEmpty()
+            runCatching {
+                CloudSpeechTranscription.transcribe(
+                    httpClient,
+                    CloudSpeechTranscriptionRequest(
+                        baseUrl = snapshot.stt.baseUrl,
+                        apiKey = apiKey,
+                        model = snapshot.stt.model,
+                        wavBytes = wav,
+                        language = snapshot.stt.language,
+                    ),
+                )
+            }.onSuccess(onTranscript).onFailure { failure ->
+                mutableState.update { it.copy(error = failure.message ?: "Speech transcription failed") }
+            }
+        }
+    }
+
     fun stopTts() = ttsController.stop()
     fun pauseTts() = ttsController.pause()
     fun resumeTts() = ttsController.resume()
@@ -1013,6 +1125,241 @@ class IosAppController(
             )
         }
         persistAsync()
+    }
+
+    fun savePromptInjections(
+        skills: List<PortableSkill>,
+        lorebooks: List<PortableLorebook>,
+        enabledSkillIds: Set<String>,
+        enabledLorebookIds: Set<String>,
+    ) {
+        mutableState.update { current ->
+            val assistantId = current.assistant.id
+            current.copy(
+                skills = skills,
+                lorebooks = lorebooks,
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == assistantId) {
+                        assistant.copy(
+                            enabledSkillIds = enabledSkillIds,
+                            enabledLorebookIds = enabledLorebookIds,
+                        )
+                    } else assistant
+                },
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveMcpServers(servers: List<PortableMcpServer>, enabledIds: Set<String>) {
+        mutableState.update { current ->
+            val assistantId = current.assistant.id
+            current.copy(
+                mcpServers = servers,
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == assistantId) assistant.copy(enabledMcpServerIds = enabledIds) else assistant
+                },
+            )
+        }
+        persistAsync()
+    }
+
+    fun refreshMcpTools(serverId: String) {
+        scope.launch {
+            val server = mutableState.value.mcpServers.firstOrNull { it.id == serverId } ?: return@launch
+            runCatching { mcpClient.listTools(server) }
+                .onSuccess { tools ->
+                    mutableState.update { current ->
+                        current.copy(
+                            mcpServers = current.mcpServers.map { existing ->
+                                if (existing.id == serverId) existing.withDiscoveredTools(tools) else existing
+                            },
+                            error = null,
+                        )
+                    }
+                    persist()
+                }
+                .onFailure { failure ->
+                    mutableState.update { it.copy(error = failure.message ?: "MCP discovery failed") }
+                }
+        }
+    }
+
+    fun saveStt(preferences: IosSttPreferences, apiKey: String) {
+        scope.launch {
+            if (apiKey.isNotBlank()) {
+                secureStore.writeString(STT_API_KEY_NAME, apiKey.trim())
+            }
+            val existingKey = secureStore.readString(STT_API_KEY_NAME)
+            if (preferences.enabled && existingKey.isNullOrBlank()) {
+                mutableState.update { it.copy(error = "Configure the speech-to-text API key first.") }
+                return@launch
+            }
+            mutableState.update {
+                it.copy(
+                    stt = preferences,
+                    hasSttApiKey = !existingKey.isNullOrBlank(),
+                    error = null,
+                )
+            }
+            persist()
+        }
+    }
+
+    fun clearSttApiKey() {
+        scope.launch {
+            secureStore.remove(STT_API_KEY_NAME)
+            mutableState.update { it.copy(hasSttApiKey = false) }
+        }
+    }
+
+    fun saveWebPreferences(preferences: IosWebPreferences, password: String) {
+        scope.launch {
+            if (password.isNotBlank()) {
+                secureStore.writeString(WEB_PASSWORD_KEY, password.trim())
+            }
+            mutableState.update { it.copy(web = preferences.copy(port = preferences.port.coerceIn(1024, 65535))) }
+            persist()
+            refreshWebServer()
+        }
+    }
+
+    fun saveWebDav(preferences: IosWebDavPreferences, password: String) {
+        scope.launch {
+            if (password.isNotBlank()) {
+                secureStore.writeString(WEBDAV_PASSWORD_KEY, password.trim())
+            }
+            mutableState.update {
+                it.copy(
+                    webDav = preferences.copy(
+                        url = preferences.url.trim(),
+                        username = preferences.username.trim(),
+                        path = preferences.path.trim().ifBlank { "lastchat_backups" },
+                    ),
+                    hasWebDavPassword = !secureStore.readString(WEBDAV_PASSWORD_KEY).isNullOrBlank(),
+                    error = null,
+                )
+            }
+            persist()
+        }
+    }
+
+    fun testWebDav() {
+        runWebDavAction {
+            webDavClient.test(webDavConfig())
+            "WebDAV connection succeeded"
+        }
+    }
+
+    fun listWebDavBackups() {
+        runWebDavAction {
+            val items = webDavClient.list(webDavConfig())
+            mutableState.update { it.copy(webDavItems = items) }
+            "Found ${items.size} backup files"
+        }
+    }
+
+    fun backupToWebDav() {
+        runWebDavAction {
+            val archive = exportBackupArchive()
+            val name = "LastChat_ios_${Clock.System.now().toEpochMilliseconds()}.zip"
+            webDavClient.upload(webDavConfig(), name, archive)
+            val items = webDavClient.list(webDavConfig())
+            mutableState.update { it.copy(webDavItems = items) }
+            "Uploaded $name"
+        }
+    }
+
+    fun restoreFromWebDav(href: String) {
+        runWebDavAction {
+            val archive = webDavClient.download(webDavConfig(), href)
+            restoreAndroidBackupInternal(archive)
+            "Restored backup from WebDAV"
+        }
+    }
+
+    fun deleteWebDavBackup(href: String) {
+        runWebDavAction {
+            webDavClient.delete(webDavConfig(), href)
+            mutableState.update { current ->
+                current.copy(webDavItems = current.webDavItems.filterNot { it.href == href })
+            }
+            "Deleted WebDAV backup"
+        }
+    }
+
+    private fun runWebDavAction(block: suspend () -> String) {
+        scope.launch {
+            mutableState.update { it.copy(webDavBusy = true, error = null) }
+            runCatching { block() }
+                .onSuccess { message ->
+                    mutableState.update { it.copy(webDavBusy = false, error = null) }
+                    PlatformLog.i("IosWebDav", message)
+                }
+                .onFailure { failure ->
+                    mutableState.update {
+                        it.copy(webDavBusy = false, error = failure.message ?: "WebDAV request failed")
+                    }
+                }
+        }
+    }
+
+    private suspend fun webDavConfig(): PortableWebDavConfig {
+        val snapshot = mutableState.value
+        return PortableWebDavConfig(
+            url = snapshot.webDav.url,
+            username = snapshot.webDav.username,
+            password = secureStore.readString(WEBDAV_PASSWORD_KEY).orEmpty(),
+            path = snapshot.webDav.path,
+        )
+    }
+
+    private suspend fun exportBackupArchive(): ByteArray {
+        persist()
+        val snapshot = mutableState.value
+        val settings = json.encodeToString(
+            IosStoredState(
+                conversations = snapshot.conversations,
+                selectedConversationId = snapshot.selectedConversationId,
+                providers = snapshot.providers,
+                selectedChatModelId = snapshot.selectedChatModelId,
+                appearance = snapshot.appearance,
+                assistants = snapshot.assistants,
+                selectedAssistantId = snapshot.selectedAssistantId,
+                search = snapshot.search,
+                memories = snapshot.memories,
+                tts = snapshot.tts,
+                imageGeneration = snapshot.imageGeneration,
+                generatedImages = snapshot.generatedImages,
+                scheduledMessages = snapshot.scheduledMessages,
+                notificationHistory = snapshot.notificationHistory,
+                pendingQuestionnaire = snapshot.pendingQuestionnaire,
+                pendingAttachments = snapshot.pendingAttachments.map { attachment ->
+                    IosStoredPendingAttachment(
+                        storagePath = attachment.storagePath,
+                        displayName = attachment.displayName,
+                        mimeType = attachment.mimeType,
+                        kind = attachment.kind,
+                    )
+                },
+                skills = snapshot.skills,
+                lorebooks = snapshot.lorebooks,
+                mcpServers = snapshot.mcpServers,
+                stt = snapshot.stt,
+                web = snapshot.web,
+                webDav = snapshot.webDav,
+                workspace = snapshot.workspace,
+            ),
+        )
+        val manifest = json.encodeToString(
+            IosBackupManifest(formatVersion = 1, includesDatabase = false, includesFiles = false),
+        )
+        return IosBackupZip.writeStoreArchive(
+            mapOf(
+                IOS_BACKUP_SETTINGS_ENTRY to settings.encodeToByteArray(),
+                IOS_BACKUP_MANIFEST_ENTRY to manifest.encodeToByteArray(),
+            ),
+        )
     }
 
     fun saveLocalTools(tools: Set<IosLocalToolOption>) {
@@ -1298,6 +1645,7 @@ class IosAppController(
         val conversation = snapshot.selectedConversation ?: return
         if ((prompt.isEmpty() && snapshot.pendingAttachments.isEmpty()) || snapshot.generating) return
         generationJob = scope.launch {
+            turnScopedSkillIds.remove(conversation.id)
             val target = resolveChatGeneration()
             if (target == null) {
                 generationJob = null
@@ -1316,6 +1664,21 @@ class IosAppController(
                             mime = attachment.mimeType,
                         )
                     })
+                    if (attachment.kind == PlatformPickedFileKind.Document) {
+                        val bytes = fileStore.readBytes(attachment.storagePath)
+                        if (bytes != null) {
+                            val extracted = documentParser?.parse(
+                                attachment.displayName,
+                                attachment.mimeType,
+                                bytes,
+                            ) ?: PortableDocumentText.parse(
+                                attachment.displayName,
+                                attachment.mimeType,
+                                bytes,
+                            )
+                            add(UIMessagePart.Text(documentPromptText(attachment.displayName, extracted)))
+                        }
+                    }
                 }
             }
             val userMessage = UIMessage(role = MessageRole.USER, parts = userParts)
@@ -1340,14 +1703,6 @@ class IosAppController(
                 memories = selectedMemories,
                 includeToolGuide = snapshot.assistant.memoryMode != IosMemoryMode.OFF,
             )
-            val stableSystemPrompt = buildList {
-                snapshot.assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
-                if (snapshot.assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) {
-                    add(memoryPrompt)
-                }
-            }.joinToString("\n\n")
-            val systemMessages = stableSystemPrompt.takeIf(String::isNotBlank)
-                ?.let { listOf(UIMessage.system(it)) }.orEmpty()
             val requestUserMessage = if (
                 snapshot.assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
                 snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE
@@ -1358,16 +1713,18 @@ class IosAppController(
                     },
                 )
             } else userMessage
-            val requestMessages = systemMessages + conversation.currentMessages + requestUserMessage
             var generationSucceeded = false
             try {
-                val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
-                    buildMemoryTools(snapshot.assistant) +
-                    buildLocalTools(snapshot.assistant, conversation.id)
-                val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, requestMessages) }.trim()
-                val providerRequestMessages = systemMessages +
-                    toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
-                    requestMessages.drop(systemMessages.size)
+                val tools = buildGenerationTools(snapshot, snapshot.assistant, conversation.id)
+                val providerRequestMessages = prepareProviderMessages(
+                    snapshot = snapshot,
+                    assistant = snapshot.assistant,
+                    conversation = conversation,
+                    history = conversation.currentMessages + requestUserMessage,
+                    tools = tools,
+                    model = model,
+                    memoryPrompt = memoryPrompt,
+                )
                 runProviderToolLoop(
                     target.providerSetting,
                     model,
@@ -1465,6 +1822,7 @@ class IosAppController(
             ?.plus(turnStart)
             ?: return
         generationJob = scope.launch {
+            turnScopedSkillIds.remove(conversationId)
             val target = resolveChatGeneration()
             if (target == null) {
                 generationJob = null
@@ -1501,14 +1859,6 @@ class IosAppController(
                     memories = selectedMemories,
                     includeToolGuide = assistant.memoryMode != IosMemoryMode.OFF,
                 )
-                val systemMessages = buildList {
-                    assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
-                    if (assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) {
-                        add(memoryPrompt)
-                    }
-                }.joinToString("\n\n")
-                    .takeIf(String::isNotBlank)
-                    ?.let { listOf(UIMessage.system(it)) }.orEmpty()
                 val requestMessages = if (
                     assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
                     assistant.memoryMode == IosMemoryMode.ADAPTIVE
@@ -1524,13 +1874,16 @@ class IosAppController(
                     }
                 } else history
                 val model = target.model
-                val tools = listOfNotNull(buildSearchTool(snapshot.search)) +
-                    buildMemoryTools(assistant) +
-                    buildLocalTools(assistant, conversationId)
-                val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, requestMessages) }.trim()
-                val providerRequestMessages = systemMessages +
-                    toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
-                    requestMessages
+                val tools = buildGenerationTools(snapshot, assistant, conversationId)
+                val providerRequestMessages = prepareProviderMessages(
+                    snapshot = snapshot,
+                    assistant = assistant,
+                    conversation = conversation,
+                    history = requestMessages,
+                    tools = tools,
+                    model = model,
+                    memoryPrompt = memoryPrompt,
+                )
                 runProviderToolLoop(
                     target.providerSetting,
                     model,
@@ -1566,11 +1919,12 @@ class IosAppController(
         tools: List<Tool>,
         initialProviderMessages: List<UIMessage>,
     ) {
+        var currentTools = tools
         var providerMessages = initialProviderMessages
         var toolStep = 0
         var lastCheckpointAt = Clock.System.now().toEpochMilliseconds()
         while (true) {
-            providerFlow(providerSetting, model, providerMessages, tools).collect { chunk ->
+            providerFlow(providerSetting, model, providerMessages, currentTools).collect { chunk ->
                 updateConversation(conversationId) { current ->
                     val currentMessages = current.currentMessages
                     val last = currentMessages.lastOrNull()
@@ -1593,7 +1947,7 @@ class IosAppController(
             if (toolCalls.isEmpty()) break
             if (++toolStep > MAX_TOOL_STEPS) error("Too many tool-use steps")
             val results = toolCalls.map { toolCall ->
-                val tool = tools.firstOrNull { it.name == toolCall.toolName }
+                val tool = currentTools.firstOrNull { it.name == toolCall.toolName }
                 val arguments = runCatching { json.parseToJsonElement(toolCall.arguments) }
                     .getOrElse { JsonObject(emptyMap()) }
                 UIMessagePart.ToolResult(
@@ -1618,7 +1972,19 @@ class IosAppController(
             updateConversation(conversationId) { current ->
                 current.merged(current.currentMessages + toolMessage + UIMessage.assistant(""))
             }
-            providerMessages = providerMessages + assistantResponse + toolMessage
+            val activatedExtra = results.filter { it.toolName == "manage_skills" }
+                .mapNotNull { result ->
+                    val activated = (result.content as? JsonObject)?.get("activated") as? JsonArray
+                    activated?.mapNotNull { item ->
+                        val obj = item as? JsonObject ?: return@mapNotNull null
+                        val id = (obj["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                        mutableState.value.skills.firstOrNull { it.id == id }
+                    }
+                }
+                .flatten()
+            providerMessages = providerMessages + assistantResponse + toolMessage +
+                activatedExtra.map { UIMessage.user(PromptInjectionEngine.inContextSkillText(it)) }
+            currentTools = rebuildGenerationTools(conversationId)
             persist()
         }
     }
@@ -1845,24 +2211,25 @@ class IosAppController(
             try {
                 val target = resolveChatGeneration()
                     ?: error("Configure a chat model and its API key first.")
-                val tools = listOfNotNull(buildSearchTool(mutableState.value.search)) +
-                    buildMemoryTools(assistant) + buildLocalTools(assistant, conversation.id)
-                val systemMessages = assistant.systemPrompt.takeIf(String::isNotBlank)
-                    ?.let { listOf(UIMessage.system(it)) }.orEmpty()
-                val storedMessages = mutableState.value.conversations
+                val currentSnapshot = mutableState.value
+                val tools = buildGenerationTools(currentSnapshot, assistant, conversation.id)
+                val storedMessages = currentSnapshot.conversations
                     .first { it.id == conversation.id }.currentMessages.dropLast(1)
                 val model = target.model
-                val toolGuide = tools.joinToString("\n") {
-                    it.systemPrompt(model, systemMessages + storedMessages)
-                }.trim()
                 runProviderToolLoop(
                     providerSetting = target.providerSetting,
                     model = model,
                     conversationId = conversation.id,
                     tools = tools,
-                    initialProviderMessages = systemMessages +
-                        toolGuide.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
-                        storedMessages,
+                    initialProviderMessages = prepareProviderMessages(
+                        snapshot = currentSnapshot,
+                        assistant = assistant,
+                        conversation = conversation,
+                        history = storedMessages,
+                        tools = tools,
+                        model = model,
+                        memoryPrompt = "",
+                    ),
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -2777,13 +3144,186 @@ class IosAppController(
             .getOrElse { error("The image provider returned unsupported image data") }
     }
 
+    private suspend fun buildGenerationTools(
+        snapshot: IosAppState,
+        assistant: IosAssistantPreferences,
+        conversationId: String,
+    ): List<Tool> {
+        return listOfNotNull(buildSearchTool(snapshot.search)) +
+            buildMemoryTools(assistant) +
+            buildLocalTools(assistant, conversationId) +
+            listOfNotNull(buildManageSkillsTool(snapshot, assistant, conversationId)) +
+            buildMcpTools(snapshot, assistant)
+    }
+
+    private suspend fun rebuildGenerationTools(conversationId: String): List<Tool> {
+        val snapshot = mutableState.value
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+        val assistant = snapshot.assistants.firstOrNull { it.id == conversation?.assistantId } ?: snapshot.assistant
+        return buildGenerationTools(snapshot, assistant, conversationId)
+    }
+
+    private fun buildManageSkillsTool(
+        snapshot: IosAppState,
+        assistant: IosAssistantPreferences,
+        conversationId: String,
+    ): Tool? {
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+        val state = PromptInjectionEngine.skillToolState(
+            skills = snapshot.skills,
+            assistantId = assistant.id,
+            assistantDefaultSkillIds = assistant.enabledSkillIds,
+            conversationSkillIds = conversation?.enabledSkillIds.orEmpty(),
+            turnScopedSkillIds = turnScopedSkillIds[conversationId].orEmpty(),
+        )
+        if (state.availableSkills.isEmpty() && state.activeSkills.isEmpty()) return null
+        val availableSummary = state.availableSkills.joinToString("; ") { skill ->
+            val label = skill.name.ifBlank { skill.id }
+            val description = skill.description.ifBlank { "No description provided." }.replace('\n', ' ').take(120)
+            "$label: $description"
+        }
+        return Tool(
+            name = "manage_skills",
+            description = "Activate relevant skills for this turn; their full instructions load on the next step. Available: $availableSummary",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("skills", buildJsonObject {
+                            put("type", "array")
+                            put("description", "Skills to activate for this turn, referenced by exact id or exact skill name.")
+                            put("items", buildJsonObject { put("type", "string") })
+                        })
+                    },
+                    required = listOf("skills"),
+                )
+            },
+            execute = { args ->
+                val objectValue = args as? JsonObject ?: JsonObject(emptyMap())
+                val listed = (objectValue["skills"] as? JsonArray)?.mapNotNull { item ->
+                    (item as? JsonPrimitive)?.contentOrNull
+                }.orEmpty()
+                val single = (objectValue["skill"] as? JsonPrimitive)?.contentOrNull
+                val targets = PromptInjectionEngine.parseSkillTargets(listed, single)
+                require(targets.isNotEmpty()) { "Provide at least one skill target in `skills` or `skill`." }
+                val currentTurn = turnScopedSkillIds.getOrPut(conversationId) { mutableSetOf() }
+                val outcome = PromptInjectionEngine.activateSkillsForTurn(
+                    targets = targets,
+                    availableSkills = state.availableSkills,
+                    activeSkills = state.activeSkills,
+                    currentTurnScopedSkillIds = currentTurn,
+                )
+                currentTurn.clear()
+                currentTurn.addAll(outcome.updatedTurnScopedSkillIds)
+                buildJsonObject {
+                    put("updated", JsonPrimitive(outcome.activatedSkills.isNotEmpty()))
+                    put(
+                        "activated",
+                        JsonArray(
+                            outcome.activatedSkills.map { skill ->
+                                buildJsonObject {
+                                    put("id", skill.id)
+                                    put("name", skill.name)
+                                }
+                            },
+                        ),
+                    )
+                    put(
+                        "already_active",
+                        JsonArray(
+                            outcome.alreadyActiveSkills.map { skill ->
+                                buildJsonObject {
+                                    put("id", skill.id)
+                                    put("name", skill.name)
+                                }
+                            },
+                        ),
+                    )
+                    put("unmatched", JsonArray(outcome.unmatchedTargets.map(::JsonPrimitive)))
+                }
+            },
+        )
+    }
+
+    private fun prepareProviderMessages(
+        snapshot: IosAppState,
+        assistant: IosAssistantPreferences,
+        conversation: IosConversation,
+        history: List<UIMessage>,
+        tools: List<Tool>,
+        model: Model,
+        memoryPrompt: String,
+    ): List<UIMessage> {
+        val recentText = history.takeLast(10).map { it.toText() }
+        val lorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
+        val activated = PromptInjectionEngine.activateLorebookEntries(
+            lorebooks = snapshot.lorebooks,
+            enabledLorebookIds = lorebookIds,
+            recentMessages = recentText,
+        )
+        val skills = PromptInjectionEngine.enabledSkills(
+            skills = snapshot.skills,
+            assistantId = assistant.id,
+            assistantDefaultSkillIds = assistant.enabledSkillIds,
+            conversationSkillIds = conversation.enabledSkillIds.orEmpty(),
+            turnScopedSkillIds = turnScopedSkillIds[conversation.id].orEmpty(),
+        )
+        val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, history) }.trim()
+        val baseSystem = buildList {
+            assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
+            if (assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) add(memoryPrompt)
+        }.joinToString("\n\n")
+        val assembled = PromptInjectionEngine.assembleSystemPrompt(
+            baseSystemPrompt = baseSystem,
+            skills = skills,
+            lorebookEntries = activated.map { it.entry },
+            toolGuide = toolGuide,
+        )
+        val injectedHistory = applyInContextPromptInjections(
+            messages = history,
+            skills = skills,
+            lorebookEntries = activated.map { it.entry },
+        )
+        return assembled.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
+            injectedHistory
+    }
+
+    private fun buildMcpTools(
+        snapshot: IosAppState,
+        assistant: IosAssistantPreferences,
+    ): List<Tool> {
+        return snapshot.mcpServers
+            .filter { it.enable && it.url.isNotBlank() && it.id in assistant.enabledMcpServerIds }
+            .flatMap { server ->
+                server.tools.filter { it.enable && it.name.isNotBlank() }.map { tool ->
+                    Tool(
+                        name = tool.name,
+                        description = tool.description ?: "MCP tool from ${server.name.ifBlank { server.url }}",
+                        parameters = { tool.inputSchema },
+                        execute = { arguments ->
+                            mcpClient.callTool(
+                                server = server,
+                                toolName = tool.name,
+                                arguments = arguments as? JsonObject ?: JsonObject(emptyMap()),
+                            )
+                        },
+                    )
+                }
+            }
+    }
+
     private suspend fun buildSearchTool(preferences: IosSearchPreferences): Tool? {
         if (!preferences.enabled) return null
         val apiKey = secureStore.readString(searchApiKeyName(preferences.provider)).orEmpty()
         if (preferences.provider.requiresApiKey() && apiKey.isBlank()) {
             error("Configure the ${preferences.provider.displayName()} search API key first.")
         }
-        val options = preferences.provider.toOptions(apiKey)
+        val options = preferences.provider.toOptions(
+            apiKey = apiKey,
+            preferences = preferences,
+            searxngPassword = if (preferences.provider == IosSearchProviderType.SEARXNG) {
+                secureStore.readString(SEARXNG_PASSWORD_KEY).orEmpty()
+            } else "",
+        )
         val service = SearchService.getService(options)
         return Tool(
             name = "search_web",
@@ -2961,9 +3501,20 @@ class IosAppController(
                     ?: current.selectedChatModelId?.takeIf { ref -> findProviderModel(providerList, ref) != null },
                 search = plan.search ?: current.search,
                 tts = plan.tts ?: current.tts,
+                skills = plan.skills.ifEmpty { current.skills },
+                lorebooks = plan.lorebooks.ifEmpty { current.lorebooks },
+                mcpServers = plan.mcpServers.ifEmpty { current.mcpServers },
+                web = plan.web ?: current.web,
+                webDav = plan.webDav ?: current.webDav,
             )
         }
         persist()
+        if (!plan.webPassword.isNullOrBlank()) {
+            secureStore.writeString(WEB_PASSWORD_KEY, plan.webPassword)
+        }
+        if (!plan.webDavPassword.isNullOrBlank()) {
+            secureStore.writeString(WEBDAV_PASSWORD_KEY, plan.webDavPassword)
+        }
         val snapshot = mutableState.value
         val selectedModel = snapshot.selectedChatModel
         val apiKey = selectedModel
@@ -2976,6 +3527,7 @@ class IosAppController(
                 hasApiKey = selectedModel != null && apiKey.isNotBlank(),
                 hasSearchApiKey = searchKeyPresent,
                 hasTtsApiKey = ttsKey.isNotBlank(),
+                hasWebDavPassword = !secureStore.readString(WEBDAV_PASSWORD_KEY).isNullOrBlank(),
             )
         }
         ttsController.setProvider(
@@ -2987,11 +3539,64 @@ class IosAppController(
             }
             .forEach { scheduleAdaptiveMemory(it.id) }
         refreshAdaptiveBackgroundSchedule()
+        refreshWebServer()
     }
 
     private suspend fun hasSearchApiKey(preferences: IosSearchPreferences): Boolean {
         if (!preferences.provider.requiresApiKey()) return true
         return secureStore.readString(searchApiKeyName(preferences.provider)).isNullOrBlank().not()
+    }
+
+    private suspend fun refreshWebServer() {
+        val snapshot = mutableState.value
+        webServer.stop()
+        if (!snapshot.web.enabled) {
+            mutableState.update { it.copy(webApiRunning = false) }
+            return
+        }
+        val password = secureStore.readString(WEB_PASSWORD_KEY)
+        val started = webServer.start(snapshot.web.port) { method, path, authorization, queryToken ->
+            val current = mutableState.value
+            val conversationsJson = json.encodeToString(
+                JsonArray(
+                    current.conversations.map { conversation ->
+                        buildJsonObject {
+                            put("id", conversation.id)
+                            put("title", conversation.title)
+                            put("updatedAtEpochMs", conversation.updatedAtEpochMs)
+                        }
+                    },
+                ),
+            )
+            PortableWebApiRouter.handle(
+                method = method,
+                path = path,
+                authorization = authorization,
+                queryToken = queryToken,
+                password = password,
+                conversationsJson = conversationsJson,
+                conversationJson = { id ->
+                    current.conversations.firstOrNull { it.id == id }?.let { conversation ->
+                        json.encodeToString(
+                            buildJsonObject {
+                                put("id", conversation.id)
+                                put("title", conversation.title)
+                                put(
+                                    "messages",
+                                    JsonArray(conversation.currentMessages.map { JsonPrimitive(it.toText()) }),
+                                )
+                            },
+                        )
+                    }
+                },
+            ).let { response -> response.statusCode to response.body }
+        }
+        mutableState.update { it.copy(webApiRunning = started) }
+        if (!started) {
+            mutableState.update {
+                it.copy(error = it.error ?: "The local web API could not bind on port ${snapshot.web.port}")
+            }
+        }
     }
 
     private fun persistAsync() {
@@ -3024,6 +3629,13 @@ class IosAppController(
                     kind = attachment.kind,
                 )
             },
+            skills = snapshot.skills,
+            lorebooks = snapshot.lorebooks,
+            mcpServers = snapshot.mcpServers,
+            stt = snapshot.stt,
+            web = snapshot.web,
+            webDav = snapshot.webDav,
+            workspace = snapshot.workspace,
         )
         fileStore.writeBytes(STATE_PATH, json.encodeToString(stored).encodeToByteArray())
     }
@@ -3045,6 +3657,10 @@ class IosAppController(
             "search_apikey_ios_${type.name.lowercase()}"
         fun ttsApiKeyName(type: IosTtsProviderType): String =
             "tts_provider_apikey_ios_${type.name.lowercase()}"
+        const val STT_API_KEY_NAME = "stt_provider_apikey_ios_openai"
+        const val WEB_PASSWORD_KEY = "web_server_password_ios"
+        const val WEBDAV_PASSWORD_KEY = "webdav_password_ios"
+        const val SEARXNG_PASSWORD_KEY = "search_apikey_ios_searxng"
     }
 }
 
@@ -3291,6 +3907,13 @@ private data class IosStoredState(
     val pendingQuestionnaire: IosPendingQuestionnaire? = null,
     val assistant: IosAssistantPreferences? = null,
     val pendingAttachments: List<IosStoredPendingAttachment> = emptyList(),
+    val skills: List<PortableSkill> = emptyList(),
+    val lorebooks: List<PortableLorebook> = emptyList(),
+    val mcpServers: List<PortableMcpServer> = emptyList(),
+    val stt: IosSttPreferences = IosSttPreferences(),
+    val web: IosWebPreferences = IosWebPreferences(),
+    val webDav: IosWebDavPreferences = IosWebDavPreferences(),
+    val workspace: IosWorkspacePreferences = IosWorkspacePreferences(),
 )
 
 internal fun IosTtsProviderType.displayName(): String = when (this) {
@@ -3401,6 +4024,7 @@ internal fun IosSearchProviderType.displayName(): String = when (this) {
     IosSearchProviderType.OLLAMA -> "Ollama"
     IosSearchProviderType.GROK -> "Grok"
     IosSearchProviderType.NANOGPT -> "NanoGPT"
+    IosSearchProviderType.SEARXNG -> "SearXNG"
 }
 
 internal fun imageMimeTypeFromDataUrl(value: String): String {
@@ -3419,9 +4043,15 @@ internal fun imageExtension(mimeType: String): String = when (mimeType.lowercase
 }
 
 internal fun IosSearchProviderType.requiresApiKey(): Boolean =
-    this != IosSearchProviderType.KEYLESS && this != IosSearchProviderType.BING
+    this != IosSearchProviderType.KEYLESS &&
+        this != IosSearchProviderType.BING &&
+        this != IosSearchProviderType.SEARXNG
 
-internal fun IosSearchProviderType.toOptions(apiKey: String): SearchServiceOptions = when (this) {
+internal fun IosSearchProviderType.toOptions(
+    apiKey: String,
+    preferences: IosSearchPreferences = IosSearchPreferences(),
+    searxngPassword: String = "",
+): SearchServiceOptions = when (this) {
     IosSearchProviderType.KEYLESS -> SearchServiceOptions.KeylessOptions()
     IosSearchProviderType.BING -> SearchServiceOptions.BingLocalOptions()
     IosSearchProviderType.TAVILY -> SearchServiceOptions.TavilyOptions(apiKey = apiKey)
@@ -3437,6 +4067,13 @@ internal fun IosSearchProviderType.toOptions(apiKey: String): SearchServiceOptio
     IosSearchProviderType.OLLAMA -> SearchServiceOptions.OllamaOptions(apiKey = apiKey)
     IosSearchProviderType.GROK -> SearchServiceOptions.GrokOptions(apiKey = apiKey)
     IosSearchProviderType.NANOGPT -> SearchServiceOptions.NanoGPTOptions(apiKey = apiKey)
+    IosSearchProviderType.SEARXNG -> SearchServiceOptions.SearXNGOptions(
+        url = preferences.searxngUrl,
+        engines = preferences.searxngEngines,
+        language = preferences.searxngLanguage,
+        username = preferences.searxngUsername,
+        password = searxngPassword,
+    )
 }
 
 @Serializable
