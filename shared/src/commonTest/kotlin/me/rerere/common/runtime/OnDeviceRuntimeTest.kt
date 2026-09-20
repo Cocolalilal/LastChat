@@ -2,6 +2,7 @@ package me.rerere.common.runtime
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -13,9 +14,10 @@ class OnDeviceRuntimeTest {
         assertFalse(runtime.available)
         assertEquals(0, runtime.listModels().size)
         assertEquals(null, runtime.embed("model", "text"))
-        runCatching { runtime.generateText("id", "hi") }
-            .onFailure { assertTrue(it.message.orEmpty().contains("LiteRT-LM")) }
-            .onSuccess { error("unavailable LLM should throw") }
+        val failure = assertFailsWith<IllegalStateException> {
+            runtime.generateText("id", "hi")
+        }
+        assertTrue(failure.message.orEmpty().contains("LiteRT-LM"))
     }
 
     @Test
