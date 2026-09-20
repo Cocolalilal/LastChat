@@ -120,6 +120,8 @@ import me.rerere.common.runtime.local.LocalModelCatalog
 import me.rerere.common.runtime.local.PortableDownload
 import me.rerere.common.runtime.local.PortableOnDeviceModelManager
 import me.rerere.common.runtime.local.SherpaModelCatalog
+import me.rerere.rikkahub.data.ai.AILogging
+import me.rerere.rikkahub.data.ai.AILoggingManager
 import me.rerere.rikkahub.data.ai.models.MODEL_CATALOG_ASSET_NAME
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
@@ -596,6 +598,7 @@ data class IosAppState(
     val spontaneousQuietUntil: Long = 0L,
     val lastSpontaneousAssistantId: String? = null,
     val error: String? = null,
+    val aiLogs: List<AILogging> = emptyList(),
 ) {
     val selectedConversation: IosConversation?
         get() = conversations.firstOrNull { it.id == selectedConversationId }
@@ -727,6 +730,7 @@ class IosAppController(
     private val mcpClient = PortableMcpClient(httpClient, json)
     private val webDavClient = PortableWebDavClient(httpClient)
     private val webServer = IosLocalWebServer()
+    private val aiLoggingManager = AILoggingManager()
     private val customFonts = PortableCustomFontStore(fileStore)
     private val catalogService = ModelCatalogService(
         httpClient = httpClient,
@@ -2085,6 +2089,11 @@ class IosAppController(
         persistAsync()
     }
 
+    fun clearAiLogs() {
+        aiLoggingManager.clearLogs()
+        mutableState.update { it.copy(aiLogs = emptyList()) }
+    }
+
     fun saveComfyUiProvider(
         providerId: String,
         name: String,
@@ -2992,10 +3001,20 @@ class IosAppController(
                         model = model,
                         memoryPrompt = memoryPrompt,
                     )
+                    val params = TextGenerationParams(model = model, tools = stepTools)
+                    aiLoggingManager.addLog(
+                        AILogging.Generation(
+                            params = params,
+                            messages = prepared,
+                            providerSetting = providerSetting,
+                            stream = true,
+                        ),
+                    )
+                    mutableState.update { it.copy(aiLogs = aiLoggingManager.getLogs().value) }
                     PortableTurnRequest(
                         conversationMessages = conversationMessages,
                         providerMessages = prepared,
-                        params = TextGenerationParams(model = model, tools = stepTools),
+                        params = params,
                     )
                 },
                 onMessages = { messages, reason ->

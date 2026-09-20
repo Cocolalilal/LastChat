@@ -557,6 +557,7 @@ fun LastChatIosApp(
                     onDeleteWebDav = controller::deleteWebDavBackup,
                     onSaveOverlaySettings = controller::saveOverlaySettings,
                     onSaveDeveloperMode = controller::saveDeveloperMode,
+                    onClearAiLogs = controller::clearAiLogs,
                     onPickBackupFile = { filePicker.pickFile(it) },
                     onRestoreBackup = controller::restoreAndroidBackup,
                     platformHaptics = platformHaptics,
@@ -2640,6 +2641,7 @@ private fun SettingsPage(
     onDeleteWebDav: (String) -> Unit,
     onSaveOverlaySettings: (String?, Boolean, Boolean, Boolean) -> Unit,
     onSaveDeveloperMode: (Boolean) -> Unit,
+    onClearAiLogs: () -> Unit = {},
     onPickBackupFile: ((Result<PlatformPickedFile?>) -> Unit) -> Unit,
     onRestoreBackup: (String, (Result<IosBackupImportReport>) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
@@ -5863,7 +5865,7 @@ private fun SettingsPage(
                 item { IosAndroidIntegrationSettings(state, darkTheme, onSaveOverlaySettings) }
             }
             if (section == IosSettingsSection.Developer) {
-                item { IosDeveloperSettings(state, darkTheme, onSaveDeveloperMode) }
+                item { IosDeveloperSettings(state, darkTheme, onSaveDeveloperMode, onClearAiLogs) }
             }
             if (section == IosSettingsSection.Unavailable) {
                 item {
