@@ -16,6 +16,24 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: Build bundled web-ui SPA
+        working-directory: web-ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package SPA into Xcode resources
+        run: |
+          chmod +x gradlew
+          ./gradlew :iosApp:prepareIosWebUi -Plastchat.ios.webui.skip=true
+
       - name: Compile Kotlin iOS targets
         run: |
           chmod +x gradlew

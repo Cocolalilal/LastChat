@@ -66,16 +66,50 @@ compose.resources {
 val webUiDir = rootProject.file("web-ui")
 val webUiBuildDir = webUiDir.resolve("build/client")
 val iosWebUiDest = layout.projectDirectory.dir("xcode/LastChatIOS/webui")
+val skipIosWebUiBuild = providers.gradleProperty("lastchat.ios.webui.skip").orNull == "true"
+
+val buildWebUiForIos by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the React web-ui client that Xcode bundles into LastChatIOS/webui."
+    workingDir = webUiDir
+    inputs.dir(webUiDir.resolve("app"))
+    inputs.dir(webUiDir.resolve("public"))
+    inputs.file(webUiDir.resolve("package.json"))
+    inputs.file(webUiDir.resolve("react-router.config.ts"))
+    inputs.file(webUiDir.resolve("tsconfig.json"))
+    inputs.file(webUiDir.resolve("vite.config.ts"))
+    val packageLock = webUiDir.resolve("package-lock.json")
+    if (packageLock.exists()) {
+        inputs.file(packageLock)
+    }
+    outputs.dir(webUiBuildDir)
+    val windows = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
+    commandLine(if (windows) listOf("cmd", "/c", "npm", "run", "build") else listOf("npm", "run", "build"))
+    onlyIf {
+        !skipIosWebUiBuild && webUiDir.resolve("package.json").exists()
+    }
+}
 
 val prepareIosWebUi by tasks.registering(Sync::class) {
     group = "build"
-    description = "Copies the React web-ui client into the Xcode LastChatIOS/webui folder when a build exists."
+    description = "Copies web-ui/build/client into iosApp/xcode/LastChatIOS/webui for the Xcode resource folder."
+    dependsOn(buildWebUiForIos)
     from(webUiBuildDir)
     into(iosWebUiDest)
     includeEmptyDirs = false
+    exclude(".gitkeep")
     onlyIf { webUiBuildDir.resolve("index.html").exists() }
+    doLast {
+        iosWebUiDest.asFile.resolve(".gitkeep").takeIf { !it.exists() }?.writeText("")
+    }
 }
 
-tasks.matching { it.name.startsWith("compileKotlinIos") || it.name.contains("embedAndSignAppleFrameworkForXcode") }.configureEach {
+tasks.matching { it.name.contains("embedAndSignAppleFrameworkForXcode") }.configureEach {
+    dependsOn(prepareIosWebUi)
+}
+
+tasks.register("iosWebUi") {
+    group = "build"
+    description = "Builds the React SPA and copies it into the Xcode webui resource folder."
     dependsOn(prepareIosWebUi)
 }
