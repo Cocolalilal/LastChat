@@ -36,19 +36,13 @@ import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
-import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
 import me.rerere.rikkahub.service.SPONTANEOUS_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.service.initializeLastChatWorkManager
 import me.rerere.rikkahub.data.search.AndroidBingSearchClient
-import java.util.concurrent.TimeUnit
 import org.koin.core.context.startKoin
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.inference.LocalInferenceManager
@@ -123,19 +117,13 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
 
         val workManager = initializeLastChatWorkManager()
 
-        workManager?.enqueueUniquePeriodicWork(
-            CHAT_STORAGE_MAINTENANCE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            PeriodicWorkRequestBuilder<ChatStorageMaintenanceWorker>(
-                1,
-                TimeUnit.DAYS
-            )
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
-                .build()
+        taskScheduler.enqueue(
+            me.rerere.ai.generation.PortableTaskRequest(
+                task = me.rerere.ai.generation.PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE,
+                uniqueName = CHAT_STORAGE_MAINTENANCE_WORK_NAME,
+                periodic = true,
+                intervalMs = 24L * 60L * 60L * 1000L,
+            ),
         )
 
         // Post-reply jobs do the normal Core + Episodic consolidation. This periodic scan is the

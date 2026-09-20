@@ -104,6 +104,22 @@ class WorkManagerPortableTaskScheduler(
                     workRequest,
                 )
             }
+            PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE -> {
+                val interval = (request.intervalMs ?: (24L * 60L * 60L * 1000L))
+                    .coerceAtLeast(15L * 60_000L)
+                workManager.enqueueUniquePeriodicWork(
+                    request.uniqueName.ifBlank { CHAT_STORAGE_MAINTENANCE_WORK_NAME },
+                    ExistingPeriodicWorkPolicy.UPDATE,
+                    PeriodicWorkRequestBuilder<ChatStorageMaintenanceWorker>(
+                        interval,
+                        TimeUnit.MILLISECONDS,
+                    ).setConstraints(
+                        Constraints.Builder()
+                            .setRequiredNetworkType(NetworkType.CONNECTED)
+                            .build(),
+                    ).build(),
+                )
+            }
         }
     }
 

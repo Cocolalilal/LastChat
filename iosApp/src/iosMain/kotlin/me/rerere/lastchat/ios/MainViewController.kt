@@ -82,6 +82,17 @@ fun RunIosSpontaneousBackgroundMaintenance(completion: (Boolean) -> Unit) {
     controller.runSpontaneousBackgroundMaintenance(completion)
 }
 
+fun InstallIosStorageBackgroundScheduler(
+    schedule: (Long) -> Unit,
+    cancel: () -> Unit,
+) {
+    controller.installStorageBackgroundScheduler(schedule, cancel)
+}
+
+fun RunIosStorageBackgroundMaintenance(completion: (Boolean) -> Unit) {
+    controller.runStorageBackgroundMaintenance(completion)
+}
+
 fun MainViewController(): UIViewController {
     lateinit var viewController: UIViewController
     val filePicker = IosPlatformFilePicker(platformServices.fileStore) { viewController }

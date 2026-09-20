@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
@@ -36,12 +37,14 @@ import me.rerere.ai.generation.JsonFilePortableConversationStore
 import me.rerere.ai.generation.PortableBackgroundTask
 import me.rerere.ai.generation.PortableBackgroundWake
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableChatStorageMaintenance
+import me.rerere.ai.generation.PortableConversationQuery
+import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableSpontaneousCandidate
 import me.rerere.ai.generation.PortableSpontaneousMessaging
 import me.rerere.ai.generation.PortableSpontaneousRelation
 import me.rerere.ai.generation.PortableTaskRequest
 import me.rerere.ai.generation.PortableTaskScheduler
-import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableGenerationLoop
 import me.rerere.ai.generation.PortableGenerationPrepare
 import me.rerere.ai.generation.PortableGenerationSession
@@ -162,7 +165,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
-enum class IosProviderType { OPENAI, GOOGLE, CLAUDE, LOCAL }
+enum class IosProviderType { OPENAI, GOOGLE, CLAUDE, LOCAL, COMFY }
 
 @Serializable
 data class IosProviderPreferences(
@@ -484,6 +487,7 @@ internal fun chatProviderType(provider: ProviderSetting): IosProviderType? = whe
     is ProviderSetting.Google -> IosProviderType.GOOGLE
     is ProviderSetting.Claude -> IosProviderType.CLAUDE
     is ProviderSetting.LiteRtLocal -> IosProviderType.LOCAL
+    is ProviderSetting.ComfyUI -> IosProviderType.COMFY
     else -> null
 }
 
@@ -544,6 +548,8 @@ class IosAppController(
     private var cancelMessageBackground: (() -> Unit)? = null
     private var scheduleSpontaneousBackground: ((Long) -> Unit)? = null
     private var cancelSpontaneousBackground: (() -> Unit)? = null
+    private var scheduleStorageBackground: ((Long) -> Unit)? = null
+    private var cancelStorageBackground: (() -> Unit)? = null
     private var taskHandlersRegistered = false
     private val taskScheduler: PortableTaskScheduler = InProcessPortableTaskScheduler(
         scope = scope,
@@ -556,6 +562,8 @@ class IosAppController(
                         scheduleMessageBackground?.invoke(earliestEpochMs)
                     PortableBackgroundTask.MEMORY_CONSOLIDATION ->
                         scheduleAdaptiveBackground?.invoke(earliestEpochMs)
+                    PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE ->
+                        scheduleStorageBackground?.invoke(earliestEpochMs)
                 }
             }
 
@@ -564,6 +572,7 @@ class IosAppController(
                     PortableBackgroundTask.SPONTANEOUS_MESSAGES -> cancelSpontaneousBackground?.invoke()
                     PortableBackgroundTask.SCHEDULED_MESSAGES -> cancelMessageBackground?.invoke()
                     PortableBackgroundTask.MEMORY_CONSOLIDATION -> cancelAdaptiveBackground?.invoke()
+                    PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE -> cancelStorageBackground?.invoke()
                 }
             }
         },
@@ -732,6 +741,14 @@ class IosAppController(
                     intervalMs = PortableSpontaneousMessaging.WORK_INTERVAL_MS,
                 ),
             )
+            taskScheduler.enqueue(
+                PortableTaskRequest(
+                    task = PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE,
+                    uniqueName = PortableChatStorageMaintenance.UNIQUE_NAME,
+                    periodic = true,
+                    intervalMs = PortableChatStorageMaintenance.WORK_INTERVAL_MS,
+                ),
+            )
             refreshScheduledMessageBackgroundSchedule()
             refreshWebServer()
             widgetStore.consumePendingShareText()?.takeIf { it.isNotBlank() }?.let { pending ->
@@ -779,6 +796,10 @@ class IosAppController(
             IosProviderType.LOCAL -> ProviderSetting.LiteRtLocal(
                 name = "Local",
                 models = listOf(model),
+            )
+            IosProviderType.COMFY -> ProviderSetting.ComfyUI(
+                name = "ComfyUI",
+                baseUrl = config.baseUrl.ifBlank { "http://127.0.0.1:8188" },
             )
         }
     }
@@ -866,6 +887,29 @@ class IosAppController(
         scope.launch {
             val succeeded = taskScheduler.run(PortableBackgroundTask.SPONTANEOUS_MESSAGES)
             persist()
+            completion(succeeded)
+        }
+    }
+
+    fun installStorageBackgroundScheduler(
+        schedule: (earliestBeginEpochMs: Long) -> Unit,
+        cancel: () -> Unit,
+    ) {
+        scheduleStorageBackground = schedule
+        cancelStorageBackground = cancel
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE,
+                uniqueName = PortableChatStorageMaintenance.UNIQUE_NAME,
+                periodic = true,
+                intervalMs = PortableChatStorageMaintenance.WORK_INTERVAL_MS,
+            ),
+        )
+    }
+
+    fun runStorageBackgroundMaintenance(completion: (Boolean) -> Unit) {
+        scope.launch {
+            val succeeded = taskScheduler.run(PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE)
             completion(succeeded)
         }
     }
@@ -1043,6 +1087,10 @@ class IosAppController(
                             is ProviderSetting.Google -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
                             is ProviderSetting.Claude -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
                             is ProviderSetting.LiteRtLocal -> provider.copy(name = name)
+                            is ProviderSetting.ComfyUI -> provider.copy(
+                                name = name,
+                                baseUrl = normalizedBaseUrl.ifBlank { provider.baseUrl },
+                            )
                             else -> provider
                         }
                     },
@@ -1071,6 +1119,7 @@ class IosAppController(
                     Model(modelId = "on-device", displayName = "On-device LLM", type = ModelType.CHAT),
                 ),
             )
+            IosProviderType.COMFY -> ProviderSetting.ComfyUI(name = name.ifBlank { "ComfyUI" })
         }
         mutableState.update { current ->
             current.copy(providers = current.providers + provider)
@@ -1457,6 +1506,93 @@ class IosAppController(
             )
         }
         persistAsync()
+    }
+
+    fun saveSpontaneousSettings(
+        enabled: Boolean,
+        startHour: Int,
+        endHour: Int,
+        frequencyHours: Int,
+        prompt: String,
+    ) {
+        mutableState.update { current ->
+            val selectedId = current.assistant.id
+            current.copy(
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id != selectedId) assistant else assistant.copy(
+                        enableSpontaneous = enabled,
+                        notificationStartHour = startHour.coerceIn(0, 23),
+                        notificationEndHour = endHour.coerceIn(0, 23),
+                        notificationFrequencyHours = frequencyHours.coerceIn(1, 24),
+                        spontaneousPrompt = prompt,
+                    )
+                },
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveComfyUiProvider(
+        providerId: String,
+        name: String,
+        baseUrl: String,
+        workflowJson: String,
+        promptNodeId: String,
+        promptInputName: String,
+        modelNodeId: String,
+        modelInputName: String,
+    ) {
+        val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
+        if (name.isBlank() || normalizedBaseUrl.isBlank()) {
+            mutableState.update { it.copy(error = "ComfyUI name and server URL are required.") }
+            return
+        }
+        mutableState.update { current ->
+            current.copy(
+                providers = current.providers.map { provider ->
+                    if (provider.id.toString() != providerId) {
+                        provider
+                    } else if (provider is ProviderSetting.ComfyUI) {
+                        provider.copy(
+                            name = name.trim(),
+                            baseUrl = normalizedBaseUrl,
+                            workflowJson = workflowJson,
+                            promptNodeId = promptNodeId.trim(),
+                            promptInputName = promptInputName.trim().ifBlank { "text" },
+                            modelNodeId = modelNodeId.trim(),
+                            modelInputName = modelInputName.trim().ifBlank { "ckpt_name" },
+                        )
+                    } else {
+                        provider
+                    }
+                },
+                error = null,
+            )
+        }
+        persistAsync()
+    }
+
+    fun importComfyUiWorkflow(providerId: String, storagePath: String) {
+        scope.launch {
+            val bytes = fileStore.readBytes(storagePath) ?: return@launch
+            val workflow = bytes.decodeToString()
+            if (workflow.isBlank()) return@launch
+            mutableState.update { current ->
+                current.copy(
+                    providers = current.providers.map { provider ->
+                        if (provider.id.toString() != providerId) {
+                            provider
+                        } else if (provider is ProviderSetting.ComfyUI) {
+                            provider.copy(workflowJson = workflow)
+                        } else {
+                            provider
+                        }
+                    },
+                    error = null,
+                )
+            }
+            persist()
+        }
     }
 
     fun savePromptInjections(
@@ -2343,6 +2479,15 @@ class IosAppController(
         }
         taskScheduler.register(PortableBackgroundTask.SPONTANEOUS_MESSAGES) {
             runCatching { runSpontaneousPass() }.isSuccess
+        }
+        taskScheduler.register(PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE) {
+            runCatching {
+                PortableChatStorageMaintenance.run(
+                    store = conversationStore,
+                    fileStore = fileStore,
+                )
+                true
+            }.getOrDefault(false)
         }
     }
 
@@ -4040,14 +4185,54 @@ class IosAppController(
             val current = mutableState.value
             val generatingId = current.conversations.firstOrNull { current.generating && it.id == current.selectedConversationId }?.id
                 ?: current.selectedConversationId.takeIf { current.generating }
+            val assistantId = current.selectedAssistantId ?: current.assistant.id
+            val listed = runBlocking {
+                conversationStore.page(
+                    PortableConversationQuery(
+                        assistantId = assistantId,
+                        offset = 0,
+                        limit = Int.MAX_VALUE,
+                    ),
+                ).items.map { it.toIosConversation() }
+            }
             val source = PortableWebApiSource(
                 webUiBundled = IosNativeFiles.webUiBundled,
                 authRequired = !password.isNullOrBlank(),
-                conversationsListJson = IosWebDto.conversationList(current.conversations, generatingId),
+                conversationsListJson = IosWebDto.conversationList(listed, generatingId),
+                conversationsPagedJson = { offset, limit, query ->
+                    runBlocking {
+                        IosWebDto.pagedConversations(
+                            conversationStore.page(
+                                PortableConversationQuery(
+                                    assistantId = assistantId,
+                                    query = query,
+                                    offset = offset,
+                                    limit = limit,
+                                ),
+                            ),
+                            generatingId,
+                        )
+                    }
+                },
+                conversationsSearchJson = { query ->
+                    runBlocking {
+                        IosWebDto.searchHits(
+                            conversationStore.searchMessages(
+                                PortableConversationQuery(
+                                    assistantId = assistantId,
+                                    query = query,
+                                    offset = 0,
+                                    limit = 100,
+                                    includeMessages = true,
+                                ),
+                            ),
+                        )
+                    }
+                },
                 bootstrapJson = IosWebDto.bootstrap(
-                    assistantId = current.selectedAssistantId ?: current.assistant.id,
+                    assistantId = assistantId,
                     assistants = current.assistants,
-                    conversations = current.conversations,
+                    conversations = listed,
                     generatingId = generatingId,
                 ),
                 settingsJson = IosWebDto.settings(

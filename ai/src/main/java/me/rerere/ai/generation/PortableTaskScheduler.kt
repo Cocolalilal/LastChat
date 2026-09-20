@@ -12,6 +12,7 @@ enum class PortableBackgroundTask {
     SPONTANEOUS_MESSAGES,
     SCHEDULED_MESSAGES,
     MEMORY_CONSOLIDATION,
+    CHAT_STORAGE_MAINTENANCE,
 }
 
 data class PortableTaskRequest(

@@ -24,7 +24,7 @@ class PortableTaskSchedulerTest {
     @Test
     fun missingHandlerReturnsFalse() = runBlocking {
         val scheduler = InProcessPortableTaskScheduler(CoroutineScope(SupervisorJob()))
-        assertEquals(false, scheduler.run(PortableBackgroundTask.MEMORY_CONSOLIDATION))
+        assertEquals(false, scheduler.run(PortableBackgroundTask.CHAT_STORAGE_MAINTENANCE))
     }
 
     @Test
