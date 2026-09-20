@@ -18,16 +18,11 @@ import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.service.AssistantNotificationListener
 import me.rerere.rikkahub.service.ScheduledMessageWorkSpec
-import me.rerere.rikkahub.service.ScheduledMessageWorker
-import me.rerere.rikkahub.service.workManagerOrNull
 import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import java.time.Instant
 import java.io.File
 import java.security.MessageDigest
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
 import kotlin.uuid.Uuid
 
 data class SavedGeneratedToolImage(
@@ -90,6 +85,8 @@ internal object AndroidLocalToolPlatform {
 
 class AndroidLocalToolNotificationPlatform(
     private val context: Context,
+    private val taskScheduler: me.rerere.ai.generation.PortableTaskScheduler =
+        me.rerere.rikkahub.service.WorkManagerPortableTaskScheduler(context),
 ) : LocalToolNotificationPlatform {
     override fun sendNotification(
         conversationId: Uuid,
@@ -152,34 +149,19 @@ class AndroidLocalToolNotificationPlatform(
                 reason = reason,
                 scheduledAtMillis = scheduledAt,
             )
-            val workRequest = androidx.work.OneTimeWorkRequestBuilder<ScheduledMessageWorker>()
-                .setInitialDelay(delayMinutes.minutes.toJavaDuration())
-                .setBackoffCriteria(
-                    androidx.work.BackoffPolicy.EXPONENTIAL,
-                    30.seconds.toJavaDuration(),
-                )
-                .setConstraints(
-                    androidx.work.Constraints.Builder()
-                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                        .build()
-                )
-                .setInputData(
-                    ScheduledMessageWorkSpec.buildInputData(
-                        assistantId = assistantId.toString(),
-                        conversationId = conversationId.toString(),
-                        reason = reason,
-                        createdAtMillis = createdAt,
-                        scheduledAtMillis = scheduledAt,
-                    )
-                )
-                .build()
-
-            val workManager = context.workManagerOrNull()
-                ?: return ScheduledLocalToolMessage(status = "error: WorkManager is unavailable")
-            workManager.enqueueUniqueWork(
-                uniqueWorkName,
-                androidx.work.ExistingWorkPolicy.KEEP,
-                workRequest,
+            taskScheduler.enqueue(
+                me.rerere.ai.generation.PortableTaskRequest(
+                    task = me.rerere.ai.generation.PortableBackgroundTask.SCHEDULED_MESSAGES,
+                    uniqueName = uniqueWorkName,
+                    delayMs = delayMinutes * 60_000L,
+                    extras = mapOf(
+                        ScheduledMessageWorkSpec.KEY_ASSISTANT_ID to assistantId.toString(),
+                        ScheduledMessageWorkSpec.KEY_CONVERSATION_ID to conversationId.toString(),
+                        ScheduledMessageWorkSpec.KEY_REASON to reason,
+                        ScheduledMessageWorkSpec.KEY_CREATED_AT to createdAt.toString(),
+                        ScheduledMessageWorkSpec.KEY_SCHEDULED_AT to scheduledAt.toString(),
+                    ),
+                ),
             )
 
             ScheduledLocalToolMessage(

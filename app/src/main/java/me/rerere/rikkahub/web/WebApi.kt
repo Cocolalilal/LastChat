@@ -390,9 +390,8 @@ private fun Route.webRoutes(
 
         get("/{id}") {
             val conversationId = call.parameters["id"].toUuid("conversation id")
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
             val settings = settingsStore.settingsFlow.value
             val isGenerating = chatService.isGenerating(conversationId)
 
@@ -401,21 +400,17 @@ private fun Route.webRoutes(
 
         delete("/{id}") {
             val conversationId = call.parameters["id"].toUuid("conversation id")
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
-            withContext(Dispatchers.IO) {
-                conversationRepo.deleteConversation(conversation)
-            }
+            chatService.deleteConversation(conversation)
             call.respond(HttpStatusCode.NoContent)
         }
 
         post("/{id}/pin") {
             val conversationId = call.parameters["id"].toUuid("conversation id")
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
                 conversationId,
@@ -426,9 +421,8 @@ private fun Route.webRoutes(
 
         post("/{id}/regenerate-title") {
             val conversationId = call.parameters["id"].toUuid("conversation id")
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
             chatService.generateTitle(conversationId, conversation, force = true)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
@@ -464,9 +458,8 @@ private fun Route.webRoutes(
                 throw BadRequestException("Title must not be blank")
             }
 
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
                 conversationId = conversationId,
@@ -485,9 +478,8 @@ private fun Route.webRoutes(
                 throw BadRequestException("Assistant not found")
             }
 
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
                 conversationId,
@@ -506,9 +498,8 @@ private fun Route.webRoutes(
                 throw BadRequestException("skillIds contains unknown skill id")
             }
 
-            val conversation = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversationId)
-            } ?: throw NotFoundException("Conversation not found")
+            val conversation = chatService.getConversationSnapshot(conversationId)
+                ?: throw NotFoundException("Conversation not found")
 
             chatService.saveConversation(
                 conversationId,

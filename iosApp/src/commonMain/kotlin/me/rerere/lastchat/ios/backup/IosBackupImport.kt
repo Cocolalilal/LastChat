@@ -300,6 +300,11 @@ internal object IosBackupImporter {
             localTools = localTools,
             enabledSkillIds = uuidSet(element, "enabledSkillIds"),
             enabledLorebookIds = uuidSet(element, "enabledLorebookIds"),
+            enableSpontaneous = element.boolean("enableSpontaneous") ?: false,
+            spontaneousPrompt = element.string("spontaneousPrompt").orEmpty(),
+            notificationStartHour = element.int("notificationStartHour") ?: 7,
+            notificationEndHour = element.int("notificationEndHour") ?: 22,
+            notificationFrequencyHours = element.int("notificationFrequencyHours") ?: 4,
         )
     }
 

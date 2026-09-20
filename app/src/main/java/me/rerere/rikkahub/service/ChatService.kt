@@ -51,10 +51,14 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
+import me.rerere.ai.generation.PortableBackgroundTask
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableDeleteOptions
 import me.rerere.ai.generation.PortableMcpToolBinding
 import me.rerere.ai.generation.PortablePersistenceMode
 import me.rerere.ai.generation.PortableSaveOptions
+import me.rerere.ai.generation.PortableTaskRequest
+import me.rerere.ai.generation.PortableTaskScheduler
 import me.rerere.ai.generation.PortableToolAssemblyOptions
 import me.rerere.ai.generation.PortableToolRuntimes
 import me.rerere.ai.generation.assemblePortableTools
@@ -99,6 +103,7 @@ import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.AndroidBoundWorkspaceRuntime
+import me.rerere.rikkahub.data.datastore.toConversation
 import me.rerere.rikkahub.data.datastore.toPortableRecord
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
@@ -561,6 +566,7 @@ class ChatService(
     private val localTools: LocalTools,
     private val workspaceRepository: WorkspaceRepository,
     val mcpManager: McpManager,
+    private val taskScheduler: PortableTaskScheduler,
     private val chatEngine: PortableChatEngine = PortableChatEngine(),
 ) {
     // 存储每个对话的状态
@@ -665,7 +671,12 @@ class ChatService(
         )
         // Opening or starting another chat is a cheap opportunity to catch up eligible prior
         // conversations. WorkManager keeps this non-blocking and deduplicates concurrent scans.
-        MemoryConsolidationWorker.enqueueCatchUp(context)
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.MEMORY_CONSOLIDATION,
+                uniqueName = WorkManagerPortableTaskScheduler.CATCH_UP_WORK_NAME,
+            ),
+        )
     }
 
     // 移除引用
@@ -797,6 +808,41 @@ class ChatService(
         }.toMap() // 确保创建新的不可变Map实例
     }
 
+    private suspend fun loadPersistedConversation(conversationId: Uuid): Conversation? {
+        return withContext(Dispatchers.IO) {
+            chatEngine.loadConversation(conversationId.toString())?.toConversation()
+        }
+    }
+
+    private suspend fun listRecentConversations(assistantId: Uuid, limit: Int): List<Conversation> {
+        return withContext(Dispatchers.IO) {
+            chatEngine.listConversations(assistantId = assistantId.toString(), limit = limit)
+                .map { it.toConversation() }
+        }
+    }
+
+    suspend fun hasPersistedConversation(conversationId: Uuid): Boolean {
+        return loadPersistedConversation(conversationId) != null
+    }
+
+    suspend fun togglePinned(conversationId: Uuid) {
+        val conversation = getConversationSnapshot(conversationId) ?: return
+        saveConversation(
+            conversationId = conversationId,
+            conversation = conversation.copy(isPinned = !conversation.isPinned),
+            preserveConsolidation = true,
+        )
+    }
+
+    suspend fun updatePersistedTitle(conversationId: Uuid, title: String, updateAt: Instant) {
+        val conversation = getConversationSnapshot(conversationId) ?: return
+        saveConversation(
+            conversationId = conversationId,
+            conversation = conversation.copy(title = title, updateAt = updateAt),
+            preserveConsolidation = true,
+        )
+    }
+
     // 初始化对话
     suspend fun initializeConversation(conversationId: Uuid) {
         val inMemoryConversation = getConversationState(conversationId)?.value
@@ -810,9 +856,7 @@ class ChatService(
             return
         }
 
-        val conversation = withContext(Dispatchers.IO) {
-            conversationRepo.getConversationById(conversationId)
-        }?.let { loadedConversation ->
+        val conversation = loadPersistedConversation(conversationId)?.let { loadedConversation ->
             withContext(Dispatchers.IO) {
                 chatAttachmentRepository.syncConversationAttachments(loadedConversation)
             }
@@ -828,9 +872,7 @@ class ChatService(
             if (assistant.cycleIntrosOnNewChat) {
                 val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
                 if (introCount > 1) {
-                    val pastConversations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        conversationRepo.getRecentConversations(assistant.id, limit = 100)
-                    }
+                    val pastConversations = listRecentConversations(assistant.id, limit = 100)
                     val index = pastConversations.size % introCount
                     initialNodes = initialNodes.map { node ->
                         if (node.role == me.rerere.ai.core.MessageRole.ASSISTANT && node.messages.size > 1) {
@@ -859,9 +901,7 @@ class ChatService(
         if (assistant.cycleIntrosOnNewChat) {
             val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
             if (introCount > 1) {
-                val pastConversations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    conversationRepo.getRecentConversations(assistantId, limit = 100)
-                }
+                val pastConversations = listRecentConversations(assistantId, limit = 100)
                 val index = pastConversations.size % introCount
                 initialNodes = initialNodes.map { node ->
                     if (node.role == me.rerere.ai.core.MessageRole.ASSISTANT && node.messages.size > 1) {
@@ -890,9 +930,7 @@ class ChatService(
         val trimmedContent = content.trim()
         require(trimmedContent.isNotBlank()) { "Spontaneous message content cannot be blank" }
 
-        val existingInDb = withContext(Dispatchers.IO) {
-            conversationRepo.getConversationById(conversationId)
-        }
+        val existingInDb = loadPersistedConversation(conversationId)
         if (existingInDb != null) {
             setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
             updateConversation(conversationId, existingInDb)
@@ -977,9 +1015,10 @@ class ChatService(
                 }
                 if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
                     withContext(Dispatchers.IO) {
-                        conversationRepo.getConversationById(normalizedConversation.id)?.let { existing ->
-                            conversationRepo.deleteConversation(existing, deleteFiles = false)
-                        }
+                        chatEngine.deleteConversation(
+                            normalizedConversation.id.toString(),
+                            PortableDeleteOptions(deleteFiles = false),
+                        )
                     }
                     return false
                 }
@@ -997,18 +1036,14 @@ class ChatService(
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
         val currentState = getConversationState(conversationId)?.value
-        return currentState ?: withContext(Dispatchers.IO) {
-            conversationRepo.getConversationById(conversationId)
-        }?.let(::normalizeConversation)
+        return currentState ?: loadPersistedConversation(conversationId)?.let(::normalizeConversation)
     }
 
     suspend fun ensureConversationLoaded(conversationId: Uuid): Conversation? {
         val currentState = getConversationState(conversationId)?.value
         if (currentState != null) return currentState
 
-        val persistedConversation = withContext(Dispatchers.IO) {
-            conversationRepo.getConversationById(conversationId)
-        } ?: return null
+        val persistedConversation = loadPersistedConversation(conversationId) ?: return null
         val normalizedConversation = normalizeConversation(persistedConversation)
         updateConversation(conversationId, normalizedConversation)
         return normalizedConversation
@@ -1730,9 +1765,7 @@ class ChatService(
                     launch {
                         // Fetch fresh conversation from DB to ensure we have the latest state
                         // This matches the manual regeneration pattern which works correctly
-                        val freshConversation = withContext(Dispatchers.IO) {
-                            conversationRepo.getConversationById(conversationId)
-                        }
+                        val freshConversation = loadPersistedConversation(conversationId)
                         if (freshConversation != null) {
                             generateTitle(conversationId, freshConversation)
                         } else {
@@ -2201,8 +2234,8 @@ class ChatService(
             val expired = conversationDeletionLedger.expireUndoWindow(conversation.id)
             if (expired != null) {
                 withContext(Dispatchers.IO) {
-                    if (conversationRepo.getConversationById(expired.id) == null) {
-                        conversationRepo.finalizeConversationDeletion(expired.id)
+                    if (chatEngine.loadConversation(expired.id.toString()) == null) {
+                        chatEngine.finalizeConversationDeletion(expired.id.toString())
                     }
                 }
             }
@@ -2212,9 +2245,7 @@ class ChatService(
         }
 
         appScope.launch {
-            val persisted = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversation.id)
-            }
+            val persisted = loadPersistedConversation(conversation.id)
             if (!conversationDeletionLedger.isTombstoned(conversation.id)) {
                 return@launch
             }
@@ -2224,7 +2255,10 @@ class ChatService(
             }
             if (persisted != null && conversationDeletionLedger.isTombstoned(conversation.id)) {
                 withContext(Dispatchers.IO) {
-                    conversationRepo.deleteConversation(persisted, deleteFiles = false)
+                    chatEngine.deleteConversation(
+                        persisted.id.toString(),
+                        PortableDeleteOptions(deleteFiles = false),
+                    )
                 }
             }
             cleanupConversation(conversation.id)
@@ -2236,12 +2270,7 @@ class ChatService(
         val conversation = conversationDeletionLedger.takeForUndo(conversationId) ?: return false
         appScope.launch {
             withContext(Dispatchers.IO) {
-                val existing = conversationRepo.getConversationById(conversation.id)
-                if (existing == null) {
-                    conversationRepo.insertConversation(conversation)
-                } else {
-                    conversationRepo.updateConversation(conversation)
-                }
+                chatEngine.saveConversation(conversation.toPortableRecord())
             }
 
             // Track for fade-in animation
@@ -2318,15 +2347,29 @@ class ChatService(
     private suspend fun enqueueAutomaticMemoryConsolidation(conversationId: Uuid) {
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) return
         val conversation = getConversationState(conversationId)?.value
-            ?: conversationRepo.getConversationById(conversationId)
+            ?: loadPersistedConversation(conversationId)
             ?: return
         val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
             ?: return
         if (!assistant.enableMemory || !assistant.enableMemoryConsolidation) return
-        MemoryConsolidationWorker.enqueueForConversation(
-            context = context,
-            conversation = conversation,
-            consolidationDelayMinutes = assistant.consolidationDelayMinutes,
+        val decision = decideMemoryConsolidation(
+            meaningfulMessageCount = conversation.currentMessages.count { message ->
+                (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
+                    message.toText().isNotBlank()
+            },
+            idleMillis = System.currentTimeMillis() - conversation.updateAt.toEpochMilli(),
+            configuredDelayMinutes = assistant.consolidationDelayMinutes,
+        )
+        val delayMillis = (decision as? MemoryConsolidationDecision.Schedule)?.delayMillis ?: 0L
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.MEMORY_CONSOLIDATION,
+                uniqueName = WorkManagerPortableTaskScheduler.CONVERSATION_WORK_PREFIX + conversation.id,
+                delayMs = delayMillis,
+                extras = mapOf(
+                    WorkManagerPortableTaskScheduler.KEY_CONVERSATION_ID to conversation.id.toString(),
+                ),
+            ),
         )
     }
 
@@ -2435,7 +2478,7 @@ class ChatService(
         try {
             val settings = settingsStore.settingsFlow.first()
             val conversation = normalizeConversation(
-                conversationRepo.getConversationById(conversationId)
+                loadPersistedConversation(conversationId)
                     ?: return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
             )
             val conversationContext = settings.resolveConversationContext(conversation)

@@ -473,7 +473,7 @@ class ChatVM(
     fun applyRoutePersistenceMode(mode: ChatPersistenceMode?) {
         if (mode == null) return
         viewModelScope.launch(Dispatchers.IO) {
-            val existsInDb = conversationRepo.getConversationById(_conversationId) != null
+            val existsInDb = chatService.hasPersistedConversation(_conversationId)
             if (!existsInDb) {
                 chatService.ensureConversationPersistenceMode(_conversationId, mode)
             } else {
@@ -592,13 +592,13 @@ class ChatVM(
 
     fun updatePinnedStatus(conversation: Conversation) {
         viewModelScope.launch(Dispatchers.IO) {
-            conversationRepo.togglePinStatus(conversation.id)
+            chatService.togglePinned(conversation.id)
         }
     }
 
     fun updateConversationTitle(conversation: Conversation, title: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            conversationRepo.updateTitle(
+            chatService.updatePersistedTitle(
                 conversationId = conversation.id,
                 title = title,
                 updateAt = conversation.updateAt,
@@ -608,9 +608,7 @@ class ChatVM(
 
     fun generateTitle(conversation: Conversation, force: Boolean = false) {
         viewModelScope.launch {
-            val conversationFull = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationById(conversation.id)
-            } ?: return@launch
+            val conversationFull = chatService.getConversationSnapshot(conversation.id) ?: return@launch
             chatService.generateTitle(conversation.id, conversationFull, force)
         }
     }

@@ -1,10 +1,9 @@
 package me.rerere.rikkahub.service
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.ai.generation.PortableSpontaneousCandidate
+import me.rerere.ai.generation.PortableSpontaneousMessaging
+import me.rerere.ai.generation.PortableSpontaneousRelation
+import me.rerere.ai.generation.PortableSpontaneousResponse
 import kotlin.random.Random
 import kotlin.uuid.Uuid
 
@@ -27,6 +26,10 @@ enum class SpontaneousMessageRelation(
         fun fromWireValue(value: String?): SpontaneousMessageRelation? {
             return entries.firstOrNull { it.wireValue == value }
         }
+
+        fun fromPortable(value: PortableSpontaneousRelation?): SpontaneousMessageRelation? {
+            return fromWireValue(value?.wireValue)
+        }
     }
 }
 
@@ -44,89 +47,43 @@ data class SpontaneousResponse(
 )
 
 object SpontaneousMessaging {
-    fun describeElapsedTime(elapsedMillis: Long): String {
-        val clampedMillis = elapsedMillis.coerceAtLeast(0L)
-        val seconds = clampedMillis / 1_000L
-        return when {
-            seconds < 60L -> "less than a minute"
-            seconds < 60L * 60L -> formatElapsedUnit(seconds / 60L, "minute")
-            seconds < 60L * 60L * 24L -> formatElapsedUnit(seconds / (60L * 60L), "hour")
-            seconds < 60L * 60L * 24L * 7L -> formatElapsedUnit(seconds / (60L * 60L * 24L), "day")
-            seconds < 60L * 60L * 24L * 30L -> formatElapsedUnit(seconds / (60L * 60L * 24L * 7L), "week")
-            else -> formatElapsedUnit(seconds / (60L * 60L * 24L * 30L), "month")
-        }
-    }
+    fun describeElapsedTime(elapsedMillis: Long): String =
+        PortableSpontaneousMessaging.describeElapsedTime(elapsedMillis)
 
     fun isWithinActiveHours(
         currentHour: Int,
         startHour: Int,
         endHour: Int,
-    ): Boolean {
-        val normalizedCurrent = currentHour.mod(24)
-        val normalizedStart = startHour.mod(24)
-        val normalizedEnd = endHour.mod(24)
-
-        if (normalizedStart == normalizedEnd) return true
-        return if (normalizedStart < normalizedEnd) {
-            normalizedCurrent in normalizedStart until normalizedEnd
-        } else {
-            normalizedCurrent >= normalizedStart || normalizedCurrent < normalizedEnd
-        }
-    }
+    ): Boolean = PortableSpontaneousMessaging.isWithinActiveHours(currentHour, startHour, endHour)
 
     fun pickCandidate(
         candidates: List<SpontaneousCandidate>,
         lastSenderAssistantId: Uuid?,
         random: Random,
     ): SpontaneousCandidate? {
-        if (candidates.isEmpty()) return null
-        val shuffled = candidates.shuffled(random)
-        return shuffled.firstOrNull { candidate ->
-            candidate.assistantId != lastSenderAssistantId
-        } ?: shuffled.firstOrNull()
+        val selected = PortableSpontaneousMessaging.pickCandidate(
+            candidates = candidates.map {
+                PortableSpontaneousCandidate(it.assistantId.toString(), it.lastNotificationTime)
+            },
+            lastSenderAssistantId = lastSenderAssistantId?.toString(),
+            random = random,
+        ) ?: return null
+        return candidates.firstOrNull { it.assistantId.toString() == selected.assistantId }
     }
 
     fun computeGlobalQuietUntil(
         nowMillis: Long,
         random: Random,
-    ): Long {
-        val jitterMillis = random.nextLong(0, SPONTANEOUS_GLOBAL_JITTER_MINUTES * 60_000L + 1L)
-        return nowMillis + (SPONTANEOUS_WORK_INTERVAL_MINUTES * 60_000L) + jitterMillis
-    }
+    ): Long = PortableSpontaneousMessaging.computeGlobalQuietUntil(nowMillis, random)
 
     fun parseResponse(text: String): SpontaneousResponse? {
-        val jsonPayload = extractJsonObject(text) ?: return null
-        val json = runCatching {
-            Json.parseToJsonElement(jsonPayload).jsonObject
-        }.getOrNull() ?: return null
-
+        val parsed: PortableSpontaneousResponse = PortableSpontaneousMessaging.parseResponse(text) ?: return null
         return SpontaneousResponse(
-            shouldSend = json["send"]?.jsonPrimitiveOrNull?.booleanOrNull ?: false,
-            reason = json["reason"]?.jsonPrimitiveOrNull?.contentOrNull ?: "",
-            title = json["title"]?.jsonPrimitiveOrNull?.contentOrNull,
-            content = json["content"]?.jsonPrimitiveOrNull?.contentOrNull,
-            relation = SpontaneousMessageRelation.fromWireValue(
-                json["relation"]?.jsonPrimitiveOrNull?.contentOrNull
-            ),
+            shouldSend = parsed.shouldSend,
+            reason = parsed.reason,
+            title = parsed.title,
+            content = parsed.content,
+            relation = SpontaneousMessageRelation.fromPortable(parsed.relation),
         )
-    }
-
-    private fun extractJsonObject(text: String): String? {
-        val start = text.indexOf('{')
-        val end = text.lastIndexOf('}')
-        if (start == -1 || end == -1 || end <= start) return null
-        return text.substring(start, end + 1)
-    }
-
-    private fun formatElapsedUnit(
-        value: Long,
-        unit: String,
-    ): String {
-        val safeValue = value.coerceAtLeast(1L)
-        return if (safeValue == 1L) {
-            "1 $unit"
-        } else {
-            "$safeValue ${unit}s"
-        }
     }
 }

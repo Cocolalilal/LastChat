@@ -37,6 +37,8 @@ model schedules a follow-up:
 e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"lastchat.rikkafork.cocolal.ios.scheduled-message.refresh"]
 ```
 
+Spontaneous messages use the same pattern (`lastchat.rikkafork.cocolal.ios.spontaneous.refresh`) plus a 30-minute in-process fallback. Assistants imported with `enableSpontaneous` run through `PortableTaskScheduler`.
+
 iOS treats `earliestBeginDate` as a lower bound rather than an exact alarm; the
 existing foreground jobs remain active as fallbacks.
 

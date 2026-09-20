@@ -34,6 +34,7 @@
     <array>
         <string>lastchat.rikkafork.cocolal.ios.memory.refresh</string>
         <string>lastchat.rikkafork.cocolal.ios.scheduled-message.refresh</string>
+        <string>lastchat.rikkafork.cocolal.ios.spontaneous.refresh</string>
     </array>
     <key>UIBackgroundModes</key>
     <array>

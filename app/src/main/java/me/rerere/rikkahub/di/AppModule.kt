@@ -78,6 +78,10 @@ val appModule = module {
         me.rerere.ai.generation.PortableChatEngine(store = get())
     }
 
+    single<me.rerere.ai.generation.PortableTaskScheduler> {
+        me.rerere.rikkahub.service.WorkManagerPortableTaskScheduler(get())
+    }
+
     single {
         ChatService(
             context = get(),
@@ -91,6 +95,7 @@ val appModule = module {
             localTools = get(),
             workspaceRepository = get(),
             mcpManager = get(),
+            taskScheduler = get(),
             chatEngine = get(),
         )
     }

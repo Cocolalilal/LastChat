@@ -31,8 +31,16 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
+import me.rerere.ai.generation.InProcessPortableTaskScheduler
 import me.rerere.ai.generation.JsonFilePortableConversationStore
+import me.rerere.ai.generation.PortableBackgroundTask
+import me.rerere.ai.generation.PortableBackgroundWake
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableSpontaneousCandidate
+import me.rerere.ai.generation.PortableSpontaneousMessaging
+import me.rerere.ai.generation.PortableSpontaneousRelation
+import me.rerere.ai.generation.PortableTaskRequest
+import me.rerere.ai.generation.PortableTaskScheduler
 import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableGenerationLoop
 import me.rerere.ai.generation.PortableGenerationPrepare
@@ -200,6 +208,13 @@ data class IosAssistantPreferences(
     val enabledMcpServerIds: Set<String> = emptySet(),
     val thinkingBudget: Int = 0,
     val messageTemplate: String = "{{ message }}",
+    val enableSpontaneous: Boolean = false,
+    val spontaneousPrompt: String = "",
+    val notificationStartHour: Int = 7,
+    val notificationEndHour: Int = 22,
+    val notificationFrequencyHours: Int = 4,
+    val lastNotificationTime: Long = 0L,
+    val lastNotificationContent: String = "",
     /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
     val embeddingProviderType: IosProviderType? = null,
 )
@@ -431,6 +446,8 @@ data class IosAppState(
     val ttsSpeaking: Boolean = false,
     val sttRecording: Boolean = false,
     val ttsPlaybackState: PlaybackState = PlaybackState(),
+    val spontaneousQuietUntil: Long = 0L,
+    val lastSpontaneousAssistantId: String? = null,
     val error: String? = null,
 ) {
     val selectedConversation: IosConversation?
@@ -525,6 +542,32 @@ class IosAppController(
     private var currentExecutingToolCallId: String? = null
     private var scheduleMessageBackground: ((Long) -> Unit)? = null
     private var cancelMessageBackground: (() -> Unit)? = null
+    private var scheduleSpontaneousBackground: ((Long) -> Unit)? = null
+    private var cancelSpontaneousBackground: (() -> Unit)? = null
+    private var taskHandlersRegistered = false
+    private val taskScheduler: PortableTaskScheduler = InProcessPortableTaskScheduler(
+        scope = scope,
+        wake = object : PortableBackgroundWake {
+            override fun schedule(task: PortableBackgroundTask, earliestEpochMs: Long) {
+                when (task) {
+                    PortableBackgroundTask.SPONTANEOUS_MESSAGES ->
+                        scheduleSpontaneousBackground?.invoke(earliestEpochMs)
+                    PortableBackgroundTask.SCHEDULED_MESSAGES ->
+                        scheduleMessageBackground?.invoke(earliestEpochMs)
+                    PortableBackgroundTask.MEMORY_CONSOLIDATION ->
+                        scheduleAdaptiveBackground?.invoke(earliestEpochMs)
+                }
+            }
+
+            override fun cancel(task: PortableBackgroundTask) {
+                when (task) {
+                    PortableBackgroundTask.SPONTANEOUS_MESSAGES -> cancelSpontaneousBackground?.invoke()
+                    PortableBackgroundTask.SCHEDULED_MESSAGES -> cancelMessageBackground?.invoke()
+                    PortableBackgroundTask.MEMORY_CONSOLIDATION -> cancelAdaptiveBackground?.invoke()
+                }
+            }
+        },
+    )
     private val persistMutex = Mutex()
     private val adaptiveMemoryMutex = Mutex()
     private val scheduledMessageMutex = Mutex()
@@ -647,6 +690,8 @@ class IosAppController(
                 webDav = stored?.webDav ?: IosWebDavPreferences(),
                 workspace = stored?.workspace ?: IosWorkspacePreferences(),
                 favoriteModels = stored?.favoriteModels.orEmpty(),
+                spontaneousQuietUntil = stored?.spontaneousQuietUntil ?: 0L,
+                lastSpontaneousAssistantId = stored?.lastSpontaneousAssistantId,
                 onDeviceLlmAvailable = onDeviceLlm.available,
                 onDeviceLlmUnavailableReason = onDeviceLlm.unavailableReason
                     ?: UnavailableOnDeviceLlmRuntime.DEFAULT_UNAVAILABLE_REASON,
@@ -678,6 +723,15 @@ class IosAppController(
                 .forEach { scheduleAdaptiveMemory(it.id) }
             refreshAdaptiveBackgroundSchedule()
             mutableState.value.scheduledMessages.forEach(::scheduleMessageInProcess)
+            registerPortableTaskHandlers()
+            taskScheduler.enqueue(
+                PortableTaskRequest(
+                    task = PortableBackgroundTask.SPONTANEOUS_MESSAGES,
+                    uniqueName = "spontaneous",
+                    periodic = true,
+                    intervalMs = PortableSpontaneousMessaging.WORK_INTERVAL_MS,
+                ),
+            )
             refreshScheduledMessageBackgroundSchedule()
             refreshWebServer()
             widgetStore.consumePendingShareText()?.takeIf { it.isNotBlank() }?.let { pending ->
@@ -742,10 +796,15 @@ class IosAppController(
             var succeeded = true
             conversationIds.forEach { conversationId ->
                 adaptiveMemoryJobs.remove(conversationId)?.cancel()
-                val result = runCatching {
-                    adaptiveMemoryMutex.withLock { consolidateAdaptiveMemory(conversationId) }
-                }
-                if (result.isFailure) succeeded = false
+                val result = taskScheduler.run(
+                    PortableBackgroundTask.MEMORY_CONSOLIDATION,
+                    PortableTaskRequest(
+                        task = PortableBackgroundTask.MEMORY_CONSOLIDATION,
+                        uniqueName = "memory:$conversationId",
+                        extras = mapOf("conversationId" to conversationId),
+                    ),
+                )
+                if (!result) succeeded = false
             }
             refreshAdaptiveBackgroundSchedule()
             completion(succeeded)
@@ -768,14 +827,45 @@ class IosAppController(
             var succeeded = true
             due.forEach { scheduled ->
                 scheduledMessageJobs.remove(scheduled.id)?.cancel()
-                runCatching { deliverScheduledMessage(scheduled.id) }
-                    .onFailure {
-                        succeeded = false
-                        recordScheduledMessageFailure(scheduled.id)
-                    }
+                val ok = taskScheduler.run(
+                    PortableBackgroundTask.SCHEDULED_MESSAGES,
+                    PortableTaskRequest(
+                        task = PortableBackgroundTask.SCHEDULED_MESSAGES,
+                        uniqueName = "scheduled:${scheduled.id}",
+                        extras = mapOf("id" to scheduled.id),
+                    ),
+                )
+                if (!ok) {
+                    succeeded = false
+                    recordScheduledMessageFailure(scheduled.id)
+                }
             }
             persist()
             refreshScheduledMessageBackgroundSchedule()
+            completion(succeeded)
+        }
+    }
+
+    fun installSpontaneousBackgroundScheduler(
+        schedule: (earliestBeginEpochMs: Long) -> Unit,
+        cancel: () -> Unit,
+    ) {
+        scheduleSpontaneousBackground = schedule
+        cancelSpontaneousBackground = cancel
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.SPONTANEOUS_MESSAGES,
+                uniqueName = "spontaneous",
+                periodic = true,
+                intervalMs = PortableSpontaneousMessaging.WORK_INTERVAL_MS,
+            ),
+        )
+    }
+
+    fun runSpontaneousBackgroundMaintenance(completion: (Boolean) -> Unit) {
+        scope.launch {
+            val succeeded = taskScheduler.run(PortableBackgroundTask.SPONTANEOUS_MESSAGES)
+            persist()
             completion(succeeded)
         }
     }
@@ -2229,6 +2319,136 @@ class IosAppController(
         }
     }
 
+    private fun registerPortableTaskHandlers() {
+        if (taskHandlersRegistered) return
+        taskHandlersRegistered = true
+        taskScheduler.register(PortableBackgroundTask.SCHEDULED_MESSAGES) { request ->
+            val id = request.extras["id"] ?: return@register false
+            runCatching {
+                deliverScheduledMessage(id)
+                persist()
+                refreshScheduledMessageBackgroundSchedule()
+            }.onFailure { failure ->
+                if (failure is CancellationException) throw failure
+                recordScheduledMessageFailure(id)
+            }.isSuccess
+        }
+        taskScheduler.register(PortableBackgroundTask.MEMORY_CONSOLIDATION) { request ->
+            val conversationId = request.extras["conversationId"] ?: return@register false
+            val result = runCatching {
+                adaptiveMemoryMutex.withLock { consolidateAdaptiveMemory(conversationId) }
+            }
+            refreshAdaptiveBackgroundSchedule()
+            result.isSuccess
+        }
+        taskScheduler.register(PortableBackgroundTask.SPONTANEOUS_MESSAGES) {
+            runCatching { runSpontaneousPass() }.isSuccess
+        }
+    }
+
+    private suspend fun runSpontaneousPass() {
+        val snapshot = mutableState.value
+        val now = Clock.System.now().toEpochMilliseconds()
+        if (now < snapshot.spontaneousQuietUntil) return
+        val currentHour = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
+        val eligible = snapshot.assistants.filter { assistant ->
+            assistant.enableSpontaneous &&
+                PortableSpontaneousMessaging.isWithinActiveHours(
+                    currentHour = currentHour,
+                    startHour = assistant.notificationStartHour,
+                    endHour = assistant.notificationEndHour,
+                ) &&
+                (
+                    assistant.lastNotificationTime == 0L ||
+                        now - assistant.lastNotificationTime >=
+                        assistant.notificationFrequencyHours.coerceAtLeast(1) * 60L * 60L * 1000L
+                )
+        }
+        val selected = PortableSpontaneousMessaging.pickCandidate(
+            candidates = eligible.map { assistant ->
+                PortableSpontaneousCandidate(assistant.id, assistant.lastNotificationTime)
+            },
+            lastSenderAssistantId = snapshot.lastSpontaneousAssistantId,
+            random = kotlin.random.Random(now),
+        ) ?: return
+        val assistant = eligible.firstOrNull { it.id == selected.assistantId } ?: return
+        val conversation = chatEngine.listConversations(assistantId = assistant.id, limit = 1).firstOrNull()
+        val history = conversation?.messageNodes
+            ?.currentVersionMessages()
+            ?.takeLast(10)
+            ?.joinToString("\n") { message -> "${message.role}: ${message.toContentText()}" }
+            ?.ifBlank { "No previous chat history." }
+            ?: "No previous chat history."
+        val prompt = assistant.spontaneousPrompt.ifBlank {
+            """
+            You are ${assistant.name}.
+            You are considering whether to send the user a spontaneous in-app message.
+            Recent chat history:
+            $history
+            Return JSON only:
+            {"send": true or false, "reason": "brief internal reason", "relation": "recent_chat" or "unrelated", "title": "short notification title", "content": "the exact spontaneous assistant message"}
+            """.trimIndent()
+        }
+        val target = resolveChatGeneration() ?: return
+        val responseText = generateBackgroundText(
+            providerSetting = target.providerSetting,
+            model = target.model,
+            prompt = prompt,
+            temperature = 0.7f,
+            thinkingBudget = 0,
+        ).choices.firstOrNull()?.message?.toContentText().orEmpty()
+        val parsed = PortableSpontaneousMessaging.parseResponse(responseText) ?: return
+        if (!parsed.shouldSend) return
+        val content = parsed.content?.trim().orEmpty()
+        if (content.isBlank()) return
+        val title = parsed.title?.takeIf { it.isNotBlank() } ?: assistant.name
+        val conversationId = if (
+            parsed.relation == PortableSpontaneousRelation.RECENT_CHAT && conversation != null
+        ) {
+            conversation.id
+        } else {
+            null
+        }
+        val result = notificationPlatform.post(
+            identifier = conversationId ?: assistant.id,
+            title = title,
+            content = content,
+        )
+        if (result.status != "success") return
+        recordNotification(title, content)
+        if (conversationId != null) {
+            val iosConversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+            if (iosConversation != null) {
+                updateConversation(conversationId) { current ->
+                    current.copy(
+                        messageNodes = current.messageNodes + UIMessage.assistant(content).toMessageNode(),
+                        updatedAtEpochMs = now,
+                    )
+                }
+            }
+        }
+        mutableState.update { current ->
+            current.copy(
+                assistants = current.assistants.map { existing ->
+                    if (existing.id == assistant.id) {
+                        existing.copy(
+                            lastNotificationTime = now,
+                            lastNotificationContent = content,
+                        )
+                    } else {
+                        existing
+                    }
+                },
+                spontaneousQuietUntil = PortableSpontaneousMessaging.computeGlobalQuietUntil(
+                    now,
+                    kotlin.random.Random(now),
+                ),
+                lastSpontaneousAssistantId = assistant.id,
+            )
+        }
+        persist()
+    }
+
     private fun scheduleAdaptiveMemory(conversationId: String) {
         val snapshot = mutableState.value
         val conversation = snapshot.conversations.firstOrNull { it.id == conversationId } ?: return
@@ -2238,16 +2458,18 @@ class IosAppController(
         if (pendingCount == 0) return
         refreshAdaptiveBackgroundSchedule()
         adaptiveMemoryJobs.remove(conversationId)?.cancel()
-        adaptiveMemoryJobs[conversationId] = scope.launch {
-            if (pendingCount < ADAPTIVE_MEMORY_MESSAGE_THRESHOLD) {
-                delay(ADAPTIVE_MEMORY_INACTIVITY_MS)
-            }
-            adaptiveMemoryMutex.withLock {
-                runCatching { consolidateAdaptiveMemory(conversationId) }
-            }
-            adaptiveMemoryJobs.remove(conversationId)
-            refreshAdaptiveBackgroundSchedule()
-        }
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.MEMORY_CONSOLIDATION,
+                uniqueName = "memory:$conversationId",
+                delayMs = if (pendingCount < ADAPTIVE_MEMORY_MESSAGE_THRESHOLD) {
+                    ADAPTIVE_MEMORY_INACTIVITY_MS
+                } else {
+                    0L
+                },
+                extras = mapOf("conversationId" to conversationId),
+            ),
+        )
     }
 
     private fun refreshAdaptiveBackgroundSchedule() {
@@ -2277,22 +2499,15 @@ class IosAppController(
 
     private fun scheduleMessageInProcess(scheduled: IosScheduledMessage) {
         scheduledMessageJobs.remove(scheduled.id)?.cancel()
-        scheduledMessageJobs[scheduled.id] = scope.launch {
-            delay(
-                (scheduled.nextAttemptEpochMs - Clock.System.now().toEpochMilliseconds())
-                    .coerceAtLeast(0L)
-            )
-            scheduledMessageJobs.remove(scheduled.id)
-            try {
-                deliverScheduledMessage(scheduled.id)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                recordScheduledMessageFailure(scheduled.id)
-            }
-            persist()
-            refreshScheduledMessageBackgroundSchedule()
-        }
+        taskScheduler.enqueue(
+            PortableTaskRequest(
+                task = PortableBackgroundTask.SCHEDULED_MESSAGES,
+                uniqueName = "scheduled:${scheduled.id}",
+                delayMs = (scheduled.nextAttemptEpochMs - Clock.System.now().toEpochMilliseconds())
+                    .coerceAtLeast(0L),
+                extras = mapOf("id" to scheduled.id),
+            ),
+        )
     }
 
     private fun refreshScheduledMessageBackgroundSchedule() {
@@ -3279,6 +3494,17 @@ class IosAppController(
         }
         val effectiveSetting = providerSetting.withApiKey(apiKey, model)
         val provider = providerManager.getProviderByType(effectiveSetting)
+        val inputImages = inputImage?.let { picked ->
+            val bytes = fileStore.readBytes(picked.storagePath)
+                ?: error("The selected input image is no longer available")
+            listOf(
+                me.rerere.ai.provider.ImageGenerationInput(
+                    data = Base64.Default.encode(bytes),
+                    mimeType = picked.mimeType.ifBlank { "image/png" },
+                    fileName = picked.displayName.ifBlank { "input.png" },
+                )
+            )
+        }.orEmpty()
         val items = when (model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION) {
             ImageGenerationMethod.DIFFUSION -> provider.generateImage(
                 providerSetting = effectiveSetting,
@@ -3287,6 +3513,7 @@ class IosAppController(
                     prompt = prompt,
                     numOfImages = count,
                     aspectRatio = aspectRatio,
+                    inputImages = inputImages,
                 ),
             ).items
             ImageGenerationMethod.MULTIMODAL -> {
@@ -4121,6 +4348,8 @@ class IosAppController(
             webDav = snapshot.webDav,
             workspace = snapshot.workspace,
             favoriteModels = snapshot.favoriteModels,
+            spontaneousQuietUntil = snapshot.spontaneousQuietUntil,
+            lastSpontaneousAssistantId = snapshot.lastSpontaneousAssistantId,
         )
         fileStore.writeBytes(STATE_PATH, json.encodeToString(stored).encodeToByteArray())
     }
@@ -4371,6 +4600,8 @@ private data class IosStoredState(
     val webDav: IosWebDavPreferences = IosWebDavPreferences(),
     val workspace: IosWorkspacePreferences = IosWorkspacePreferences(),
     val favoriteModels: List<String> = emptyList(),
+    val spontaneousQuietUntil: Long = 0L,
+    val lastSpontaneousAssistantId: String? = null,
 )
 
 internal fun IosTtsProviderType.displayName(): String = when (this) {
