@@ -92,7 +92,8 @@ internal object IosWebDto {
         put(
             "displaySetting",
             buildJsonObject {
-                put("userNickname", "")
+                put("userNickname", appearance.userNickname)
+                put("userAvatar", avatarJson(appearance.userAvatar))
                 put("showUserAvatar", appearance.showUserAvatar)
                 put("showModelIcon", appearance.showModelIcon)
                 put("showModelName", appearance.showModelName)
@@ -121,6 +122,23 @@ internal object IosWebDto {
                 put("reasoningPreviewEnabled", appearance.reasoningPreviewEnabled)
                 put("checkForUpdates", appearance.checkForUpdates)
                 put("enableNotificationOnMessageGeneration", appearance.enableNotificationOnMessageGeneration)
+                put("providerViewMode", appearance.providerViewMode.name)
+                put("fontSettings", fontSettingsJson(appearance.fontSettings))
+                put(
+                    "ttsTextFilterRules",
+                    buildJsonArray {
+                        appearance.ttsTextFilterRules.forEach { rule ->
+                            add(
+                                buildJsonObject {
+                                    put("id", rule.id)
+                                    put("pattern", rule.pattern)
+                                    put("mode", rule.mode.name)
+                                    put("enabled", rule.enabled)
+                                },
+                            )
+                        }
+                    },
+                )
                 put("pasteLongTextAsFile", false)
                 put("pasteLongTextThreshold", 4096)
                 put(
@@ -299,10 +317,63 @@ internal object IosWebDto {
     private fun assistant(assistant: IosAssistantPreferences) = buildJsonObject {
         put("id", assistant.id)
         put("name", assistant.name)
+        put("avatar", avatarJson(assistant.avatar))
+        put("useAssistantAvatar", assistant.useAssistantAvatar)
+        put(
+            "uiSettings",
+            buildJsonObject {
+                assistant.uiSettings.showUserAvatar?.let { put("showUserAvatar", it) }
+                assistant.uiSettings.showAssistantAvatar?.let { put("showAssistantAvatar", it) }
+                assistant.uiSettings.showAssistantBubbles?.let { put("showAssistantBubbles", it) }
+                assistant.uiSettings.showTokenUsage?.let { put("showTokenUsage", it) }
+                assistant.uiSettings.autoCloseThinking?.let { put("autoCloseThinking", it) }
+                assistant.uiSettings.showMessageJumper?.let { put("showMessageJumper", it) }
+                assistant.uiSettings.messageJumperOnLeft?.let { put("messageJumperOnLeft", it) }
+                assistant.uiSettings.fontSizeRatio?.let { put("fontSizeRatio", it.toDouble()) }
+                assistant.uiSettings.codeBlockAutoWrap?.let { put("codeBlockAutoWrap", it) }
+                assistant.uiSettings.codeBlockAutoCollapse?.let { put("codeBlockAutoCollapse", it) }
+                assistant.uiSettings.showContextStacks?.let { put("showContextStacks", it) }
+                assistant.uiSettings.newChatHeaderStyle?.let { put("newChatHeaderStyle", it.name) }
+                assistant.uiSettings.newChatContentStyle?.let { put("newChatContentStyle", it.name) }
+                assistant.uiSettings.newChatShowAvatar?.let { put("newChatShowAvatar", it) }
+            },
+        )
         put("tags", buildJsonArray { })
         put("enableMemory", assistant.memoryMode != IosMemoryMode.OFF)
         put("modeInjectionIds", buildJsonArray { assistant.enabledSkillIds.forEach { add(JsonPrimitive(it)) } })
         put("lorebookIds", buildJsonArray { assistant.enabledLorebookIds.forEach { add(JsonPrimitive(it)) } })
+    }
+
+    private fun avatarJson(avatar: IosAvatar) = when (avatar) {
+        IosAvatar.Dummy -> buildJsonObject { put("type", "Dummy") }
+        is IosAvatar.Emoji -> buildJsonObject {
+            put("type", "Emoji")
+            put("content", avatar.content)
+        }
+        is IosAvatar.Image -> buildJsonObject {
+            put("type", "Image")
+            put("url", avatar.url)
+        }
+    }
+
+    private fun fontSettingsJson(settings: IosFontSettings) = buildJsonObject {
+        put("useSameFontForHeadersAndContent", settings.useSameFontForHeadersAndContent)
+        put("usePhoneSystemFont", settings.usePhoneSystemFont)
+        put("headerFont", fontConfigJson(settings.headerFont))
+        put("contentFont", fontConfigJson(settings.contentFont))
+        put("codeFont", fontConfigJson(settings.codeFont))
+    }
+
+    private fun fontConfigJson(config: IosFontConfig) = buildJsonObject {
+        put("fontSource", config.fontSource.name)
+        config.customFontPath?.let { put("customFontPath", it) }
+        config.customFontName?.let { put("customFontName", it) }
+        put("weight", config.weight.toDouble())
+        put("width", config.width.toDouble())
+        put("roundness", config.roundness.toDouble())
+        put("fontSize", config.fontSize.toDouble())
+        put("lineHeight", config.lineHeight.toDouble())
+        put("letterSpacing", config.letterSpacing.toDouble())
     }
 
     private fun provider(provider: ProviderSetting) = buildJsonObject {

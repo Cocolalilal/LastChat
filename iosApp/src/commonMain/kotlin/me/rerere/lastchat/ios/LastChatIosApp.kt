@@ -83,6 +83,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Typography
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.rememberDrawerState
@@ -137,6 +138,11 @@ import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.ui.text.TextStyle
+import me.rerere.rikkahub.utils.TtsFilterMode
+import me.rerere.rikkahub.utils.TtsTextFilterRule
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -313,14 +319,18 @@ fun LastChatIosApp(
     }
     val colorScheme = presetColorScheme(state.appearance.themeId, useDarkTheme)
     val lastChatFontFamily = rememberLastChatFontFamily()
-    val appFontFamily = if (state.appearance.usePhoneSystemFont) {
-        FontFamily.Default
-    } else {
-        lastChatFontFamily
-    }
+    val fontSettings = state.appearance.fontSettings.normalize()
+    val appFontFamily = iosFontFamilyChoice(
+        lastChatFontFamily,
+        fontSettings,
+        state.appearance.usePhoneSystemFont,
+    )
     MaterialTheme(
         colorScheme = colorScheme.withLastChatAmoledSurface(useDarkTheme),
-        typography = buildLastChatTypography(appFontFamily),
+        typography = buildLastChatTypography(appFontFamily).withIosFontConfig(
+            fontSettings.headerFont,
+            state.appearance.fontSizeRatio,
+        ),
         shapes = Shapes,
     ) {
         var route by remember { mutableStateOf(IosRoute.Chat) }
@@ -344,6 +354,8 @@ fun LastChatIosApp(
                                 onRenameConversation = controller::renameConversation,
                                 onDeleteConversation = controller::deleteConversation,
                                 onSelectAssistant = controller::selectAssistant,
+                                onSaveUserProfile = controller::saveUserProfile,
+                                onPickUserAvatar = { filePicker.pickFile(it) },
                                 darkTheme = useDarkTheme,
                                 platformHaptics = platformHaptics,
                                 onDismiss = { scope.launch { drawerState.close() } },
@@ -387,6 +399,7 @@ fun LastChatIosApp(
                         audioPlayer = audioPlayer,
                         onOpenMenu = { scope.launch { drawerState.open() } },
                         onOpenSettings = { route = IosRoute.Settings },
+                        onSelectDefaultModel = controller::selectDefaultModel,
                         onOpenImageGeneration = { route = IosRoute.ImageGeneration },
                         onIgnoreUpdate = controller::ignoreUpdate,
                         onSelectVersion = { nodeId, index ->
@@ -443,6 +456,9 @@ fun LastChatIosApp(
                     onRequestNotificationPermission = controller::requestNotificationPermission,
                     onSaveRpStyleRules = controller::saveRpStyleRules,
                     onSaveAssistant = controller::saveAssistant,
+                    onSaveAssistantAvatar = controller::saveAssistantAvatar,
+                    onSaveAssistantUiSettings = controller::saveAssistantUiSettings,
+                    onPickAvatarFile = { filePicker.pickFile(it) },
                     onSaveSpontaneousSettings = controller::saveSpontaneousSettings,
                     onSaveComfyUiProvider = controller::saveComfyUiProvider,
                     onImportComfyUiWorkflow = controller::importComfyUiWorkflow,
@@ -526,6 +542,7 @@ private fun ChatPage(
     audioPlayer: PlatformAttachmentAudioPlayer,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSelectDefaultModel: (String, String) -> Unit = { _, _ -> },
     onOpenImageGeneration: () -> Unit = {},
     onIgnoreUpdate: (String) -> Unit = {},
     onSelectVersion: (String, Int) -> Unit,
@@ -635,7 +652,9 @@ private fun ChatPage(
         inputState.setTextAndPlaceCursorAtEnd("")
         platformHaptics.perform(if (dismissed) PlatformHapticPattern.Pop else PlatformHapticPattern.Send)
     }
-    val appearance = state.appearance
+    val appearance = state.appearance.withAssistantUi(state.assistant.uiSettings)
+    var showChatModelPicker by remember { mutableStateOf(false) }
+    var chatModelSearchQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val chatScope = rememberCoroutineScope()
     val isNewChat = messages.isEmpty()
@@ -904,7 +923,7 @@ private fun ChatPage(
                                             }
                                             LastChatComposerAction.Picker -> {
                                                 platformHaptics.perform(PlatformHapticPattern.Pop)
-                                                onOpenSettings()
+                                                showChatModelPicker = true
                                             }
                                             else -> Unit
                                         }
@@ -941,6 +960,7 @@ private fun ChatPage(
                 IosNewChatEmpty(
                     appearance = appearance,
                     assistantName = state.assistant.name,
+                    assistantAvatar = state.assistant.avatar,
                     onTemplateClick = { prompt ->
                         inputState.setTextAndPlaceCursorAtEnd(prompt)
                         platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -970,6 +990,13 @@ private fun ChatPage(
                             isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
                             appearance = appearance,
                             generating = state.generating && message.messageId == messages.lastOrNull()?.messageId,
+                            userAvatar = state.appearance.userAvatar,
+                            userNickname = state.appearance.userNickname,
+                            assistantAvatar = if (state.assistant.useAssistantAvatar) {
+                                state.assistant.avatar
+                            } else {
+                                IosAvatar.Dummy
+                            },
                             onSpeak = onSpeak,
                             onStopSpeaking = onStopSpeaking,
                         )
@@ -1087,6 +1114,19 @@ private fun ChatPage(
             dismissButton = {
                 TextButton(onClick = { editingMessageId = null }) { Text("Cancel") }
             },
+        )
+    }
+    if (showChatModelPicker) {
+        IosChatModelPickerSheet(
+            state = state,
+            searchQuery = chatModelSearchQuery,
+            onSearchQueryChange = { chatModelSearchQuery = it },
+            onSelect = { providerId, modelId ->
+                onSelectDefaultModel(providerId, modelId)
+                showChatModelPicker = false
+            },
+            onDismiss = { showChatModelPicker = false },
+            platformHaptics = platformHaptics,
         )
     }
 }
@@ -1213,6 +1253,9 @@ private fun MessageBubble(
     isTtsAvailable: Boolean,
     appearance: IosAppearancePreferences,
     generating: Boolean = false,
+    userAvatar: IosAvatar = IosAvatar.Dummy,
+    userNickname: String = "",
+    assistantAvatar: IosAvatar = IosAvatar.Dummy,
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
 ) {
@@ -1239,8 +1282,9 @@ private fun MessageBubble(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (appearance.showModelIcon) {
-                    IosAvatarGlyph(
-                        label = message.modelName?.firstOrNull()?.uppercase() ?: "A",
+                    IosAvatarView(
+                        avatar = assistantAvatar,
+                        letter = iosAvatarLetter(message.modelName ?: "A", "A"),
                         size = 28.dp,
                     )
                 }
@@ -1254,7 +1298,11 @@ private fun MessageBubble(
             }
         }
         if (message.outgoing && appearance.showUserAvatar) {
-            IosAvatarGlyph(label = "Y", size = 28.dp)
+            IosAvatarView(
+                avatar = userAvatar,
+                letter = iosAvatarLetter(userNickname, "Y"),
+                size = 28.dp,
+            )
         }
         if (!message.outgoing && message.reasoning.isNotBlank()) {
             Surface(
@@ -1344,6 +1392,7 @@ private fun MessageBubble(
                     fontSizeRatio = fontSizeRatio,
                     wrapCode = appearance.codeBlockAutoWrap,
                     collapseCode = appearance.codeBlockAutoCollapse,
+                    codeFontFamily = iosCodeFontFamily(appearance.fontSettings),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             } else {
@@ -1358,6 +1407,7 @@ private fun MessageBubble(
                         fontSizeRatio = fontSizeRatio,
                         wrapCode = appearance.codeBlockAutoWrap,
                         collapseCode = appearance.codeBlockAutoCollapse,
+                        codeFontFamily = iosCodeFontFamily(appearance.fontSettings),
                     )
                 }
             }
@@ -1398,16 +1448,35 @@ private fun MessageBubble(
 }
 
 @Composable
-private fun IosAvatarGlyph(label: String, size: androidx.compose.ui.unit.Dp) {
+private fun IosAvatarView(
+    avatar: IosAvatar,
+    letter: String,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
     Surface(
-        modifier = Modifier.size(size),
+        modifier = modifier.size(size),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
+            when (avatar) {
+                is IosAvatar.Emoji -> Text(avatar.content, style = MaterialTheme.typography.titleMedium)
+                is IosAvatar.Image -> AsyncImage(
+                    model = avatar.url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                )
+                IosAvatar.Dummy -> Text(letter, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
+}
+
+@Composable
+private fun IosAvatarGlyph(label: String, size: androidx.compose.ui.unit.Dp) {
+    IosAvatarView(avatar = IosAvatar.Dummy, letter = label, size = size)
 }
 
 @Composable
@@ -1417,6 +1486,7 @@ private fun IosChatTextBody(
     fontSizeRatio: Float,
     wrapCode: Boolean,
     collapseCode: Boolean,
+    codeFontFamily: FontFamily = FontFamily.Monospace,
     modifier: Modifier = Modifier,
 ) {
     val bodyStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1443,6 +1513,7 @@ private fun IosChatTextBody(
                     code = segment.value,
                     wrap = wrapCode,
                     collapse = collapseCode,
+                    fontFamily = codeFontFamily,
                 )
             }
         }
@@ -1455,6 +1526,7 @@ private fun IosChatCodeBlock(
     code: String,
     wrap: Boolean,
     collapse: Boolean,
+    fontFamily: FontFamily = FontFamily.Monospace,
 ) {
     var expanded by remember(code) { mutableStateOf(!collapse) }
     Surface(
@@ -1483,7 +1555,7 @@ private fun IosChatCodeBlock(
                 val codeModifier = if (wrap) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState())
                 Text(
                     text = code,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = fontFamily),
                     modifier = codeModifier,
                     softWrap = wrap,
                 )
@@ -1497,6 +1569,7 @@ private fun IosChatCodeBlock(
 private fun IosNewChatEmpty(
     appearance: IosAppearancePreferences,
     assistantName: String,
+    assistantAvatar: IosAvatar = IosAvatar.Dummy,
     onTemplateClick: (String) -> Unit,
     onOpenImageGeneration: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1515,7 +1588,11 @@ private fun IosNewChatEmpty(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (appearance.newChatShowAvatar) {
-                        IosAvatarGlyph(label = assistantName.firstOrNull()?.uppercase() ?: "A", size = 44.dp)
+                        IosAvatarView(
+                            avatar = assistantAvatar,
+                            letter = iosAvatarLetter(assistantName, "A"),
+                            size = 44.dp,
+                        )
                     }
                     Text(
                         iosGreeting(hour, assistantName),
@@ -1526,7 +1603,11 @@ private fun IosNewChatEmpty(
             }
             IosNewChatHeaderStyle.BIG_ICON -> {
                 if (appearance.newChatShowAvatar) {
-                    IosAvatarGlyph(label = assistantName.firstOrNull()?.uppercase() ?: "A", size = 80.dp)
+                    IosAvatarView(
+                        avatar = assistantAvatar,
+                        letter = iosAvatarLetter(assistantName, "A"),
+                        size = 80.dp,
+                    )
                 }
                 Text(
                     assistantName.ifBlank { "Assistant" },
@@ -1667,6 +1748,8 @@ private fun MenuPage(
     onRenameConversation: (String, String) -> Unit,
     onDeleteConversation: (String) -> Unit,
     onSelectAssistant: (String) -> Unit,
+    onSaveUserProfile: (String, IosAvatar) -> Unit = { _, _ -> },
+    onPickUserAvatar: ((Result<PlatformPickedFile?>) -> Unit) -> Unit = {},
     darkTheme: Boolean,
     platformHaptics: PlatformHaptics,
     onDismiss: () -> Unit,
@@ -1677,6 +1760,10 @@ private fun MenuPage(
     var searchQuery by remember { mutableStateOf("") }
     var searchExpanded by remember { mutableStateOf(false) }
     var showAssistantPicker by remember { mutableStateOf(false) }
+    var showUserProfile by remember { mutableStateOf(false) }
+    var nicknameDraft by remember(state.appearance.userNickname) {
+        mutableStateOf(state.appearance.userNickname)
+    }
     val filteredConversations = remember(state.conversations, searchQuery) {
         if (searchQuery.isBlank()) {
             state.conversations
@@ -1690,6 +1777,40 @@ private fun MenuPage(
         modifier = Modifier.fillMaxSize().padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+            item {
+                Surface(
+                    onClick = { showUserProfile = true },
+                    shape = AppShapes.CardSmall,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        IosAvatarView(
+                            avatar = state.appearance.userAvatar,
+                            letter = iosAvatarLetter(state.appearance.userNickname, "Y"),
+                            size = 40.dp,
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                state.appearance.userNickname.ifBlank { "You" },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "Tap to set nickname and avatar",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 Text(
                     text = "Chats",
@@ -1800,6 +1921,7 @@ private fun MenuPage(
                             }
                             IosAssistantAvatar(
                                 name = state.assistant.name,
+                                avatar = state.assistant.avatar,
                                 modifier = Modifier
                                     .size(assistantAvatarSize)
                                     .clickable {
@@ -1849,7 +1971,38 @@ private fun MenuPage(
             onDismiss = { showAssistantPicker = false },
             onPopHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
             onThudHaptic = { platformHaptics.perform(PlatformHapticPattern.Thud) },
-            avatar = { item, modifier -> IosAssistantAvatar(item.name, modifier) },
+            avatar = { item, modifier ->
+                val assistant = state.assistants.firstOrNull { it.id == item.id }
+                IosAssistantAvatar(item.name, assistant?.avatar ?: IosAvatar.Dummy, modifier)
+            },
+        )
+    }
+    if (showUserProfile) {
+        IosAvatarPickerDialog(
+            title = "You",
+            nickname = nicknameDraft,
+            avatar = state.appearance.userAvatar,
+            onNicknameChange = { nicknameDraft = it },
+            onSelectEmoji = { emoji ->
+                onSaveUserProfile(nicknameDraft, IosAvatar.Emoji(emoji))
+            },
+            onSelectImage = {
+                onPickUserAvatar { result ->
+                    val picked = result.getOrNull() ?: return@onPickUserAvatar
+                    if (picked.kind == PlatformPickedFileKind.Image) {
+                        onSaveUserProfile(
+                            nicknameDraft,
+                            IosAvatar.Image(picked.localUrl.ifBlank { picked.storagePath }),
+                        )
+                    }
+                }
+            },
+            onSelectDummy = { onSaveUserProfile(nicknameDraft, IosAvatar.Dummy) },
+            onSave = {
+                onSaveUserProfile(nicknameDraft, state.appearance.userAvatar)
+                showUserProfile = false
+            },
+            onDismiss = { showUserProfile = false },
         )
     }
 }
@@ -1857,22 +2010,15 @@ private fun MenuPage(
 @Composable
 private fun IosAssistantAvatar(
     name: String,
+    avatar: IosAvatar = IosAvatar.Dummy,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    IosAvatarView(
+        avatar = avatar,
+        letter = iosAvatarLetter(name, "A"),
+        size = 30.dp,
         modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = name.firstOrNull()?.uppercase() ?: "A",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2345,7 +2491,7 @@ private fun MenuCard(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsPage(
     state: IosAppState,
@@ -2388,6 +2534,9 @@ private fun SettingsPage(
     onRequestNotificationPermission: () -> Unit,
     onSaveRpStyleRules: (List<IosRpStyleRule>) -> Unit,
     onSaveAssistant: (String, String) -> Unit,
+    onSaveAssistantAvatar: (IosAvatar, Boolean?) -> Unit = { _, _ -> },
+    onSaveAssistantUiSettings: (IosAssistantUiSettings) -> Unit = {},
+    onPickAvatarFile: ((Result<PlatformPickedFile?>) -> Unit) -> Unit = {},
     onSaveSpontaneousSettings: (Boolean, Int, Int, Int, String) -> Unit,
     onSaveComfyUiProvider: (String, String, String, String, String, String, String, String) -> Unit,
     onImportComfyUiWorkflow: (String, String) -> Unit,
@@ -2536,6 +2685,23 @@ private fun SettingsPage(
     var sttReplaceModelIcon by remember(state.appearance.sttReplaceModelIcon) {
         mutableStateOf(state.appearance.sttReplaceModelIcon)
     }
+    var userNickname by remember(state.appearance.userNickname) {
+        mutableStateOf(state.appearance.userNickname)
+    }
+    var userAvatar by remember(state.appearance.userAvatar) {
+        mutableStateOf(state.appearance.userAvatar)
+    }
+    var fontSettings by remember(state.appearance.fontSettings) {
+        mutableStateOf(state.appearance.fontSettings)
+    }
+    var ttsTextFilterRules by remember(state.appearance.ttsTextFilterRules) {
+        mutableStateOf(state.appearance.ttsTextFilterRules)
+    }
+    var providerViewMode by remember(state.appearance.providerViewMode) {
+        mutableStateOf(state.appearance.providerViewMode)
+    }
+    var editingTtsFilter by remember { mutableStateOf<TtsTextFilterRule?>(null) }
+    var showAddTtsFilter by remember { mutableStateOf(false) }
     fun appearanceDraft(): IosAppearancePreferences = state.appearance.copy(
         showAssistantBubbles = showAssistantBubbles,
         fontSizeRatio = fontSizeRatio,
@@ -2563,6 +2729,11 @@ private fun SettingsPage(
         reasoningPreviewEnabled = reasoningPreviewEnabled,
         chatToolbarAtBottom = chatToolbarAtBottom,
         sttReplaceModelIcon = sttReplaceModelIcon,
+        userNickname = userNickname,
+        userAvatar = userAvatar,
+        fontSettings = fontSettings,
+        ttsTextFilterRules = ttsTextFilterRules,
+        providerViewMode = providerViewMode,
     )
     fun persistAppearance(transform: IosAppearancePreferences.() -> IosAppearancePreferences) {
         val next = appearanceDraft().transform()
@@ -2592,6 +2763,11 @@ private fun SettingsPage(
         reasoningPreviewEnabled = next.reasoningPreviewEnabled
         chatToolbarAtBottom = next.chatToolbarAtBottom
         sttReplaceModelIcon = next.sttReplaceModelIcon
+        userNickname = next.userNickname
+        userAvatar = next.userAvatar
+        fontSettings = next.fontSettings
+        ttsTextFilterRules = next.ttsTextFilterRules
+        providerViewMode = next.providerViewMode
         onSaveAppearancePreferences(next)
     }
     var rpStyleRules by remember(state.appearance.rpStyleRules) {
@@ -2987,6 +3163,94 @@ private fun SettingsPage(
                                 onClick = { onSaveAssistant(assistantName, systemPrompt) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Save assistant") }
+                            LastChatFormItem(label = { Text("Avatar") }) {
+                                IosAvatarPickerInline(
+                                    nickname = assistantName,
+                                    avatar = state.assistant.avatar,
+                                    onSelectEmoji = { onSaveAssistantAvatar(IosAvatar.Emoji(it), null) },
+                                    onSelectImage = {
+                                        onPickAvatarFile { result ->
+                                            val picked = result.getOrNull() ?: return@onPickAvatarFile
+                                            if (picked.kind == PlatformPickedFileKind.Image) {
+                                                onSaveAssistantAvatar(
+                                                    IosAvatar.Image(picked.localUrl.ifBlank { picked.storagePath }),
+                                                    null,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onSelectDummy = { onSaveAssistantAvatar(IosAvatar.Dummy, null) },
+                                )
+                            }
+                            LastChatFormItem(
+                                label = { Text("Use assistant avatar in chat") },
+                                description = { Text("Replace the model letter glyph with this assistant's avatar") },
+                                tail = {
+                                    Switch(
+                                        checked = state.assistant.useAssistantAvatar,
+                                        onCheckedChange = {
+                                            onSaveAssistantAvatar(state.assistant.avatar, it)
+                                        },
+                                    )
+                                },
+                            )
+                            LastChatSettingGroupInputItem(
+                                title = "UI overrides",
+                                subtitle = "Null means use the global DisplaySetting, matching Android AssistantUISettings",
+                                darkTheme = darkTheme,
+                            ) {
+                                val ui = state.assistant.uiSettings
+                                IosTriStateRow("User avatar", ui.showUserAvatar, showUserAvatar) {
+                                    onSaveAssistantUiSettings(ui.copy(showUserAvatar = it))
+                                }
+                                IosTriStateRow("Character avatar", ui.showAssistantAvatar, showModelIcon) {
+                                    onSaveAssistantUiSettings(ui.copy(showAssistantAvatar = it))
+                                }
+                                IosTriStateRow("Assistant bubbles", ui.showAssistantBubbles, showAssistantBubbles) {
+                                    onSaveAssistantUiSettings(ui.copy(showAssistantBubbles = it))
+                                }
+                                IosTriStateRow("Token usage", ui.showTokenUsage, showTokenUsage) {
+                                    onSaveAssistantUiSettings(ui.copy(showTokenUsage = it))
+                                }
+                                IosTriStateRow("Auto-collapse thinking", ui.autoCloseThinking, autoCloseThinking) {
+                                    onSaveAssistantUiSettings(ui.copy(autoCloseThinking = it))
+                                }
+                                IosTriStateRow("Message jumper", ui.showMessageJumper, showMessageJumper) {
+                                    onSaveAssistantUiSettings(ui.copy(showMessageJumper = it))
+                                }
+                                IosTriStateRow("Code wrap", ui.codeBlockAutoWrap, codeBlockAutoWrap) {
+                                    onSaveAssistantUiSettings(ui.copy(codeBlockAutoWrap = it))
+                                }
+                                IosTriStateRow("Context stacks", ui.showContextStacks, showContextStacks) {
+                                    onSaveAssistantUiSettings(ui.copy(showContextStacks = it))
+                                }
+                                Text("New chat header", style = MaterialTheme.typography.labelMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    (listOf<IosNewChatHeaderStyle?>(null) + IosNewChatHeaderStyle.entries).forEach { style ->
+                                        val label = style?.name ?: "Global"
+                                        if (ui.newChatHeaderStyle == style) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                onSaveAssistantUiSettings(ui.copy(newChatHeaderStyle = style))
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
+                                Text("New chat content", style = MaterialTheme.typography.labelMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    (listOf<IosNewChatContentStyle?>(null) + IosNewChatContentStyle.entries).forEach { style ->
+                                        val label = style?.name ?: "Global"
+                                        if (ui.newChatContentStyle == style) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                onSaveAssistantUiSettings(ui.copy(newChatContentStyle = style))
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
+                            }
                             LastChatFormItem(
                                 label = { Text("Spontaneous messages") },
                                 description = {
@@ -3665,36 +3929,93 @@ private fun SettingsPage(
                             horizontalPadding = 0.dp,
                             titleStartPadding = 0.dp,
                         ) {
-                            state.providers.forEach { provider ->
-                                LastChatSettingGroupItem(
-                                    title = provider.name,
-                                    darkTheme = darkTheme,
-                                    icon = { Icon(Icons.Rounded.Cloud, null, Modifier.size(20.dp)) },
-                                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-                                    onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
-                                    onClick = {
-                                        selectedProviderId = provider.id.toString()
-                                        providerName = provider.name
-                                        when (provider) {
-                                            is ProviderSetting.OpenAI -> providerBaseUrl = provider.baseUrl
-                                            is ProviderSetting.Google -> providerBaseUrl = provider.baseUrl
-                                            is ProviderSetting.Claude -> providerBaseUrl = provider.baseUrl
-                                            is ProviderSetting.ComfyUI -> {
-                                                providerBaseUrl = provider.baseUrl
-                                                comfyWorkflowJson = provider.workflowJson
-                                                comfyPromptNodeId = provider.promptNodeId
-                                                comfyPromptInputName = provider.promptInputName.ifBlank { "text" }
-                                                comfyModelNodeId = provider.modelNodeId
-                                                comfyModelInputName = provider.modelInputName.ifBlank { "ckpt_name" }
-                                                comfyShowAdvanced = provider.promptNodeId.isNotBlank() ||
-                                                    provider.modelNodeId.isNotBlank()
+                            LastChatFormItem(
+                                label = { Text("View") },
+                                tail = {
+                                    IconButton(
+                                        onClick = {
+                                            val next = if (providerViewMode == IosProviderViewMode.LIST) {
+                                                IosProviderViewMode.GRID
+                                            } else {
+                                                IosProviderViewMode.LIST
                                             }
-                                            else -> providerBaseUrl = ""
+                                            persistAppearance { copy(providerViewMode = next) }
+                                        },
+                                    ) {
+                                        Icon(
+                                            if (providerViewMode == IosProviderViewMode.LIST) {
+                                                Icons.Rounded.GridView
+                                            } else {
+                                                Icons.AutoMirrored.Rounded.ViewList
+                                            },
+                                            contentDescription = "Toggle provider view",
+                                        )
+                                    }
+                                },
+                            )
+                            val openProviderEditor: (ProviderSetting) -> Unit = { provider ->
+                                selectedProviderId = provider.id.toString()
+                                providerName = provider.name
+                                when (provider) {
+                                    is ProviderSetting.OpenAI -> providerBaseUrl = provider.baseUrl
+                                    is ProviderSetting.Google -> providerBaseUrl = provider.baseUrl
+                                    is ProviderSetting.Claude -> providerBaseUrl = provider.baseUrl
+                                    is ProviderSetting.ComfyUI -> {
+                                        providerBaseUrl = provider.baseUrl
+                                        comfyWorkflowJson = provider.workflowJson
+                                        comfyPromptNodeId = provider.promptNodeId
+                                        comfyPromptInputName = provider.promptInputName.ifBlank { "text" }
+                                        comfyModelNodeId = provider.modelNodeId
+                                        comfyModelInputName = provider.modelInputName.ifBlank { "ckpt_name" }
+                                        comfyShowAdvanced = provider.promptNodeId.isNotBlank() ||
+                                            provider.modelNodeId.isNotBlank()
+                                    }
+                                    else -> providerBaseUrl = ""
+                                }
+                                providerApiKey = ""
+                                newModelId = ""
+                            }
+                            if (providerViewMode == IosProviderViewMode.GRID) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    state.providers.forEach { provider ->
+                                        Surface(
+                                            onClick = {
+                                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                                openProviderEditor(provider)
+                                            },
+                                            shape = AppShapes.CardSmall,
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            modifier = Modifier.width(148.dp).height(96.dp),
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.fillMaxSize().padding(12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                Icon(Icons.Rounded.Cloud, null)
+                                                Text(
+                                                    provider.name,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
                                         }
-                                        providerApiKey = ""
-                                        newModelId = ""
-                                    },
-                                )
+                                    }
+                                }
+                            } else {
+                                state.providers.forEach { provider ->
+                                    LastChatSettingGroupItem(
+                                        title = provider.name,
+                                        darkTheme = darkTheme,
+                                        icon = { Icon(Icons.Rounded.Cloud, null, Modifier.size(20.dp)) },
+                                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                        onClick = { openProviderEditor(provider) },
+                                    )
+                                }
                             }
                             LastChatSettingGroupItem(
                                 title = "Add provider",
@@ -4419,6 +4740,56 @@ private fun SettingsPage(
                                     Text("Remove saved API key")
                                 }
                             }
+                            LastChatFormItem(
+                                label = { Text("Playback filters") },
+                                description = {
+                                    Text("SKIP removes paired text; ONLY_READ speaks only captures. Applied before markdown stripping, same as Android.")
+                                },
+                            ) {
+                                Button(
+                                    onClick = { showAddTtsFilter = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Add filter")
+                                }
+                            }
+                            ttsTextFilterRules.forEach { rule ->
+                                LastChatSettingGroupInputItem(
+                                    title = "${rule.mode.name}: ${rule.pattern}",
+                                    subtitle = if (rule.enabled) "Enabled" else "Disabled",
+                                    darkTheme = darkTheme,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        TextButton(onClick = { editingTtsFilter = rule }) { Text("Edit") }
+                                        IconButton(
+                                            onClick = {
+                                                persistAppearance {
+                                                    copy(ttsTextFilterRules = ttsTextFilterRules.filterNot { it.id == rule.id })
+                                                }
+                                            },
+                                        ) {
+                                            Icon(Icons.Rounded.Delete, contentDescription = "Delete")
+                                        }
+                                        Switch(
+                                            checked = rule.enabled,
+                                            onCheckedChange = { enabled ->
+                                                persistAppearance {
+                                                    copy(
+                                                        ttsTextFilterRules = ttsTextFilterRules.map {
+                                                            if (it.id == rule.id) it.copy(enabled = enabled) else it
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -4457,10 +4828,114 @@ private fun SettingsPage(
                                             checked = usePhoneSystemFont,
                                             onCheckedChange = { enabled ->
                                                 usePhoneSystemFont = enabled
+                                                persistAppearance {
+                                                    copy(
+                                                        usePhoneSystemFont = enabled,
+                                                        fontSettings = fontSettings.copy(
+                                                            usePhoneSystemFont = enabled,
+                                                        ).normalize(),
+                                                    )
+                                                }
                                                 onSaveFontSettings(enabled)
                                             },
                                         )
                                     },
+                                )
+                            }
+                            LastChatSettingGroupInputItem(
+                                title = "Content font",
+                                subtitle = "Weight, size, line height, and tracking. Header uses the same values as Android.",
+                                darkTheme = darkTheme,
+                            ) {
+                                val header = fontSettings.headerFont
+                                Text("Weight ${header.weight.toInt()}")
+                                Slider(
+                                    value = header.weight,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(weight = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = 100f..900f,
+                                )
+                                Text("Size ×${iosFormatDecimal(header.fontSize)}")
+                                Slider(
+                                    value = header.fontSize,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(fontSize = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = 0.5f..2f,
+                                )
+                                Text("Line height ×${iosFormatDecimal(header.lineHeight)}")
+                                Slider(
+                                    value = header.lineHeight,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(lineHeight = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = 0.75f..2f,
+                                )
+                                Text("Letter spacing ${iosFormatDecimal(header.letterSpacing, 3)}")
+                                Slider(
+                                    value = header.letterSpacing,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(letterSpacing = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = -0.05f..0.1f,
+                                )
+                                Text("Width ${header.width.toInt()}")
+                                Slider(
+                                    value = header.width,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(width = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = 75f..125f,
+                                )
+                                Text("Roundness ${header.roundness.toInt()}")
+                                Slider(
+                                    value = header.roundness,
+                                    onValueChange = { value ->
+                                        persistAppearance {
+                                            copy(
+                                                fontSettings = fontSettings.copy(
+                                                    headerFont = header.copy(roundness = value),
+                                                ).normalize(),
+                                            )
+                                        }
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text(
+                                    "Width and roundness persist for Android backup parity. Compose Multiplatform applies weight, size, line height, and tracking.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             LastChatSettingGroupInputItem(
@@ -4488,12 +4963,38 @@ private fun SettingsPage(
                             }
                             LastChatSettingGroupInputItem(
                                 title = "Code blocks",
-                                subtitle = "Native monospace font",
+                                subtitle = if (fontSettings.codeFont.fontSource == IosFontSource.SYSTEM_CODE) {
+                                    "Native monospace font"
+                                } else {
+                                    "System font"
+                                },
                                 darkTheme = darkTheme,
                             ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        IosFontSource.SYSTEM_CODE to "Mono",
+                                        IosFontSource.SYSTEM to "System",
+                                    ).forEach { (source, label) ->
+                                        if (fontSettings.codeFont.fontSource == source) {
+                                            Button(onClick = {}) { Text(label) }
+                                        } else {
+                                            TextButton(onClick = {
+                                                persistAppearance {
+                                                    copy(
+                                                        fontSettings = fontSettings.copy(
+                                                            codeFont = fontSettings.codeFont.copy(
+                                                                fontSource = source,
+                                                            ),
+                                                        ),
+                                                    )
+                                                }
+                                            }) { Text(label) }
+                                        }
+                                    }
+                                }
                                 Text(
                                     "fun main() = println(\"LastChat\")",
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = iosCodeFontFamily(fontSettings),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
@@ -4636,6 +5137,15 @@ private fun SettingsPage(
                                         }
                                     }
                                 }
+                                LastChatFormItem(
+                                    label = { Text("AMOLED dark surfaces") },
+                                    description = {
+                                        Text("Dark mode uses true black for background and surface, matching Android's always-on OLED canvas. Compose Multiplatform applies this without Material You.")
+                                    },
+                                    tail = {
+                                        Switch(checked = true, onCheckedChange = { }, enabled = false)
+                                    },
+                                )
                                 LastChatFormItem(
                                     label = { Text("Developer mode") },
                                     description = { Text("Unlocks the Developer destination for overlay and analytics diagnostics") },
@@ -4795,6 +5305,38 @@ private fun SettingsPage(
                                 subtitle = "Chat presentation and content scale",
                                 darkTheme = darkTheme,
                             ) {
+                                LastChatFormItem(label = { Text("Nickname") }) {
+                                    OutlinedTextField(
+                                        value = userNickname,
+                                        onValueChange = { persistAppearance { copy(userNickname = it) } },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                        placeholder = { Text("You") },
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("User avatar") }) {
+                                    IosAvatarPickerInline(
+                                        nickname = userNickname,
+                                        avatar = userAvatar,
+                                        onSelectEmoji = { persistAppearance { copy(userAvatar = IosAvatar.Emoji(it)) } },
+                                        onSelectImage = {
+                                            onPickAvatarFile { result ->
+                                                val picked = result.getOrNull() ?: return@onPickAvatarFile
+                                                if (picked.kind == PlatformPickedFileKind.Image) {
+                                                    persistAppearance {
+                                                        copy(
+                                                            userAvatar = IosAvatar.Image(
+                                                                picked.localUrl.ifBlank { picked.storagePath },
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onSelectDummy = { persistAppearance { copy(userAvatar = IosAvatar.Dummy) } },
+                                    )
+                                }
                                 LastChatFormItem(
                                     label = { Text("New chat header") },
                                     description = { Text("GREETING, BIG_ICON, or NONE — same key as Android") },
@@ -5377,97 +5919,340 @@ private fun SettingsPage(
                 },
             )
         }
-        if (showModelPicker) {
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            val selectedChatModel = state.selectedChatModel
-            val visibleProviders = state.providers.mapNotNull { provider ->
-                val matchingModels = provider.models.filter { model ->
-                    model.type == ModelType.CHAT && (
-                        modelSearchQuery.isBlank() ||
-                            model.modelId.contains(modelSearchQuery, ignoreCase = true) ||
-                            model.displayName.contains(modelSearchQuery, ignoreCase = true) ||
-                            provider.name.contains(modelSearchQuery, ignoreCase = true)
-                    )
-                }
-                if (matchingModels.isEmpty()) null else provider to matchingModels
-            }
-            ModalBottomSheet(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                onDismissRequest = { showModelPicker = false },
-                sheetState = sheetState,
-                sheetGesturesEnabled = false,
-                dragHandle = {
-                    IconButton(onClick = { showModelPicker = false }) {
-                        Icon(Icons.Rounded.KeyboardArrowDown, null)
-                    }
+        if (showAddTtsFilter || editingTtsFilter != null) {
+            IosTtsFilterDialog(
+                rule = editingTtsFilter,
+                onDismiss = {
+                    showAddTtsFilter = false
+                    editingTtsFilter = null
                 },
+                onSave = { saved ->
+                    persistAppearance {
+                        copy(
+                            ttsTextFilterRules = if (editingTtsFilter == null) {
+                                ttsTextFilterRules + saved
+                            } else {
+                                ttsTextFilterRules.map { if (it.id == saved.id) saved else it }
+                            },
+                        )
+                    }
+                    showAddTtsFilter = false
+                    editingTtsFilter = null
+                },
+            )
+        }
+        if (showModelPicker) {
+            IosChatModelPickerSheet(
+                state = state,
+                searchQuery = modelSearchQuery,
+                onSearchQueryChange = { modelSearchQuery = it },
+                onSelect = { providerId, modelId ->
+                    onSelectDefaultModel(providerId, modelId)
+                    showModelPicker = false
+                },
+                onDismiss = { showModelPicker = false },
+                platformHaptics = platformHaptics,
+            )
+        }
+    }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IosChatModelPickerSheet(
+    state: IosAppState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onSelect: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+    platformHaptics: PlatformHaptics,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val selectedChatModel = state.selectedChatModel
+    val visibleProviders = state.providers.mapNotNull { provider ->
+        val matchingModels = provider.models.filter { model ->
+            model.type == ModelType.CHAT && (
+                searchQuery.isBlank() ||
+                    model.modelId.contains(searchQuery, ignoreCase = true) ||
+                    model.displayName.contains(searchQuery, ignoreCase = true) ||
+                    provider.name.contains(searchQuery, ignoreCase = true)
+                )
+        }
+        if (matchingModels.isEmpty()) null else provider to matchingModels
+    }
+    ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        },
+    ) {
+        Column(
+            modifier = Modifier.fillMaxHeight(0.8f).imePadding(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                shape = AppShapes.SearchField,
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                placeholder = { Text("Search models") },
+                singleLine = true,
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Column(
-                    modifier = Modifier.fillMaxHeight(0.8f).imePadding(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    OutlinedTextField(
-                        value = modelSearchQuery,
-                        onValueChange = { modelSearchQuery = it },
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        shape = AppShapes.SearchField,
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        placeholder = { Text("Search models") },
-                        singleLine = true,
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        visibleProviders.forEach { (provider, models) ->
-                            item("model-provider-${provider.id}") {
-                                Text(
-                                    provider.name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
-                                )
-                            }
-                            items(models, key = { "model-${provider.id}-${it.id}" }) { model ->
-                                val selected = selectedChatModel?.first?.id == provider.id &&
-                                    selectedChatModel?.second?.id == model.id
-                                LastChatGroupedModelRow(
-                                    title = model.displayName.ifBlank { model.modelId },
-                                    selected = selected,
-                                    position = LastChatModelGroupPosition.Single,
-                                    onClick = {
-                                        platformHaptics.perform(PlatformHapticPattern.Pop)
-                                        onSelectDefaultModel(
-                                            provider.id.toString(),
-                                            model.modelId,
+                visibleProviders.forEach { (provider, models) ->
+                    item("model-provider-${provider.id}") {
+                        Text(
+                            provider.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
+                        )
+                    }
+                    items(models, key = { "model-${provider.id}-${it.id}" }) { model ->
+                        val selected = selectedChatModel?.first?.id == provider.id &&
+                            selectedChatModel?.second?.id == model.id
+                        LastChatGroupedModelRow(
+                            title = model.displayName.ifBlank { model.modelId },
+                            selected = selected,
+                            position = LastChatModelGroupPosition.Single,
+                            onClick = {
+                                platformHaptics.perform(PlatformHapticPattern.Pop)
+                                onSelect(provider.id.toString(), model.modelId)
+                            },
+                            icon = {
+                                Surface(
+                                    modifier = Modifier.size(32.dp),
+                                    shape = CircleShape,
+                                    color = Color.Transparent,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            provider.name.firstOrNull()?.uppercase() ?: "P",
+                                            style = MaterialTheme.typography.titleSmall,
                                         )
-                                        showModelPicker = false
-                                    },
-                                    icon = {
-                                        Surface(
-                                            modifier = Modifier.size(32.dp),
-                                            shape = CircleShape,
-                                            color = Color.Transparent,
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(
-                                                    provider.name.firstOrNull()?.uppercase() ?: "P",
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                )
-                                            }
-                                        }
-                                    },
-                                )
-                            }
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IosAvatarPickerInline(
+    nickname: String,
+    avatar: IosAvatar,
+    onSelectEmoji: (String) -> Unit,
+    onSelectImage: () -> Unit,
+    onSelectDummy: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        IosAvatarView(
+            avatar = avatar,
+            letter = iosAvatarLetter(nickname, "Y"),
+            size = 56.dp,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            IOS_AVATAR_EMOJI_PRESETS.forEach { emoji ->
+                Surface(
+                    onClick = { onSelectEmoji(emoji) },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Text(emoji, modifier = Modifier.padding(8.dp))
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onSelectImage) { Text("Photo") }
+            TextButton(onClick = onSelectDummy) { Text("Letter") }
+        }
+    }
+}
+
+@Composable
+private fun IosAvatarPickerDialog(
+    title: String,
+    nickname: String,
+    avatar: IosAvatar,
+    onNicknameChange: (String) -> Unit,
+    onSelectEmoji: (String) -> Unit,
+    onSelectImage: () -> Unit,
+    onSelectDummy: () -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = onNicknameChange,
+                    label = { Text("Nickname") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IosAvatarPickerInline(
+                    nickname = nickname,
+                    avatar = avatar,
+                    onSelectEmoji = onSelectEmoji,
+                    onSelectImage = onSelectImage,
+                    onSelectDummy = onSelectDummy,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun IosTriStateRow(
+    title: String,
+    value: Boolean?,
+    globalValue: Boolean,
+    onValueChange: (Boolean?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "Global is ${if (globalValue) "on" else "off"}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf<Boolean?>(null, true, false).forEach { option ->
+                val label = when (option) {
+                    null -> "Global"
+                    true -> "On"
+                    false -> "Off"
+                }
+                if (value == option) {
+                    Button(onClick = {}) { Text(label) }
+                } else {
+                    TextButton(onClick = { onValueChange(option) }) { Text(label) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosTtsFilterDialog(
+    rule: TtsTextFilterRule?,
+    onDismiss: () -> Unit,
+    onSave: (TtsTextFilterRule) -> Unit,
+) {
+    var pattern by remember(rule?.id) { mutableStateOf(rule?.pattern ?: "*") }
+    var mode by remember(rule?.id) { mutableStateOf(rule?.mode ?: TtsFilterMode.SKIP) }
+    var enabled by remember(rule?.id) { mutableStateOf(rule?.enabled ?: true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (rule == null) "Add TTS filter" else "Edit TTS filter") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = pattern,
+                    onValueChange = { pattern = it },
+                    label = { Text("Pattern") },
+                    singleLine = true,
+                    shape = AppShapes.InputField,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TtsFilterMode.entries.forEach { entry ->
+                        if (mode == entry) {
+                            Button(onClick = {}) { Text(entry.name) }
+                        } else {
+                            TextButton(onClick = { mode = entry }) { Text(entry.name) }
                         }
                     }
                 }
+                LastChatFormItem(
+                    label = { Text("Enabled") },
+                    tail = { Switch(checked = enabled, onCheckedChange = { enabled = it }) },
+                )
             }
-        }
-    }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (pattern.isNotBlank()) {
+                        onSave(
+                            (rule ?: TtsTextFilterRule()).copy(
+                                pattern = pattern,
+                                mode = mode,
+                                enabled = enabled,
+                            ),
+                        )
+                    }
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun Typography.withIosFontConfig(config: IosFontConfig, fontSizeRatio: Float): Typography {
+    val sizeMul = (config.fontSize * fontSizeRatio).coerceIn(0.5f, 2.5f)
+    val lineMul = config.lineHeight.coerceIn(0.75f, 2.0f)
+    val extraLetter = config.letterSpacing.coerceIn(-0.05f, 0.1f)
+    val weight = FontWeight(config.weight.toInt().coerceIn(1, 1000))
+    fun TextStyle.scaled(): TextStyle = copy(
+        fontWeight = weight,
+        fontSize = fontSize * sizeMul,
+        lineHeight = lineHeight * lineMul,
+        letterSpacing = androidx.compose.ui.unit.TextUnit(
+            extraLetter,
+            androidx.compose.ui.unit.TextUnitType.Em,
+        ),
+    )
+    return copy(
+        displayLarge = displayLarge.scaled(),
+        displayMedium = displayMedium.scaled(),
+        displaySmall = displaySmall.scaled(),
+        headlineLarge = headlineLarge.scaled(),
+        headlineMedium = headlineMedium.scaled(),
+        headlineSmall = headlineSmall.scaled(),
+        titleLarge = titleLarge.scaled(),
+        titleMedium = titleMedium.scaled(),
+        titleSmall = titleSmall.scaled(),
+        bodyLarge = bodyLarge.scaled(),
+        bodyMedium = bodyMedium.scaled(),
+        bodySmall = bodySmall.scaled(),
+        labelLarge = labelLarge.scaled(),
+        labelMedium = labelMedium.scaled(),
+        labelSmall = labelSmall.scaled(),
+    )
+}
+
+private fun iosFormatDecimal(value: Float, digits: Int = 2): String {
+    var factor = 1
+    repeat(digits) { factor *= 10 }
+    val scaled = kotlin.math.round(value * factor) / factor
+    return scaled.toString()
 }
 
 @Composable

@@ -199,6 +199,62 @@ enum class IosNewChatHeaderStyle { NONE, GREETING, BIG_ICON }
 enum class IosNewChatContentStyle { NONE, TEMPLATES, ACTIONS }
 
 @Serializable
+enum class IosProviderViewMode { LIST, GRID }
+
+@Serializable
+enum class IosFontSource { SYSTEM, SYSTEM_CODE, CUSTOM }
+
+@Serializable
+data class IosFontConfig(
+    val fontSource: IosFontSource = IosFontSource.SYSTEM,
+    val customFontPath: String? = null,
+    val customFontName: String? = null,
+    val weight: Float = 400f,
+    val width: Float = 100f,
+    val roundness: Float = 100f,
+    val grade: Float = 0f,
+    val slant: Float = 0f,
+    val fontSize: Float = 1.0f,
+    val lineHeight: Float = 1.0f,
+    val letterSpacing: Float = 0f,
+) {
+    companion object {
+        val DEFAULT_EXPRESSIVE = IosFontConfig(fontSource = IosFontSource.SYSTEM, roundness = 100f)
+        val DEFAULT_CODE = IosFontConfig(
+            fontSource = IosFontSource.SYSTEM_CODE,
+            roundness = 0f,
+            weight = 400f,
+        )
+    }
+}
+
+@Serializable
+data class IosFontSettings(
+    val useSameFontForHeadersAndContent: Boolean = true,
+    val usePhoneSystemFont: Boolean = false,
+    val headerFont: IosFontConfig = IosFontConfig.DEFAULT_EXPRESSIVE,
+    val contentFont: IosFontConfig = IosFontConfig.DEFAULT_EXPRESSIVE,
+    val codeFont: IosFontConfig = IosFontConfig.DEFAULT_CODE,
+)
+
+internal fun IosFontSettings.normalize(): IosFontSettings = copy(
+    useSameFontForHeadersAndContent = true,
+    contentFont = headerFont,
+)
+
+@Serializable
+sealed class IosAvatar {
+    @Serializable
+    data object Dummy : IosAvatar()
+
+    @Serializable
+    data class Emoji(val content: String) : IosAvatar()
+
+    @Serializable
+    data class Image(val url: String) : IosAvatar()
+}
+
+@Serializable
 data class IosAppearancePreferences(
     val themeId: String = "seafoam_mint",
     val colorMode: IosColorMode = IosColorMode.SYSTEM,
@@ -233,6 +289,29 @@ data class IosAppearancePreferences(
     val sttReplaceModelIcon: Boolean = false,
     val ignoredUpdateVersion: String = "",
     val ignoredUpdateTimeEpochMs: Long = 0L,
+    val userNickname: String = "",
+    val userAvatar: IosAvatar = IosAvatar.Dummy,
+    val fontSettings: IosFontSettings = IosFontSettings(),
+    val ttsTextFilterRules: List<me.rerere.rikkahub.utils.TtsTextFilterRule> = emptyList(),
+    val providerViewMode: IosProviderViewMode = IosProviderViewMode.LIST,
+)
+
+@Serializable
+data class IosAssistantUiSettings(
+    val showUserAvatar: Boolean? = null,
+    val showAssistantAvatar: Boolean? = null,
+    val showAssistantBubbles: Boolean? = null,
+    val showTokenUsage: Boolean? = null,
+    val autoCloseThinking: Boolean? = null,
+    val showMessageJumper: Boolean? = null,
+    val messageJumperOnLeft: Boolean? = null,
+    val fontSizeRatio: Float? = null,
+    val codeBlockAutoWrap: Boolean? = null,
+    val codeBlockAutoCollapse: Boolean? = null,
+    val showContextStacks: Boolean? = null,
+    val newChatHeaderStyle: IosNewChatHeaderStyle? = null,
+    val newChatContentStyle: IosNewChatContentStyle? = null,
+    val newChatShowAvatar: Boolean? = null,
 )
 
 @Serializable
@@ -268,6 +347,9 @@ data class IosAssistantPreferences(
     val lastNotificationContent: String = "",
     /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
     val embeddingProviderType: IosProviderType? = null,
+    val avatar: IosAvatar = IosAvatar.Dummy,
+    val useAssistantAvatar: Boolean = false,
+    val uiSettings: IosAssistantUiSettings = IosAssistantUiSettings(),
 )
 
 @Serializable
@@ -1520,8 +1602,12 @@ class IosAppController(
     }
 
     fun speak(text: String) {
-        if (text.isBlank()) return
         val snapshot = mutableState.value
+        val processed = me.rerere.rikkahub.utils.prepareTtsPlaybackText(
+            text,
+            snapshot.appearance.ttsTextFilterRules,
+        )
+        if (processed.isBlank()) return
         if (snapshot.tts.type == IosTtsProviderType.SYSTEM) {
             if (!snapshot.tts.enabled || !systemTts.available) {
                 mutableState.update { it.copy(error = "Enable system TTS in Settings first") }
@@ -1529,7 +1615,7 @@ class IosAppController(
             }
             ttsController.stop()
             mutableState.update { it.copy(ttsSpeaking = true, error = null) }
-            systemTts.speak(text, snapshot.tts.speed, snapshot.tts.pitch) {
+            systemTts.speak(processed, snapshot.tts.speed, snapshot.tts.pitch) {
                 mutableState.update { it.copy(ttsSpeaking = false) }
             }
             return
@@ -1538,7 +1624,7 @@ class IosAppController(
             mutableState.update { it.copy(error = "Enable and configure TTS in Settings first") }
             return
         }
-        ttsController.speak(text)
+        ttsController.speak(processed)
     }
 
     fun startSpeechRecognition() {
@@ -1744,11 +1830,67 @@ class IosAppController(
     }
 
     fun saveFontSettings(usePhoneSystemFont: Boolean) {
-        mutableState.update {
-            it.copy(
-                appearance = it.appearance.copy(
-                    usePhoneSystemFont = usePhoneSystemFont,
-                )
+        saveFontSettings(
+            mutableState.value.appearance.fontSettings.copy(usePhoneSystemFont = usePhoneSystemFont),
+        )
+    }
+
+    fun saveFontSettings(settings: IosFontSettings) {
+        val normalized = settings.normalize()
+        saveAppearancePreferences { current ->
+            current.copy(
+                usePhoneSystemFont = normalized.usePhoneSystemFont,
+                fontSettings = normalized,
+            )
+        }
+    }
+
+    fun saveUserProfile(nickname: String, avatar: IosAvatar) {
+        saveAppearancePreferences { current ->
+            current.copy(userNickname = nickname.trim(), userAvatar = avatar)
+        }
+    }
+
+    fun saveProviderViewMode(mode: IosProviderViewMode) {
+        saveAppearancePreferences { current -> current.copy(providerViewMode = mode) }
+    }
+
+    fun saveTtsTextFilterRules(rules: List<me.rerere.rikkahub.utils.TtsTextFilterRule>) {
+        saveAppearancePreferences { current ->
+            current.copy(
+                ttsTextFilterRules = rules.mapNotNull { rule ->
+                    rule.copy(pattern = rule.pattern).takeIf { it.pattern.isNotEmpty() }
+                },
+            )
+        }
+    }
+
+    fun saveAssistantAvatar(avatar: IosAvatar, useAssistantAvatar: Boolean? = null) {
+        mutableState.update { current ->
+            val selectedId = current.assistant.id
+            current.copy(
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == selectedId) {
+                        assistant.copy(
+                            avatar = avatar,
+                            useAssistantAvatar = useAssistantAvatar ?: assistant.useAssistantAvatar,
+                        )
+                    } else {
+                        assistant
+                    }
+                },
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveAssistantUiSettings(uiSettings: IosAssistantUiSettings) {
+        mutableState.update { current ->
+            val selectedId = current.assistant.id
+            current.copy(
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == selectedId) assistant.copy(uiSettings = uiSettings) else assistant
+                },
             )
         }
         persistAsync()
@@ -3809,13 +3951,15 @@ class IosAppController(
                             ?.content?.trim().orEmpty()
                         require(text.isNotBlank()) { "text is required" }
                         val current = mutableState.value
-                        if (!current.tts.enabled || !current.hasTtsApiKey) {
+                        if (!current.tts.enabled ||
+                            (current.tts.type != IosTtsProviderType.SYSTEM && !current.hasTtsApiKey)
+                        ) {
                             buildJsonObject {
                                 put("success", false)
                                 put("error", "No TTS provider selected")
                             }
                         } else {
-                            ttsController.speak(text)
+                            speak(text)
                             buildJsonObject {
                                 put("success", true)
                                 put("provider", current.tts.type.displayName())

@@ -65,3 +65,54 @@ internal const val IOS_NEW_CHAT_WRITE_PROMPT = "Help me write "
 internal const val IOS_NEW_CHAT_CODE_PROMPT = "Help me code "
 internal const val IOS_NEW_CHAT_BRAINSTORM_PROMPT = "Let's brainstorm about "
 internal const val IOS_NEW_CHAT_LEARN_PROMPT = "Explain "
+
+internal val IOS_AVATAR_EMOJI_PRESETS = listOf(
+    "🙂", "😀", "😎", "🤓", "🥳", "🤖", "🐱", "🐶", "🦊", "🐼",
+    "🌸", "🌟", "🔥", "💡", "🎵", "📚", "☕", "🌈", "🪄", "🧭",
+)
+
+internal fun iosAvatarLetter(name: String, fallback: String = "Y"): String =
+    name.trim().firstOrNull()?.uppercase() ?: fallback
+
+internal fun IosAppearancePreferences.withAssistantUi(
+    ui: IosAssistantUiSettings,
+): IosAppearancePreferences {
+    val effectiveShowModelIcon = ui.showAssistantAvatar ?: showModelIcon
+    return copy(
+        showUserAvatar = ui.showUserAvatar ?: showUserAvatar,
+        showModelIcon = effectiveShowModelIcon,
+        showModelName = effectiveShowModelIcon && showModelName,
+        showAssistantBubbles = ui.showAssistantBubbles ?: showAssistantBubbles,
+        showTokenUsage = ui.showTokenUsage ?: showTokenUsage,
+        autoCloseThinking = ui.autoCloseThinking ?: autoCloseThinking,
+        showMessageJumper = ui.showMessageJumper ?: showMessageJumper,
+        messageJumperOnLeft = ui.messageJumperOnLeft ?: messageJumperOnLeft,
+        fontSizeRatio = ui.fontSizeRatio ?: fontSizeRatio,
+        codeBlockAutoWrap = ui.codeBlockAutoWrap ?: codeBlockAutoWrap,
+        codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: codeBlockAutoCollapse,
+        showContextStacks = ui.showContextStacks ?: showContextStacks,
+        newChatHeaderStyle = ui.newChatHeaderStyle ?: newChatHeaderStyle,
+        newChatContentStyle = ui.newChatContentStyle ?: newChatContentStyle,
+        newChatShowAvatar = ui.newChatShowAvatar ?: newChatShowAvatar,
+    )
+}
+
+internal fun iosFontFamilyChoice(
+    lastChatFamily: androidx.compose.ui.text.font.FontFamily,
+    settings: IosFontSettings,
+    usePhoneSystemFont: Boolean,
+): androidx.compose.ui.text.font.FontFamily {
+    val font = settings.normalize().headerFont
+    return when {
+        usePhoneSystemFont || settings.usePhoneSystemFont -> androidx.compose.ui.text.font.FontFamily.Default
+        font.fontSource == IosFontSource.SYSTEM_CODE -> androidx.compose.ui.text.font.FontFamily.Monospace
+        else -> lastChatFamily
+    }
+}
+
+internal fun iosCodeFontFamily(settings: IosFontSettings): androidx.compose.ui.text.font.FontFamily {
+    return when (settings.normalize().codeFont.fontSource) {
+        IosFontSource.SYSTEM_CODE, IosFontSource.CUSTOM -> androidx.compose.ui.text.font.FontFamily.Monospace
+        IosFontSource.SYSTEM -> androidx.compose.ui.text.font.FontFamily.Default
+    }
+}

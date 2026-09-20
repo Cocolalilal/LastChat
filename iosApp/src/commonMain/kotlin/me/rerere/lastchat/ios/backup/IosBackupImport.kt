@@ -14,9 +14,18 @@ import kotlinx.serialization.json.intOrNull
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.lastchat.ios.IosAppearancePreferences
+import me.rerere.lastchat.ios.IosAvatar
+import me.rerere.lastchat.ios.IosAssistantUiSettings
+import me.rerere.lastchat.ios.IosFontConfig
+import me.rerere.lastchat.ios.IosFontSettings
+import me.rerere.lastchat.ios.IosFontSource
+import me.rerere.lastchat.ios.IosProviderViewMode
+import me.rerere.lastchat.ios.normalize
 import me.rerere.lastchat.ios.IosNewChatContentStyle
 import me.rerere.lastchat.ios.IosNewChatHeaderStyle
 import me.rerere.lastchat.ios.IosAssistantPreferences
+import me.rerere.rikkahub.utils.TtsFilterMode
+import me.rerere.rikkahub.utils.TtsTextFilterRule
 import me.rerere.lastchat.ios.IosLocalToolOption
 import me.rerere.lastchat.ios.IosMemoryMode
 import me.rerere.lastchat.ios.IosProviderType
@@ -307,6 +316,9 @@ internal object IosBackupImporter {
             notificationStartHour = element.int("notificationStartHour") ?: 7,
             notificationEndHour = element.int("notificationEndHour") ?: 22,
             notificationFrequencyHours = element.int("notificationFrequencyHours") ?: 4,
+            avatar = mapAvatar(element["avatar"]),
+            useAssistantAvatar = element.boolean("useAssistantAvatar") ?: false,
+            uiSettings = mapAssistantUi(element["uiSettings"] as? JsonObject),
         )
     }
 
@@ -331,9 +343,11 @@ internal object IosBackupImporter {
         }
         warnings += "Appearance: dynamic color is not available on iOS; the Android theme id and font size are applied where supported"
         val defaults = IosAppearancePreferences()
+        val fonts = mapFontSettings(display?.get("fontSettings") as? JsonObject)
         return IosAppearancePreferences(
             themeId = themeId ?: defaults.themeId,
             fontSizeRatio = fontSizeRatio ?: defaults.fontSizeRatio,
+            usePhoneSystemFont = fonts.usePhoneSystemFont,
             showAssistantBubbles = display?.boolean("showAssistantBubbles") ?: defaults.showAssistantBubbles,
             showModelIcon = display?.boolean("showModelIcon") ?: defaults.showModelIcon,
             showTokenUsage = display?.boolean("showTokenUsage") ?: defaults.showTokenUsage,
@@ -361,6 +375,12 @@ internal object IosBackupImporter {
             reasoningPreviewEnabled = display?.boolean("reasoningPreviewEnabled") ?: defaults.reasoningPreviewEnabled,
             chatToolbarAtBottom = display?.boolean("chatToolbarAtBottom") ?: defaults.chatToolbarAtBottom,
             sttReplaceModelIcon = display?.boolean("sttReplaceModelIcon") ?: defaults.sttReplaceModelIcon,
+            userNickname = display?.string("userNickname") ?: defaults.userNickname,
+            userAvatar = mapAvatar(display?.get("userAvatar")),
+            fontSettings = fonts,
+            ttsTextFilterRules = mapTtsFilters(display?.get("ttsTextFilterRules") as? JsonArray),
+            providerViewMode = enumValueOrNull<IosProviderViewMode>(display?.string("providerViewMode"))
+                ?: defaults.providerViewMode,
         )
     }
 
@@ -755,6 +775,88 @@ internal object IosBackupImporter {
     private fun parseUuid(value: String?): Uuid? {
         val text = value?.takeIf(String::isNotBlank) ?: return null
         return runCatching { Uuid.parse(text) }.getOrNull()
+    }
+
+    private fun mapAvatar(element: kotlinx.serialization.json.JsonElement?): IosAvatar {
+        val obj = element as? JsonObject ?: return IosAvatar.Dummy
+        val type = obj.string("type").orEmpty()
+        val content = obj.string("content")
+        val url = obj.string("url")
+        return when {
+            type.contains("Emoji", ignoreCase = true) || content != null ->
+                IosAvatar.Emoji(content?.ifBlank { "🙂" } ?: "🙂")
+            type.contains("Image", ignoreCase = true) || !url.isNullOrBlank() ->
+                IosAvatar.Image(url.orEmpty())
+            else -> IosAvatar.Dummy
+        }
+    }
+
+    private fun mapFontSettings(obj: JsonObject?): IosFontSettings {
+        if (obj == null) return IosFontSettings()
+        val header = mapFontConfig(obj["headerFont"] as? JsonObject, IosFontConfig.DEFAULT_EXPRESSIVE)
+        return IosFontSettings(
+            useSameFontForHeadersAndContent = obj.boolean("useSameFontForHeadersAndContent") ?: true,
+            usePhoneSystemFont = obj.boolean("usePhoneSystemFont") ?: false,
+            headerFont = header,
+            contentFont = mapFontConfig(obj["contentFont"] as? JsonObject, header),
+            codeFont = mapFontConfig(obj["codeFont"] as? JsonObject, IosFontConfig.DEFAULT_CODE),
+        ).normalize()
+    }
+
+    private fun mapFontConfig(obj: JsonObject?, fallback: IosFontConfig): IosFontConfig {
+        if (obj == null) return fallback
+        val source = when (obj.string("fontSource")?.uppercase()) {
+            "SYSTEMCODE", "SYSTEM_CODE" -> IosFontSource.SYSTEM_CODE
+            "CUSTOM" -> IosFontSource.CUSTOM
+            else -> IosFontSource.SYSTEM
+        }
+        return IosFontConfig(
+            fontSource = source,
+            customFontPath = obj.string("customFontPath"),
+            customFontName = obj.string("customFontName"),
+            weight = obj.float("weight") ?: fallback.weight,
+            width = obj.float("width") ?: fallback.width,
+            roundness = obj.float("roundness") ?: fallback.roundness,
+            grade = obj.float("grade") ?: fallback.grade,
+            slant = obj.float("slant") ?: fallback.slant,
+            fontSize = obj.float("fontSize") ?: fallback.fontSize,
+            lineHeight = obj.float("lineHeight") ?: fallback.lineHeight,
+            letterSpacing = obj.float("letterSpacing") ?: fallback.letterSpacing,
+        )
+    }
+
+    private fun mapTtsFilters(array: JsonArray?): List<TtsTextFilterRule> {
+        if (array == null) return emptyList()
+        return array.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            val pattern = obj.string("pattern")?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            TtsTextFilterRule(
+                id = obj.string("id") ?: kotlin.uuid.Uuid.random().toString(),
+                pattern = pattern,
+                mode = enumValueOrNull<TtsFilterMode>(obj.string("mode")) ?: TtsFilterMode.SKIP,
+                enabled = obj.boolean("enabled") ?: true,
+            )
+        }
+    }
+
+    private fun mapAssistantUi(obj: JsonObject?): IosAssistantUiSettings {
+        if (obj == null) return IosAssistantUiSettings()
+        return IosAssistantUiSettings(
+            showUserAvatar = obj.boolean("showUserAvatar"),
+            showAssistantAvatar = obj.boolean("showAssistantAvatar"),
+            showAssistantBubbles = obj.boolean("showAssistantBubbles"),
+            showTokenUsage = obj.boolean("showTokenUsage"),
+            autoCloseThinking = obj.boolean("autoCloseThinking"),
+            showMessageJumper = obj.boolean("showMessageJumper"),
+            messageJumperOnLeft = obj.boolean("messageJumperOnLeft"),
+            fontSizeRatio = obj.float("fontSizeRatio"),
+            codeBlockAutoWrap = obj.boolean("codeBlockAutoWrap"),
+            codeBlockAutoCollapse = obj.boolean("codeBlockAutoCollapse"),
+            showContextStacks = obj.boolean("showContextStacks"),
+            newChatHeaderStyle = enumValueOrNull<IosNewChatHeaderStyle>(obj.string("newChatHeaderStyle")),
+            newChatContentStyle = enumValueOrNull<IosNewChatContentStyle>(obj.string("newChatContentStyle")),
+            newChatShowAvatar = obj.boolean("newChatShowAvatar"),
+        )
     }
 
     private inline fun <reified T : Enum<T>> enumValueOrNull(raw: String?): T? {
