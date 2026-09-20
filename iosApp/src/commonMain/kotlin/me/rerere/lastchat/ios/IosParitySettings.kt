@@ -469,26 +469,63 @@ internal fun IosWebDavSettings(
 }
 
 @Composable
-internal fun IosWorkspaceSettings(darkTheme: Boolean) {
+internal fun IosWorkspaceSettings(state: IosAppState, darkTheme: Boolean) {
     LastChatSettingsGroup(title = "Workspaces", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
         LastChatSettingGroupInputItem(
-            title = "Linux sandbox",
-            subtitle = WORKSPACE_UNAVAILABLE_REASON,
+            title = if (state.onDeviceWorkspaceAvailable) "Linux sandbox" else "On-device sandbox",
+            subtitle = if (state.onDeviceWorkspaceAvailable) {
+                "Workspace tools are active for this assistant."
+            } else {
+                state.onDeviceWorkspaceUnavailableReason
+            },
             darkTheme = darkTheme,
         ) {
             Text(
-                "Attachments, generated images, and document text extraction already use the iOS app container. Shell/PRoot workspace tools remain Android-only.",
+                if (state.onDeviceWorkspaceAvailable) {
+                    "Read/write/shell tools share the same generation loop as Android."
+                } else {
+                    "Chat orchestration still uses the shared tool loop. Workspace tools report this unavailable reason instead of a second iOS engine."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
+        LastChatSettingGroupInputItem(
+            title = "On-device LLM",
+            subtitle = if (state.onDeviceLlmAvailable) {
+                "Local models are available."
+            } else {
+                state.onDeviceLlmUnavailableReason
+            },
+            darkTheme = darkTheme,
+        ) {}
     }
 }
 
 @Composable
 internal fun IosAndroidIntegrationSettings(darkTheme: Boolean) {
-    LastChatSettingsGroup(title = "Android integration", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
+    LastChatSettingsGroup(title = "Platform integrations", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
+        LastChatSettingGroupInputItem(
+            title = "Digital assistant overlay",
+            subtitle = "In-process Compose overlay plus clipboard share-in, using the same chat send path as Android.",
+            darkTheme = darkTheme,
+        ) {}
+        LastChatSettingGroupInputItem(
+            title = "Share sheet",
+            subtitle = "Conversation export uses the iOS share sheet (UIActivityViewController).",
+            darkTheme = darkTheme,
+        ) {}
+        LastChatSettingGroupInputItem(
+            title = "Home screen widget",
+            subtitle = "Shared AssistantWidgetSnapshot is published to App Group UserDefaults for the WidgetKit shell.",
+            darkTheme = darkTheme,
+        ) {}
+        LastChatSettingGroupInputItem(
+            title = "System TTS",
+            subtitle = "AVSpeech synthesizer is wired through the shared PlatformSystemTts contract.",
+            darkTheme = darkTheme,
+        ) {}
         LastChatSettingGroupInputItem(
             title = "Android-only surfaces",
             subtitle = ANDROID_INTEGRATION_UNAVAILABLE_REASON,

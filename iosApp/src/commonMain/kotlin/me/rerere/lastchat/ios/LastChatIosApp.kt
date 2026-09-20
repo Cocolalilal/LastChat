@@ -118,6 +118,8 @@ import androidx.compose.material.icons.rounded.PhoneIphone
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -349,6 +351,8 @@ fun LastChatIosApp(
                         onStopSpeaking = controller::stopTts,
                         onStartSpeech = controller::startSpeechRecognition,
                         onStopSpeech = controller::stopSpeechRecognition,
+                        onShareConversation = { controller.shareConversation() },
+                        onOpenOverlay = controller::showAssistantOverlay,
                         platformHaptics = platformHaptics,
                         attachmentOpener = attachmentOpener,
                         audioPlayer = audioPlayer,
@@ -443,6 +447,15 @@ fun LastChatIosApp(
                 )
             }
         }
+        if (state.overlayVisible) {
+            IosAssistantOverlaySheet(
+                state = state,
+                onDismiss = controller::hideAssistantOverlay,
+                onSend = controller::send,
+                onIngestShareText = controller::ingestShareText,
+                platformHaptics = platformHaptics,
+            )
+        }
     }
 }
 
@@ -459,6 +472,8 @@ private fun ChatPage(
     onStopSpeaking: () -> Unit,
     onStartSpeech: () -> Unit,
     onStopSpeech: ((String) -> Unit) -> Unit,
+    onShareConversation: () -> Unit = {},
+    onOpenOverlay: () -> Unit = {},
     platformHaptics: PlatformHaptics,
     attachmentOpener: PlatformAttachmentOpener,
     audioPlayer: PlatformAttachmentAudioPlayer,
@@ -565,6 +580,14 @@ private fun ChatPage(
                         onClick = onOpenMenu,
                         contentDescription = "Messages",
                     )
+                },
+                actions = {
+                    IconButton(onClick = onOpenOverlay) {
+                        Icon(Icons.Rounded.Assistant, contentDescription = "Assistant overlay")
+                    }
+                    IconButton(onClick = onShareConversation) {
+                        Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
+                    }
                 },
             )
         },
@@ -773,7 +796,7 @@ private fun ChatPage(
                         playingAudioUrl = playingAudioUrl,
                         platformHaptics = platformHaptics,
                         isTtsSpeaking = state.ttsSpeaking,
-                        isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
+                        isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
                         showAssistantBubbles = state.appearance.showAssistantBubbles,
                         fontSizeRatio = state.appearance.fontSizeRatio,
                         rpStyleRules = state.appearance.rpStyleRules,
@@ -791,7 +814,7 @@ private fun ChatPage(
                         playingAudioUrl = playingAudioUrl,
                         platformHaptics = platformHaptics,
                         isTtsSpeaking = state.ttsSpeaking,
-                        isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
+                        isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
                         showAssistantBubbles = state.appearance.showAssistantBubbles,
                         fontSizeRatio = state.appearance.fontSizeRatio,
                         rpStyleRules = state.appearance.rpStyleRules,
@@ -2599,6 +2622,26 @@ private fun SettingsPage(
                                 )
                             },
                         )
+                        LastChatSettingGroupItem(
+                            title = "Workspace",
+                            subtitle = if (state.onDeviceWorkspaceAvailable) {
+                                "Read, write, and shell tools in the on-device sandbox"
+                            } else {
+                                "Registered in the shared tool loop; currently unavailable on this device"
+                            },
+                            darkTheme = darkTheme,
+                            trailing = {
+                                Switch(
+                                    checked = IosLocalToolOption.WORKSPACE in localTools,
+                                    onCheckedChange = { enabled ->
+                                        localTools = if (enabled) {
+                                            localTools + IosLocalToolOption.WORKSPACE
+                                        } else localTools - IosLocalToolOption.WORKSPACE
+                                        onSaveLocalTools(localTools)
+                                    },
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -2833,7 +2876,9 @@ private fun SettingsPage(
                                         singleLine = true,
                                     )
                                 }
-                                if (editingProvider !is ProviderSetting.ComfyUI) {
+                                if (editingProvider !is ProviderSetting.ComfyUI &&
+                                    editingProvider !is ProviderSetting.LiteRtLocal
+                                ) {
                                     LastChatFormItem(label = { Text("Base URL") }) {
                                         OutlinedTextField(
                                             value = providerBaseUrl,
@@ -3183,7 +3228,9 @@ private fun SettingsPage(
                                     }
                                 }
                             }
-                            if (ttsPreferences.type != IosTtsProviderType.ELEVENLABS) {
+                            if (ttsPreferences.type != IosTtsProviderType.ELEVENLABS &&
+                                ttsPreferences.type != IosTtsProviderType.SYSTEM
+                            ) {
                                 LastChatFormItem(label = { Text("Base URL") }) {
                                     OutlinedTextField(
                                         value = ttsPreferences.baseUrl,
@@ -3316,6 +3363,40 @@ private fun SettingsPage(
                                     )
                                 }
                             }
+                            if (ttsPreferences.type == IosTtsProviderType.SYSTEM) {
+                                LastChatFormItem(
+                                    label = { Text("Speed") },
+                                    description = { Text("Between 0.5 and 2.0") },
+                                ) {
+                                    OutlinedTextField(
+                                        value = ttsSpeed,
+                                        onValueChange = { value ->
+                                            ttsSpeed = value.filter { it.isDigit() || it == '.' }.take(4)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                                LastChatFormItem(
+                                    label = { Text("Pitch") },
+                                    description = { Text("Between 0.5 and 2.0") },
+                                ) {
+                                    OutlinedTextField(
+                                        value = ttsPreferences.pitch.toString(),
+                                        onValueChange = { value ->
+                                            val pitch = value.filter { it.isDigit() || it == '.' }.toFloatOrNull()
+                                            if (pitch != null) {
+                                                ttsPreferences = ttsPreferences.copy(pitch = pitch)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        singleLine = true,
+                                    )
+                                }
+                            }
+                            if (ttsPreferences.type != IosTtsProviderType.SYSTEM) {
                             LastChatFormItem(
                                 label = {
                                     Text(
@@ -3343,6 +3424,7 @@ private fun SettingsPage(
                                     shape = AppShapes.InputField,
                                     singleLine = true,
                                 )
+                            }
                             }
                             Button(
                                 onClick = {
@@ -3721,7 +3803,7 @@ private fun SettingsPage(
                 item { IosWebSettings(state, darkTheme, onSaveWeb) }
             }
             if (section == IosSettingsSection.Workspaces) {
-                item { IosWorkspaceSettings(darkTheme) }
+                item { IosWorkspaceSettings(state, darkTheme) }
             }
             if (section == IosSettingsSection.AndroidIntegration) {
                 item { IosAndroidIntegrationSettings(darkTheme) }
@@ -4384,6 +4466,7 @@ private fun IosProviderType.displayName(): String = when (this) {
     IosProviderType.OPENAI -> "OpenAI"
     IosProviderType.GOOGLE -> "Google"
     IosProviderType.CLAUDE -> "Claude"
+    IosProviderType.LOCAL -> "On-device"
 }
 
 private fun IosImageProviderType.displayName(): String = when (this) {
@@ -4401,10 +4484,73 @@ private fun IosProviderType.defaultBaseUrl(): String = when (this) {
     IosProviderType.OPENAI -> "https://api.openai.com/v1"
     IosProviderType.GOOGLE -> "https://generativelanguage.googleapis.com/v1beta"
     IosProviderType.CLAUDE -> "https://api.anthropic.com/v1"
+    IosProviderType.LOCAL -> "on-device"
 }
 
 private fun IosProviderType.defaultModelId(): String = when (this) {
     IosProviderType.OPENAI -> "gpt-4.1-mini"
     IosProviderType.GOOGLE -> "gemini-2.5-flash"
     IosProviderType.CLAUDE -> "claude-sonnet-4-5"
+    IosProviderType.LOCAL -> "on-device"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IosAssistantOverlaySheet(
+    state: IosAppState,
+    onDismiss: () -> Unit,
+    onSend: (String) -> Unit,
+    onIngestShareText: (String) -> Unit,
+    platformHaptics: PlatformHaptics,
+) {
+    val clipboard = LocalClipboardManager.current
+    var overlayText by remember { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Assistant overlay", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Same composer as Android's digital assistant overlay. Share-in pastes clipboard text into a new chat.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = overlayText,
+                onValueChange = { overlayText = it },
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.InputField,
+                minLines = 2,
+                maxLines = 6,
+                placeholder = { Text("Ask ${state.assistant.name}") },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        val text = overlayText.trim()
+                        if (text.isNotEmpty()) {
+                            onSend(text)
+                            overlayText = ""
+                            platformHaptics.perform(PlatformHapticPattern.Send)
+                            onDismiss()
+                        }
+                    },
+                ) { Text("Send") }
+                TextButton(
+                    onClick = {
+                        val clipped = clipboard.getText()?.text.orEmpty()
+                        if (clipped.isNotBlank()) {
+                            onIngestShareText(clipped)
+                            platformHaptics.perform(PlatformHapticPattern.Send)
+                        }
+                    },
+                ) { Text("Share in from clipboard") }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    }
 }

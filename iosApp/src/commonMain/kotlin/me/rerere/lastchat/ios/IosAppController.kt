@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -44,6 +45,7 @@ import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.currentVersionMessages
 import me.rerere.ai.ui.mergeCurrentVersionMessages
@@ -58,9 +60,15 @@ import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
+import me.rerere.common.platform.PlatformShareSheet
 import me.rerere.common.platform.PlatformSpeechRecorder
 import me.rerere.common.platform.SecureSettingsStore
+import me.rerere.common.platform.UnavailableShareSheet
 import me.rerere.common.platform.UnavailableSpeechRecorder
+import me.rerere.common.runtime.OnDeviceLlmRuntime
+import me.rerere.common.runtime.OnDeviceWorkspaceRuntime
+import me.rerere.common.runtime.UnavailableOnDeviceLlmRuntime
+import me.rerere.common.runtime.UnavailableOnDeviceWorkspaceRuntime
 import me.rerere.document.PlatformDocumentParser
 import me.rerere.document.PortableDocumentText
 import me.rerere.rikkahub.data.mcp.PortableMcpClient
@@ -72,9 +80,17 @@ import me.rerere.rikkahub.data.prompt.PromptInjectionEngine
 import me.rerere.rikkahub.data.sync.PortableWebDavClient
 import me.rerere.rikkahub.data.sync.PortableWebDavConfig
 import me.rerere.rikkahub.data.sync.PortableWebDavItem
+import me.rerere.rikkahub.data.web.PortableMultipartFile
+import me.rerere.rikkahub.data.web.PortableWebApiActions
 import me.rerere.rikkahub.data.web.PortableWebApiResponse
 import me.rerere.rikkahub.data.web.PortableWebApiRouter
+import me.rerere.rikkahub.data.share.PortableSharePayload
 import me.rerere.rikkahub.data.web.PortableWebApiSource
+import me.rerere.rikkahub.data.widget.AssistantWidgetSnapshot
+import me.rerere.rikkahub.data.widget.NoOpWidgetStore
+import me.rerere.rikkahub.data.widget.PlatformWidgetStore
+import me.rerere.tts.provider.PlatformSystemTts
+import me.rerere.tts.provider.UnavailableSystemTts
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_MANIFEST_ENTRY
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_SETTINGS_ENTRY
 import me.rerere.lastchat.ios.backup.IosBackupDataImporter
@@ -107,7 +123,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
-enum class IosProviderType { OPENAI, GOOGLE, CLAUDE }
+enum class IosProviderType { OPENAI, GOOGLE, CLAUDE, LOCAL }
 
 @Serializable
 data class IosProviderPreferences(
@@ -151,12 +167,13 @@ data class IosAssistantPreferences(
     val enabledSkillIds: Set<String> = emptySet(),
     val enabledLorebookIds: Set<String> = emptySet(),
     val enabledMcpServerIds: Set<String> = emptySet(),
+    val thinkingBudget: Int = 0,
     /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
     val embeddingProviderType: IosProviderType? = null,
 )
 
 @Serializable
-enum class IosLocalToolOption { JAVASCRIPT, NOTIFICATIONS, TTS, ASK_USER, IMAGE_GENERATION }
+enum class IosLocalToolOption { JAVASCRIPT, NOTIFICATIONS, TTS, ASK_USER, IMAGE_GENERATION, WORKSPACE }
 
 @Serializable
 enum class IosMemoryMode { OFF, BASIC, SEARCHABLE, ADAPTIVE }
@@ -201,7 +218,7 @@ data class IosSearchPreferences(
 
 @Serializable
 enum class IosTtsProviderType {
-    OPENAI, GEMINI, MINIMAX, ELEVENLABS, QWEN, FISH_AUDIO, CARTESIA, PLAY_HT,
+    OPENAI, GEMINI, MINIMAX, ELEVENLABS, QWEN, FISH_AUDIO, CARTESIA, PLAY_HT, SYSTEM,
 }
 
 /** Persistable TTS configuration. Credentials are deliberately absent and live in Keychain. */
@@ -216,6 +233,7 @@ data class IosTtsPreferences(
     val language: String = "Auto",
     val emotion: String = "neutral",
     val speed: Float = 1.0f,
+    val pitch: Float = 1.0f,
 )
 
 @Serializable
@@ -353,6 +371,13 @@ data class IosAppState(
     val web: IosWebPreferences = IosWebPreferences(),
     val webDav: IosWebDavPreferences = IosWebDavPreferences(),
     val workspace: IosWorkspacePreferences = IosWorkspacePreferences(),
+    val favoriteModels: List<String> = emptyList(),
+    val onDeviceLlmAvailable: Boolean = false,
+    val onDeviceLlmUnavailableReason: String = UnavailableOnDeviceLlmRuntime.DEFAULT_UNAVAILABLE_REASON,
+    val onDeviceWorkspaceAvailable: Boolean = false,
+    val onDeviceWorkspaceUnavailableReason: String =
+        UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON,
+    val overlayVisible: Boolean = false,
     val hasApiKey: Boolean = false,
     val hasSearchApiKey: Boolean = false,
     val hasTtsApiKey: Boolean = false,
@@ -399,6 +424,7 @@ internal fun chatProviderType(provider: ProviderSetting): IosProviderType? = whe
     is ProviderSetting.OpenAI -> IosProviderType.OPENAI
     is ProviderSetting.Google -> IosProviderType.GOOGLE
     is ProviderSetting.Claude -> IosProviderType.CLAUDE
+    is ProviderSetting.LiteRtLocal -> IosProviderType.LOCAL
     else -> null
 }
 
@@ -407,6 +433,7 @@ internal fun ProviderSetting.withApiKey(apiKey: String, model: Model): ProviderS
     is ProviderSetting.OpenAI -> copy(apiKey = apiKey, models = listOf(model))
     is ProviderSetting.Google -> copy(apiKey = apiKey, models = listOf(model))
     is ProviderSetting.Claude -> copy(apiKey = apiKey, models = listOf(model))
+    is ProviderSetting.LiteRtLocal -> copy(models = listOf(model))
     is ProviderSetting.ComfyUI -> this
     else -> this
 }
@@ -425,6 +452,11 @@ class IosAppController(
     private val notificationPlatform: IosLocalNotificationPlatform,
     private val speechRecorder: PlatformSpeechRecorder = UnavailableSpeechRecorder(),
     private val documentParser: PlatformDocumentParser? = null,
+    private val systemTts: PlatformSystemTts = UnavailableSystemTts(),
+    private val shareSheet: PlatformShareSheet = UnavailableShareSheet(),
+    private val widgetStore: PlatformWidgetStore = NoOpWidgetStore(),
+    private val onDeviceLlm: OnDeviceLlmRuntime = UnavailableOnDeviceLlmRuntime(),
+    private val onDeviceWorkspace: OnDeviceWorkspaceRuntime = UnavailableOnDeviceWorkspaceRuntime(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json {
@@ -450,6 +482,8 @@ class IosAppController(
     private val webDavClient = PortableWebDavClient(httpClient)
     private val webServer = IosLocalWebServer()
     private val turnScopedSkillIds = mutableMapOf<String, MutableSet<String>>()
+    private val webUploads = mutableMapOf<String, String>()
+    private var webUploadSeq = 0L
     val state: StateFlow<IosAppState> = mutableState.asStateFlow()
 
     init {
@@ -556,8 +590,17 @@ class IosAppController(
                 web = stored?.web ?: IosWebPreferences(),
                 webDav = stored?.webDav ?: IosWebDavPreferences(),
                 workspace = stored?.workspace ?: IosWorkspacePreferences(),
+                favoriteModels = stored?.favoriteModels.orEmpty(),
+                onDeviceLlmAvailable = onDeviceLlm.available,
+                onDeviceLlmUnavailableReason = onDeviceLlm.unavailableReason
+                    ?: UnavailableOnDeviceLlmRuntime.DEFAULT_UNAVAILABLE_REASON,
+                onDeviceWorkspaceAvailable = onDeviceWorkspace.available,
+                onDeviceWorkspaceUnavailableReason = onDeviceWorkspace.unavailableReason
+                    ?: UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON,
                 hasApiKey = selectedProviderId?.let { providerId ->
-                    secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not()
+                    val selected = providers.firstOrNull { it.id.toString() == providerId }
+                    selected is ProviderSetting.LiteRtLocal ||
+                        secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not()
                 } ?: false,
                 hasSearchApiKey = hasSearchApiKey(stored?.search ?: IosSearchPreferences()),
                 hasTtsApiKey = ttsApiKey.isNotBlank(),
@@ -615,6 +658,10 @@ class IosAppController(
             IosProviderType.CLAUDE -> ProviderSetting.Claude(
                 name = "Claude",
                 baseUrl = config.baseUrl,
+                models = listOf(model),
+            )
+            IosProviderType.LOCAL -> ProviderSetting.LiteRtLocal(
+                name = "Local",
                 models = listOf(model),
             )
         }
@@ -685,15 +732,22 @@ class IosAppController(
     }
 
     fun newConversation() {
-        val conversation = IosConversation(assistantId = mutableState.value.assistant.id)
+        createConversation()
+    }
+
+    fun createConversation(assistantId: String? = null): IosConversation {
+        val conversation = IosConversation(assistantId = assistantId ?: mutableState.value.assistant.id)
         mutableState.update {
             it.copy(
                 conversations = listOf(conversation) + it.conversations,
                 selectedConversationId = conversation.id,
+                selectedAssistantId = conversation.assistantId ?: it.selectedAssistantId,
                 error = null,
             )
         }
         persistAsync()
+        publishWidgetSnapshot()
+        return conversation
     }
 
     fun renameConversation(id: String, title: String) {
@@ -734,19 +788,101 @@ class IosAppController(
         persistAsync()
         refreshAdaptiveBackgroundSchedule()
         refreshScheduledMessageBackgroundSchedule()
+        publishWidgetSnapshot()
+    }
+
+    fun togglePinned(id: String) {
+        updateConversation(id) { conversation -> conversation.copy(isPinned = !conversation.isPinned) }
+        persistAsync()
+    }
+
+    fun moveConversation(id: String, assistantId: String) {
+        if (mutableState.value.assistants.none { it.id == assistantId }) return
+        updateConversation(id) { conversation -> conversation.copy(assistantId = assistantId) }
+        persistAsync()
+    }
+
+    fun updateConversationSkills(id: String, skillIds: Set<String>) {
+        updateConversation(id) { conversation -> conversation.copy(enabledSkillIds = skillIds) }
+        persistAsync()
+    }
+
+    fun shareConversation(id: String? = null) {
+        val conversation = id?.let { target -> mutableState.value.conversations.firstOrNull { it.id == target } }
+            ?: mutableState.value.selectedConversation
+            ?: return
+        shareSheet.shareText(conversation.title, exportConversationText(conversation))
+    }
+
+    fun showAssistantOverlay() {
+        mutableState.update { it.copy(overlayVisible = true, error = null) }
+    }
+
+    fun hideAssistantOverlay() {
+        mutableState.update { it.copy(overlayVisible = false) }
+    }
+
+    fun ingestShare(payload: PortableSharePayload) {
+        if (!payload.hasContent()) return
+        createConversation()
+        val prompt = payload.promptText()
+        if (prompt.isNotBlank()) {
+            send(prompt)
+        }
+        hideAssistantOverlay()
+    }
+
+    fun ingestShareText(text: String) {
+        ingestShare(PortableSharePayload(text = text))
+    }
+
+    fun exportConversationText(conversation: IosConversation): String = buildString {
+        appendLine(conversation.title)
+        conversation.currentMessages.forEach { message ->
+            val role = when (message.role) {
+                MessageRole.USER -> "User"
+                MessageRole.ASSISTANT -> "Assistant"
+                MessageRole.SYSTEM -> "System"
+                else -> message.role.name
+            }
+            val text = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+            if (text.isNotBlank()) {
+                appendLine()
+                appendLine("$role:")
+                appendLine(text)
+            }
+        }
+    }.trim()
+
+    private fun publishWidgetSnapshot() {
+        val snapshot = mutableState.value
+        val assistant = snapshot.assistant
+        widgetStore.publish(
+            AssistantWidgetSnapshot(
+                assistantId = assistant.id,
+                assistantName = assistant.name,
+                conversationTitle = snapshot.selectedConversation?.title,
+                updatedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
+            ),
+        )
     }
 
     fun saveProvider(providerId: String, name: String, baseUrl: String, apiKey: String) {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
-        if (name.isBlank() || normalizedBaseUrl.isBlank()) {
+        val existing = mutableState.value.providers.firstOrNull { it.id.toString() == providerId }
+        val local = existing is ProviderSetting.LiteRtLocal
+        if (name.isBlank() || (!local && normalizedBaseUrl.isBlank())) {
             mutableState.update { it.copy(error = "Provider name and base URL are required.") }
             return
         }
         scope.launch {
-            if (apiKey.isNotBlank()) secureStore.writeString(apiKeyName(providerId), apiKey.trim())
+            if (!local && apiKey.isNotBlank()) secureStore.writeString(apiKeyName(providerId), apiKey.trim())
             val hasSelectedKey = mutableState.value.selectedChatModel
                 ?.takeIf { (provider, _) -> provider.id.toString() == providerId }
-                ?.let { secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not() }
+                ?.let { selected ->
+                    selected.first is ProviderSetting.LiteRtLocal ||
+                        secureStore.readString(apiKeyName(providerId)).isNullOrBlank().not()
+                }
             mutableState.update { current ->
                 current.copy(
                     providers = current.providers.map { provider ->
@@ -754,6 +890,7 @@ class IosAppController(
                             is ProviderSetting.OpenAI -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
                             is ProviderSetting.Google -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
                             is ProviderSetting.Claude -> provider.copy(name = name, baseUrl = normalizedBaseUrl)
+                            is ProviderSetting.LiteRtLocal -> provider.copy(name = name)
                             else -> provider
                         }
                     },
@@ -766,10 +903,22 @@ class IosAppController(
     }
 
     fun addProvider(name: String, type: IosProviderType) {
+        if (type == IosProviderType.LOCAL &&
+            mutableState.value.providers.any { it is ProviderSetting.LiteRtLocal }
+        ) {
+            mutableState.update { it.copy(error = "On-device LiteRT is already configured as a provider.") }
+            return
+        }
         val provider = when (type) {
             IosProviderType.OPENAI -> ProviderSetting.OpenAI(name = name)
             IosProviderType.GOOGLE -> ProviderSetting.Google(name = name)
             IosProviderType.CLAUDE -> ProviderSetting.Claude(name = name)
+            IosProviderType.LOCAL -> ProviderSetting.LiteRtLocal(
+                name = name.ifBlank { "Local" },
+                models = listOf(
+                    Model(modelId = "on-device", displayName = "On-device LLM", type = ModelType.CHAT),
+                ),
+            )
         }
         mutableState.update { current ->
             current.copy(providers = current.providers + provider)
@@ -897,24 +1046,36 @@ class IosAppController(
     ) {
         scope.launch {
             runCatching {
-                require(preferences.baseUrl.isNotBlank()) { "TTS base URL is required" }
-                require(preferences.model.isNotBlank()) { "TTS model is required" }
-                require(preferences.voice.isNotBlank()) { "TTS voice is required" }
+                if (preferences.type != IosTtsProviderType.SYSTEM) {
+                    require(preferences.baseUrl.isNotBlank()) { "TTS base URL is required" }
+                    require(preferences.model.isNotBlank()) { "TTS model is required" }
+                    require(preferences.voice.isNotBlank()) { "TTS voice is required" }
+                }
                 require(preferences.speed in 0.5f..2.0f) { "TTS speed must be between 0.5 and 2" }
+                require(preferences.pitch in 0.5f..2.0f) { "TTS pitch must be between 0.5 and 2" }
                 val keyName = ttsApiKeyName(preferences.type)
                 val existingKey = secureStore.readString(keyName).orEmpty()
-                require(!preferences.enabled || apiKey.isNotBlank() || existingKey.isNotBlank()) {
+                require(
+                    !preferences.enabled ||
+                        preferences.type == IosTtsProviderType.SYSTEM ||
+                        apiKey.isNotBlank() ||
+                        existingKey.isNotBlank(),
+                ) {
                     "A Keychain API key is required before enabling TTS"
                 }
                 if (apiKey.isNotBlank()) secureStore.writeString(keyName, apiKey)
                 val effectiveKey = apiKey.ifBlank { existingKey }
-                ttsController.setProvider(
-                    preferences.takeIf { it.enabled }?.toProviderSetting(effectiveKey)
-                )
+                if (preferences.type == IosTtsProviderType.SYSTEM) {
+                    ttsController.setProvider(null)
+                } else {
+                    ttsController.setProvider(
+                        preferences.takeIf { it.enabled }?.toProviderSetting(effectiveKey)
+                    )
+                }
                 mutableState.update {
                     it.copy(
                         tts = preferences,
-                        hasTtsApiKey = effectiveKey.isNotBlank(),
+                        hasTtsApiKey = preferences.type == IosTtsProviderType.SYSTEM || effectiveKey.isNotBlank(),
                         error = null,
                     )
                 }
@@ -1003,7 +1164,20 @@ class IosAppController(
 
     fun speak(text: String) {
         if (text.isBlank()) return
-        if (!mutableState.value.tts.enabled || !mutableState.value.hasTtsApiKey) {
+        val snapshot = mutableState.value
+        if (snapshot.tts.type == IosTtsProviderType.SYSTEM) {
+            if (!snapshot.tts.enabled || !systemTts.available) {
+                mutableState.update { it.copy(error = "Enable system TTS in Settings first") }
+                return
+            }
+            ttsController.stop()
+            mutableState.update { it.copy(ttsSpeaking = true, error = null) }
+            systemTts.speak(text, snapshot.tts.speed, snapshot.tts.pitch) {
+                mutableState.update { it.copy(ttsSpeaking = false) }
+            }
+            return
+        }
+        if (!snapshot.tts.enabled || !snapshot.hasTtsApiKey) {
             mutableState.update { it.copy(error = "Enable and configure TTS in Settings first") }
             return
         }
@@ -1052,7 +1226,11 @@ class IosAppController(
         }
     }
 
-    fun stopTts() = ttsController.stop()
+    fun stopTts() {
+        systemTts.stop()
+        ttsController.stop()
+        mutableState.update { it.copy(ttsSpeaking = false) }
+    }
     fun pauseTts() = ttsController.pause()
     fun resumeTts() = ttsController.resume()
     fun fastForwardTts(ms: Long = 5_000L) = ttsController.fastForward(ms)
@@ -1631,6 +1809,15 @@ class IosAppController(
             mutableState.update { it.copy(error = "Select a chat model in Settings first.") }
             return null
         }
+        if (selected.first is ProviderSetting.LiteRtLocal) {
+            if (!onDeviceLlm.available) {
+                mutableState.update {
+                    it.copy(error = onDeviceLlm.unavailableReason ?: LOCAL_LLM_UNAVAILABLE_REASON)
+                }
+                return null
+            }
+            return GenerationTarget(selected.first.withApiKey("", selected.second), selected.second)
+        }
         val apiKey = readApiKey(selected.first.id.toString())
         if (apiKey.isBlank()) {
             mutableState.update {
@@ -1799,10 +1986,10 @@ class IosAppController(
         persistAsync()
     }
 
-    fun forkConversation(conversationId: String, messageId: String) {
+    fun forkConversation(conversationId: String, messageId: String): String? {
         val conversation = mutableState.value.conversations
-            .firstOrNull { it.id == conversationId } ?: return
-        val fork = buildIosForkConversation(conversation, messageId) ?: return
+            .firstOrNull { it.id == conversationId } ?: return null
+        val fork = buildIosForkConversation(conversation, messageId) ?: return null
         mutableState.update { current ->
             current.copy(
                 conversations = current.conversations + fork,
@@ -1810,6 +1997,7 @@ class IosAppController(
             )
         }
         persistAsync()
+        return fork.id
     }
 
     /**
@@ -1817,12 +2005,24 @@ class IosAppController(
      * first assistant node of the turn and re-runs the tool loop. The shared version-selection
      * resolution then shows only the new version while old snapshots stay selectable.
      */
-    fun regenerateResponse(conversationId: String) {
+    fun regenerateResponse(conversationId: String, messageId: String? = null) {
         val snapshot = mutableState.value
         if (snapshot.generating) return
         val conversation = snapshot.conversations.firstOrNull { it.id == conversationId } ?: return
         val nodes = conversation.messageNodes
-        val lastUserIndex = nodes.indexOfLast { it.role == MessageRole.USER }
+        val lastUserIndex = if (!messageId.isNullOrBlank()) {
+            val messageIndex = nodes.indexOfFirst { node ->
+                node.messages.any { it.id.toString() == messageId }
+            }
+            if (messageIndex == -1) return
+            if (nodes[messageIndex].role == MessageRole.USER) {
+                messageIndex
+            } else {
+                nodes.take(messageIndex + 1).indexOfLast { it.role == MessageRole.USER }
+            }
+        } else {
+            nodes.indexOfLast { it.role == MessageRole.USER }
+        }
         if (lastUserIndex == -1 || lastUserIndex == nodes.lastIndex) return
         val turnStart = lastUserIndex + 1
         val firstAssistantOfTurn = nodes.drop(turnStart)
@@ -2003,10 +2203,39 @@ class IosAppController(
         model: Model,
         messages: List<UIMessage>,
         tools: List<Tool>,
-    ): kotlinx.coroutines.flow.Flow<MessageChunk> =
-        providerManager.getProviderByType(providerSetting).streamText(
+    ): kotlinx.coroutines.flow.Flow<MessageChunk> {
+        if (providerSetting is ProviderSetting.LiteRtLocal) {
+            return flow {
+                val prompt = flattenMessagesForOnDevice(messages)
+                val text = onDeviceLlm.generateText(model.modelId, prompt)
+                emit(
+                    MessageChunk(
+                        id = Uuid.random().toString(),
+                        model = model.modelId,
+                        choices = listOf(
+                            UIMessageChoice(
+                                index = 0,
+                                delta = UIMessage(
+                                    role = MessageRole.ASSISTANT,
+                                    parts = listOf(UIMessagePart.Text(text)),
+                                ),
+                                message = null,
+                                finishReason = "stop",
+                            ),
+                        ),
+                    ),
+                )
+            }
+        }
+        return providerManager.getProviderByType(providerSetting).streamText(
             providerSetting, messages, TextGenerationParams(model = model, tools = tools),
         )
+    }
+
+    private fun flattenMessagesForOnDevice(messages: List<UIMessage>): String = messages.joinToString("\n\n") { message ->
+        val body = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+        "${message.role.name}: $body"
+    }
 
     private fun scheduleAdaptiveMemory(conversationId: String) {
         val snapshot = mutableState.value
@@ -3021,6 +3250,95 @@ class IosAppController(
                 )
             )
         }
+        if (IosLocalToolOption.WORKSPACE in assistant.localTools) {
+            addAll(buildWorkspaceTools())
+        }
+    }
+
+    private fun buildWorkspaceTools(): List<Tool> {
+        val reason = onDeviceWorkspace.unavailableReason
+            ?: WORKSPACE_UNAVAILABLE_REASON
+        fun unavailableResult() = buildJsonObject {
+            put("available", false)
+            put("error", reason)
+        }
+        return listOf(
+            Tool(
+                name = "workspace_read_file",
+                description = "Read a file from the on-device workspace sandbox.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Absolute path inside the workspace")
+                            })
+                        },
+                        required = listOf("path"),
+                    )
+                },
+                execute = { arguments ->
+                    val path = ((arguments as? JsonObject)?.get("path") as? JsonPrimitive)?.content.orEmpty()
+                    if (!onDeviceWorkspace.available) {
+                        unavailableResult()
+                    } else {
+                        buildJsonObject {
+                            put("path", path)
+                            put("text", onDeviceWorkspace.readFile(path))
+                        }
+                    }
+                },
+            ),
+            Tool(
+                name = "workspace_write_file",
+                description = "Write a UTF-8 text file in the on-device workspace sandbox.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject { put("type", "string") })
+                            put("text", buildJsonObject { put("type", "string") })
+                        },
+                        required = listOf("path", "text"),
+                    )
+                },
+                execute = { arguments ->
+                    val obj = arguments as? JsonObject
+                    val path = (obj?.get("path") as? JsonPrimitive)?.content.orEmpty()
+                    val text = (obj?.get("text") as? JsonPrimitive)?.content.orEmpty()
+                    if (!onDeviceWorkspace.available) {
+                        unavailableResult()
+                    } else {
+                        onDeviceWorkspace.writeFile(path, text)
+                        buildJsonObject { put("path", path); put("ok", true) }
+                    }
+                },
+            ),
+            Tool(
+                name = "workspace_shell",
+                description = "Run a command in the on-device workspace sandbox.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("command", buildJsonObject { put("type", "string") })
+                        },
+                        required = listOf("command"),
+                    )
+                },
+                execute = { arguments ->
+                    val command = ((arguments as? JsonObject)?.get("command") as? JsonPrimitive)?.content.orEmpty()
+                    if (!onDeviceWorkspace.available) {
+                        unavailableResult()
+                    } else {
+                        val result = onDeviceWorkspace.exec(command)
+                        buildJsonObject {
+                            put("exitCode", result.exitCode)
+                            put("stdout", result.stdout)
+                            put("stderr", result.stderr)
+                        }
+                    }
+                },
+            ),
+        )
     }
 
     @OptIn(ExperimentalEncodingApi::class)
@@ -3533,7 +3851,9 @@ class IosAppController(
         val ttsKey = secureStore.readString(ttsApiKeyName(snapshot.tts.type)).orEmpty()
         mutableState.update {
             it.copy(
-                hasApiKey = selectedModel != null && apiKey.isNotBlank(),
+                hasApiKey = selectedModel != null && (
+                    selectedModel.first is ProviderSetting.LiteRtLocal || apiKey.isNotBlank()
+                ),
                 hasSearchApiKey = searchKeyPresent,
                 hasTtsApiKey = ttsKey.isNotBlank(),
                 hasWebDavPassword = !secureStore.readString(WEBDAV_PASSWORD_KEY).isNullOrBlank(),
@@ -3564,9 +3884,10 @@ class IosAppController(
             return
         }
         val password = secureStore.readString(WEB_PASSWORD_KEY)
-        val started = webServer.start(snapshot.web.port) { method, path, authorization, query, body ->
+        val started = webServer.start(snapshot.web.port) { request ->
             val current = mutableState.value
-            val generatingId = current.selectedConversationId.takeIf { current.generating }
+            val generatingId = current.conversations.firstOrNull { current.generating && it.id == current.selectedConversationId }?.id
+                ?: current.selectedConversationId.takeIf { current.generating }
             val source = PortableWebApiSource(
                 webUiBundled = IosNativeFiles.webUiBundled,
                 authRequired = !password.isNullOrBlank(),
@@ -3611,24 +3932,181 @@ class IosAppController(
                 filePath = { relative -> fileResponse(fileStore.localUrl(relative)) },
                 onSendMessage = { conversationId, requestBody ->
                     send(PortableWebApiRouter.extractMessageText(requestBody), conversationId)
-                    PortableWebApiResponse.json(200, """{"ok":true}""")
+                    webStatus("accepted", 202)
                 },
                 onStop = { conversationId ->
                     if (mutableState.value.selectedConversationId == conversationId) {
                         cancelGeneration()
                     }
-                    PortableWebApiResponse.json(200, """{"ok":true}""")
+                    webStatus("stopped")
                 },
+                conversationsInvalidateJson = {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    """{"assistantId":"${current.selectedAssistantId ?: current.assistant.id}","timestamp":$now}"""
+                },
+                actions = PortableWebApiActions(
+                    onCreateConversation = { body ->
+                        val assistantId = PortableWebApiRouter.jsonString(body, "assistantId")
+                        val created = createConversation(assistantId)
+                        PortableWebApiResponse.json(
+                            201,
+                            """{"id":"${created.id}","assistantId":"${created.assistantId ?: created.id}"}""",
+                        )
+                    },
+                    onDeleteConversation = { id ->
+                        deleteConversation(id)
+                        webStatus("deleted")
+                    },
+                    onPinConversation = { id ->
+                        togglePinned(id)
+                        webStatus("updated")
+                    },
+                    onRegenerateTitle = { id ->
+                        val conversation = mutableState.value.conversations.firstOrNull { it.id == id }
+                        val title = conversation?.currentMessages
+                            ?.firstOrNull { it.role == MessageRole.USER }
+                            ?.parts
+                            ?.filterIsInstance<UIMessagePart.Text>()
+                            ?.joinToString(" ") { it.text }
+                            ?.take(48)
+                            ?: conversation?.title
+                            ?: "New chat"
+                        renameConversation(id, title)
+                        webStatus("accepted", 202)
+                    },
+                    onContextRefresh = {
+                        PortableWebApiResponse.json(
+                            200,
+                            """{"success":true,"summary":null,"messagesSummarized":0,"tokensSaved":0}""",
+                        )
+                    },
+                    onRenameConversation = { id, title ->
+                        renameConversation(id, title)
+                        webStatus("updated")
+                    },
+                    onMoveConversation = { id, assistantId ->
+                        moveConversation(id, assistantId)
+                        webStatus("updated")
+                    },
+                    onUpdateSkills = { id, skillIds ->
+                        updateConversationSkills(id, skillIds.toSet())
+                        webStatus("updated")
+                    },
+                    onEditMessage = { conversationId, messageId, body ->
+                        val text = PortableWebApiRouter.extractMessageText(body)
+                        editMessage(conversationId, messageId, listOf(UIMessagePart.Text(text)))
+                        webStatus("accepted", 202)
+                    },
+                    onForkConversation = { conversationId, messageId ->
+                        val forkId = forkConversation(conversationId, messageId)
+                        if (forkId == null) {
+                            PortableWebApiResponse.json(404, """{"error":"not_found","code":404}""")
+                        } else {
+                            PortableWebApiResponse.json(201, """{"conversationId":"$forkId"}""")
+                        }
+                    },
+                    onDeleteMessage = { conversationId, messageId ->
+                        deleteMessage(conversationId, messageId)
+                        webStatus("deleted")
+                    },
+                    onSelectNode = { conversationId, nodeId, selectIndex ->
+                        updateNodeSelection(conversationId, nodeId, selectIndex)
+                        webStatus("accepted", 202)
+                    },
+                    onRegenerate = { conversationId, messageId ->
+                        regenerateResponse(conversationId, messageId.ifBlank { null })
+                        webStatus("accepted", 202)
+                    },
+                    onToolApproval = { conversationId, body ->
+                        handleWebToolApproval(conversationId, body)
+                    },
+                    onSelectAssistant = { assistantId ->
+                        if (assistantId.isNotBlank()) selectAssistant(assistantId)
+                        webStatus("ok")
+                    },
+                    onSelectModel = { body ->
+                        val modelId = PortableWebApiRouter.jsonString(body, "modelId")
+                            ?: PortableWebApiRouter.jsonString(body, "id")
+                        if (!modelId.isNullOrBlank()) {
+                            mutableState.update { it.copy(selectedChatModelId = modelId) }
+                            persistAsync()
+                        }
+                        webStatus("ok")
+                    },
+                    onThinkingBudget = { body ->
+                        val budget = PortableWebApiRouter.jsonInt(body, "thinkingBudget") ?: 0
+                        mutableState.update { current ->
+                            current.copy(
+                                assistants = current.assistants.map { assistant ->
+                                    if (assistant.id == current.assistant.id) {
+                                        assistant.copy(thinkingBudget = budget)
+                                    } else assistant
+                                },
+                            )
+                        }
+                        persistAsync()
+                        webStatus("ok")
+                    },
+                    onUpdateMcp = { body ->
+                        val ids = PortableWebApiRouter.jsonStringList(body, "serverIds").toSet()
+                        mutableState.update { current ->
+                            current.copy(
+                                assistants = current.assistants.map { assistant ->
+                                    if (assistant.id == current.assistant.id) {
+                                        assistant.copy(enabledMcpServerIds = ids)
+                                    } else assistant
+                                },
+                            )
+                        }
+                        persistAsync()
+                        webStatus("ok")
+                    },
+                    onUpdateInjections = { body ->
+                        val skillIds = PortableWebApiRouter.jsonStringList(body, "skillIds").toSet()
+                        val lorebookIds = PortableWebApiRouter.jsonStringList(body, "lorebookIds").toSet()
+                        mutableState.update { current ->
+                            current.copy(
+                                assistants = current.assistants.map { assistant ->
+                                    if (assistant.id == current.assistant.id) {
+                                        assistant.copy(
+                                            enabledSkillIds = skillIds.ifEmpty { assistant.enabledSkillIds },
+                                            enabledLorebookIds = lorebookIds.ifEmpty { assistant.enabledLorebookIds },
+                                        )
+                                    } else assistant
+                                },
+                            )
+                        }
+                        persistAsync()
+                        webStatus("ok")
+                    },
+                    onSearchEnabled = { enabled ->
+                        mutableState.update { it.copy(search = it.search.copy(enabled = enabled)) }
+                        persistAsync()
+                        webStatus("ok")
+                    },
+                    onSearchService = { index ->
+                        val provider = IosSearchProviderType.entries.getOrNull(index)
+                        if (provider != null) {
+                            mutableState.update { it.copy(search = it.search.copy(provider = provider)) }
+                            persistAsync()
+                        }
+                        webStatus("ok")
+                    },
+                    onBuiltInTool = { webStatus("ok") },
+                    onFavoriteModels = { body ->
+                        val ids = PortableWebApiRouter.jsonStringList(body, "modelIds")
+                        mutableState.update { it.copy(favoriteModels = ids) }
+                        persistAsync()
+                        webStatus("ok")
+                    },
+                    onUploadFiles = { files -> uploadWebFiles(files) },
+                    onDeleteFile = { id ->
+                        webUploads.remove(id)?.let { path -> scope.launch { fileStore.delete(path) } }
+                        webStatus("deleted")
+                    },
+                ),
             )
-            PortableWebApiRouter.handle(
-                method = method,
-                path = path,
-                authorization = authorization,
-                query = query,
-                body = body,
-                password = password,
-                source = source,
-            )
+            PortableWebApiRouter.handle(request, password, source)
         }
         mutableState.update { it.copy(webApiRunning = started) }
         if (!started) {
@@ -3636,6 +4114,41 @@ class IosAppController(
                 it.copy(error = it.error ?: "The local web API could not bind on port ${snapshot.web.port}")
             }
         }
+    }
+
+    private fun webStatus(status: String, code: Int = 200): PortableWebApiResponse =
+        PortableWebApiResponse.json(code, """{"status":"$status"}""")
+
+    private fun handleWebToolApproval(conversationId: String, body: String): PortableWebApiResponse {
+        val approved = PortableWebApiRouter.jsonBoolean(body, "approved") != false
+        val answer = PortableWebApiRouter.jsonString(body, "answer")
+        val pending = mutableState.value.pendingQuestionnaire
+        if (pending != null && pending.conversationId == conversationId) {
+            if (!approved) {
+                submitQuestionnaire(emptyMap(), emptyMap(), dismissed = true)
+            } else if (!answer.isNullOrBlank()) {
+                submitQuestionnaire(emptyMap(), mapOf(pending.questions.firstOrNull()?.id.orEmpty() to answer), false)
+            } else {
+                submitQuestionnaire(emptyMap(), emptyMap(), dismissed = false)
+            }
+        }
+        return webStatus("accepted", 202)
+    }
+
+    private fun uploadWebFiles(files: List<PortableMultipartFile>): PortableWebApiResponse {
+        if (files.isEmpty()) {
+            return PortableWebApiResponse.json(400, """{"error":"No files uploaded","code":400}""")
+        }
+        val uploaded = files.map { file ->
+            webUploadSeq += 1
+            val id = webUploadSeq.toString()
+            val storagePath = "uploads/$id-${file.fileName}"
+            webUploads[id] = storagePath
+            scope.launch { fileStore.writeBytes(storagePath, file.bytes) }
+            val url = fileStore.localUrl(storagePath) ?: "file://$storagePath"
+            """{"id":$id,"url":"$url","fileName":"${file.fileName.replace("\"", "")}","mime":"${file.mimeType}","size":${file.bytes.size}}"""
+        }
+        return PortableWebApiResponse.json(201, """{"files":[${uploaded.joinToString(",")}]}""")
     }
 
     private fun fileResponse(uri: String?): PortableWebApiResponse? {
@@ -3681,6 +4194,7 @@ class IosAppController(
             web = snapshot.web,
             webDav = snapshot.webDav,
             workspace = snapshot.workspace,
+            favoriteModels = snapshot.favoriteModels,
         )
         fileStore.writeBytes(STATE_PATH, json.encodeToString(stored).encodeToByteArray())
     }
@@ -3959,6 +4473,7 @@ private data class IosStoredState(
     val web: IosWebPreferences = IosWebPreferences(),
     val webDav: IosWebDavPreferences = IosWebDavPreferences(),
     val workspace: IosWorkspacePreferences = IosWorkspacePreferences(),
+    val favoriteModels: List<String> = emptyList(),
 )
 
 internal fun IosTtsProviderType.displayName(): String = when (this) {
@@ -3970,6 +4485,7 @@ internal fun IosTtsProviderType.displayName(): String = when (this) {
     IosTtsProviderType.FISH_AUDIO -> "Fish Audio"
     IosTtsProviderType.CARTESIA -> "Cartesia"
     IosTtsProviderType.PLAY_HT -> "PlayHT"
+    IosTtsProviderType.SYSTEM -> "System TTS"
 }
 
 internal fun IosTtsProviderType.defaultPreferences(): IosTtsPreferences = when (this) {
@@ -4019,6 +4535,12 @@ internal fun IosTtsProviderType.defaultPreferences(): IosTtsPreferences = when (
         model = "PlayHT2.0",
         voice = "voice-manifest-uri",
     )
+    IosTtsProviderType.SYSTEM -> IosTtsPreferences(
+        type = this,
+        baseUrl = "system",
+        model = "avspeech",
+        voice = "default",
+    )
 }
 
 internal fun IosTtsPreferences.toProviderSetting(apiKey: String): TTSProviderSetting = when (type) {
@@ -4050,6 +4572,10 @@ internal fun IosTtsPreferences.toProviderSetting(apiKey: String): TTSProviderSet
     IosTtsProviderType.PLAY_HT -> TTSProviderSetting.PlayHT(
         apiKey = apiKey, userId = secondary, baseUrl = baseUrl, voice = voice,
         voiceEngine = model, speed = speed,
+    )
+    IosTtsProviderType.SYSTEM -> TTSProviderSetting.SystemTTS(
+        speechRate = speed,
+        pitch = pitch,
     )
 }
 

@@ -5,18 +5,27 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.platform.ios.IosPlatformServices
 import me.rerere.common.platform.ios.IosPlatformAttachmentOpener
 import me.rerere.common.platform.ios.IosPlatformFilePicker
+import me.rerere.common.platform.ios.IosPlatformShareSheet
+import me.rerere.common.platform.ios.IosPlatformWidgetStore
+import me.rerere.common.runtime.UnavailableOnDeviceLlmRuntime
+import me.rerere.common.runtime.UnavailableOnDeviceWorkspaceRuntime
 import me.rerere.search.PlatformBingSearchClient
 import me.rerere.search.SearchService
 import me.rerere.tts.controller.IosTtsAudioPlayer
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.provider.CloudTtsManager
+import me.rerere.tts.provider.ios.IosPlatformSystemTts
 import platform.UIKit.UIViewController
 
 private val platformServices = IosPlatformServices()
+private val systemTts = IosPlatformSystemTts()
+private val presentingController = object {
+    var value: UIViewController? = null
+}
 private val controller = run {
     SearchService.installPlatformHttpClient(platformServices.httpClient)
     SearchService.installBingSearchClient(PlatformBingSearchClient(platformServices.httpClient))
-    val ttsManager = CloudTtsManager(platformServices.httpClient)
+    val ttsManager = CloudTtsManager(platformServices.httpClient, systemTts)
     IosAppController(
         fileStore = platformServices.fileStore,
         secureStore = platformServices.secureSettingsStore,
@@ -31,6 +40,11 @@ private val controller = run {
         notificationPlatform = IosUserNotificationPlatform(),
         speechRecorder = platformServices.speechRecorder,
         documentParser = platformServices.documentParser,
+        systemTts = systemTts,
+        shareSheet = IosPlatformShareSheet { presentingController.value },
+        widgetStore = IosPlatformWidgetStore(),
+        onDeviceLlm = UnavailableOnDeviceLlmRuntime(),
+        onDeviceWorkspace = UnavailableOnDeviceWorkspaceRuntime(),
     )
 }
 
@@ -69,5 +83,6 @@ fun MainViewController(): UIViewController {
             audioPlayer = platformServices.attachmentAudioPlayer,
         )
     }
+    presentingController.value = viewController
     return viewController
 }

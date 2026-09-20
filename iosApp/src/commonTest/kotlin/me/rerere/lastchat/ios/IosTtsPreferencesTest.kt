@@ -23,6 +23,7 @@ class IosTtsPreferencesTest {
                 IosTtsProviderType.FISH_AUDIO -> assertIs<TTSProviderSetting.FishAudio>(setting)
                 IosTtsProviderType.CARTESIA -> assertIs<TTSProviderSetting.Cartesia>(setting)
                 IosTtsProviderType.PLAY_HT -> assertIs<TTSProviderSetting.PlayHT>(setting)
+                IosTtsProviderType.SYSTEM -> assertIs<TTSProviderSetting.SystemTTS>(setting)
             }
             assertTrue(setting.name.isNotBlank())
         }
@@ -39,6 +40,7 @@ class IosTtsPreferencesTest {
         assertFalse(encoded.contains("secret", ignoreCase = true))
         assertFalse(encoded.contains("apiKey", ignoreCase = true))
         assertEquals(1.25f, Json.decodeFromString<IosTtsPreferences>(encoded).speed)
+        assertEquals(1.0f, Json.decodeFromString<IosTtsPreferences>(encoded).pitch)
     }
 
     @Test

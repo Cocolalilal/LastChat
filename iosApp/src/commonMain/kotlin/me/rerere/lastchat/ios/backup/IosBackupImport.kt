@@ -447,7 +447,13 @@ internal object IosBackupImporter {
             secondary = provider.userId,
             speed = provider.speed,
         )
-        is TTSProviderSetting.SystemTTS -> null
+        is TTSProviderSetting.SystemTTS -> IosTtsPreferences(
+            type = IosTtsProviderType.SYSTEM,
+            baseUrl = "system",
+            model = "avspeech",
+            voice = "default",
+            speed = provider.speechRate,
+        )
     }
 
     private fun collectTtsApiKeys(
@@ -474,6 +480,7 @@ internal object IosBackupImporter {
         is ProviderSetting.OpenAI -> IosProviderType.OPENAI
         is ProviderSetting.Google -> IosProviderType.GOOGLE
         is ProviderSetting.Claude -> IosProviderType.CLAUDE
+        is ProviderSetting.LiteRtLocal -> IosProviderType.LOCAL
         else -> null
     }
 

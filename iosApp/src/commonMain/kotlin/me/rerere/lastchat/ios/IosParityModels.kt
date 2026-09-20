@@ -1,6 +1,8 @@
 package me.rerere.lastchat.ios
 
 import kotlinx.serialization.Serializable
+import me.rerere.common.runtime.UnavailableOnDeviceLlmRuntime
+import me.rerere.common.runtime.UnavailableOnDeviceWorkspaceRuntime
 
 @Serializable
 data class IosSttPreferences(
@@ -30,7 +32,10 @@ data class IosWorkspacePreferences(
 )
 
 internal const val ANDROID_INTEGRATION_UNAVAILABLE_REASON =
-    "Android integration (digital assistant, share sheet, widgets, and system TTS) is Android-only."
+    "Android share trampolines remain activity-owned. iOS hosts the assistant overlay in-process and ingests clipboard share-in through PortableSharePayload."
 
 internal const val WORKSPACE_UNAVAILABLE_REASON =
-    "The Linux PRoot workspace sandbox is Android-only. iOS keeps a sandboxed app-container file area for attachments and generated media instead of a full on-device Linux environment."
+    UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON
+
+internal const val LOCAL_LLM_UNAVAILABLE_REASON =
+    UnavailableOnDeviceLlmRuntime.DEFAULT_UNAVAILABLE_REASON
