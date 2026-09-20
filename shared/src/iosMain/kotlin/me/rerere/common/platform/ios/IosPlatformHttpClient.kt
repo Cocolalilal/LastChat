@@ -11,6 +11,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
+import io.ktor.utils.io.readAvailable
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,31 @@ class IosPlatformHttpClient(
             headers = response.headers.names().associateWith { response.headers.getAll(it).orEmpty() },
             body = response.body(),
         )
+    }
+
+    override suspend fun downloadTo(
+        request: PlatformHttpRequest,
+        onChunk: suspend (ByteArray) -> Unit,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ): PlatformHttpResponse {
+        return clientFor(request.proxy).prepareRequest(request.url) { apply(request) }.execute { response ->
+            val total = response.headers["Content-Length"]?.toLongOrNull() ?: -1L
+            val channel = response.body<io.ktor.utils.io.ByteReadChannel>()
+            var downloaded = 0L
+            val buffer = ByteArray(64 * 1024)
+            while (!channel.isClosedForRead) {
+                val read = channel.readAvailable(buffer, 0, buffer.size)
+                if (read <= 0) continue
+                onChunk(buffer.copyOf(read))
+                downloaded += read
+                onProgress(downloaded, total)
+            }
+            PlatformHttpResponse(
+                statusCode = response.status.value,
+                headers = response.headers.names().associateWith { response.headers.getAll(it).orEmpty() },
+                body = ByteArray(0),
+            )
+        }
     }
 
     override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = flow {

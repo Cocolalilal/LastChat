@@ -49,4 +49,21 @@ interface PlatformHttpClient {
     suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse
 
     fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent>
+
+    /**
+     * Streams the response body in chunks. Used for catalog JSON and on-device model
+     * files so Android OkHttp and iOS URLSession share one download loop.
+     */
+    suspend fun downloadTo(
+        request: PlatformHttpRequest,
+        onChunk: suspend (ByteArray) -> Unit,
+        onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> },
+    ): PlatformHttpResponse {
+        val response = execute(request)
+        if (response.statusCode in 200..299 && response.body.isNotEmpty()) {
+            onChunk(response.body)
+            onProgress(response.body.size.toLong(), response.body.size.toLong())
+        }
+        return response.copy(body = ByteArray(0))
+    }
 }

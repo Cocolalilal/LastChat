@@ -20,4 +20,11 @@ interface PlatformFileStore {
      * stubs stay source-compatible.
      */
     suspend fun listFiles(path: String): List<String> = emptyList()
+
+    suspend fun fileSize(path: String): Long? = readBytes(path)?.size?.toLong()
+
+    suspend fun appendBytes(path: String, bytes: ByteArray) {
+        val existing = readBytes(path) ?: ByteArray(0)
+        writeBytes(path, existing + bytes)
+    }
 }

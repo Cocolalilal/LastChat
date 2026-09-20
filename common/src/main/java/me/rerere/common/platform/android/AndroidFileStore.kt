@@ -61,6 +61,21 @@ class AndroidFileStore(
 
     override fun localUrl(path: String): String = resolvePath(path).toURI().toString()
 
+    override suspend fun fileSize(path: String): Long? = withContext(Dispatchers.IO) {
+        resolvePath(path).takeIf { it.exists() }?.length()
+    }
+
+    override suspend fun appendBytes(path: String, bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
+        val file = resolvePath(path)
+        val parent = file.parentFile
+        if (parent != null && !parent.exists()) {
+            if (!parent.mkdirs() && !parent.exists()) {
+                throw IOException("Failed to create directory: $parent")
+            }
+        }
+        file.appendBytes(bytes)
+    }
+
     override suspend fun listFiles(path: String): List<String> = withContext(Dispatchers.IO) {
         val dir = resolvePath(path)
         if (!dir.isDirectory) return@withContext emptyList()

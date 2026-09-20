@@ -30,6 +30,33 @@ class OkHttpPlatformHttpClient(
         }
     }
 
+    override suspend fun downloadTo(
+        request: PlatformHttpRequest,
+        onChunk: suspend (ByteArray) -> Unit,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ): PlatformHttpResponse {
+        request.client().newCall(request.toOkHttpRequest()).await().use { response ->
+            val body = response.body
+            val total = body.contentLength()
+            var downloaded = 0L
+            val buffer = ByteArray(64 * 1024)
+            body.byteStream().use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    onChunk(buffer.copyOf(read))
+                    downloaded += read
+                    onProgress(downloaded, total)
+                }
+            }
+            return PlatformHttpResponse(
+                statusCode = response.code,
+                headers = response.headers.toMultimap(),
+                body = ByteArray(0),
+            )
+        }
+    }
+
     override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = flow {
         val okRequest = try {
             request.toOkHttpRequest()

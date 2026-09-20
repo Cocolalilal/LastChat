@@ -17,6 +17,9 @@ import platform.Foundation.create
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
+import platform.posix.fclose
+import platform.posix.fopen
+import platform.posix.fwrite
 import platform.posix.memcpy
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
@@ -84,6 +87,32 @@ class IosPlatformFileStore(
         val attributes = fileManager.attributesOfItemAtPath(resolve(path), error = null) ?: return null
         val date = attributes[NSFileModificationDate] as? NSDate ?: return null
         return (date.timeIntervalSince1970 * 1_000.0).toLong()
+    }
+
+    override suspend fun fileSize(path: String): Long? {
+        val destination = resolve(path)
+        if (!fileManager.fileExistsAtPath(destination)) return null
+        val attributes = fileManager.attributesOfItemAtPath(destination, error = null) ?: return null
+        val size = attributes[platform.Foundation.NSFileSize] as? Long
+            ?: (attributes[platform.Foundation.NSFileSize] as? ULong)?.toLong()
+        return size
+    }
+
+    override suspend fun appendBytes(path: String, bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        val destination = resolve(path)
+        if (!fileManager.fileExistsAtPath(destination)) {
+            writeBytes(path, bytes)
+            return
+        }
+        val file = fopen(destination, "ab") ?: error("Unable to append app file: $path")
+        try {
+            bytes.usePinned { pinned ->
+                fwrite(pinned.addressOf(0), 1u, bytes.size.toULong(), file)
+            }
+        } finally {
+            fclose(file)
+        }
     }
 
     override fun localUrl(path: String): String? = NSURL.fileURLWithPath(resolve(path)).absoluteString
