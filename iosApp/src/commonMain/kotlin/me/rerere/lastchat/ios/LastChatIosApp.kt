@@ -12,10 +12,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -48,6 +52,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -79,6 +84,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
@@ -106,6 +112,12 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Close
@@ -136,6 +148,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -145,6 +158,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.TokenUsage
+import me.rerere.rikkahub.utils.formatUpdateFileSize
+import me.rerere.rikkahub.utils.shouldShowUpdatePill
+import me.rerere.rikkahub.utils.Version
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
@@ -232,6 +249,7 @@ import coil3.compose.AsyncImage
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSource
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
@@ -271,6 +289,10 @@ private data class DisplayMessage(
     val messageId: String? = null,
     val branchNode: MessageNode? = null,
     val canRegenerate: Boolean = false,
+    val reasoning: String = "",
+    val usage: TokenUsage? = null,
+    val modelName: String? = null,
+    val contextStack: IosContextStackSummary = IosContextStackSummary(0, 0, 0),
 )
 
 @Composable
@@ -365,6 +387,8 @@ fun LastChatIosApp(
                         audioPlayer = audioPlayer,
                         onOpenMenu = { scope.launch { drawerState.open() } },
                         onOpenSettings = { route = IosRoute.Settings },
+                        onOpenImageGeneration = { route = IosRoute.ImageGeneration },
+                        onIgnoreUpdate = controller::ignoreUpdate,
                         onSelectVersion = { nodeId, index ->
                             state.selectedConversationId?.let { id ->
                                 controller.updateNodeSelection(id, nodeId, index)
@@ -408,6 +432,8 @@ fun LastChatIosApp(
                     onSaveFontSettings = controller::saveFontSettings,
                     onSaveUiCustomization = controller::saveUiCustomization,
                     onSaveDisplayKnobs = controller::saveDisplayKnobs,
+                    onSaveAppearancePreferences = { controller.saveAppearancePreferences(it) },
+                    onRefreshUpdateCheck = { controller.refreshUpdateCheck(force = true) },
                     onRefreshModelCatalog = controller::refreshModelCatalog,
                     onDownloadLocalLlm = controller::downloadLocalLlm,
                     onDownloadLocalStt = controller::downloadLocalStt,
@@ -480,7 +506,7 @@ fun LastChatIosApp(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatPage(
     state: IosAppState,
@@ -500,6 +526,8 @@ private fun ChatPage(
     audioPlayer: PlatformAttachmentAudioPlayer,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenImageGeneration: () -> Unit = {},
+    onIgnoreUpdate: (String) -> Unit = {},
     onSelectVersion: (String, Int) -> Unit,
     onRegenerate: () -> Unit,
     onEditMessage: (String, List<UIMessagePart>) -> Unit,
@@ -565,6 +593,13 @@ private fun ChatPage(
             else -> BubblePosition.MIDDLE
         }
         val node = branchNodesByMessageId[message.id.toString()]
+        val reasoning = message.parts.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Reasoning -> part.reasoning
+                is UIMessagePart.Thinking -> part.thinking
+                else -> null
+            }
+        }.filter { it.isNotBlank() }.joinToString("\n")
         DisplayMessage(
             text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
             outgoing = outgoing,
@@ -574,6 +609,15 @@ private fun ChatPage(
             branchNode = if (!outgoing) node else null,
             canRegenerate = !outgoing && !state.generating &&
                 index == conversationMessages.lastIndex && node != null,
+            reasoning = reasoning,
+            usage = message.usage,
+            modelName = state.selectedChatModel?.second?.displayName
+                ?: state.selectedChatModel?.second?.modelId,
+            contextStack = IosContextStackSummary(
+                lore = message.usedLorebookEntries.orEmpty().size,
+                modes = message.usedModes.orEmpty().size,
+                memories = message.usedMemories.orEmpty().size,
+            ),
         )
     }
     fun send() {
@@ -591,41 +635,120 @@ private fun ChatPage(
         inputState.setTextAndPlaceCursorAtEnd("")
         platformHaptics.perform(if (dismissed) PlatformHapticPattern.Pop else PlatformHapticPattern.Send)
     }
+    val appearance = state.appearance
+    val listState = rememberLazyListState()
+    val chatScope = rememberCoroutineScope()
+    val isNewChat = messages.isEmpty()
+    var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+    val showUpdatePill = shouldShowUpdatePill(
+        checkForUpdates = appearance.checkForUpdates,
+        forceCheck = false,
+        isNewChat = isNewChat,
+        currentVersion = IOS_APP_VERSION,
+        latest = state.updateInfo,
+        ignoredVersion = appearance.ignoredUpdateVersion.takeIf { it.isNotBlank() },
+        ignoredTimeEpochMs = appearance.ignoredUpdateTimeEpochMs,
+        nowEpochMs = Clock.System.now().toEpochMilliseconds(),
+        dismissedVersion = dismissedUpdateVersion,
+    )
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(state.selectedConversationId, appearance.enableMessageGenerationHapticEffect) {
+        if (!appearance.enableMessageGenerationHapticEffect) return@LaunchedEffect
+        var previousLength = 0
+        snapshotFlow {
+            if (!state.generating) {
+                0
+            } else {
+                messages.lastOrNull { !it.outgoing }?.text?.length ?: 0
+            }
+        }.collect { length ->
+            if (length == 0) {
+                previousLength = 0
+            } else if (length > previousLength + 24) {
+                platformHaptics.perform(PlatformHapticPattern.ScrollEdge)
+                previousLength = length
+            } else if (length < previousLength) {
+                previousLength = length
+            }
+        }
+    }
+    val chromeBlur = if (appearance.enableBlurEffect) Modifier.blur(12.dp) else Modifier
+    val toolbar: @Composable () -> Unit = {
+        TopAppBar(
+            title = {
+                Column {
+                    Text(state.assistant.name, fontWeight = FontWeight.SemiBold)
+                    if (appearance.showContextTokenSummary) {
+                        val usage = messages.lastOrNull { it.usage != null }?.usage
+                        val label = if (usage != null) {
+                            iosTokenUsageLabel(usage.promptTokens, usage.completionTokens, usage.totalTokens)
+                        } else {
+                            "Context"
+                        }
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+            navigationIcon = {
+                LastChatMenuButton(
+                    onClick = onOpenMenu,
+                    contentDescription = "Messages",
+                )
+            },
+            actions = {
+                if (showUpdatePill) {
+                    Surface(
+                        onClick = { showUpdateDialog = true },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, end = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("New Update", style = MaterialTheme.typography.labelLarge)
+                            IconButton(
+                                onClick = { dismissedUpdateVersion = state.updateInfo?.version },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Dismiss")
+                            }
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier.combinedClickable(
+                        onClick = onOpenOverlay,
+                        onLongClick = onOpenOverlay,
+                    ),
+                ) {
+                    Icon(Icons.Rounded.Assistant, contentDescription = "Assistant overlay")
+                }
+                IconButton(onClick = onShareConversation) {
+                    Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
+                }
+            },
+            modifier = chromeBlur,
+        )
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent),
-        topBar = {
-            TopAppBar(
-                title = { Text(state.assistant.name, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    LastChatMenuButton(
-                        onClick = onOpenMenu,
-                        contentDescription = "Messages",
-                    )
-                },
-                actions = {
-                    Box(
-                        modifier = Modifier.combinedClickable(
-                            onClick = onOpenOverlay,
-                            onLongClick = onOpenOverlay,
-                        ),
-                    ) {
-                        Icon(Icons.Rounded.Assistant, contentDescription = "Assistant overlay")
-                    }
-                    IconButton(onClick = onShareConversation) {
-                        Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
-                    }
-                },
-            )
-        },
+        topBar = { if (!appearance.chatToolbarAtBottom) toolbar() },
         bottomBar = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
                     .navigationBarsPadding()
+                    .then(chromeBlur)
                     .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (appearance.chatToolbarAtBottom) toolbar()
                 pendingQuestionnaire?.let { questionnaire ->
                     IosCharacterQuestionsCard(
                         questionnaire = questionnaire,
@@ -744,6 +867,7 @@ private fun ChatPage(
                                     inputState.text.isNotBlank() || state.pendingAttachments.isNotEmpty() ->
                                         LastChatComposerAction.Send
                                     state.stt.enabled && state.hasSttApiKey -> LastChatComposerAction.Stt
+                                    appearance.sttReplaceModelIcon && state.stt.enabled -> LastChatComposerAction.Stt
                                     else -> LastChatComposerAction.Picker
                                 }
                                 LastChatComposerActionButton(
@@ -806,77 +930,130 @@ private fun ChatPage(
             }
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item { Spacer(Modifier.height(8.dp)) }
-            if (state.loading) {
-                item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            } else if (messages.isEmpty()) {
-                item {
-                    MessageBubble(
-                        message = DisplayMessage("How can I help?", outgoing = false),
-                        attachmentOpener = attachmentOpener,
-                        audioPlayer = audioPlayer,
-                        playingAudioUrl = playingAudioUrl,
-                        platformHaptics = platformHaptics,
-                        isTtsSpeaking = state.ttsSpeaking,
-                        isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
-                        showAssistantBubbles = state.appearance.showAssistantBubbles,
-                        fontSizeRatio = state.appearance.fontSizeRatio,
-                        rpStyleRules = state.appearance.rpStyleRules,
-                        onSpeak = onSpeak,
-                        onStopSpeaking = onStopSpeaking,
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            val showNewChatContent = isNewChat &&
+                !state.loading &&
+                (
+                    appearance.newChatHeaderStyle != IosNewChatHeaderStyle.NONE ||
+                        appearance.newChatContentStyle != IosNewChatContentStyle.NONE
                     )
+            if (showNewChatContent) {
+                IosNewChatEmpty(
+                    appearance = appearance,
+                    assistantName = state.assistant.name,
+                    onTemplateClick = { prompt ->
+                        inputState.setTextAndPlaceCursorAtEnd(prompt)
+                        platformHaptics.perform(PlatformHapticPattern.Pop)
+                    },
+                    onOpenImageGeneration = onOpenImageGeneration,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp),
+                )
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item { Spacer(Modifier.height(8.dp)) }
+                if (state.loading) {
+                    item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
                 }
-            }
-            items(messages) { message ->
-                Column {
-                    MessageBubble(
-                        message = message,
-                        attachmentOpener = attachmentOpener,
-                        audioPlayer = audioPlayer,
-                        playingAudioUrl = playingAudioUrl,
-                        platformHaptics = platformHaptics,
-                        isTtsSpeaking = state.ttsSpeaking,
-                        isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
-                        showAssistantBubbles = state.appearance.showAssistantBubbles,
-                        fontSizeRatio = state.appearance.fontSizeRatio,
-                        rpStyleRules = state.appearance.rpStyleRules,
-                        onSpeak = onSpeak,
-                        onStopSpeaking = onStopSpeaking,
-                    )
-                    IosMessageActionsRow(
-                        message = message,
-                        clipboard = clipboard,
-                        platformHaptics = platformHaptics,
-                        onEdit = {
-                            message.messageId?.let { id ->
-                                editingMessageId = id
-                                editingText = message.text
-                            }
-                        },
-                        onDelete = { message.messageId?.let(onDeleteMessage) },
-                        onFork = { message.messageId?.let(onForkMessage) },
-                        onSelect = { index ->
-                            message.branchNode?.let { node ->
-                                onSelectVersion(node.id.toString(), index)
-                            }
-                        },
-                        onRegenerate = onRegenerate,
-                    )
+                items(messages) { message ->
+                    Column {
+                        MessageBubble(
+                            message = message,
+                            attachmentOpener = attachmentOpener,
+                            audioPlayer = audioPlayer,
+                            playingAudioUrl = playingAudioUrl,
+                            platformHaptics = platformHaptics,
+                            isTtsSpeaking = state.ttsSpeaking,
+                            isTtsAvailable = state.tts.enabled && (state.hasTtsApiKey || state.tts.type == IosTtsProviderType.SYSTEM),
+                            appearance = appearance,
+                            generating = state.generating && message.messageId == messages.lastOrNull()?.messageId,
+                            onSpeak = onSpeak,
+                            onStopSpeaking = onStopSpeaking,
+                        )
+                        IosMessageActionsRow(
+                            message = message,
+                            clipboard = clipboard,
+                            platformHaptics = platformHaptics,
+                            onEdit = {
+                                message.messageId?.let { id ->
+                                    editingMessageId = id
+                                    editingText = message.text
+                                }
+                            },
+                            onDelete = { message.messageId?.let(onDeleteMessage) },
+                            onFork = { message.messageId?.let(onForkMessage) },
+                            onSelect = { index ->
+                                message.branchNode?.let { node ->
+                                    onSelectVersion(node.id.toString(), index)
+                                }
+                            },
+                            onRegenerate = onRegenerate,
+                        )
+                    }
                 }
+                if (state.generating) item {
+                    GroupedMessageBubble(
+                        position = BubblePosition.SINGLE,
+                        role = BubbleRole.ACTIVITY,
+                    ) { TypingIndicator() }
+                }
+                state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
+                item { Spacer(Modifier.height(8.dp)) }
             }
-            if (state.generating) item {
-                GroupedMessageBubble(
-                    position = BubblePosition.SINGLE,
-                    role = BubbleRole.ACTIVITY,
-                ) { TypingIndicator() }
+            if (appearance.showMessageJumper && messages.isNotEmpty()) {
+                IosMessageJumper(
+                    onLeft = appearance.messageJumperOnLeft,
+                    listState = listState,
+                    scope = chatScope,
+                )
             }
-            state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
-            item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+    if (showUpdateDialog) {
+        val info = state.updateInfo
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            title = { Text(if (info != null) "Update ${info.version}" else "Updates") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (info != null) {
+                        Text("Current version $IOS_APP_VERSION")
+                        if (info.changelog.isNotBlank()) Text(info.changelog)
+                        info.downloads.firstOrNull()?.let { download ->
+                            Text("${download.name} · ${download.size}")
+                        }
+                    } else {
+                        Text(state.updateCheckError ?: "No GitHub release is available.")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val url = info?.downloads?.firstOrNull()?.url
+                            ?: "https://github.com/Cocolalilal/LastChat/releases/latest"
+                        openIosExternalUrl(url)
+                        showUpdateDialog = false
+                    },
+                ) { Text("Open release") }
+            },
+            dismissButton = {
+                Row {
+                    if (info != null) {
+                        TextButton(
+                            onClick = {
+                                onIgnoreUpdate(info.version)
+                                showUpdateDialog = false
+                            },
+                        ) { Text("Ignore for a week") }
+                    }
+                    TextButton(onClick = { showUpdateDialog = false }) { Text("Close") }
+                }
+            },
+        )
     }
     editingMessageId?.let { id ->
         AlertDialog(
@@ -1034,24 +1211,82 @@ private fun MessageBubble(
     platformHaptics: PlatformHaptics,
     isTtsSpeaking: Boolean,
     isTtsAvailable: Boolean,
-    showAssistantBubbles: Boolean,
-    fontSizeRatio: Float,
-    rpStyleRules: List<IosRpStyleRule>,
+    appearance: IosAppearancePreferences,
+    generating: Boolean = false,
     onSpeak: (String) -> Unit,
     onStopSpeaking: () -> Unit,
 ) {
-    val styledText = remember(message.text, rpStyleRules) {
-        buildIosRoleplayText(message.text, rpStyleRules)
+    val styledText = remember(message.text, appearance.rpStyleRules) {
+        buildIosRoleplayText(message.text, appearance.rpStyleRules)
     }
+    val segments = remember(message.text) { splitIosChatText(message.text) }
     val attachments = message.parts.filter { part ->
         part is UIMessagePart.Image || part is UIMessagePart.Video ||
             part is UIMessagePart.Audio || part is UIMessagePart.Document
+    }
+    val fontSizeRatio = appearance.fontSizeRatio
+    var reasoningExpanded by remember(message.messageId, appearance.autoCloseThinking, generating) {
+        mutableStateOf(!appearance.autoCloseThinking || generating)
     }
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        if (!message.outgoing && (appearance.showModelIcon || appearance.showModelName)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (appearance.showModelIcon) {
+                    IosAvatarGlyph(
+                        label = message.modelName?.firstOrNull()?.uppercase() ?: "A",
+                        size = 28.dp,
+                    )
+                }
+                if (appearance.showModelName) {
+                    Text(
+                        text = message.modelName?.ifBlank { "Assistant" } ?: "Assistant",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        if (message.outgoing && appearance.showUserAvatar) {
+            IosAvatarGlyph(label = "Y", size = 28.dp)
+        }
+        if (!message.outgoing && message.reasoning.isNotBlank()) {
+            Surface(
+                onClick = { reasoningExpanded = !reasoningExpanded },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(
+                        if (reasoningExpanded) "Thinking" else "Thought",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val preview = if (reasoningExpanded) {
+                        message.reasoning
+                    } else if (appearance.reasoningPreviewEnabled) {
+                        iosReasoningPreview(message.reasoning)
+                    } else {
+                        null
+                    }
+                    preview?.let { text ->
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (reasoningExpanded) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
         if (attachments.isNotEmpty()) {
             LastChatMessageAttachmentRow(alignEnd = message.outgoing) {
                 items(
@@ -1102,13 +1337,13 @@ private fun MessageBubble(
             }
         }
         if (message.text.isNotBlank()) {
-            if (!message.outgoing && !showAssistantBubbles) {
-                Text(
-                    text = styledText,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
-                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
-                    ),
+            if (!message.outgoing && !appearance.showAssistantBubbles) {
+                IosChatTextBody(
+                    segments = segments,
+                    styledText = styledText,
+                    fontSizeRatio = fontSizeRatio,
+                    wrapCode = appearance.codeBlockAutoWrap,
+                    collapseCode = appearance.codeBlockAutoCollapse,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             } else {
@@ -1117,12 +1352,12 @@ private fun MessageBubble(
                     role = if (message.outgoing) BubbleRole.USER else BubbleRole.ASSISTANT,
                     modifier = Modifier.fillMaxWidth(0.86f),
                 ) {
-                    Text(
-                        text = styledText,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
-                            lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
-                        ),
+                    IosChatTextBody(
+                        segments = segments,
+                        styledText = styledText,
+                        fontSizeRatio = fontSizeRatio,
+                        wrapCode = appearance.codeBlockAutoWrap,
+                        collapseCode = appearance.codeBlockAutoCollapse,
                     )
                 }
             }
@@ -1138,6 +1373,289 @@ private fun MessageBubble(
                 )
             }
         }
+        if (!message.outgoing && appearance.showContextStacks && message.contextStack.total > 0) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    message.contextStack.label,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        if (!message.outgoing && appearance.showTokenUsage) {
+            message.usage?.let { usage ->
+                Text(
+                    iosTokenUsageLabel(usage.promptTokens, usage.completionTokens, usage.totalTokens),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosAvatarGlyph(label: String, size: androidx.compose.ui.unit.Dp) {
+    Surface(
+        modifier = Modifier.size(size),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun IosChatTextBody(
+    segments: List<IosChatTextSegment>,
+    styledText: AnnotatedString,
+    fontSizeRatio: Float,
+    wrapCode: Boolean,
+    collapseCode: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val bodyStyle = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontSizeRatio,
+        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontSizeRatio,
+    )
+    if (segments.none { it is IosChatTextSegment.Code }) {
+        Text(text = styledText, style = bodyStyle, modifier = modifier)
+        return
+    }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        segments.forEach { segment ->
+            when (segment) {
+                is IosChatTextSegment.Text -> {
+                    if (segment.value.isNotBlank()) {
+                        Text(
+                            text = buildIosRoleplayText(segment.value, emptyList()),
+                            style = bodyStyle,
+                        )
+                    }
+                }
+                is IosChatTextSegment.Code -> IosChatCodeBlock(
+                    language = segment.language,
+                    code = segment.value,
+                    wrap = wrapCode,
+                    collapse = collapseCode,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosChatCodeBlock(
+    language: String,
+    code: String,
+    wrap: Boolean,
+    collapse: Boolean,
+) {
+    var expanded by remember(code) { mutableStateOf(!collapse) }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    language.ifBlank { "code" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (collapse) {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "Collapse" else "Expand")
+                    }
+                }
+            }
+            if (expanded) {
+                val codeModifier = if (wrap) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState())
+                Text(
+                    text = code,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    modifier = codeModifier,
+                    softWrap = wrap,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IosNewChatEmpty(
+    appearance: IosAppearancePreferences,
+    assistantName: String,
+    onTemplateClick: (String) -> Unit,
+    onOpenImageGeneration: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hour = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        when (appearance.newChatHeaderStyle) {
+            IosNewChatHeaderStyle.NONE -> Unit
+            IosNewChatHeaderStyle.GREETING -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (appearance.newChatShowAvatar) {
+                        IosAvatarGlyph(label = assistantName.firstOrNull()?.uppercase() ?: "A", size = 44.dp)
+                    }
+                    Text(
+                        iosGreeting(hour, assistantName),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+            IosNewChatHeaderStyle.BIG_ICON -> {
+                if (appearance.newChatShowAvatar) {
+                    IosAvatarGlyph(label = assistantName.firstOrNull()?.uppercase() ?: "A", size = 80.dp)
+                }
+                Text(
+                    assistantName.ifBlank { "Assistant" },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        when (appearance.newChatContentStyle) {
+            IosNewChatContentStyle.NONE -> Unit
+            IosNewChatContentStyle.TEMPLATES -> {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IosNewChatTemplateCard("Write", Icons.Rounded.Edit) { onTemplateClick(IOS_NEW_CHAT_WRITE_PROMPT) }
+                    IosNewChatTemplateCard("Code", Icons.Rounded.Code) { onTemplateClick(IOS_NEW_CHAT_CODE_PROMPT) }
+                    IosNewChatTemplateCard("Brainstorm", Icons.Rounded.Lightbulb) {
+                        onTemplateClick(IOS_NEW_CHAT_BRAINSTORM_PROMPT)
+                    }
+                    IosNewChatTemplateCard("Learn", Icons.AutoMirrored.Rounded.MenuBook) {
+                        onTemplateClick(IOS_NEW_CHAT_LEARN_PROMPT)
+                    }
+                }
+            }
+            IosNewChatContentStyle.ACTIONS -> {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IosNewChatActionPill("Create image", Icons.Rounded.Image, onOpenImageGeneration)
+                    IosNewChatActionPill("Brainstorm", Icons.Rounded.Lightbulb) {
+                        onTemplateClick(IOS_NEW_CHAT_BRAINSTORM_PROMPT)
+                    }
+                    IosNewChatActionPill("Code", Icons.Rounded.Code) { onTemplateClick(IOS_NEW_CHAT_CODE_PROMPT) }
+                    IosNewChatActionPill("Write", Icons.Rounded.Edit) { onTemplateClick(IOS_NEW_CHAT_WRITE_PROMPT) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosNewChatTemplateCard(title: String, icon: ImageVector, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.widthIn(min = 140.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(icon, contentDescription = null)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun IosNewChatActionPill(title: String, icon: ImageVector, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(title, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.IosMessageJumper(
+    onLeft: Boolean,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    AnimatedVisibility(
+        visible = true,
+        modifier = Modifier.align(if (onLeft) Alignment.CenterStart else Alignment.CenterEnd),
+        enter = slideInHorizontally(initialOffsetX = { if (onLeft) -it * 2 else it * 2 }),
+        exit = slideOutHorizontally(targetOffsetX = { if (onLeft) -it * 2 else it * 2 }),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            IosJumperButton(Icons.Rounded.KeyboardDoubleArrowUp, "Jump to top") {
+                scope.launch { listState.animateScrollToItem(0) }
+            }
+            IosJumperButton(Icons.Rounded.KeyboardArrowUp, "Previous message") {
+                scope.launch {
+                    listState.animateScrollToItem((listState.firstVisibleItemIndex - 1).coerceAtLeast(0))
+                }
+            }
+            IosJumperButton(Icons.Rounded.KeyboardArrowDown, "Next message") {
+                scope.launch {
+                    val last = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                    listState.animateScrollToItem((listState.firstVisibleItemIndex + 1).coerceAtMost(last))
+                }
+            }
+            IosJumperButton(Icons.Rounded.KeyboardDoubleArrowDown, "Jump to bottom") {
+                scope.launch {
+                    val last = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                    listState.animateScrollToItem(last)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosJumperButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        tonalElevation = 4.dp,
+        color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp),
+    ) {
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.padding(4.dp))
     }
 }
 
@@ -1859,6 +2377,8 @@ private fun SettingsPage(
     onSaveFontSettings: (Boolean) -> Unit,
     onSaveUiCustomization: (Boolean, Float, Boolean, Boolean, Boolean, Boolean) -> Unit,
     onSaveDisplayKnobs: (Boolean, Boolean, Boolean, Boolean) -> Unit,
+    onSaveAppearancePreferences: (IosAppearancePreferences) -> Unit,
+    onRefreshUpdateCheck: () -> Unit,
     onRefreshModelCatalog: () -> Unit,
     onDownloadLocalLlm: (String) -> Unit,
     onDownloadLocalStt: (String) -> Unit,
@@ -1967,6 +2487,112 @@ private fun SettingsPage(
     }
     var ttsAutoplay by remember(state.appearance.ttsAutoplay) {
         mutableStateOf(state.appearance.ttsAutoplay)
+    }
+    var showMessageJumper by remember(state.appearance.showMessageJumper) {
+        mutableStateOf(state.appearance.showMessageJumper)
+    }
+    var messageJumperOnLeft by remember(state.appearance.messageJumperOnLeft) {
+        mutableStateOf(state.appearance.messageJumperOnLeft)
+    }
+    var enableBlurEffect by remember(state.appearance.enableBlurEffect) {
+        mutableStateOf(state.appearance.enableBlurEffect)
+    }
+    var codeBlockAutoWrap by remember(state.appearance.codeBlockAutoWrap) {
+        mutableStateOf(state.appearance.codeBlockAutoWrap)
+    }
+    var codeBlockAutoCollapse by remember(state.appearance.codeBlockAutoCollapse) {
+        mutableStateOf(state.appearance.codeBlockAutoCollapse)
+    }
+    var showContextStacks by remember(state.appearance.showContextStacks) {
+        mutableStateOf(state.appearance.showContextStacks)
+    }
+    var newChatHeaderStyle by remember(state.appearance.newChatHeaderStyle) {
+        mutableStateOf(state.appearance.newChatHeaderStyle)
+    }
+    var newChatContentStyle by remember(state.appearance.newChatContentStyle) {
+        mutableStateOf(state.appearance.newChatContentStyle)
+    }
+    var newChatShowAvatar by remember(state.appearance.newChatShowAvatar) {
+        mutableStateOf(state.appearance.newChatShowAvatar)
+    }
+    var enableGenerationHaptics by remember(state.appearance.enableMessageGenerationHapticEffect) {
+        mutableStateOf(state.appearance.enableMessageGenerationHapticEffect)
+    }
+    var showUserAvatar by remember(state.appearance.showUserAvatar) {
+        mutableStateOf(state.appearance.showUserAvatar)
+    }
+    var showModelName by remember(state.appearance.showModelName) {
+        mutableStateOf(state.appearance.showModelName)
+    }
+    var showContextTokenSummary by remember(state.appearance.showContextTokenSummary) {
+        mutableStateOf(state.appearance.showContextTokenSummary)
+    }
+    var reasoningPreviewEnabled by remember(state.appearance.reasoningPreviewEnabled) {
+        mutableStateOf(state.appearance.reasoningPreviewEnabled)
+    }
+    var chatToolbarAtBottom by remember(state.appearance.chatToolbarAtBottom) {
+        mutableStateOf(state.appearance.chatToolbarAtBottom)
+    }
+    var sttReplaceModelIcon by remember(state.appearance.sttReplaceModelIcon) {
+        mutableStateOf(state.appearance.sttReplaceModelIcon)
+    }
+    fun appearanceDraft(): IosAppearancePreferences = state.appearance.copy(
+        showAssistantBubbles = showAssistantBubbles,
+        fontSizeRatio = fontSizeRatio,
+        showModelIcon = showModelIcon,
+        showTokenUsage = showTokenUsage,
+        autoCloseThinking = autoCloseThinking,
+        enableUIHaptics = enableUIHaptics,
+        enableNotificationOnMessageGeneration = notifyOnGeneration,
+        checkForUpdates = checkForUpdates,
+        createNewConversationOnStart = createNewConversationOnStart,
+        ttsAutoplay = ttsAutoplay,
+        showMessageJumper = showMessageJumper,
+        messageJumperOnLeft = messageJumperOnLeft,
+        enableBlurEffect = enableBlurEffect,
+        codeBlockAutoWrap = codeBlockAutoWrap,
+        codeBlockAutoCollapse = codeBlockAutoCollapse,
+        showContextStacks = showContextStacks,
+        newChatHeaderStyle = newChatHeaderStyle,
+        newChatContentStyle = newChatContentStyle,
+        newChatShowAvatar = newChatShowAvatar,
+        enableMessageGenerationHapticEffect = enableGenerationHaptics,
+        showUserAvatar = showUserAvatar,
+        showModelName = showModelName,
+        showContextTokenSummary = showContextTokenSummary,
+        reasoningPreviewEnabled = reasoningPreviewEnabled,
+        chatToolbarAtBottom = chatToolbarAtBottom,
+        sttReplaceModelIcon = sttReplaceModelIcon,
+    )
+    fun persistAppearance(transform: IosAppearancePreferences.() -> IosAppearancePreferences) {
+        val next = appearanceDraft().transform()
+        showAssistantBubbles = next.showAssistantBubbles
+        fontSizeRatio = next.fontSizeRatio
+        showModelIcon = next.showModelIcon
+        showTokenUsage = next.showTokenUsage
+        autoCloseThinking = next.autoCloseThinking
+        enableUIHaptics = next.enableUIHaptics
+        notifyOnGeneration = next.enableNotificationOnMessageGeneration
+        checkForUpdates = next.checkForUpdates
+        createNewConversationOnStart = next.createNewConversationOnStart
+        ttsAutoplay = next.ttsAutoplay
+        showMessageJumper = next.showMessageJumper
+        messageJumperOnLeft = next.messageJumperOnLeft
+        enableBlurEffect = next.enableBlurEffect
+        codeBlockAutoWrap = next.codeBlockAutoWrap
+        codeBlockAutoCollapse = next.codeBlockAutoCollapse
+        showContextStacks = next.showContextStacks
+        newChatHeaderStyle = next.newChatHeaderStyle
+        newChatContentStyle = next.newChatContentStyle
+        newChatShowAvatar = next.newChatShowAvatar
+        enableGenerationHaptics = next.enableMessageGenerationHapticEffect
+        showUserAvatar = next.showUserAvatar
+        showModelName = next.showModelName
+        showContextTokenSummary = next.showContextTokenSummary
+        reasoningPreviewEnabled = next.reasoningPreviewEnabled
+        chatToolbarAtBottom = next.chatToolbarAtBottom
+        sttReplaceModelIcon = next.sttReplaceModelIcon
+        onSaveAppearancePreferences(next)
     }
     var rpStyleRules by remember(state.appearance.rpStyleRules) {
         mutableStateOf(state.appearance.rpStyleRules)
@@ -2886,6 +3512,22 @@ private fun SettingsPage(
                                 }
                             },
                         )
+                        LastChatSettingGroupInputItem(
+                            title = "Speech composer",
+                            subtitle = "Replace the model picker with STT when idle",
+                            darkTheme = darkTheme,
+                        ) {
+                            LastChatFormItem(
+                                label = { Text("STT replaces model icon") },
+                                description = { Text("Same sttReplaceModelIcon key Android uses on the Default model page") },
+                                tail = {
+                                    Switch(
+                                        checked = sttReplaceModelIcon,
+                                        onCheckedChange = { persistAppearance { copy(sttReplaceModelIcon = it) } },
+                                    )
+                                },
+                            )
+                        }
                         LastChatSettingGroupInputItem(
                             title = "Image generation model",
                             subtitle = if (imageGeneration.enabled) imageGeneration.modelId
@@ -4079,23 +4721,37 @@ private fun SettingsPage(
                                 LastChatFormItem(
                                     label = { Text("Check for updates") },
                                     description = {
-                                        Text("Same preference Android uses before GitHub release checks")
+                                        Text("Fetches GitHub releases/latest with the same Accept header Android uses")
                                     },
                                     tail = {
                                         Switch(
                                             checked = checkForUpdates,
                                             onCheckedChange = { enabled ->
-                                                checkForUpdates = enabled
-                                                onSaveDisplayKnobs(
-                                                    notifyOnGeneration,
-                                                    enabled,
-                                                    createNewConversationOnStart,
-                                                    ttsAutoplay,
-                                                )
+                                                persistAppearance { copy(checkForUpdates = enabled) }
                                             },
                                         )
                                     },
                                 )
+                                state.updateInfo?.let { info ->
+                                    Text(
+                                        "Latest GitHub release: ${info.version}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    info.downloads.firstOrNull()?.let { download ->
+                                        Text(
+                                            "${download.name} · ${download.size.ifBlank { formatUpdateFileSize(0) }}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                state.updateCheckError?.let { error ->
+                                    Text(error, color = MaterialTheme.colorScheme.error)
+                                }
+                                Button(
+                                    onClick = onRefreshUpdateCheck,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Check GitHub now") }
                                 LastChatFormItem(
                                     label = { Text("TTS autoplay") },
                                     description = { Text("Read assistant replies automatically after generation") },
@@ -4140,22 +4796,55 @@ private fun SettingsPage(
                                 darkTheme = darkTheme,
                             ) {
                                 LastChatFormItem(
+                                    label = { Text("New chat header") },
+                                    description = { Text("GREETING, BIG_ICON, or NONE — same key as Android") },
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IosNewChatHeaderStyle.entries.forEach { style ->
+                                            if (newChatHeaderStyle == style) {
+                                                Button(onClick = {}) { Text(style.name) }
+                                            } else {
+                                                TextButton(onClick = {
+                                                    persistAppearance { copy(newChatHeaderStyle = style) }
+                                                }) { Text(style.name) }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (newChatHeaderStyle != IosNewChatHeaderStyle.NONE) {
+                                    LastChatFormItem(
+                                        label = { Text("Avatar in new-chat header") },
+                                        tail = {
+                                            Switch(
+                                                checked = newChatShowAvatar,
+                                                onCheckedChange = { persistAppearance { copy(newChatShowAvatar = it) } },
+                                            )
+                                        },
+                                    )
+                                }
+                                LastChatFormItem(
+                                    label = { Text("New chat content") },
+                                    description = { Text("TEMPLATES, ACTIONS, or NONE") },
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IosNewChatContentStyle.entries.forEach { style ->
+                                            if (newChatContentStyle == style) {
+                                                Button(onClick = {}) { Text(style.name) }
+                                            } else {
+                                                TextButton(onClick = {
+                                                    persistAppearance { copy(newChatContentStyle = style) }
+                                                }) { Text(style.name) }
+                                            }
+                                        }
+                                    }
+                                }
+                                LastChatFormItem(
                                     label = { Text("Assistant message bubbles") },
                                     description = { Text("Show a filled surface behind assistant messages") },
                                     tail = {
                                         Switch(
                                             checked = showAssistantBubbles,
-                                            onCheckedChange = { enabled ->
-                                                showAssistantBubbles = enabled
-                                                onSaveUiCustomization(
-                                                    enabled,
-                                                    fontSizeRatio,
-                                                    showModelIcon,
-                                                    showTokenUsage,
-                                                    autoCloseThinking,
-                                                    enableUIHaptics,
-                                                )
-                                            },
+                                            onCheckedChange = { persistAppearance { copy(showAssistantBubbles = it) } },
                                         )
                                     },
                                 )
@@ -4165,17 +4854,25 @@ private fun SettingsPage(
                                     tail = {
                                         Switch(
                                             checked = showModelIcon,
-                                            onCheckedChange = { enabled ->
-                                                showModelIcon = enabled
-                                                onSaveUiCustomization(
-                                                    showAssistantBubbles,
-                                                    fontSizeRatio,
-                                                    enabled,
-                                                    showTokenUsage,
-                                                    autoCloseThinking,
-                                                    enableUIHaptics,
-                                                )
-                                            },
+                                            onCheckedChange = { persistAppearance { copy(showModelIcon = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Show model name") },
+                                    tail = {
+                                        Switch(
+                                            checked = showModelName,
+                                            onCheckedChange = { persistAppearance { copy(showModelName = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Show user avatar") },
+                                    tail = {
+                                        Switch(
+                                            checked = showUserAvatar,
+                                            onCheckedChange = { persistAppearance { copy(showUserAvatar = it) } },
                                         )
                                     },
                                 )
@@ -4185,17 +4882,17 @@ private fun SettingsPage(
                                     tail = {
                                         Switch(
                                             checked = showTokenUsage,
-                                            onCheckedChange = { enabled ->
-                                                showTokenUsage = enabled
-                                                onSaveUiCustomization(
-                                                    showAssistantBubbles,
-                                                    fontSizeRatio,
-                                                    showModelIcon,
-                                                    enabled,
-                                                    autoCloseThinking,
-                                                    enableUIHaptics,
-                                                )
-                                            },
+                                            onCheckedChange = { persistAppearance { copy(showTokenUsage = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Context token summary") },
+                                    description = { Text("Show the last-turn token meter in the chat toolbar") },
+                                    tail = {
+                                        Switch(
+                                            checked = showContextTokenSummary,
+                                            onCheckedChange = { persistAppearance { copy(showContextTokenSummary = it) } },
                                         )
                                     },
                                 )
@@ -4205,16 +4902,78 @@ private fun SettingsPage(
                                     tail = {
                                         Switch(
                                             checked = autoCloseThinking,
-                                            onCheckedChange = { enabled ->
-                                                autoCloseThinking = enabled
-                                                onSaveUiCustomization(
-                                                    showAssistantBubbles,
-                                                    fontSizeRatio,
-                                                    showModelIcon,
-                                                    showTokenUsage,
-                                                    enabled,
-                                                    enableUIHaptics,
-                                                )
+                                            onCheckedChange = { persistAppearance { copy(autoCloseThinking = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Reasoning preview") },
+                                    description = { Text("Keep a short snippet visible when thinking is collapsed") },
+                                    tail = {
+                                        Switch(
+                                            checked = reasoningPreviewEnabled,
+                                            onCheckedChange = { persistAppearance { copy(reasoningPreviewEnabled = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Context stacks") },
+                                    description = { Text("Show lorebook, skill, and memory counts on assistant turns") },
+                                    tail = {
+                                        Switch(
+                                            checked = showContextStacks,
+                                            onCheckedChange = { persistAppearance { copy(showContextStacks = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Blur chrome") },
+                                    description = { Text("Soft-focus the chat toolbar and composer") },
+                                    tail = {
+                                        Switch(
+                                            checked = enableBlurEffect,
+                                            onCheckedChange = { persistAppearance { copy(enableBlurEffect = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Toolbar at bottom") },
+                                    tail = {
+                                        Switch(
+                                            checked = chatToolbarAtBottom,
+                                            onCheckedChange = { persistAppearance { copy(chatToolbarAtBottom = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Message jumper") },
+                                    description = { Text("Overlay jump-to-top/bottom controls on the chat list") },
+                                    tail = {
+                                        Switch(
+                                            checked = showMessageJumper,
+                                            onCheckedChange = { persistAppearance { copy(showMessageJumper = it) } },
+                                        )
+                                    },
+                                )
+                                if (showMessageJumper) {
+                                    LastChatFormItem(
+                                        label = { Text("Jumper on the left") },
+                                        tail = {
+                                            Switch(
+                                                checked = messageJumperOnLeft,
+                                                onCheckedChange = { persistAppearance { copy(messageJumperOnLeft = it) } },
+                                            )
+                                        },
+                                    )
+                                }
+                                LastChatFormItem(
+                                    label = { Text("Generation haptics") },
+                                    description = { Text("Pulse while the assistant reply is streaming") },
+                                    tail = {
+                                        Switch(
+                                            checked = enableGenerationHaptics,
+                                            onCheckedChange = {
+                                                persistAppearance { copy(enableMessageGenerationHapticEffect = it) }
                                             },
                                         )
                                     },
@@ -4225,17 +4984,25 @@ private fun SettingsPage(
                                     tail = {
                                         Switch(
                                             checked = enableUIHaptics,
-                                            onCheckedChange = { enabled ->
-                                                enableUIHaptics = enabled
-                                                onSaveUiCustomization(
-                                                    showAssistantBubbles,
-                                                    fontSizeRatio,
-                                                    showModelIcon,
-                                                    showTokenUsage,
-                                                    autoCloseThinking,
-                                                    enabled,
-                                                )
-                                            },
+                                            onCheckedChange = { persistAppearance { copy(enableUIHaptics = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Wrap code blocks") },
+                                    tail = {
+                                        Switch(
+                                            checked = codeBlockAutoWrap,
+                                            onCheckedChange = { persistAppearance { copy(codeBlockAutoWrap = it) } },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Collapse code blocks") },
+                                    tail = {
+                                        Switch(
+                                            checked = codeBlockAutoCollapse,
+                                            onCheckedChange = { persistAppearance { copy(codeBlockAutoCollapse = it) } },
                                         )
                                     },
                                 )
@@ -4248,14 +5015,7 @@ private fun SettingsPage(
                                             value = fontSizeRatio,
                                             onValueChange = { fontSizeRatio = it },
                                             onValueChangeFinished = {
-                                                onSaveUiCustomization(
-                                                    showAssistantBubbles,
-                                                    fontSizeRatio,
-                                                    showModelIcon,
-                                                    showTokenUsage,
-                                                    autoCloseThinking,
-                                                    enableUIHaptics,
-                                                )
+                                                persistAppearance { copy(fontSizeRatio = fontSizeRatio) }
                                             },
                                             valueRange = 0.5f..2f,
                                             steps = 11,
@@ -4311,7 +5071,7 @@ private fun SettingsPage(
                     val platformInfo = currentIosPlatformInfo()
                     LastChatAboutContent(
                         appName = "LastChat",
-                        versionName = "1.4.5",
+                        versionName = IOS_APP_VERSION,
                         darkTheme = darkTheme,
                         platformTitle = "iOS Version",
                         platformSubtitle = platformInfo.systemVersion,

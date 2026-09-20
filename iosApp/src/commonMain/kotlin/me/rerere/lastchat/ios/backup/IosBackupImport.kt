@@ -14,6 +14,8 @@ import kotlinx.serialization.json.intOrNull
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.lastchat.ios.IosAppearancePreferences
+import me.rerere.lastchat.ios.IosNewChatContentStyle
+import me.rerere.lastchat.ios.IosNewChatHeaderStyle
 import me.rerere.lastchat.ios.IosAssistantPreferences
 import me.rerere.lastchat.ios.IosLocalToolOption
 import me.rerere.lastchat.ios.IosMemoryMode
@@ -340,6 +342,25 @@ internal object IosBackupImporter {
             enableNotificationOnMessageGeneration = notify ?: defaults.enableNotificationOnMessageGeneration,
             checkForUpdates = checkUpdates ?: defaults.checkForUpdates,
             ttsAutoplay = ttsAutoplayMode != null && ttsAutoplayMode != "OFF",
+            showMessageJumper = display?.boolean("showMessageJumper") ?: defaults.showMessageJumper,
+            messageJumperOnLeft = display?.boolean("messageJumperOnLeft") ?: defaults.messageJumperOnLeft,
+            enableBlurEffect = display?.boolean("enableBlurEffect") ?: defaults.enableBlurEffect,
+            codeBlockAutoWrap = display?.boolean("codeBlockAutoWrap") ?: defaults.codeBlockAutoWrap,
+            codeBlockAutoCollapse = display?.boolean("codeBlockAutoCollapse") ?: defaults.codeBlockAutoCollapse,
+            showContextStacks = display?.boolean("showContextStacks") ?: defaults.showContextStacks,
+            newChatHeaderStyle = enumValueOrNull<IosNewChatHeaderStyle>(display?.string("newChatHeaderStyle"))
+                ?: defaults.newChatHeaderStyle,
+            newChatContentStyle = enumValueOrNull<IosNewChatContentStyle>(display?.string("newChatContentStyle"))
+                ?: defaults.newChatContentStyle,
+            newChatShowAvatar = display?.boolean("newChatShowAvatar") ?: defaults.newChatShowAvatar,
+            enableMessageGenerationHapticEffect = display?.boolean("enableMessageGenerationHapticEffect")
+                ?: defaults.enableMessageGenerationHapticEffect,
+            showUserAvatar = display?.boolean("showUserAvatar") ?: defaults.showUserAvatar,
+            showModelName = display?.boolean("showModelName") ?: defaults.showModelName,
+            showContextTokenSummary = display?.boolean("showContextTokenSummary") ?: defaults.showContextTokenSummary,
+            reasoningPreviewEnabled = display?.boolean("reasoningPreviewEnabled") ?: defaults.reasoningPreviewEnabled,
+            chatToolbarAtBottom = display?.boolean("chatToolbarAtBottom") ?: defaults.chatToolbarAtBottom,
+            sttReplaceModelIcon = display?.boolean("sttReplaceModelIcon") ?: defaults.sttReplaceModelIcon,
         )
     }
 
@@ -734,6 +755,11 @@ internal object IosBackupImporter {
     private fun parseUuid(value: String?): Uuid? {
         val text = value?.takeIf(String::isNotBlank) ?: return null
         return runCatching { Uuid.parse(text) }.getOrNull()
+    }
+
+    private inline fun <reified T : Enum<T>> enumValueOrNull(raw: String?): T? {
+        val text = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        return enumValues<T>().firstOrNull { it.name.equals(text, ignoreCase = true) }
     }
 
     private fun JsonObject.string(key: String): String? =

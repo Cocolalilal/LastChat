@@ -82,4 +82,10 @@ class IosUserNotificationPlatform : IosLocalNotificationPlatform {
         } else null
         return IosLocalNotificationResult("success", scheduledAt)
     }
+
+    override suspend fun cancel(identifier: String) {
+        val center = UNUserNotificationCenter.currentNotificationCenter()
+        center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
+        center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
+    }
 }

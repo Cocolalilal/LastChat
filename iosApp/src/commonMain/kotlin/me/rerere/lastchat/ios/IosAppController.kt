@@ -124,6 +124,8 @@ import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoProviders
+import me.rerere.rikkahub.utils.UpdateInfo
+import me.rerere.rikkahub.utils.fetchGithubLatestRelease
 import me.rerere.document.PlatformDocumentParser
 import me.rerere.document.PortableDocumentText
 import me.rerere.rikkahub.data.mcp.PortableMcpClient
@@ -191,6 +193,12 @@ data class IosProviderPreferences(
 enum class IosColorMode { SYSTEM, LIGHT, DARK }
 
 @Serializable
+enum class IosNewChatHeaderStyle { NONE, GREETING, BIG_ICON }
+
+@Serializable
+enum class IosNewChatContentStyle { NONE, TEMPLATES, ACTIONS }
+
+@Serializable
 data class IosAppearancePreferences(
     val themeId: String = "seafoam_mint",
     val colorMode: IosColorMode = IosColorMode.SYSTEM,
@@ -207,6 +215,24 @@ data class IosAppearancePreferences(
     val showTokenUsage: Boolean = false,
     val autoCloseThinking: Boolean = true,
     val enableUIHaptics: Boolean = true,
+    val showMessageJumper: Boolean = false,
+    val messageJumperOnLeft: Boolean = false,
+    val enableBlurEffect: Boolean = false,
+    val codeBlockAutoWrap: Boolean = false,
+    val codeBlockAutoCollapse: Boolean = true,
+    val showContextStacks: Boolean = false,
+    val newChatHeaderStyle: IosNewChatHeaderStyle = IosNewChatHeaderStyle.GREETING,
+    val newChatContentStyle: IosNewChatContentStyle = IosNewChatContentStyle.ACTIONS,
+    val newChatShowAvatar: Boolean = true,
+    val enableMessageGenerationHapticEffect: Boolean = false,
+    val showUserAvatar: Boolean = true,
+    val showModelName: Boolean = true,
+    val showContextTokenSummary: Boolean = true,
+    val reasoningPreviewEnabled: Boolean = false,
+    val chatToolbarAtBottom: Boolean = false,
+    val sttReplaceModelIcon: Boolean = false,
+    val ignoredUpdateVersion: String = "",
+    val ignoredUpdateTimeEpochMs: Long = 0L,
 )
 
 @Serializable
@@ -462,6 +488,8 @@ data class IosAppState(
     val overlayVisible: Boolean = false,
     val overlay: IosOverlayPreferences = IosOverlayPreferences(),
     val catalogStatus: ModelCatalogStatus = ModelCatalogStatus(),
+    val updateInfo: UpdateInfo? = null,
+    val updateCheckError: String? = null,
     val llmCatalog: LocalModelCatalog = LocalModelCatalog(),
     val sttCatalog: SherpaModelCatalog = SherpaModelCatalog(),
     val installedLlm: List<InstalledLocalModel> = emptyList(),
@@ -858,6 +886,7 @@ class IosAppController(
             }
             runCatching { onDeviceModels.warmUp() }
                 .onFailure { PlatformLog.w(TAG, "On-device catalog warm-up failed: ${it.message}") }
+            refreshUpdateCheck()
             if (mutableState.value.appearance.createNewConversationOnStart) {
                 val selected = mutableState.value.selectedConversation
                 if (selected != null && selected.currentMessages.isNotEmpty()) {
@@ -1589,19 +1618,16 @@ class IosAppController(
         autoCloseThinking: Boolean,
         enableUIHaptics: Boolean,
     ) {
-        mutableState.update {
-            it.copy(
-                appearance = it.appearance.copy(
-                    showAssistantBubbles = showAssistantBubbles,
-                    fontSizeRatio = fontSizeRatio.coerceIn(0.5f, 2.0f),
-                    showModelIcon = showModelIcon,
-                    showTokenUsage = showTokenUsage,
-                    autoCloseThinking = autoCloseThinking,
-                    enableUIHaptics = enableUIHaptics,
-                )
+        saveAppearancePreferences { current ->
+            current.copy(
+                showAssistantBubbles = showAssistantBubbles,
+                fontSizeRatio = fontSizeRatio.coerceIn(0.5f, 2.0f),
+                showModelIcon = showModelIcon,
+                showTokenUsage = showTokenUsage,
+                autoCloseThinking = autoCloseThinking,
+                enableUIHaptics = enableUIHaptics,
             )
         }
-        persistAsync()
     }
 
     fun saveDisplayKnobs(
@@ -1610,19 +1636,65 @@ class IosAppController(
         createNewConversationOnStart: Boolean,
         ttsAutoplay: Boolean,
     ) {
-        mutableState.update { current ->
+        saveAppearancePreferences { current ->
             current.copy(
-                appearance = current.appearance.copy(
-                    enableNotificationOnMessageGeneration = enableNotificationOnMessageGeneration,
-                    checkForUpdates = checkForUpdates,
-                    createNewConversationOnStart = createNewConversationOnStart,
-                    ttsAutoplay = ttsAutoplay,
-                ),
+                enableNotificationOnMessageGeneration = enableNotificationOnMessageGeneration,
+                checkForUpdates = checkForUpdates,
+                createNewConversationOnStart = createNewConversationOnStart,
+                ttsAutoplay = ttsAutoplay,
             )
         }
+    }
+
+    fun saveAppearancePreferences(appearance: IosAppearancePreferences) {
+        saveAppearancePreferences { appearance }
+    }
+
+    fun saveAppearancePreferences(transform: (IosAppearancePreferences) -> IosAppearancePreferences) {
+        mutableState.update { current ->
+            current.copy(appearance = transform(current.appearance))
+        }
         persistAsync()
-        if (enableNotificationOnMessageGeneration) {
+        val appearance = mutableState.value.appearance
+        if (appearance.enableNotificationOnMessageGeneration) {
             scope.launch { notificationPlatform.requestAuthorization() }
+        }
+        if (appearance.checkForUpdates) {
+            refreshUpdateCheck()
+        } else {
+            mutableState.update { it.copy(updateInfo = null, updateCheckError = null) }
+        }
+    }
+
+    fun ignoreUpdate(version: String) {
+        saveAppearancePreferences { current ->
+            current.copy(
+                ignoredUpdateVersion = version,
+                ignoredUpdateTimeEpochMs = Clock.System.now().toEpochMilliseconds(),
+            )
+        }
+    }
+
+    fun refreshUpdateCheck(force: Boolean = false) {
+        val snapshot = mutableState.value
+        if (!force && !snapshot.appearance.checkForUpdates) return
+        scope.launch {
+            runCatching {
+                fetchGithubLatestRelease(
+                    client = httpClient,
+                    userAgent = "LastChat $IOS_APP_VERSION iOS",
+                    assetNameFilter = { name ->
+                        name.endsWith(".ipa", ignoreCase = true) || name.endsWith(".apk", ignoreCase = true)
+                    },
+                    preferredArchitecture = currentIosPlatformInfo().architecture,
+                )
+            }.onSuccess { info ->
+                mutableState.update { it.copy(updateInfo = info, updateCheckError = null) }
+            }.onFailure { failure ->
+                mutableState.update {
+                    it.copy(updateCheckError = failure.message ?: "Update check failed")
+                }
+            }
         }
     }
 
@@ -4444,6 +4516,7 @@ class IosAppController(
         webServer.stop()
         if (!snapshot.web.enabled) {
             mutableState.update { it.copy(webApiRunning = false) }
+            cancelWebServerNotification()
             return
         }
         val password = secureStore.readString(WEB_PASSWORD_KEY)
@@ -4712,11 +4785,29 @@ class IosAppController(
             PortableWebApiRouter.handle(request, password, source)
         }
         mutableState.update { it.copy(webApiRunning = started) }
-        if (!started) {
+        if (started) {
+            postWebServerNotification(snapshot.web.port)
+        } else {
+            cancelWebServerNotification()
             mutableState.update {
                 it.copy(error = it.error ?: "The local web API could not bind on port ${snapshot.web.port}")
             }
         }
+    }
+
+    private suspend fun postWebServerNotification(port: Int) {
+        runCatching {
+            notificationPlatform.post(
+                identifier = IosNotificationCategory.WEB_SERVER_STATUS_ID,
+                title = "LastChat web server",
+                content = "Local browser access is running on port $port",
+                category = IosNotificationCategory.WEB_SERVER,
+            )
+        }
+    }
+
+    private suspend fun cancelWebServerNotification() {
+        runCatching { notificationPlatform.cancel(IosNotificationCategory.WEB_SERVER_STATUS_ID) }
     }
 
     private fun webStatus(status: String, code: Int = 200): PortableWebApiResponse =
