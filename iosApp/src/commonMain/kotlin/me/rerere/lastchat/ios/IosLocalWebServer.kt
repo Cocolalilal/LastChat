@@ -1,5 +1,7 @@
 package me.rerere.lastchat.ios
 
+import me.rerere.rikkahub.data.web.PortableWebApiResponse
+
 internal expect class IosLocalWebServer() {
     fun start(
         port: Int,
@@ -7,8 +9,9 @@ internal expect class IosLocalWebServer() {
             method: String,
             path: String,
             authorization: String?,
-            queryToken: String?,
-        ) -> Pair<Int, String>,
+            query: Map<String, String>,
+            body: String?,
+        ) -> PortableWebApiResponse,
     ): Boolean
 
     fun stop()

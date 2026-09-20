@@ -27,4 +27,6 @@ __pycache__/
 Thumbs.db
 graphify-out/
 temp_aar/
+iosApp/xcode/LastChatIOS/webui/**
+!iosApp/xcode/LastChatIOS/webui/.gitkeep
 .commandcode/taste/workflow/taste.md

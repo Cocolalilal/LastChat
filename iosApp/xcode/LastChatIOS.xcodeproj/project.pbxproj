@@ -7,12 +7,14 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* LastChatIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* LastChatIOSApp.swift */; };
+		A10000000000000000000002 /* webui in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* webui */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000010 /* LastChatIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LastChatIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* LastChatIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastChatIOSApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000013 /* webui */ = {isa = PBXFileReference; lastKnownFileType = folder; path = webui; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +40,7 @@
 			children = (
 				A10000000000000000000011 /* LastChatIOSApp.swift */,
 				A10000000000000000000012 /* Info.plist */,
+				A10000000000000000000013 /* webui */,
 			);
 			path = LastChatIOS;
 			sourceTree = "<group>";
@@ -96,7 +99,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A10000000000000000000052 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000052 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002 /* webui in Resources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */

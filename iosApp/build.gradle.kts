@@ -62,3 +62,20 @@ compose.resources {
     publicResClass = false
     packageOfResClass = "me.rerere.lastchat.ios.generated.resources"
 }
+
+val webUiDir = rootProject.file("web-ui")
+val webUiBuildDir = webUiDir.resolve("build/client")
+val iosWebUiDest = layout.projectDirectory.dir("xcode/LastChatIOS/webui")
+
+val prepareIosWebUi by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Copies the React web-ui client into the Xcode LastChatIOS/webui folder when a build exists."
+    from(webUiBuildDir)
+    into(iosWebUiDest)
+    includeEmptyDirs = false
+    onlyIf { webUiBuildDir.resolve("index.html").exists() }
+}
+
+tasks.matching { it.name.startsWith("compileKotlinIos") || it.name.contains("embedAndSignAppleFrameworkForXcode") }.configureEach {
+    dependsOn(prepareIosWebUi)
+}

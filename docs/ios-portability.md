@@ -414,10 +414,13 @@ Current iOS app status:
 - WebDAV backup uses a portable PROPFIND/PUT/GET/DELETE client. Local restore
   still imports Android backup archives;
 - A password-gated JSON web API can bind on the configured port (conversations
-  list/detail). The React web-ui SPA is not yet packaged into the iOS app;
+  list/detail, bootstrap, settings SSE, send/stop, and file content). When
+  `web-ui/build/client` exists, Gradle copies it into `iosApp/xcode/LastChatIOS/webui`
+  so the React SPA is hosted from the same routes as Android. Without that
+  bundle, iOS serves a password-gated HTML conversation client that uses the
+  same API;
 - Darwin HTTP now honors per-request `PlatformHttpProxy` via NSURLSession
   proxy dictionaries plus Proxy-Authorization;
-- generation can be cancelled from the composer without retaining a blank
 - all eight cloud TTS providers are configurable on iOS with Keychain-only
   credentials. Android and iOS now share the same chunking, prefetch, retry,
   queue, pause/resume, seeking, and playback-state controller; Android retains
@@ -439,8 +442,9 @@ Current iOS app status:
 - the Fonts destination applies its persisted phone-system-font toggle to the
   entire Material theme and previews app and code typography. The bundled
   Google Sans Flex family remains the default, matching Android;
-- inline attachment audio, local LiteRT models, the PRoot Linux workspace,
-  Android widgets/share/system TTS, and the full bundled web-ui SPA still
+- inline attachment audio now plays in-chat through `PlatformAttachmentAudioPlayer`
+  (AVAudioPlayer). Local LiteRT models, the PRoot Linux workspace,
+  Android widgets/share/system TTS, and Xcode screenshot QA still
   require platform-specific work before the iOS app is feature-complete.
 
 On macOS:

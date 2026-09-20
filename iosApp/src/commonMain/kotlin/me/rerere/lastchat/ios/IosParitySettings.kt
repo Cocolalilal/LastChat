@@ -335,9 +335,13 @@ internal fun IosWebSettings(
         LastChatSettingGroupInputItem(
             title = "Remote access",
             subtitle = if (state.webApiRunning) {
-                "Local JSON API is listening on port ${state.web.port}."
+                if (IosNativeFiles.webUiBundled) {
+                    "Serving the bundled web UI and JSON API on port ${state.web.port}."
+                } else {
+                    "JSON API and fallback web client are listening on port ${state.web.port}. Package web-ui/build/client into the Xcode webui folder for the full React SPA."
+                }
             } else {
-                "Serves a password-gated JSON API for conversations. The bundled React web-ui still needs Xcode asset packaging before the full Android SPA is hosted here."
+                "Serves a password-gated JSON API plus the React web-ui when the Xcode webui folder is populated from web-ui/build/client."
             },
             darkTheme = darkTheme,
         ) {

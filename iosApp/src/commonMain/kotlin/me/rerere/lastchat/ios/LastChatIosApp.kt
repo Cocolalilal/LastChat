@@ -154,6 +154,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.vector.ImageVector
 import me.rerere.common.platform.PlatformFilePicker
 import me.rerere.common.platform.PlatformAttachmentOpener
+import me.rerere.common.platform.PlatformAttachmentAudioPlayer
+import me.rerere.common.platform.UnavailableAttachmentAudioPlayer
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.lastchat.ios.backup.IosBackupImportReport
@@ -173,6 +175,7 @@ import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddButton
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddIcon
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerCapsule
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAttachmentRow
+import me.rerere.rikkahub.ui.components.chat.LastChatAudioAttachmentTile
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAudioIcon
 import me.rerere.rikkahub.ui.components.chat.LastChatDocumentAttachmentTile
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerImageAttachment
@@ -267,6 +270,7 @@ fun LastChatIosApp(
     platformHaptics: PlatformHaptics,
     filePicker: PlatformFilePicker,
     attachmentOpener: PlatformAttachmentOpener,
+    audioPlayer: PlatformAttachmentAudioPlayer = UnavailableAttachmentAudioPlayer(),
     darkTheme: Boolean? = null,
 ) {
     LaunchedEffect(controller) { controller.initialize() }
@@ -347,6 +351,7 @@ fun LastChatIosApp(
                         onStopSpeech = controller::stopSpeechRecognition,
                         platformHaptics = platformHaptics,
                         attachmentOpener = attachmentOpener,
+                        audioPlayer = audioPlayer,
                         onOpenMenu = { scope.launch { drawerState.open() } },
                         onOpenSettings = { route = IosRoute.Settings },
                         onSelectVersion = { nodeId, index ->
@@ -456,6 +461,7 @@ private fun ChatPage(
     onStopSpeech: ((String) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
     attachmentOpener: PlatformAttachmentOpener,
+    audioPlayer: PlatformAttachmentAudioPlayer,
     onOpenMenu: () -> Unit,
     onOpenSettings: () -> Unit,
     onSelectVersion: (String, Int) -> Unit,
@@ -465,6 +471,7 @@ private fun ChatPage(
     onForkMessage: (String) -> Unit,
 ) {
     val inputState = remember { TextFieldState() }
+    val playingAudioUrl by audioPlayer.playingUrl.collectAsState()
     val clipboard = LocalClipboardManager.current
     var editingMessageId by remember { mutableStateOf<String?>(null) }
     var editingText by remember { mutableStateOf("") }
@@ -762,6 +769,8 @@ private fun ChatPage(
                     MessageBubble(
                         message = DisplayMessage("How can I help?", outgoing = false),
                         attachmentOpener = attachmentOpener,
+                        audioPlayer = audioPlayer,
+                        playingAudioUrl = playingAudioUrl,
                         platformHaptics = platformHaptics,
                         isTtsSpeaking = state.ttsSpeaking,
                         isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
@@ -778,6 +787,8 @@ private fun ChatPage(
                     MessageBubble(
                         message = message,
                         attachmentOpener = attachmentOpener,
+                        audioPlayer = audioPlayer,
+                        playingAudioUrl = playingAudioUrl,
                         platformHaptics = platformHaptics,
                         isTtsSpeaking = state.ttsSpeaking,
                         isTtsAvailable = state.tts.enabled && state.hasTtsApiKey,
@@ -969,6 +980,8 @@ private fun IosCharacterQuestionOptionRow(
 private fun MessageBubble(
     message: DisplayMessage,
     attachmentOpener: PlatformAttachmentOpener,
+    audioPlayer: PlatformAttachmentAudioPlayer,
+    playingAudioUrl: String?,
     platformHaptics: PlatformHaptics,
     isTtsSpeaking: Boolean,
     isTtsAvailable: Boolean,
@@ -1017,13 +1030,14 @@ private fun MessageBubble(
                                 attachmentOpener.open(part.url)
                             },
                         )
-                        is UIMessagePart.Audio -> LastChatDocumentAttachmentTile(
+                        is UIMessagePart.Audio -> LastChatAudioAttachmentTile(
                             fileName = "Audio",
-                            modifier = Modifier.size(72.dp),
-                            onClick = {
+                            playing = playingAudioUrl == part.url,
+                            onToggle = {
                                 platformHaptics.perform(PlatformHapticPattern.Pop)
-                                attachmentOpener.open(part.url)
+                                audioPlayer.toggle(part.url)
                             },
+                            modifier = Modifier.size(72.dp),
                         )
                         is UIMessagePart.Document -> LastChatDocumentAttachmentTile(
                             fileName = part.fileName,

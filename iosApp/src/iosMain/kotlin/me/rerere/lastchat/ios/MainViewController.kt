@@ -66,6 +66,7 @@ fun MainViewController(): UIViewController {
             platformHaptics = platformServices.haptics,
             filePicker = filePicker,
             attachmentOpener = attachmentOpener,
+            audioPlayer = platformServices.attachmentAudioPlayer,
         )
     }
     return viewController

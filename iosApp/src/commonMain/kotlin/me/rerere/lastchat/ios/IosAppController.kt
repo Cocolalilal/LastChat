@@ -72,7 +72,9 @@ import me.rerere.rikkahub.data.prompt.PromptInjectionEngine
 import me.rerere.rikkahub.data.sync.PortableWebDavClient
 import me.rerere.rikkahub.data.sync.PortableWebDavConfig
 import me.rerere.rikkahub.data.sync.PortableWebDavItem
+import me.rerere.rikkahub.data.web.PortableWebApiResponse
 import me.rerere.rikkahub.data.web.PortableWebApiRouter
+import me.rerere.rikkahub.data.web.PortableWebApiSource
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_MANIFEST_ENTRY
 import me.rerere.lastchat.ios.backup.IOS_BACKUP_SETTINGS_ENTRY
 import me.rerere.lastchat.ios.backup.IosBackupDataImporter
@@ -1639,7 +1641,14 @@ class IosAppController(
         return GenerationTarget(selected.first.withApiKey(apiKey, selected.second), selected.second)
     }
 
-    fun send(text: String) {
+    fun send(text: String, conversationId: String? = null) {
+        if (conversationId != null) {
+            val exists = mutableState.value.conversations.any { it.id == conversationId }
+            if (!exists) return
+            if (mutableState.value.selectedConversationId != conversationId) {
+                mutableState.update { it.copy(selectedConversationId = conversationId) }
+            }
+        }
         val prompt = text.trim()
         val snapshot = mutableState.value
         val conversation = snapshot.selectedConversation ?: return
@@ -3555,41 +3564,71 @@ class IosAppController(
             return
         }
         val password = secureStore.readString(WEB_PASSWORD_KEY)
-        val started = webServer.start(snapshot.web.port) { method, path, authorization, queryToken ->
+        val started = webServer.start(snapshot.web.port) { method, path, authorization, query, body ->
             val current = mutableState.value
-            val conversationsJson = json.encodeToString(
-                JsonArray(
-                    current.conversations.map { conversation ->
-                        buildJsonObject {
-                            put("id", conversation.id)
-                            put("title", conversation.title)
-                            put("updatedAtEpochMs", conversation.updatedAtEpochMs)
-                        }
-                    },
+            val generatingId = current.selectedConversationId.takeIf { current.generating }
+            val source = PortableWebApiSource(
+                webUiBundled = IosNativeFiles.webUiBundled,
+                authRequired = !password.isNullOrBlank(),
+                conversationsListJson = IosWebDto.conversationList(current.conversations, generatingId),
+                bootstrapJson = IosWebDto.bootstrap(
+                    assistantId = current.selectedAssistantId ?: current.assistant.id,
+                    assistants = current.assistants,
+                    conversations = current.conversations,
+                    generatingId = generatingId,
                 ),
+                settingsJson = IosWebDto.settings(
+                    appearance = current.appearance,
+                    assistantId = current.selectedAssistantId ?: current.assistant.id,
+                    chatModelId = current.selectedChatModelId.orEmpty(),
+                    assistants = current.assistants,
+                    providers = current.providers,
+                    skills = current.skills,
+                    lorebooks = current.lorebooks,
+                    mcpServers = current.mcpServers,
+                    searchType = current.search.provider.name.lowercase(),
+                    enableWebSearch = current.search.enabled,
+                ),
+                conversationJson = { id ->
+                    current.conversations.firstOrNull { it.id == id }?.let { conversation ->
+                        IosWebDto.conversation(conversation, generatingId == conversation.id)
+                    }
+                },
+                staticAsset = { relative ->
+                    val bytes = IosNativeFiles.loadWebAsset(relative)
+                    if (bytes == null) {
+                        null
+                    } else {
+                        val contentType = PortableWebApiRouter.guessAssetContentType(relative)
+                        if (contentType.startsWith("text/") || contentType.contains("javascript") || contentType.contains("json") || contentType.contains("svg")) {
+                            PortableWebApiResponse(statusCode = 200, contentType = contentType, body = bytes.decodeToString())
+                        } else {
+                            PortableWebApiResponse.bytes(contentType, bytes)
+                        }
+                    }
+                },
+                fileContent = { uri -> fileResponse(uri) },
+                filePath = { relative -> fileResponse(fileStore.localUrl(relative)) },
+                onSendMessage = { conversationId, requestBody ->
+                    send(PortableWebApiRouter.extractMessageText(requestBody), conversationId)
+                    PortableWebApiResponse.json(200, """{"ok":true}""")
+                },
+                onStop = { conversationId ->
+                    if (mutableState.value.selectedConversationId == conversationId) {
+                        cancelGeneration()
+                    }
+                    PortableWebApiResponse.json(200, """{"ok":true}""")
+                },
             )
             PortableWebApiRouter.handle(
                 method = method,
                 path = path,
                 authorization = authorization,
-                queryToken = queryToken,
+                query = query,
+                body = body,
                 password = password,
-                conversationsJson = conversationsJson,
-                conversationJson = { id ->
-                    current.conversations.firstOrNull { it.id == id }?.let { conversation ->
-                        json.encodeToString(
-                            buildJsonObject {
-                                put("id", conversation.id)
-                                put("title", conversation.title)
-                                put(
-                                    "messages",
-                                    JsonArray(conversation.currentMessages.map { JsonPrimitive(it.toText()) }),
-                                )
-                            },
-                        )
-                    }
-                },
-            ).let { response -> response.statusCode to response.body }
+                source = source,
+            )
         }
         mutableState.update { it.copy(webApiRunning = started) }
         if (!started) {
@@ -3597,6 +3636,12 @@ class IosAppController(
                 it.copy(error = it.error ?: "The local web API could not bind on port ${snapshot.web.port}")
             }
         }
+    }
+
+    private fun fileResponse(uri: String?): PortableWebApiResponse? {
+        if (uri.isNullOrBlank()) return null
+        val bytes = IosNativeFiles.readUrl(uri) ?: return null
+        return PortableWebApiResponse.bytes(PortableWebApiRouter.guessAssetContentType(uri), bytes)
     }
 
     private fun persistAsync() {
