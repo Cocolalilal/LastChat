@@ -54,4 +54,43 @@ class IosChatDisplayTest {
         assertEquals("A", iosAvatarLetter(" ada", "Y"))
         assertEquals("Y", iosAvatarLetter("  ", "Y"))
     }
+
+    @Test
+    fun customFontSourcePrefersLoadedFamilyOverBundledFlex() {
+        val custom = androidx.compose.ui.text.font.FontFamily.Serif
+        val settings = IosFontSettings(
+            headerFont = IosFontConfig(fontSource = IosFontSource.CUSTOM, customFontPath = "custom_fonts/x.ttf"),
+        )
+        assertEquals(
+            custom,
+            iosFontFamilyChoice(
+                lastChatFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
+                settings = settings,
+                usePhoneSystemFont = false,
+                customFamily = custom,
+            ),
+        )
+        assertEquals(
+            androidx.compose.ui.text.font.FontFamily.SansSerif,
+            iosFontFamilyChoice(
+                lastChatFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
+                settings = settings,
+                usePhoneSystemFont = false,
+                customFamily = null,
+            ),
+        )
+        val customCode = androidx.compose.ui.text.font.FontFamily.Serif
+        assertEquals(
+            customCode,
+            iosCodeFontFamily(
+                settings = IosFontSettings(
+                    codeFont = IosFontConfig(
+                        fontSource = IosFontSource.CUSTOM,
+                        customFontPath = "custom_fonts/code.ttf",
+                    ),
+                ),
+                customFamily = customCode,
+            ),
+        )
+    }
 }

@@ -269,7 +269,25 @@ class IosMemoryStateTest {
             userAvatar = IosAvatar.Emoji("🦊"),
             fontSettings = IosFontSettings(
                 usePhoneSystemFont = true,
-                headerFont = IosFontConfig(weight = 500f, fontSize = 1.1f),
+                headerFont = IosFontConfig(
+                    fontSource = IosFontSource.CUSTOM,
+                    customFontPath = "custom_fonts/ada.ttf",
+                    customFontName = "Ada",
+                    weight = 500f,
+                    fontSize = 1.1f,
+                    width = 110f,
+                    roundness = 80f,
+                    customAxes = listOf(
+                        me.rerere.common.font.PortableFontAxis(
+                            tag = "opsz",
+                            name = "Optical Size",
+                            minValue = 8f,
+                            maxValue = 144f,
+                            defaultValue = 14f,
+                            currentValue = 18f,
+                        ),
+                    ),
+                ),
             ).normalize(),
             ttsTextFilterRules = listOf(
                 me.rerere.rikkahub.utils.TtsTextFilterRule(
