@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import me.rerere.common.archive.PortableTarBz2
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
@@ -89,7 +90,14 @@ class PortableOnDeviceModelManager(
     }
 
     fun downloadLlm(meta: LocalModelMetadata) {
-        startDownload(meta.id, meta.name, "llm", meta.sizeInBytes, meta.downloadUrl) { path, size ->
+        startDownload(
+            meta.id,
+            meta.name,
+            "llm",
+            meta.sizeInBytes,
+            meta.downloadUrl,
+            dest = "$DOWNLOAD_DIR/llm/${meta.id}.bin",
+        ) { path, size ->
             val installed = InstalledLocalModel(
                 id = meta.id,
                 displayName = meta.name,
@@ -113,7 +121,30 @@ class PortableOnDeviceModelManager(
     }
 
     fun downloadStt(meta: SherpaModelMetadata) {
-        startDownload(meta.id, meta.name, "stt", meta.archiveSizeBytes, meta.archiveUrl) { path, size ->
+        val archivePath = "$DOWNLOAD_DIR/stt/${meta.id}.tar.bz2"
+        startDownload(
+            id = meta.id,
+            name = meta.name,
+            kind = "stt",
+            expectedBytes = meta.archiveSizeBytes,
+            url = meta.archiveUrl,
+            dest = archivePath,
+        ) { path, _ ->
+            val bytes = fileStore.readBytes(path) ?: error("missing archive")
+            val extracted = PortableTarBz2.extractRequiredFiles(bytes, meta.files.values.toSet())
+            val destDir = "$DOWNLOAD_DIR/stt/${meta.id}"
+            var total = 0L
+            extracted.forEach { (relative, data) ->
+                val out = "$destDir/$relative"
+                fileStore.writeBytes(out, data)
+                total += data.size
+            }
+            fileStore.delete(path)
+            val installedFiles = if (meta.files.isEmpty()) {
+                extracted.mapValues { (relative, _) -> "$destDir/$relative" }
+            } else {
+                meta.files.mapValues { (_, relative) -> "$destDir/$relative" }
+            }
             val installed = InstalledSherpaModel(
                 id = meta.id,
                 displayName = meta.name,
@@ -121,10 +152,10 @@ class PortableOnDeviceModelManager(
                 languages = meta.languages,
                 streaming = meta.streaming,
                 onlineModelType = meta.onlineModelType,
-                directoryPath = path,
-                sizeInBytes = size,
+                directoryPath = destDir,
+                sizeInBytes = total,
                 revision = meta.revision,
-                files = meta.files,
+                files = installedFiles,
                 config = meta.defaultConfig,
             )
             val next = _installedStt.value.filterNot { it.id == meta.id } + installed
@@ -148,7 +179,8 @@ class PortableOnDeviceModelManager(
 
     suspend fun deleteStt(id: String) {
         val existing = _installedStt.value.firstOrNull { it.id == id } ?: return
-        fileStore.delete(existing.directoryPath)
+        deleteTree(existing.directoryPath)
+        existing.files.values.forEach { fileStore.delete(it) }
         val next = _installedStt.value.filterNot { it.id == id }
         _installedStt.value = next
         persist(STT_INDEX_PATH, next)
@@ -160,11 +192,11 @@ class PortableOnDeviceModelManager(
         kind: String,
         expectedBytes: Long,
         url: String,
+        dest: String,
         onInstalled: suspend (path: String, size: Long) -> Unit,
     ) {
         if (jobs[id]?.isActive == true) return
         jobs[id] = scope.launch {
-            val dest = "$DOWNLOAD_DIR/$kind/$id.bin"
             put(PortableDownload.Running(id, name, PortableDownloadProgress(0, expectedBytes), kind))
             runCatching {
                 if (fileStore.exists(dest)) fileStore.delete(dest)
@@ -193,6 +225,11 @@ class PortableOnDeviceModelManager(
             }
             jobs.remove(id)
         }
+    }
+
+    private suspend fun deleteTree(path: String) {
+        fileStore.listFiles(path).forEach { fileStore.delete(it) }
+        fileStore.delete(path)
     }
 
     private fun put(state: PortableDownload) = _downloads.update { it + (state.modelId to state) }
