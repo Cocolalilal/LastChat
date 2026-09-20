@@ -248,7 +248,8 @@ val dataSourceModule = module {
             conversationRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
-            memorySearchService = get()
+            memorySearchService = get(),
+            onDeviceLlm = get(),
         )
     }
 
@@ -447,26 +448,26 @@ val dataSourceModule = module {
     }
     single { me.rerere.asr.local.SherpaSttRuntime() }
 
-    single {
-        ProviderManager(
-            platformHttpClient = get(),
-            platformMediaEncoder = AndroidPlatformMediaEncoder(),
-            platformJwtSigner = AndroidPlatformJwtSigner(),
-        ).apply {
-            // The on-device provider lives in :local-llm, so register it here (see ProviderManager).
-            registerProvider(
-                me.rerere.locallm.litert.LiteRtProvider.NAME,
-                get<me.rerere.locallm.litert.LiteRtProvider>(),
-            )
-        }
-    }
-
     single<me.rerere.common.runtime.OnDeviceLlmRuntime> {
         me.rerere.locallm.AndroidOnDeviceLlmRuntime(
             provider = get(),
             store = get(),
             embedder = get(),
         )
+    }
+
+    single {
+        ProviderManager(
+            platformHttpClient = get(),
+            platformMediaEncoder = AndroidPlatformMediaEncoder(),
+            platformJwtSigner = AndroidPlatformJwtSigner(),
+        ).apply {
+            // LiteRT is an OnDeviceLlmRuntime implementation, not a second chat engine.
+            registerProvider(
+                me.rerere.ai.provider.OnDeviceLlmProvider.NAME,
+                me.rerere.ai.provider.OnDeviceLlmProvider(get()),
+            )
+        }
     }
 
     single {

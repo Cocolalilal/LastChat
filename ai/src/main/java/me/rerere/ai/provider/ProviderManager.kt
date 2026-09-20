@@ -60,9 +60,8 @@ class ProviderManager(
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ComfyUI -> getProvider("comfyui")
-            // The on-device provider lives in :local-llm (which depends on :ai), so it can't be
-            // constructed here. The app registers it at startup via registerProvider("litert_local", ...).
-            is ProviderSetting.LiteRtLocal -> getProvider("litert_local")
+            // Registered by the app/iOS host as OnDeviceLlmProvider wrapping OnDeviceLlmRuntime.
+            is ProviderSetting.LiteRtLocal -> getProvider(OnDeviceLlmProvider.NAME)
         } as Provider<T>
     }
 }

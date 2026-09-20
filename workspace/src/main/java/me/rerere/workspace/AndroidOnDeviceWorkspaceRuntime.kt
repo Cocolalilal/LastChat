@@ -26,25 +26,36 @@ class AndroidOnDeviceWorkspaceRuntime(
                 path = entry.path,
                 isDirectory = entry.isDirectory,
                 sizeBytes = entry.sizeBytes,
+                name = entry.name,
+                updatedAtEpochMs = entry.updatedAt,
             )
         }
 
     override suspend fun readFile(path: String): String = manager.readText(root, path)
 
-    override suspend fun writeFile(path: String, text: String) {
-        manager.writeText(root, path, text)
+    override suspend fun writeFile(path: String, text: String, overwrite: Boolean) {
+        manager.writeText(root, path, text, overwrite)
     }
 
-    override suspend fun exec(command: String, timeoutSeconds: Long): OnDeviceWorkspaceCommandResult {
+    override suspend fun exec(
+        command: String,
+        timeoutSeconds: Long,
+        cwd: String?,
+        stdin: ByteArray?,
+    ): OnDeviceWorkspaceCommandResult {
         val result = manager.executeCommand(
             root = root,
             command = command,
+            cwd = cwd.orEmpty(),
             timeoutMillis = (timeoutSeconds * 1000L).coerceAtLeast(1_000L),
+            stdin = stdin,
         )
         return OnDeviceWorkspaceCommandResult(
             exitCode = result.exitCode,
             stdout = result.stdout,
             stderr = result.stderr,
+            timedOut = result.timedOut,
+            truncated = result.truncated,
         )
     }
 

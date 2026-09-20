@@ -2,6 +2,7 @@ package me.rerere.lastchat.ios
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import me.rerere.ai.provider.ImageGenerationMethod
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

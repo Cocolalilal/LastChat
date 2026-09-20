@@ -90,7 +90,7 @@ import me.rerere.rikkahub.ui.components.ui.AutoSaveIndicator
 
 
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.ai.tools.resolveWorkspaceToolApproval
+import me.rerere.ai.workspace.resolveWorkspaceToolApproval
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import androidx.compose.ui.res.stringResource
 import me.rerere.rikkahub.R

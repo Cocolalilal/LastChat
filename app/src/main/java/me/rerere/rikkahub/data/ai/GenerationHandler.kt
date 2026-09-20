@@ -39,6 +39,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -560,6 +561,7 @@ class GenerationHandler(
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
+    private val onDeviceLlm: me.rerere.common.runtime.OnDeviceLlmRuntime,
 ) {
     fun generateText(
         settings: Settings,
@@ -589,7 +591,7 @@ class GenerationHandler(
                 .onFailure { Log.w(TAG, "Could not sync skill package ${skill.name}", it) }
         }
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
-        val providerImpl = providerManager.getProviderByType(provider)
+        val providerImpl = resolveProvider(provider)
 
         var messages: List<UIMessage> = messages
         val allSkillIds = settings.skills
@@ -2125,6 +2127,14 @@ class GenerationHandler(
     }
 
 
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : ProviderSetting> resolveProvider(setting: T): me.rerere.ai.provider.Provider<T> {
+        if (setting is ProviderSetting.LiteRtLocal) {
+            return OnDeviceLlmProvider(onDeviceLlm) as me.rerere.ai.provider.Provider<T>
+        }
+        return providerManager.getProviderByType(setting)
+    }
+
     fun translateText(
         settings: Settings,
         sourceText: String,
@@ -2138,7 +2148,7 @@ class GenerationHandler(
         val provider = model.findProvider(settings.providers)
             ?: error("Translation provider not found")
 
-        val providerHandler = providerManager.getProviderByType(provider)
+        val providerHandler = resolveProvider(provider)
 
         if (!ModelRegistry.QWEN_MT.match(model.modelId)) {
             // Use regular translation with prompt

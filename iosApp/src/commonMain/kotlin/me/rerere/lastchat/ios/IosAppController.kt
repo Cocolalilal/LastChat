@@ -10,7 +10,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -35,6 +34,7 @@ import me.rerere.ai.memory.MemoryVectorMath
 import me.rerere.ai.memory.PortableMemoryChunker
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -45,13 +45,13 @@ import me.rerere.ai.provider.withComfyDefaults
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageChunk
-import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.currentVersionMessages
 import me.rerere.ai.ui.mergeCurrentVersionMessages
 import me.rerere.ai.ui.toMessageNode
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.ai.workspace.createPortableWorkspaceTools
 import me.rerere.asr.CloudSpeechTranscription
 import me.rerere.asr.CloudSpeechTranscriptionRequest
 import me.rerere.common.platform.PlatformFileStore
@@ -487,6 +487,10 @@ class IosAppController(
     val state: StateFlow<IosAppState> = mutableState.asStateFlow()
 
     init {
+        providerManager.registerProvider(
+            OnDeviceLlmProvider.NAME,
+            OnDeviceLlmProvider(onDeviceLlm),
+        )
         scope.launch {
             ttsController.isSpeaking.collect { speaking ->
                 mutableState.update { it.copy(ttsSpeaking = speaking) }
@@ -621,6 +625,9 @@ class IosAppController(
             mutableState.value.scheduledMessages.forEach(::scheduleMessageInProcess)
             refreshScheduledMessageBackgroundSchedule()
             refreshWebServer()
+            widgetStore.consumePendingShareText()?.takeIf { it.isNotBlank() }?.let { pending ->
+                ingestShareText(pending)
+            }
         }
     }
 
@@ -2204,37 +2211,9 @@ class IosAppController(
         messages: List<UIMessage>,
         tools: List<Tool>,
     ): kotlinx.coroutines.flow.Flow<MessageChunk> {
-        if (providerSetting is ProviderSetting.LiteRtLocal) {
-            return flow {
-                val prompt = flattenMessagesForOnDevice(messages)
-                val text = onDeviceLlm.generateText(model.modelId, prompt)
-                emit(
-                    MessageChunk(
-                        id = Uuid.random().toString(),
-                        model = model.modelId,
-                        choices = listOf(
-                            UIMessageChoice(
-                                index = 0,
-                                delta = UIMessage(
-                                    role = MessageRole.ASSISTANT,
-                                    parts = listOf(UIMessagePart.Text(text)),
-                                ),
-                                message = null,
-                                finishReason = "stop",
-                            ),
-                        ),
-                    ),
-                )
-            }
-        }
         return providerManager.getProviderByType(providerSetting).streamText(
             providerSetting, messages, TextGenerationParams(model = model, tools = tools),
         )
-    }
-
-    private fun flattenMessagesForOnDevice(messages: List<UIMessage>): String = messages.joinToString("\n\n") { message ->
-        val body = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-        "${message.role.name}: $body"
     }
 
     private fun scheduleAdaptiveMemory(conversationId: String) {
@@ -3251,94 +3230,8 @@ class IosAppController(
             )
         }
         if (IosLocalToolOption.WORKSPACE in assistant.localTools) {
-            addAll(buildWorkspaceTools())
+            addAll(createPortableWorkspaceTools(onDeviceWorkspace))
         }
-    }
-
-    private fun buildWorkspaceTools(): List<Tool> {
-        val reason = onDeviceWorkspace.unavailableReason
-            ?: WORKSPACE_UNAVAILABLE_REASON
-        fun unavailableResult() = buildJsonObject {
-            put("available", false)
-            put("error", reason)
-        }
-        return listOf(
-            Tool(
-                name = "workspace_read_file",
-                description = "Read a file from the on-device workspace sandbox.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("path", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Absolute path inside the workspace")
-                            })
-                        },
-                        required = listOf("path"),
-                    )
-                },
-                execute = { arguments ->
-                    val path = ((arguments as? JsonObject)?.get("path") as? JsonPrimitive)?.content.orEmpty()
-                    if (!onDeviceWorkspace.available) {
-                        unavailableResult()
-                    } else {
-                        buildJsonObject {
-                            put("path", path)
-                            put("text", onDeviceWorkspace.readFile(path))
-                        }
-                    }
-                },
-            ),
-            Tool(
-                name = "workspace_write_file",
-                description = "Write a UTF-8 text file in the on-device workspace sandbox.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("path", buildJsonObject { put("type", "string") })
-                            put("text", buildJsonObject { put("type", "string") })
-                        },
-                        required = listOf("path", "text"),
-                    )
-                },
-                execute = { arguments ->
-                    val obj = arguments as? JsonObject
-                    val path = (obj?.get("path") as? JsonPrimitive)?.content.orEmpty()
-                    val text = (obj?.get("text") as? JsonPrimitive)?.content.orEmpty()
-                    if (!onDeviceWorkspace.available) {
-                        unavailableResult()
-                    } else {
-                        onDeviceWorkspace.writeFile(path, text)
-                        buildJsonObject { put("path", path); put("ok", true) }
-                    }
-                },
-            ),
-            Tool(
-                name = "workspace_shell",
-                description = "Run a command in the on-device workspace sandbox.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("command", buildJsonObject { put("type", "string") })
-                        },
-                        required = listOf("command"),
-                    )
-                },
-                execute = { arguments ->
-                    val command = ((arguments as? JsonObject)?.get("command") as? JsonPrimitive)?.content.orEmpty()
-                    if (!onDeviceWorkspace.available) {
-                        unavailableResult()
-                    } else {
-                        val result = onDeviceWorkspace.exec(command)
-                        buildJsonObject {
-                            put("exitCode", result.exitCode)
-                            put("stdout", result.stdout)
-                            put("stderr", result.stderr)
-                        }
-                    }
-                },
-            ),
-        )
     }
 
     @OptIn(ExperimentalEncodingApi::class)
