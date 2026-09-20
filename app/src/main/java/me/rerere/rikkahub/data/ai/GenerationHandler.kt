@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -40,9 +41,20 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.generation.PortableChatEngine
 import me.rerere.ai.generation.PortableGenerationLoop
+import me.rerere.ai.generation.PortableGenerationPrepare
 import me.rerere.ai.generation.PortableGenerationSession
 import me.rerere.ai.generation.PortableGenerationUpdate
+import me.rerere.ai.generation.PortableInputTransformer
+import me.rerere.ai.generation.PortableMemoryToolRuntime
+import me.rerere.ai.generation.PortablePrepareRequest
+import me.rerere.ai.generation.PortablePlaceholderTransformer
+import me.rerere.ai.generation.PortableSkillToolBinding
+import me.rerere.ai.generation.PortableTransformerContext
 import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.createPortableManageSkillsTool
+import me.rerere.ai.generation.createPortableMemoryTools
+import me.rerere.ai.generation.defaultPortableInputTransformers
+import me.rerere.ai.generation.SKILL_MANAGEMENT_TOOL_NAME
 import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -57,9 +69,17 @@ import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
+import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.InputTransformResult
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
+import me.rerere.rikkahub.data.ai.transformers.TransformerContext
+import me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.androidPortableDocumentRuntime
+import me.rerere.rikkahub.data.ai.transformers.androidPortableOcrRuntime
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transformInput
 import me.rerere.rikkahub.data.ai.transformers.transforms
@@ -86,7 +106,6 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
-private const val SKILL_MANAGEMENT_TOOL_NAME = "manage_skills"
 internal const val MEMORY_SEARCH_TOOL_NAME = "search_memory"
 
 private val SMART_CONTEXT_PROTECTED_BODY_KEYS = setOf(
@@ -203,59 +222,12 @@ internal fun selectSmartTools(
     messages: List<UIMessage>,
     model: Model,
     inputBudgetTokens: Int,
-): List<Tool> {
-    if (tools.isEmpty()) return tools
-    val recentMessages = messages.takeLast(12)
-    val recentlyUsedNames = recentMessages.flatMap { message ->
-        message.getToolCalls().map { it.toolName }
-    }.toSet()
-    val queryTerms = recentMessages.lastOrNull { it.role == MessageRole.USER }
-        ?.toText()
-        .orEmpty()
-        .lowercase()
-        .split(Regex("[^a-z0-9_]+"))
-        .filter { it.length >= 3 }
-        .toSet()
-    data class RankedTool(val index: Int, val tool: Tool, val tokens: Int, val score: Int)
-    val ranked = tools.mapIndexed { index, tool ->
-        val systemPromptTokens = runCatching { tool.systemPrompt(model, messages) }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { ContextTokenEstimator.textTokens(it, model) }
-            ?: 0
-        val searchable = "${tool.name} ${tool.description}".lowercase()
-        val semanticHits = queryTerms.count { term -> searchable.contains(term) }
-        val score = when {
-            tool.name in recentlyUsedNames -> 10_000
-            tool.name == "look_at_screen" -> 8_000
-            tool.name == SKILL_MANAGEMENT_TOOL_NAME || tool.name == "ask_user" -> 2_000
-            else -> semanticHits * 100 - index
-        }
-        RankedTool(
-            index = index,
-            tool = tool,
-            tokens = (ContextTokenEstimator.toolDefinitionTokens(tool, model).toLong() + systemPromptTokens)
-                .coerceAtMost(Int.MAX_VALUE.toLong())
-                .toInt(),
-            score = score,
-        )
-    }
-    val total = ranked.sumOf { it.tokens }
-    val allocation = (inputBudgetTokens * 0.22).toInt()
-        .coerceAtLeast(128)
-        .coerceAtMost((inputBudgetTokens - 128).coerceAtLeast(0))
-    if (total <= allocation) return tools
-
-    var remaining = allocation
-    val selected = mutableSetOf<Int>()
-    ranked.sortedByDescending { it.score }.forEach { candidate ->
-        if (candidate.tokens <= remaining) {
-            selected += candidate.index
-            remaining = (remaining - candidate.tokens).coerceAtLeast(0)
-        }
-    }
-    return ranked.filter { it.index in selected }.map { it.tool }
-}
+): List<Tool> = PortableGenerationPrepare.selectSmartTools(
+    tools = tools,
+    messages = messages,
+    model = model,
+    inputBudgetTokens = inputBudgetTokens,
+)
 
 internal data class SkillActivationOutcome(
     val activatedSkills: List<me.rerere.rikkahub.data.model.Skill>,
@@ -432,131 +404,29 @@ internal fun createSkillManagementTool(
     automaticInvocationEnabled: Boolean = true,
     onUpdateTurnScopedSkillIds: suspend (Set<Uuid>) -> Unit,
 ): Tool? {
-    if (!automaticInvocationEnabled || state.availableSkills.isEmpty()) {
-        return null
-    }
-
-    fun parseTargets(args: kotlinx.serialization.json.JsonElement): List<String> {
-        val params = args.jsonObject
-        val targetsFromList = (params["skills"] as? JsonArray)
-            ?.mapNotNull { item ->
-                (item as? JsonPrimitive)?.contentOrNull
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-            }
-            ?: emptyList()
-        val targetFromSingle = (params["skill"] as? JsonPrimitive)
-            ?.contentOrNull
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-        return (targetsFromList + listOfNotNull(targetFromSingle))
-            .flatMap { raw ->
-                raw.split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-            }
-            .distinct()
-    }
-
-    fun summarizeSkill(skill: me.rerere.rikkahub.data.model.Skill): String {
-        val description = skill.description
-            .ifBlank { "No description provided." }
-            .replace('\n', ' ')
-            .trim()
-            .take(120)
-        return skill.compatibility
-            ?.takeIf { it.isNotBlank() }
-            ?.let { "$description (Requires: ${it.replace('\n', ' ').take(64)})" }
-            ?: description
-    }
-
-    val availableSkillSummary = state.availableSkills.joinToString("; ") { skill ->
-        val label = skill.name.ifBlank { skill.id.toString() }
-        "$label: ${summarizeSkill(skill)}"
-    }
-
-    return Tool(
-        name = SKILL_MANAGEMENT_TOOL_NAME,
-        description = "Activate relevant skills for this turn; their full instructions load on the next step. Available: $availableSkillSummary",
-        parameters = {
-            InputSchema.Obj(
-                properties = buildJsonObject {
-                    put("skills", buildJsonObject {
-                        put("type", "array")
-                        put("description", "Skills to activate for this turn, referenced by exact id or exact skill name.")
-                        put("items", buildJsonObject {
-                            put("type", "string")
-                        })
-                    })
-                },
-                required = listOf("skills"),
-            )
-        },
-        execute = { args ->
-            val targets = parseTargets(args)
-            if (targets.isEmpty()) {
-                error("Provide at least one skill target in `skills` or `skill`.")
-            }
-
-            val outcome = activateSkillsForTurn(
-                targets = targets,
-                availableSkills = state.availableSkills,
-                activeSkills = state.activeSkills,
-                blockedSkills = state.blockedSkills,
-                currentTurnScopedSkillIds = currentTurnScopedSkillIds,
-            )
-
-            if (outcome.updatedTurnScopedSkillIds != currentTurnScopedSkillIds) {
-                onUpdateTurnScopedSkillIds(outcome.updatedTurnScopedSkillIds)
-            }
-
-            buildJsonObject {
-                put("updated", JsonPrimitive(outcome.updatedTurnScopedSkillIds != currentTurnScopedSkillIds))
-                put(
-                    "activated",
-                    JsonArray(
-                        outcome.activatedSkills.map { skill ->
-                            buildJsonObject {
-                                put("id", JsonPrimitive(skill.id.toString()))
-                                put("name", JsonPrimitive(skill.name))
-                            }
-                        }
-                    )
-                )
-                put(
-                    "already_active",
-                    JsonArray(
-                        outcome.alreadyActiveSkills.map { skill ->
-                            buildJsonObject {
-                                put("id", JsonPrimitive(skill.id.toString()))
-                                put("name", JsonPrimitive(skill.name))
-                            }
-                        }
-                    )
-                )
-                put(
-                    "blocked",
-                    JsonArray(
-                        outcome.blockedSkills.map { skill ->
-                            buildJsonObject {
-                                put("id", JsonPrimitive(skill.id.toString()))
-                                put("name", JsonPrimitive(skill.name))
-                            }
-                        }
-                    )
-                )
-                put(
-                    "unmatched",
-                    JsonArray(outcome.unmatchedTargets.map { JsonPrimitive(it) })
-                )
-                put(
-                    "enabled_skill_ids",
-                    JsonArray(outcome.activeSkillIds.map { JsonPrimitive(it.toString()) })
-                )
-            }
-        }
+    val skills = (state.availableSkills + state.activeSkills + state.blockedSkills).distinctBy { it.id }
+    return createPortableManageSkillsTool(
+        binding = PortableSkillToolBinding(
+            skills = skills.map { it.toPortableSkill() },
+            assistantId = skills.firstOrNull()?.let { skill ->
+                if (skill.availableForAllAssistants) {
+                    "all"
+                } else {
+                    skill.availableAssistantIds.firstOrNull()?.toString() ?: "all"
+                }
+            } ?: "all",
+            assistantDefaultSkillIds = state.activeSkillIds.map { it.toString() }.toSet() -
+                currentTurnScopedSkillIds.map { it.toString() }.toSet(),
+            conversationSkillIds = emptySet(),
+            turnScopedSkillIds = currentTurnScopedSkillIds.map { it.toString() }.toSet(),
+            onUpdateTurnScopedSkillIds = { updated ->
+                onUpdateTurnScopedSkillIds(updated.mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }.toSet())
+            },
+        ),
+        automaticInvocationEnabled = automaticInvocationEnabled,
     )
 }
+
 
 @Serializable
 sealed interface GenerationChunk {
@@ -843,750 +713,95 @@ class GenerationHandler(
         contextSummaryUpToIndex: Int = -1,
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
+        transformers: List<PortableInputTransformer> = emptyList(),
+        transformerContext: PortableTransformerContext? = null,
     ): BuildMessagesResult {
-        fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
-        fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
-
         val smartEnabled = assistant.smartContextManagement &&
             model.contextCapacityTokens?.let { it > 0 } == true
-        val maxTokens = if (smartEnabled) {
-            smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
-        } else {
-            assistant.maxTokenUsage
-        }.let { budget ->
-            if (smartEnabled) {
-                (budget * contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(1)
-            } else budget
-        }
-        val smartPlan = if (smartEnabled) {
-            me.rerere.ai.context.ContextPlanner.plan(
+        val history = if (smartEnabled) {
+            preserveOcrForImagesBeyondSmartLimit(
                 messages = messages,
                 model = model,
-                customBudgetTokens = maxTokens,
-                systemPromptTokens = estimateTokens(assistant.systemPrompt),
-                toolDefinitionTokens = tools.sumOf { ContextTokenEstimator.toolDefinitionTokens(it, model) },
+                inputBudgetTokens = (smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage)
+                    .coerceAtLeast(1),
             )
-        } else null
-
-        val effectiveTools = when {
-            ModelAbility.TOOL !in model.abilities -> emptyList()
-            smartEnabled && smartPlan?.allowToolDistillation == true -> selectSmartTools(tools, messages, model, maxTokens)
-            else -> tools
+        } else {
+            archiveOldImageMessages(messages, assistant)
         }
-        var currentTokens = 0
-
-        // Cosine similarity for RAG matching
-        fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
-            if (a.size != b.size) return 0f
-            var dotProduct = 0f
-            var normA = 0f
-            var normB = 0f
-            for (i in a.indices) {
-                dotProduct += a[i] * b[i]
-                normA += a[i] * a[i]
-                normB += b[i] * b[i]
-            }
-            val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
-            return if (denominator == 0f) 0f else dotProduct / denominator
+        val recentMessagesForScan = history.takeLast(10).map { it.toText() }
+        val lorebooksForAssistant = settings.lorebooks.filter { lorebook ->
+            lorebook.enabled && (conversationEnabledLorebookIds ?: assistant.enabledLorebookIds).contains(lorebook.id)
         }
-        
-        // Helper to check if and why lorebook entry activated
-        fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
-            if (!entry.enabled) return null
-            return when (entry.activationType) {
-                LorebookActivationType.ALWAYS -> "Always Active"
-                LorebookActivationType.KEYWORDS -> {
-                    val searchText = recentMessages.joinToString(" ")
-                    val matchingKeyword = entry.keywords.firstOrNull { keyword ->
-                        if (entry.useRegex) {
-                            try {
-                                val regex = if (entry.caseSensitive) {
-                                    Regex(keyword)
-                                } else {
-                                    Regex(keyword, RegexOption.IGNORE_CASE)
-                                }
-                                regex.containsMatchIn(searchText)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Invalid regex in lorebook entry: $keyword", e)
-                                false
-                            }
-                        } else {
-                            if (entry.caseSensitive) {
-                                searchText.contains(keyword)
-                            } else {
-                                searchText.contains(keyword, ignoreCase = true)
-                            }
-                        }
-                    }
-                    if (matchingKeyword != null) "Keyword: $matchingKeyword" else null
-                }
-                LorebookActivationType.RAG -> {
-                    // RAG activation uses embedding similarity
-                    if (entry.embedding == null || entry.embedding.isEmpty()) {
-                        Log.d(TAG, "RAG entry '${entry.name}' has no embedding, skipping")
-                        null
-                    } else if (queryEmbedding == null) {
-                        Log.d(TAG, "No query embedding available for RAG matching")
-                        null
-                    } else {
-                        // Compute cosine similarity
-                        val similarity = cosineSimilarity(entry.embedding, queryEmbedding)
-                        val threshold = 0.7f // Similarity threshold for activation
-                        val activated = similarity >= threshold
-                        if (activated) {
-                            val scoreStr = try {
-                                "%.2f".format(similarity)
-                            } catch (e: Exception) {
-                                similarity.toString().take(4)
-                            }
-                            Log.d(TAG, "RAG entry '${entry.name}' activated with similarity $similarity")
-                            "RAG Match ($scoreStr)"
-                        } else null
-                    }
-                }
-            }
-        }
-
-        // Get recent message text for lorebook keyword scanning
-        val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
-
-        val availableSkills = settings.skills.filter { skill ->
-            skill.enabled && skill.instructions.isNotBlank()
-        }
-        val allSkillIds = availableSkills.map { it.id }.toSet()
-        val assistantAvailableSkillIds = settings.skills
-            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
-            .map { it.id }
-            .toSet()
-        val alwaysEnabledSkillIds = availableSkills
-            .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
-            .map { it.id }
-            .toSet()
-        val assistantDefaultSkillIds = settings.skills
-            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
-            .map { it.id }
-            .toSet()
-            .let { assistant.enabledSkillIds.intersect(it) }
-        val activeSkillIds = resolveActiveSkillIds(
-            assistantDefaultSkillIds = assistantDefaultSkillIds,
-            conversationSkillIds = conversationEnabledModeIds,
-            turnScopedSkillIds = turnScopedEnabledModeIds,
-            allSkillIds = allSkillIds,
-            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
-        )
-        val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
-        val usedModes = buildUsedModes(
-            availableSkills = availableSkills,
-            assistantDefaultSkillIds = assistantDefaultSkillIds,
-            conversationSkillIds = conversationEnabledModeIds,
-            turnScopedSkillIds = turnScopedEnabledModeIds,
-            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
-        )
-
-        // Check if any lorebook entries use RAG activation
-        val activeLorebookIds = conversationEnabledLorebookIds ?: assistant.enabledLorebookIds
-        val lorebooksForAssistant = settings.lorebooks
-            .filter { it.enabled && activeLorebookIds.contains(it.id) }
         val hasRagEntries = lorebooksForAssistant.any { lorebook ->
             lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
         }
-        
-        // Compute query embedding only if there are RAG entries
         val queryEmbedding: List<Float>? = if (hasRagEntries) {
             try {
                 val queryText = recentMessagesForScan.takeLast(3).joinToString("\n")
-                if (queryText.isNotBlank()) {
-                    embeddingService.embed(queryText)
-                } else null
+                if (queryText.isNotBlank()) embeddingService.embed(queryText) else null
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to compute query embedding for RAG", e)
                 null
             }
         } else null
-
-        // Collect activated lorebook entries from enabled lorebooks assigned to this assistant
-        // Also track UsedLorebookEntry info for the UI display
-        // Collect activated lorebook entries from enabled lorebooks assigned to this assistant
-        // Also track UsedLorebookEntry info for the UI display
-        data class ActivatedEntryWithLorebook(val lorebook: Lorebook, val entry: LorebookEntry, val entryIndex: Int, val reason: String)
-        val activatedEntriesWithLorebook = lorebooksForAssistant
-            .flatMap { lorebook -> 
-                lorebook.entries.mapIndexedNotNull { index, entry ->
-                    val reason = getLorebookEntryActivationReason(entry, recentMessagesForScan, queryEmbedding)
-                    if (reason != null) {
-                        ActivatedEntryWithLorebook(lorebook, entry, index, reason)
-                    } else null
-                }
-            }
-        val activatedEntries = activatedEntriesWithLorebook.map { it.entry }
-        
-        // Build UsedLorebookEntry list for UI display
-        val usedLorebookEntries = activatedEntriesWithLorebook.mapIndexed { priority, activated ->
-            // Serialize cover Avatar to JSON string for UI display
-            val coverJson = activated.lorebook.cover?.let { cover ->
-                try {
-                    json.encodeToString(me.rerere.rikkahub.data.model.Avatar.serializer(), cover)
-                } catch (e: Exception) {
-                    null
-                }
-            }
-            me.rerere.ai.ui.UsedLorebookEntry(
-                lorebookId = activated.lorebook.id.toString(),
-                lorebookName = activated.lorebook.name,
-                lorebookCover = coverJson,
-                entryId = activated.entry.id.toString(),
-                entryName = activated.entry.name,
-                entryIndex = activated.entryIndex,
-                priority = activatedEntriesWithLorebook.size - priority, // Higher priority for first entries
-                activationReason = activated.reason,
-                contextTokenCount = estimateTokens(activated.entry.prompt),
-            )
-        }
-
-        // Group injections by position
-        val beforeSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
-        val topOfChatSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
-        val beforeLatestSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
-        val depthSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
-        val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
-        val topOfChatEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
-        val beforeLatestEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
-        val depthEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
-
-        // 1. Base System Prompt (BEFORE_SYSTEM skills/entries + System + Learning + AFTER_SYSTEM skills/entries + Tools)
-        val baseSystemPromptBuilder = StringBuilder()
-
-        fun appendSkillPrompt(skill: me.rerere.rikkahub.data.model.Skill) {
-            if (skill.name.isNotBlank()) {
-                baseSystemPromptBuilder.append("[Skill: ${skill.name}]")
-                baseSystemPromptBuilder.appendLine()
-            }
-            baseSystemPromptBuilder.append(skill.instructions)
-            val skillsRoot = File(context.filesDir, "skills")
-            val resources = File(skillsRoot, skill.workspaceDirectory().removePrefix("/skills/"))
-                .takeIf { it.isDirectory }
-                ?.walkTopDown()
-                ?.filter { it.isFile && it.name != "SKILL.md" }
-                ?.map { it.relativeTo(skillsRoot).invariantSeparatorsPath }
-                ?.take(64)
-                ?.toList()
-                .orEmpty()
-            if (resources.isNotEmpty()) {
-                baseSystemPromptBuilder.appendLine()
-                baseSystemPromptBuilder.appendLine("Skill package: ${skill.workspaceDirectory()}")
-                baseSystemPromptBuilder.appendLine("Bundled resources (load only when needed):")
-                resources.forEach { baseSystemPromptBuilder.appendLine("- /skills/$it") }
-            }
-        }
-        
-        // BEFORE_SYSTEM injections
-        beforeSystemSkills.forEach { skill ->
-            appendSkillPrompt(skill)
-            baseSystemPromptBuilder.appendLine()
-        }
-        beforeSystemEntries.forEach { entry ->
-            baseSystemPromptBuilder.append(entry.prompt)
-            baseSystemPromptBuilder.appendLine()
-        }
-        
-        // Original system prompt  
-        if (assistant.systemPrompt.isNotBlank()) {
-            baseSystemPromptBuilder.append(assistant.systemPrompt)
-        }
-        
-        // Learning mode (legacy - still supported)
-        if (assistant.learningMode) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
-            baseSystemPromptBuilder.appendLine()
-        }
-        
-        // AFTER_SYSTEM injections
-        afterSystemSkills.forEach { skill ->
-            baseSystemPromptBuilder.appendLine()
-            appendSkillPrompt(skill)
-        }
-        afterSystemEntries.forEach { entry ->
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(entry.prompt)
-        }
-        
-        val toolSystemPromptText = effectiveTools.joinToString("\n") { tool -> tool.systemPrompt(model, messages) }
-        if (toolSystemPromptText.isNotBlank()) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(toolSystemPromptText)
-        }
-        val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
-            ContextTokenEstimator.toolDefinitionText(tool)
-        }
-        val toolDefinitionTokens = effectiveTools
-            .sumOf { tool -> ContextTokenEstimator.toolDefinitionTokens(tool, model).toLong() }
-            .coerceAtMost(Int.MAX_VALUE.toLong())
-            .toInt()
-        val baseSystemPrompt = baseSystemPromptBuilder.toString()
-        currentTokens = (currentTokens.toLong() + estimateTokens(baseSystemPrompt) + toolDefinitionTokens)
-            .coerceAtMost(Int.MAX_VALUE.toLong())
-            .toInt()
-
-        // 2. Prepare Candidates. Smart mode is authoritative: an existing summary replaces the
-        // turns it covers, and manual history/search/media limits no longer constrain allocation.
-        val historyLimitedMessages = effectiveHistoryForContext(
-            messages = messages,
-            smartManagement = smartEnabled,
-            summaryUpToIndex = contextSummaryUpToIndex.takeIf {
-                !contextSummary.isNullOrBlank()
-            } ?: -1,
-            truncateIndex = truncateIndex,
-            manualHistoryLimit = assistant.maxHistoryMessages,
-        )
-        
-        val historyWithPreservedOcr = if (smartEnabled) {
-            preserveOcrForImagesBeyondSmartLimit(
-                messages = historyLimitedMessages,
-                model = model,
-                inputBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
-            )
-        } else {
-            historyLimitedMessages
-        }
-
-        // Prune search results if configured
-        val searchPrunedMessages = if (smartEnabled) {
-            smartPrepareHistory(
-                messages = historyWithPreservedOcr,
-                model = model,
-                availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
-            )
-        } else assistant.maxSearchResultsRetained?.let { maxSearches ->
-            if (maxSearches > 0) {
-                // Find all messages that contain search tool results
-                val searchResultIndices = historyLimitedMessages.mapIndexedNotNull { index, msg ->
-                    val hasSearchResult = msg.parts.any { part ->
-                        part is UIMessagePart.ToolResult && part.toolName == "search_web"
-                    }
-                    if (hasSearchResult) index else null
-                }
-                
-                // Keep only the last N search results
-                val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
-                
-                if (indicesToPrune.isNotEmpty()) {
-                    historyLimitedMessages.mapIndexed { index, msg ->
-                        if (index in indicesToPrune) {
-                            // Replace search result content with a minimal placeholder
-                            msg.copy(parts = msg.parts.map { part ->
-                                if (part is UIMessagePart.ToolResult && part.toolName == "search_web") {
-                                    part.copy(content = kotlinx.serialization.json.buildJsonObject {
-                                        put("note", kotlinx.serialization.json.JsonPrimitive("Earlier search results pruned to save context"))
-                                    })
-                                } else part
-                            })
-                        } else msg
-                    }
-                } else historyLimitedMessages
-            } else historyLimitedMessages
-        } ?: historyLimitedMessages
-        val imageArchivedMessages = if (smartEnabled) {
-            searchPrunedMessages
-        } else {
-            archiveOldImageMessages(
-                messages = searchPrunedMessages,
-                assistant = assistant,
-            ).limitImagesForModel(model)
-        }
-        
-        // Chat History (reverse order to prioritize recent)
-        val chatHistoryCandidates = imageArchivedMessages.reversed()
-        
-        // Memories (Prepare effective memories including recent chats if enabled)
-        val effectiveMemoriesCandidates = if (assistant.enableMemory) {
-            val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
-                val recentConversations = conversationRepo.getRecentConversations(
-                    assistantId = assistant.id,
-                    // The active conversation is normally the newest result, so fetch one
-                    // extra before excluding it to retain up to three prior conversations.
-                    limit = 4,
-                ).filter { conversation ->
+        val extraMemories = if (assistant.enableMemory && assistant.enableRecentChatsReference && history.size <= 2) {
+            conversationRepo.getRecentConversations(assistant.id, limit = 4)
+                .filter { conversation ->
                     conversation.id != activeConversationId &&
                         conversation.title.isNotBlank() &&
                         runtimeInfo.isToday(conversation.updateAt)
-                }.take(3)
-                recentConversations.map { conversation ->
+                }
+                .take(3)
+                .map { conversation ->
                     AssistantMemory(
                         id = -1,
                         content = "Participated in conversation: ${conversation.title}",
                         type = 1,
-                        timestamp = conversation.updateAt.toEpochMilli()
+                        timestamp = conversation.updateAt.toEpochMilli(),
                     )
                 }
-            } else {
-                emptyList()
+        } else emptyList()
+        val portableMemories = (memories + extraMemories).distinctBy { it.content }.map { it.toPortableMemory() }
+        val portableSkills = settings.skills.map { it.toPortableSkill(context) }
+        val portableLorebooks = settings.lorebooks.map { lorebook ->
+            val coverJson = lorebook.cover?.let { cover ->
+                runCatching { json.encodeToString(me.rerere.rikkahub.data.model.Avatar.serializer(), cover) }.getOrNull()
             }
-            (memories + recentChatMemories).distinctBy { it.content } // Avoid duplicates
-        } else {
-            emptyList()
+            lorebook.toPortableLorebook(coverJson)
         }
-
-        // 3. Allocation Logic
-        val selectedMessages = mutableListOf<UIMessage>()
-        val selectedMemories = mutableListOf<AssistantMemory>()
-        var selectedMemoryPromptText = ""
-        
-        val remainingTokens = maxTokens - currentTokens
-        if (remainingTokens <= 0) {
-            // Edge case: System prompt too large. Just return minimums.
-            Log.w(TAG, "buildMessages: System prompt exceeds max tokens!")
-        }
-
-        if (smartEnabled) {
-            // Start with all summarized/recent history; the final manager compacts low-value
-            // payloads and removes complete old turn groups only when the real budget requires it.
-            selectedMessages.addAll(imageArchivedMessages)
-            if (assistant.enableMemory) {
-                val memorySelection = selectSmartMemoryContext(
-                    candidates = effectiveMemoriesCandidates,
-                    model = model,
-                    inputBudgetTokens = maxTokens,
-                    requiredContextTokens = currentTokens,
-                    historyMessages = imageArchivedMessages,
-                    contextPriority = assistant.contextPriority,
-                    episodeGroup = runtimeInfo::episodicMemoryGroup,
-                )
-                selectedMemories.addAll(memorySelection.memories)
-                selectedMemoryPromptText = memorySelection.promptText
-            }
-        } else {
-        // Minimums
-        val minChatHistory = 2.coerceAtMost(chatHistoryCandidates.size)
-        val minMemories = if (assistant.enableMemory) 2.coerceAtMost(effectiveMemoriesCandidates.size) else 0
-
-        // Add minimums first
-        var usedTokens = 0
-        
-        // Add min chat history
-        chatHistoryCandidates.take(minChatHistory).forEach {
-            selectedMessages.add(it)
-            usedTokens += estimateTokens(it)
-        }
-        
-        // Add min memories
-        effectiveMemoriesCandidates.take(minMemories).forEach {
-            selectedMemories.add(it)
-            usedTokens += estimateTokens(it.content)
-        }
-
-        // Distribute remaining tokens
-        var availableTokens = remainingTokens - usedTokens
-        if (availableTokens > 0) {
-            val remainingChatHistory = chatHistoryCandidates.drop(minChatHistory)
-            val remainingMemories = effectiveMemoriesCandidates.drop(minMemories)
-            
-            when (assistant.contextPriority) {
-                me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> {
-                    // Prioritize Chat History
-                    for (msg in remainingChatHistory) {
-                        val cost = estimateTokens(msg)
-                        if (availableTokens >= cost) {
-                            selectedMessages.add(msg)
-                            availableTokens -= cost
-                        } else break
-                    }
-                    for (mem in remainingMemories) {
-                        val cost = estimateTokens(mem.content)
-                        if (availableTokens >= cost) {
-                            selectedMemories.add(mem)
-                            availableTokens -= cost
-                        }
-                    }
-                }
-                me.rerere.rikkahub.data.model.ContextPriority.MEMORIES -> {
-                    // Prioritize Memories
-                    for (mem in remainingMemories) {
-                        val cost = estimateTokens(mem.content)
-                        if (availableTokens >= cost) {
-                            selectedMemories.add(mem)
-                            availableTokens -= cost
-                        }
-                    }
-                    for (msg in remainingChatHistory) {
-                        val cost = estimateTokens(msg)
-                        if (availableTokens >= cost) {
-                            selectedMessages.add(msg)
-                            availableTokens -= cost
-                        } else break
-                    }
-                }
-                me.rerere.rikkahub.data.model.ContextPriority.BALANCED -> {
-                    // Balanced (e.g. 50/50 split of remaining, or round-robin)
-                    // Simple round-robin approach
-                    var msgIndex = 0
-                    var memIndex = 0
-                    var addedSomething = true
-                    while (addedSomething && availableTokens > 0) {
-                        addedSomething = false
-                        // Try add message
-                        if (msgIndex < remainingChatHistory.size) {
-                            val msg = remainingChatHistory[msgIndex]
-                            val cost = estimateTokens(msg)
-                            if (availableTokens >= cost) {
-                                selectedMessages.add(msg)
-                                availableTokens -= cost
-                                msgIndex++
-                                addedSomething = true
-                            }
-                        }
-                        // Try add memory
-                        if (memIndex < remainingMemories.size) {
-                            val mem = remainingMemories[memIndex]
-                            val cost = estimateTokens(mem.content)
-                            if (availableTokens >= cost) {
-                                selectedMemories.add(mem)
-                                availableTokens -= cost
-                                memIndex++
-                                addedSomething = true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (assistant.enableMemory && selectedMemoryPromptText.isBlank()) {
-            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities) {
-                selectedMemoryPromptText = renderMemoryContextPrompt(
-                    model = model,
-                    memories = selectedMemories,
-                    episodeGroup = runtimeInfo::episodicMemoryGroup,
-                )
-            }
-        }
-        }
-
-        // 4. Construct Final List
-        // Collect all attachments from enabled skills
-        val skillAttachmentParts = enabledSkills.flatMap { skill ->
-            skill.attachments.map { attachment ->
-                when (attachment.type) {
-                    ModeAttachmentType.IMAGE -> UIMessagePart.Image(url = attachment.url)
-                    ModeAttachmentType.VIDEO -> UIMessagePart.Video(url = attachment.url)
-                    ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url = attachment.url)
-                    ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(
-                        url = attachment.url,
-                        fileName = attachment.fileName,
-                        mime = attachment.mime
-                    )
-                }
-            }
-        }
-        
-        // Collect attachments from activated lorebook entries
-        val lorebookAttachmentParts = activatedEntries.flatMap { entry ->
-            entry.attachments.map { attachment ->
-                when (attachment.type) {
-                    ModeAttachmentType.IMAGE -> UIMessagePart.Image(url = attachment.url)
-                    ModeAttachmentType.VIDEO -> UIMessagePart.Video(url = attachment.url)
-                    ModeAttachmentType.AUDIO -> UIMessagePart.Audio(url = attachment.url)
-                    ModeAttachmentType.DOCUMENT -> UIMessagePart.Document(
-                        url = attachment.url,
-                        fileName = attachment.fileName,
-                        mime = attachment.mime
-                    )
-                }
-            }
-        }
-        
-        // Combine all context attachments
-        val allContextAttachments = skillAttachmentParts + lorebookAttachmentParts
-        
-        val orderedSelectedMessages = if (smartEnabled) {
-            // Smart preparation creates message copies (OCR/media/tool compaction), so looking
-            // them up in the original list can return -1 and reverse history. They are already
-            // chronological here.
-            selectedMessages.toList()
-        } else {
-            selectedMessages.sortedBy { messages.indexOf(it) }
-        }
-        val timeAwarenessPrompt = buildTimeAwarenessBlock(
-            enabled = assistant.enableTimeAwareness,
-            fullMessages = messages,
-            retainedMessages = orderedSelectedMessages
-        )
-        val rawBuiltMessages = buildList {
-            if (baseSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(baseSystemPrompt))
-            }
-
-            fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
-                "<system>\n[Skill: ${skill.name}]\n${skill.instructions}\nSkill directory: ${skill.workspaceDirectory()}\n</system>"
-            )
-            fun lorebookMessage(entry: LorebookEntry): UIMessage = UIMessage.user(
-                "<system>\n${entry.prompt}\n</system>"
-            )
-
-            // These positions intentionally become in-context messages rather than
-            // system-prompt text. That makes TOP_OF_CHAT, BEFORE_LATEST and AT_DEPTH
-            // materially distinct and preserves their documented ordering.
-            topOfChatSkills.forEach { add(skillMessage(it)) }
-            topOfChatEntries.forEach { add(lorebookMessage(it)) }
-            
-            val dynamicContext = buildList {
-                if (!contextSummary.isNullOrBlank()) {
-                    add("[Conversation Summary (Earlier context)]:\n$contextSummary")
-                }
-                if (selectedMemoryPromptText.isNotBlank()) {
-                    add(selectedMemoryPromptText)
-                }
-                if (!timeAwarenessPrompt.isNullOrBlank()) {
-                    add(timeAwarenessPrompt)
-                }
-            }.joinToString(separator = "\n")
-
-            if (orderedSelectedMessages.isNotEmpty()) {
-                val turnGroups = orderedSelectedMessages.toTurnGroups()
-                val latestTurnGroup = turnGroups.last()
-                val historicalTurnGroups = turnGroups.dropLast(1)
-
-                // Depth injections are aligned to atomic TurnGroup boundaries to prevent interleaving inside tool exchanges
-                val depthByGroupIndex = depthSkills.groupBy { skill ->
-                    (historicalTurnGroups.size - skill.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
-                }
-                val lorebookDepthByGroupIndex = depthEntries.groupBy { entry ->
-                    (historicalTurnGroups.size - entry.depth.coerceAtLeast(0)).coerceIn(0, historicalTurnGroups.size)
-                }
-
-                for (groupIndex in 0..historicalTurnGroups.size) {
-                    depthByGroupIndex[groupIndex].orEmpty().forEach { add(skillMessage(it)) }
-                    lorebookDepthByGroupIndex[groupIndex].orEmpty().forEach { add(lorebookMessage(it)) }
-                    if (groupIndex < historicalTurnGroups.size) {
-                        addAll(historicalTurnGroups[groupIndex].messages)
-                    }
-                }
-
-                // Injections BEFORE the latest turn sit strictly outside the active TurnGroup
-                beforeLatestSkills.forEach { add(skillMessage(it)) }
-                beforeLatestEntries.forEach { add(lorebookMessage(it)) }
-
-                // Attach dynamic context (summary, memories, time) strictly to the initiating USER message.
-                // In multi-step tool turns, attaching text to TOOL messages triggers Gemini 400 INVALID_ARGUMENT
-                // and causes OpenAI/Claude to drop/blackout memory and summary context.
-                val latestMessages = latestTurnGroup.messages
-                val initiatingUserIndex = latestMessages.indexOfFirst { it.role == MessageRole.USER }
-
-                if (initiatingUserIndex != -1) {
-                    latestMessages.forEachIndexed { idx, msg ->
-                        if (idx == initiatingUserIndex) {
-                            var userParts = msg.parts
-                            if (allContextAttachments.isNotEmpty()) {
-                                userParts = allContextAttachments + userParts
-                            }
-                            if (dynamicContext.isNotBlank()) {
-                                userParts = listOf(UIMessagePart.Text("<system>\n$dynamicContext\n</system>\n\n")) + userParts
-                            }
-                            add(msg.copy(parts = userParts))
-                        } else {
-                            add(msg)
-                        }
-                    }
-                } else {
-                    // If the active turn has no USER message (e.g. initial assistant greeting),
-                    // prepend dynamic context as system/user before the turn messages.
-                    if (dynamicContext.isNotBlank()) {
-                        add(UIMessage.system(dynamicContext))
-                    }
-                    if (allContextAttachments.isNotEmpty()) {
-                        add(UIMessage(role = MessageRole.USER, parts = allContextAttachments))
-                    }
-                    addAll(latestMessages)
-                }
-            } else {
-                depthSkills.forEach { add(skillMessage(it)) }
-                depthEntries.forEach { add(lorebookMessage(it)) }
-                beforeLatestSkills.forEach { add(skillMessage(it)) }
-                beforeLatestEntries.forEach { add(lorebookMessage(it)) }
-                if (dynamicContext.isNotBlank()) {
-                    add(UIMessage.system(dynamicContext))
-                }
-                
-                if (allContextAttachments.isNotEmpty()) {
-                    add(UIMessage(
-                        role = me.rerere.ai.core.MessageRole.USER,
-                        parts = allContextAttachments
-                    ))
-                }
-            }
-        }.limitImagesForModel(model)
-        val smartMessageBudget = if (smartEnabled) {
-            (maxTokens - toolDefinitionTokens).coerceAtLeast(1)
-        } else {
-            null
-        }
-        val builtMessages = if (smartMessageBudget != null) {
-            smartFitContext(
-                messages = rawBuiltMessages,
+        val prepared = PortableGenerationPrepare.prepare(
+            PortablePrepareRequest(
+                messages = history,
                 model = model,
-                messageBudgetTokens = smartMessageBudget,
-            )
-        } else {
-            rawBuiltMessages
-        }
-        // Build UsedMemory list for UI display
-        val usedMemories = selectedMemories.mapIndexed { index, memory ->
-            val reason = when {
-                memory.id == -1 -> "Recent episode boost"  // Recent chat reference
-                assistant.useRagMemoryRetrieval -> "Contextually relevant"  // RAG mode
-                else -> "Always included"  // Basic mode
-            }
-            me.rerere.ai.ui.UsedMemory(
-                memoryId = memory.id,
-                memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
-                memoryType = memory.type,
-                priority = selectedMemories.size - index,  // Higher priority for earlier memories
-                activationReason = reason,
-                contextTokenCount = estimateTokens(memory.content),
-            )
-        }
-        
+                tools = tools,
+                assistant = assistant.toPortablePrepareAssistant(),
+                skills = portableSkills,
+                lorebooks = portableLorebooks,
+                memories = portableMemories,
+                conversationSkillIds = conversationEnabledModeIds.map { it.toString() }.toSet(),
+                turnScopedSkillIds = turnScopedEnabledModeIds.map { it.toString() }.toSet(),
+                conversationLorebookIds = conversationEnabledLorebookIds?.map { it.toString() }?.toSet(),
+                contextSummary = contextSummary,
+                contextSummaryUpToIndex = contextSummaryUpToIndex,
+                truncateIndex = truncateIndex,
+                learningModePrompt = settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT },
+                queryEmbedding = queryEmbedding,
+                transformers = transformers,
+                transformerContext = transformerContext,
+                contextBudgetScale = contextBudgetScale,
+                contextUsageSourceKey = contextUsageSourceKey,
+                episodeGroup = runtimeInfo::episodicMemoryGroup,
+            ),
+        )
         return BuildMessagesResult(
-            messages = builtMessages,
-            activatedLorebookEntries = usedLorebookEntries,
-            usedModes = usedModes,
-            usedMemories = usedMemories,
-            effectiveTools = effectiveTools,
-            messageBudgetTokens = smartMessageBudget,
-            effectiveInputBudgetTokens = maxTokens.takeIf { smartEnabled },
-            contextUsage = model.contextCapacityTokens?.let {
-                val skillText = buildString {
-                    enabledSkills.forEach { skill ->
-                        appendLine(skill.name)
-                        appendLine(skill.instructions)
-                    }
-                }
-                val lorebookText = activatedEntries.joinToString("\n") { entry -> entry.prompt }
-                val systemPromptText = buildString {
-                    append(assistant.systemPrompt)
-                    if (assistant.learningMode) {
-                        appendLine()
-                        append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
-                    }
-                }
-                ContextTokenEstimator.breakdown(
-                    messages = builtMessages,
-                    model = model,
-                    systemPromptText = systemPromptText,
-                    summaryText = contextSummary.orEmpty(),
-                    memoryText = selectedMemoryPromptText,
-                    skillText = skillText,
-                    lorebookText = lorebookText,
-                    toolDefinitionText = toolDefinitionText,
-                    toolDefinitionTokensOverride = toolDefinitionTokens,
-                    embeddedToolText = toolSystemPromptText,
-                    namedContextEmbeddedInMessages = true,
-                    usableInputTokens = if (smartEnabled) maxTokens else null,
-                    sourceKey = contextUsageSourceKey,
-                )
-            },
+            messages = prepared.providerMessages,
+            activatedLorebookEntries = prepared.usedLorebookEntries,
+            usedModes = prepared.usedModes,
+            usedMemories = prepared.usedMemories,
+            effectiveTools = prepared.effectiveTools,
+            messageBudgetTokens = prepared.messageBudgetTokens,
+            effectiveInputBudgetTokens = prepared.effectiveInputBudgetTokens,
+            contextUsage = prepared.contextUsage,
         )
     }
 
@@ -1690,6 +905,34 @@ class GenerationHandler(
         providerImpl: Provider<ProviderSetting>,
         provider: ProviderSetting,
     ): PreparedGenerationTurn {
+        var uiMessages = messages
+        val transformerCtx = PortableTransformerContext(
+            model = model,
+            workspaceEnabled = assistant.workspaceId != null,
+            documentRuntime = androidPortableDocumentRuntime(context),
+            ocrRuntime = androidPortableOcrRuntime(chatAttachmentRepository),
+            onProgressAnnotationsChanged = { annotations ->
+                val updatedMessages = uiMessages.upsertOcrPlaceholder(annotations)
+                if (updatedMessages != uiMessages) {
+                    uiMessages = updatedMessages
+                    onUpdateMessages(uiMessages)
+                }
+            },
+        )
+        val androidPlaceholder = PortableInputTransformer { ctx, msgs ->
+            PlaceholderTransformer.transform(
+                TransformerContext(context, ctx.model, assistant),
+                msgs,
+            )
+        }
+        val portableTransformers = listOf(androidPlaceholder) +
+            defaultPortableInputTransformers().filter { it !== PortablePlaceholderTransformer }
+        val extraAndroid = transformers.filterNot {
+            it === PlaceholderTransformer ||
+                it === DocumentAsPromptTransformer ||
+                it === OcrTransformer ||
+                it === UnsupportedFileTransformer
+        }
         val buildResult = buildMessages(
             assistant = assistant,
             settings = settings,
@@ -1706,20 +949,17 @@ class GenerationHandler(
             contextSummaryUpToIndex = contextSummaryUpToIndex,
             contextUsageSourceKey = contextUsageSourceKey,
             contextBudgetScale = contextBudgetScale,
+            transformers = portableTransformers,
+            transformerContext = transformerCtx,
         )
-        var uiMessages = messages
-        val transformedInput = buildResult.messages.transformInput(
-            transformers = transformers,
-            context = context,
-            model = model,
-            assistant = assistant,
-            onProgressAnnotationsChanged = { annotations ->
-                val updatedMessages = uiMessages.upsertOcrPlaceholder(annotations)
-                if (updatedMessages != uiMessages) {
-                    uiMessages = updatedMessages
-                    onUpdateMessages(uiMessages)
-                }
-            },
+        val extraCtx = TransformerContext(context, model, assistant)
+        var extraTransformed = buildResult.messages
+        extraAndroid.forEach { transformer ->
+            extraTransformed = transformer.transform(extraCtx, extraTransformed)
+        }
+        val transformedInput = InputTransformResult(
+            messages = extraTransformed,
+            annotations = transformerCtx.annotations,
         )
         val transformedMessages = transformedInput.messages.limitImagesForModel(model)
         var internalMessages = buildResult.messageBudgetTokens?.let { budget ->
@@ -1885,51 +1125,12 @@ class GenerationHandler(
         onUpdate: suspend (Int, String) -> AssistantMemory,
         onDelete: suspend (Int) -> Unit,
         onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
-    ) = buildList {
-        add(Tool(
-            name = "create_memory",
-            description = "Create a new memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("content", buildJsonObject {
-                            put("type", "string")
-                            put("description", "Content of the memory.")
-                        })
-                    },
-                    required = listOf("content")
-                )
-            },
-            execute = {
-                val params = it.jsonObject
-                val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+    ): List<Tool> = createPortableMemoryTools(
+        runtime = PortableMemoryToolRuntime(
+            onCreate = { content ->
                 json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
-            }
-        ))
-        add(Tool(
-            name = "edit_memory",
-            description = "Update an existing memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject {
-                            put("type", "integer")
-                            put("description", "ID of the memory to update.")
-                        })
-                        put("content", buildJsonObject {
-                            put("type", "string")
-                            put("description", "New content for the memory.")
-                        })
-                    },
-                    required = listOf("id", "content"),
-                )
             },
-            execute = {
-                val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
-                val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+            onUpdate = { id, content ->
                 val before = memoryRepo.getMemoryById(id)
                 val updated = onUpdate(id, content)
                 buildJsonObject {
@@ -1945,25 +1146,8 @@ class GenerationHandler(
                         put("before_timestamp", JsonPrimitive(previous.timestamp))
                     }
                 }
-            }
-        ))
-        add(Tool(
-            name = "delete_memory",
-            description = "Delete a memory record.",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("id", buildJsonObject {
-                            put("type", "integer")
-                            put("description", "ID of the memory to delete.")
-                        })
-                    },
-                    required = listOf("id")
-                )
             },
-            execute = {
-                val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+            onDelete = { id ->
                 val before = memoryRepo.getMemoryById(id)
                 onDelete(id)
                 buildJsonObject {
@@ -1978,56 +1162,11 @@ class GenerationHandler(
                         memory.significance?.let { put("significance", JsonPrimitive(it)) }
                     }
                 }
-            }
-        ))
-        if (onSearch != null) {
-            add(Tool(
-                name = MEMORY_SEARCH_TOOL_NAME,
-                description = "Search this character's core memories and actually used past chat messages for a remembered topic, scene, person, feeling, or detail. The memory subagent expands the query internally and searches multiple variants.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("query", buildJsonObject {
-                                put("type", "string")
-                                put("description", "The remembered topic, keyword, person, preference, event, or question to search for.")
-                            })
-                            put("limit", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Maximum number of memory results to return. Defaults to 5.")
-                            })
-                            put("time_range", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Optional rough time span to filter recall, such as last week, this month, last month, 4 months ago, or yesterday.")
-                            })
-                        },
-                        required = listOf("query")
-                    )
-                },
-                systemPrompt = { _, _ ->
-                    """
-                    ## Memory search tool
-                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
-                    - Use it for genuine recall, not on every turn.
-                    - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
-                    - You can pass `time_range` when the user asks about a rough time span, like "last day", "last 2 days", "yesterday", "last week", "this month", "last month", or "4 months ago".
-                    - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
-                    - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
-                    - Treat returned memories as approximate, human-like recollections.
-                    - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
-                    - If confidence is low or results disagree, answer with natural uncertainty.
-                    """.trimIndent()
-                },
-                execute = {
-                    val params = it.jsonObject
-                    val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
-                    val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 5
-                    val timeRange = params["time_range"]?.jsonPrimitive?.contentOrNull
-                    onSearch(query, limit, timeRange)
-                }
-            ))
-        }
-    }
-
+            },
+            onSearch = onSearch,
+        ),
+        includeSearch = onSearch != null,
+    )
 
     @Suppress("UNCHECKED_CAST")
     private fun <T : ProviderSetting> resolveProvider(setting: T): me.rerere.ai.provider.Provider<T> {

@@ -467,9 +467,17 @@ Current iOS app status:
   `ChatService` (jobs, persistence mode, edit/fork/delete/select) call
   that class; iOS `IosAppController` is a thin host that prepares
   tools/memory/MCP/provider messages and calls the same `generate()`.
-  `PortableConversationStore` / `PortableSettingsStore` are the
-  platform-agnostic persistence contracts; Room and the iOS file store
-  remain the backing implementations. iOS on-device runtimes stay honest
+  Prepare is no longer dual-code: `:ai` `PortableGenerationPrepare` owns
+  lorebook/skill/RAG activation, smart-context packing, memory injection,
+  and portable input transformers (placeholder/document/OCR/unsupported).
+  Tool lists are built by `assemblePortableTools` (local, workspace via
+  `OnDeviceWorkspaceRuntime`, memory, `manage_skills`, MCP, search). Hosts
+  inject runtimes and do not hand-roll the list. Android
+  `ChatService.persistConversationToRepository` saves through
+  `PortableChatEngine.saveConversation` backed by
+  `RoomPortableConversationStore`. `PortableConversationStore` /
+  `PortableSettingsStore` remain the platform-agnostic persistence
+  contracts; Room and the iOS file store remain the backing implementations. iOS on-device runtimes stay honest
   unavailable shims. The assistant overlay is an in-process Compose
   sheet that also ingests clipboard/App Group share-in through
   `PortableSharePayload`. Xcode screenshot QA is still required before 1:1

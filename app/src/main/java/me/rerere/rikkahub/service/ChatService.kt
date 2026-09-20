@@ -52,7 +52,12 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableMcpToolBinding
 import me.rerere.ai.generation.PortablePersistenceMode
+import me.rerere.ai.generation.PortableSaveOptions
+import me.rerere.ai.generation.PortableToolAssemblyOptions
+import me.rerere.ai.generation.PortableToolRuntimes
+import me.rerere.ai.generation.assemblePortableTools
 import me.rerere.ai.generation.applyToolApprovalState
 import me.rerere.ai.generation.forkThroughMessage
 import me.rerere.ai.generation.mergeRegeneratedTurn
@@ -93,7 +98,8 @@ import me.rerere.rikkahub.data.ai.shouldUseBuiltInSearch
 import me.rerere.rikkahub.data.ai.tools.ASK_USER_TOOL_NAME
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.LocalTools
-import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
+import me.rerere.rikkahub.data.ai.tools.AndroidBoundWorkspaceRuntime
+import me.rerere.rikkahub.data.datastore.toPortableRecord
 import me.rerere.rikkahub.data.ai.tools.normalizeAskUserAnswerPayload
 import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
@@ -964,18 +970,13 @@ class ChatService(
                     if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
                         return@withContext
                     }
-                    if (conversationRepo.getConversationById(normalizedConversation.id) == null) {
-                        if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
-                            return@withContext
-                        }
-                        conversationRepo.insertConversation(normalizedConversation)
-                    } else {
-                        conversationRepo.updateConversation(
-                            conversation = normalizedConversation,
+                    chatEngine.saveConversation(
+                        normalizedConversation.toPortableRecord(),
+                        PortableSaveOptions(
                             preserveConsolidation = preserveConsolidation,
                             syncAttachments = syncAttachments,
-                        )
-                    }
+                        ),
+                    )
                 }
                 if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
                     withContext(Dispatchers.IO) {
@@ -1776,70 +1777,49 @@ class ChatService(
         conversation: Conversation,
         model: Model,
     ): List<Tool> {
-        if (!model.abilities.contains(ModelAbility.TOOL)) return emptyList()
-        return buildList {
-            val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
-
-            when (val searchMode = assistant.searchMode) {
-                is AssistantSearchMode.Provider -> {
-                    if (!useBuiltInSearch) {
-                        addAll(createSearchTool(settings, searchMode.index))
-                    }
-                }
-
-                is AssistantSearchMode.BuiltIn -> Unit
-                is AssistantSearchMode.Off -> Unit
+        val useBuiltInSearch = shouldUseBuiltInSearch(model, assistant)
+        val searchTool = when (val searchMode = assistant.searchMode) {
+            is AssistantSearchMode.Provider -> {
+                if (!useBuiltInSearch) createSearchTool(settings, searchMode.index).firstOrNull() else null
             }
-
-            addAll(
-                localTools.getTools(
+            is AssistantSearchMode.BuiltIn -> null
+            is AssistantSearchMode.Off -> null
+        }
+        val workspaceId = assistant.workspaceId?.toString()
+        val workspace = workspaceId?.let { workspaceRepository.getById(it) }
+        val workspaceReady = workspace != null && workspace.shellStatus == WorkspaceShellStatus.READY.name
+        return assemblePortableTools(
+            options = PortableToolAssemblyOptions(
+                model = model,
+                includeSearch = searchTool != null,
+                includeWorkspace = workspaceReady,
+            ),
+            runtimes = PortableToolRuntimes(
+                searchTool = searchTool,
+                localTools = localTools.getTools(
                     options = assistant.localTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
-                )
-            )
-
-            val workspaceId = assistant.workspaceId?.toString()
-            val workspace = workspaceId?.let { workspaceRepository.getById(it) }
-            if (
-                model.abilities.contains(ModelAbility.TOOL) &&
-                workspace != null &&
-                workspace.shellStatus == WorkspaceShellStatus.READY.name
-            ) {
-                addAll(
-                    createWorkspaceTools(
-                        workspaceId = workspaceId,
-                        workspaceRepository = workspaceRepository,
-                    )
-                )
-            }
-
-            mcpManager.getAvailableTools(assistant).forEach { (serverId, tool) ->
-                add(
-                    Tool(
+                ),
+                workspaceRuntime = workspaceId?.takeIf { workspaceReady }?.let { id ->
+                    AndroidBoundWorkspaceRuntime(id, workspaceRepository)
+                },
+                workspaceApprovals = workspace?.toolApprovalOverrides().orEmpty(),
+                mcpTools = mcpManager.getAvailableTools(assistant).map { (serverId, tool) ->
+                    PortableMcpToolBinding(
                         name = tool.name,
                         description = tool.description ?: "",
-                        parameters = { tool.inputSchema },
-                        execute = {
-                            val contextAwareCharacterLimit = (
-                                (model.contextCapacityTokens?.toLong() ?: 16_000L) * 2L
-                                ).coerceIn(2_000L, 32_000L).toInt()
-                            mcpManager.callTool(serverId, tool.name, it.jsonObject)
-                                .truncateLargeJsonText(contextAwareCharacterLimit)
-                        },
+                        inputSchema = tool.inputSchema,
+                        execute = { args -> mcpManager.callTool(serverId, tool.name, args) },
                     )
-                )
-            }
-
-            // look_at_screen: available whenever a fresh assist screenshot was captured (i.e.
-            // the assistant overlay was just summoned) and screenshot-attach is enabled. Vision
-            // models get the image (injected as a follow-up USER message via
-            // TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY so it isn't stuffed into a tool result);
-            // non-vision models get OCR text.
-            if (settings.assistantOverlayConfig.attachScreenshot && AssistScreenHolder.hasFreshScreenshot()) {
-                add(createLookAtScreenTool(model))
-            }
-        }.withUniqueToolNames()
+                },
+                extraTools = buildList {
+                    if (settings.assistantOverlayConfig.attachScreenshot && AssistScreenHolder.hasFreshScreenshot()) {
+                        add(createLookAtScreenTool(model))
+                    }
+                },
+            ),
+        )
     }
 
 
@@ -2594,7 +2574,10 @@ class ChatService(
             )
 
             // Persist changes
-            conversationRepo.updateConversation(updatedConversation)
+            chatEngine.saveConversation(
+                updatedConversation.toPortableRecord(),
+                PortableSaveOptions(syncAttachments = false),
+            )
             updateConversation(conversationId, updatedConversation)
 
             Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages into Milestone $nextMilestoneNumber, saved ~${originalTokens - summaryTokens} tokens")

@@ -74,8 +74,11 @@ class PortableChatEngine(
 
     suspend fun loadConversation(id: String): PortableConversationRecord? = store.get(id)
 
-    suspend fun saveConversation(conversation: PortableConversationRecord) {
-        store.save(conversation)
+    suspend fun saveConversation(
+        conversation: PortableConversationRecord,
+        options: PortableSaveOptions = PortableSaveOptions(),
+    ) {
+        store.save(conversation, options)
     }
 
     fun editMessage(nodes: List<MessageNode>, messageId: Uuid, parts: List<UIMessagePart>): List<MessageNode> {

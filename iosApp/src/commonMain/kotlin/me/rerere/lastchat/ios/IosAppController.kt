@@ -33,9 +33,22 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.generation.PortableChatEngine
 import me.rerere.ai.generation.PortableGenerationLoop
+import me.rerere.ai.generation.PortableGenerationPrepare
 import me.rerere.ai.generation.PortableGenerationSession
 import me.rerere.ai.generation.PortableGenerationUpdate
+import me.rerere.ai.generation.PortableMemoryRecord
+import me.rerere.ai.generation.PortableMemoryToolRuntime
+import me.rerere.ai.generation.PortableMcpToolBinding
+import me.rerere.ai.generation.PortablePrepareAssistant
+import me.rerere.ai.generation.PortablePrepareRequest
+import me.rerere.ai.generation.PortableSkillToolBinding
+import me.rerere.ai.generation.PortableToolAssemblyOptions
+import me.rerere.ai.generation.PortableToolRuntimes
+import me.rerere.ai.generation.PortableTransformerContext
 import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.assemblePortableTools
+import me.rerere.ai.generation.bytesDocumentRuntime
+import me.rerere.ai.generation.defaultPortableInputTransformers
 import me.rerere.ai.generation.dropTrailingBlankAssistant
 import me.rerere.ai.generation.forkThroughMessage
 import me.rerere.ai.generation.withDeletedMessage
@@ -62,7 +75,6 @@ import me.rerere.ai.ui.mergeCurrentVersionMessages
 import me.rerere.ai.ui.toMessageNode
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
-import me.rerere.ai.workspace.createPortableWorkspaceTools
 import me.rerere.asr.CloudSpeechTranscription
 import me.rerere.asr.CloudSpeechTranscriptionRequest
 import me.rerere.common.platform.PlatformFileStore
@@ -87,7 +99,6 @@ import me.rerere.rikkahub.data.mcp.PortableMcpServer
 import me.rerere.rikkahub.data.mcp.withDiscoveredTools
 import me.rerere.rikkahub.data.prompt.PortableLorebook
 import me.rerere.rikkahub.data.prompt.PortableSkill
-import me.rerere.rikkahub.data.prompt.PromptInjectionEngine
 import me.rerere.rikkahub.data.sync.PortableWebDavClient
 import me.rerere.rikkahub.data.sync.PortableWebDavConfig
 import me.rerere.rikkahub.data.sync.PortableWebDavItem
@@ -1921,7 +1932,7 @@ class IosAppController(
             )
             var generationSucceeded = false
             try {
-                val tools = buildGenerationTools(snapshot, snapshot.assistant, conversation.id)
+                val tools = buildGenerationTools(snapshot, snapshot.assistant, conversation.id, model)
                 runSharedGeneration(
                     providerSetting = target.providerSetting,
                     model = model,
@@ -2069,7 +2080,7 @@ class IosAppController(
                     includeToolGuide = assistant.memoryMode != IosMemoryMode.OFF,
                 )
                 val model = target.model
-                val tools = buildGenerationTools(snapshot, assistant, conversationId)
+                val tools = buildGenerationTools(snapshot, assistant, conversationId, model)
                 runSharedGeneration(
                     providerSetting = target.providerSetting,
                     model = model,
@@ -2128,28 +2139,24 @@ class IosAppController(
                         params,
                     )
                 },
-                rebuildTools = { _, _ -> rebuildGenerationTools(conversationId) },
+                rebuildTools = { _, _ -> rebuildGenerationTools(conversationId, model) },
                 prepareTurn = { _, conversationMessages, stepTools ->
                     val snapshot = mutableState.value
                     val conversation = snapshot.conversations.first { it.id == conversationId }
                     val assistant = snapshot.assistants.firstOrNull { it.id == conversation.assistantId }
                         ?: snapshot.assistant
-                    val history = injectMemoryPrompt(
-                        messages = conversationMessages.dropTrailingBlankAssistant(),
+                    val prepared = prepareProviderMessages(
+                        snapshot = snapshot,
                         assistant = assistant,
+                        conversation = conversation,
+                        history = conversationMessages.dropTrailingBlankAssistant(),
+                        tools = stepTools,
+                        model = model,
                         memoryPrompt = memoryPrompt,
                     )
                     PortableTurnRequest(
                         conversationMessages = conversationMessages,
-                        providerMessages = prepareProviderMessages(
-                            snapshot = snapshot,
-                            assistant = assistant,
-                            conversation = conversation,
-                            history = history,
-                            tools = stepTools,
-                            model = model,
-                            memoryPrompt = memoryPrompt,
-                        ),
+                        providerMessages = prepared,
                         params = TextGenerationParams(model = model, tools = stepTools),
                     )
                 },
@@ -2165,31 +2172,6 @@ class IosAppController(
         )
         if (result.pendingApproval) {
             bindPendingAskUser(conversationId, result.messages)
-        }
-    }
-
-    private fun injectMemoryPrompt(
-        messages: List<UIMessage>,
-        assistant: IosAssistantPreferences,
-        memoryPrompt: String,
-    ): List<UIMessage> {
-        if (memoryPrompt.isBlank()) return messages
-        if (
-            assistant.memoryMode != IosMemoryMode.SEARCHABLE &&
-            assistant.memoryMode != IosMemoryMode.ADAPTIVE
-        ) {
-            return messages
-        }
-        val lastUser = messages.indexOfLast { it.role == MessageRole.USER }
-        if (lastUser < 0) return messages
-        return messages.mapIndexed { index, message ->
-            if (index != lastUser) {
-                message
-            } else {
-                message.copy(
-                    parts = listOf(UIMessagePart.Text("<system>\n$memoryPrompt\n</system>\n\n")) + message.parts,
-                )
-            }
         }
     }
 
@@ -2429,8 +2411,8 @@ class IosAppController(
                 val target = resolveChatGeneration()
                     ?: error("Configure a chat model and its API key first.")
                 val currentSnapshot = mutableState.value
-                val tools = buildGenerationTools(currentSnapshot, assistant, conversation.id)
                 val model = target.model
+                val tools = buildGenerationTools(currentSnapshot, assistant, conversation.id, model)
                 runSharedGeneration(
                     providerSetting = target.providerSetting,
                     model = model,
@@ -3219,9 +3201,6 @@ class IosAppController(
                 )
             )
         }
-        if (IosLocalToolOption.WORKSPACE in assistant.localTools) {
-            addAll(createPortableWorkspaceTools(onDeviceWorkspace))
-        }
     }
 
     @OptIn(ExperimentalEncodingApi::class)
@@ -3358,103 +3337,93 @@ class IosAppController(
         snapshot: IosAppState,
         assistant: IosAssistantPreferences,
         conversationId: String,
+        model: Model,
     ): List<Tool> {
-        return listOfNotNull(buildSearchTool(snapshot.search)) +
-            buildMemoryTools(assistant) +
-            buildLocalTools(assistant, conversationId) +
-            listOfNotNull(buildManageSkillsTool(snapshot, assistant, conversationId)) +
-            buildMcpTools(snapshot, assistant)
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+        return assemblePortableTools(
+            options = PortableToolAssemblyOptions(
+                model = model,
+                includeSearch = snapshot.search.enabled,
+                includeMemory = assistant.memoryMode != IosMemoryMode.OFF,
+                includeMemorySearch = assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
+                    assistant.memoryMode == IosMemoryMode.ADAPTIVE,
+                includeWorkspace = IosLocalToolOption.WORKSPACE in assistant.localTools,
+                includeSkills = true,
+                automaticSkillInvocation = true,
+            ),
+            runtimes = PortableToolRuntimes(
+                searchTool = buildSearchTool(snapshot.search),
+                localTools = buildLocalTools(assistant, conversationId),
+                workspaceRuntime = onDeviceWorkspace.takeIf { IosLocalToolOption.WORKSPACE in assistant.localTools },
+                memory = PortableMemoryToolRuntime(
+                    onCreate = { content ->
+                        val record = addMemoryInternal(assistant, content)
+                        buildJsonObject { put("id", record.id); put("content", record.content) }
+                    },
+                    onUpdate = { id, content ->
+                        val updated = updateMemoryInternal(id, content, assistant)
+                        buildJsonObject { put("id", id); put("content", updated.content) }
+                    },
+                    onDelete = { id ->
+                        deleteMemoryInternal(id, assistant.id)
+                        buildJsonObject { put("deleted", id) }
+                    },
+                    onSearch = if (assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
+                        assistant.memoryMode == IosMemoryMode.ADAPTIVE
+                    ) {
+                        { query, limit, _ ->
+                            val hits = selectMemories(assistant, query).take(limit)
+                            JsonArray(hits.map { record ->
+                                buildJsonObject {
+                                    put("id", record.id)
+                                    put("content", record.content)
+                                }
+                            })
+                        }
+                    } else null,
+                ).takeIf { assistant.memoryMode != IosMemoryMode.OFF },
+                skills = PortableSkillToolBinding(
+                    skills = snapshot.skills,
+                    assistantId = assistant.id,
+                    assistantDefaultSkillIds = assistant.enabledSkillIds,
+                    conversationSkillIds = conversation?.enabledSkillIds.orEmpty(),
+                    turnScopedSkillIds = turnScopedSkillIds[conversationId].orEmpty(),
+                    onUpdateTurnScopedSkillIds = { updated ->
+                        val current = turnScopedSkillIds.getOrPut(conversationId) { mutableSetOf() }
+                        current.clear()
+                        current.addAll(updated)
+                    },
+                ),
+                mcpTools = snapshot.mcpServers
+                    .filter { it.enable && it.url.isNotBlank() && it.id in assistant.enabledMcpServerIds }
+                    .flatMap { server ->
+                        server.tools.filter { it.enable && it.name.isNotBlank() }.map { tool ->
+                            PortableMcpToolBinding(
+                                name = tool.name,
+                                description = tool.description ?: "MCP tool from ${server.name.ifBlank { server.url }}",
+                                inputSchema = tool.inputSchema,
+                                execute = { arguments ->
+                                    mcpClient.callTool(
+                                        server = server,
+                                        toolName = tool.name,
+                                        arguments = arguments,
+                                    )
+                                },
+                            )
+                        }
+                    },
+            ),
+        )
     }
 
-    private suspend fun rebuildGenerationTools(conversationId: String): List<Tool> {
+    private suspend fun rebuildGenerationTools(conversationId: String, model: Model): List<Tool> {
         val snapshot = mutableState.value
         val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
         val assistant = snapshot.assistants.firstOrNull { it.id == conversation?.assistantId } ?: snapshot.assistant
-        return buildGenerationTools(snapshot, assistant, conversationId)
+        return buildGenerationTools(snapshot, assistant, conversationId, model)
     }
 
-    private fun buildManageSkillsTool(
-        snapshot: IosAppState,
-        assistant: IosAssistantPreferences,
-        conversationId: String,
-    ): Tool? {
-        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
-        val state = PromptInjectionEngine.skillToolState(
-            skills = snapshot.skills,
-            assistantId = assistant.id,
-            assistantDefaultSkillIds = assistant.enabledSkillIds,
-            conversationSkillIds = conversation?.enabledSkillIds.orEmpty(),
-            turnScopedSkillIds = turnScopedSkillIds[conversationId].orEmpty(),
-        )
-        if (state.availableSkills.isEmpty() && state.activeSkills.isEmpty()) return null
-        val availableSummary = state.availableSkills.joinToString("; ") { skill ->
-            val label = skill.name.ifBlank { skill.id }
-            val description = skill.description.ifBlank { "No description provided." }.replace('\n', ' ').take(120)
-            "$label: $description"
-        }
-        return Tool(
-            name = "manage_skills",
-            description = "Activate relevant skills for this turn; their full instructions load on the next step. Available: $availableSummary",
-            parameters = {
-                InputSchema.Obj(
-                    properties = buildJsonObject {
-                        put("skills", buildJsonObject {
-                            put("type", "array")
-                            put("description", "Skills to activate for this turn, referenced by exact id or exact skill name.")
-                            put("items", buildJsonObject { put("type", "string") })
-                        })
-                    },
-                    required = listOf("skills"),
-                )
-            },
-            execute = { args ->
-                val objectValue = args as? JsonObject ?: JsonObject(emptyMap())
-                val listed = (objectValue["skills"] as? JsonArray)?.mapNotNull { item ->
-                    (item as? JsonPrimitive)?.contentOrNull
-                }.orEmpty()
-                val single = (objectValue["skill"] as? JsonPrimitive)?.contentOrNull
-                val targets = PromptInjectionEngine.parseSkillTargets(listed, single)
-                require(targets.isNotEmpty()) { "Provide at least one skill target in `skills` or `skill`." }
-                val currentTurn = turnScopedSkillIds.getOrPut(conversationId) { mutableSetOf() }
-                val outcome = PromptInjectionEngine.activateSkillsForTurn(
-                    targets = targets,
-                    availableSkills = state.availableSkills,
-                    activeSkills = state.activeSkills,
-                    currentTurnScopedSkillIds = currentTurn,
-                )
-                currentTurn.clear()
-                currentTurn.addAll(outcome.updatedTurnScopedSkillIds)
-                buildJsonObject {
-                    put("updated", JsonPrimitive(outcome.activatedSkills.isNotEmpty()))
-                    put(
-                        "activated",
-                        JsonArray(
-                            outcome.activatedSkills.map { skill ->
-                                buildJsonObject {
-                                    put("id", skill.id)
-                                    put("name", skill.name)
-                                }
-                            },
-                        ),
-                    )
-                    put(
-                        "already_active",
-                        JsonArray(
-                            outcome.alreadyActiveSkills.map { skill ->
-                                buildJsonObject {
-                                    put("id", skill.id)
-                                    put("name", skill.name)
-                                }
-                            },
-                        ),
-                    )
-                    put("unmatched", JsonArray(outcome.unmatchedTargets.map(::JsonPrimitive)))
-                }
-            },
-        )
-    }
-
-    private fun prepareProviderMessages(
+    private suspend fun prepareProviderMessages(
         snapshot: IosAppState,
         assistant: IosAssistantPreferences,
         conversation: IosConversation,
@@ -3465,60 +3434,60 @@ class IosAppController(
     ): List<UIMessage> {
         val recentText = history.takeLast(10).map { it.toText() }
         val lorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
-        val activated = PromptInjectionEngine.activateLorebookEntries(
-            lorebooks = snapshot.lorebooks,
-            enabledLorebookIds = lorebookIds,
-            recentMessages = recentText,
-        )
-        val skills = PromptInjectionEngine.enabledSkills(
-            skills = snapshot.skills,
-            assistantId = assistant.id,
-            assistantDefaultSkillIds = assistant.enabledSkillIds,
-            conversationSkillIds = conversation.enabledSkillIds.orEmpty(),
-            turnScopedSkillIds = turnScopedSkillIds[conversation.id].orEmpty(),
-        )
-        val toolGuide = tools.joinToString("\n") { it.systemPrompt(model, history) }.trim()
-        val baseSystem = buildList {
-            assistant.systemPrompt.takeIf(String::isNotBlank)?.let(::add)
-            if (assistant.memoryMode == IosMemoryMode.BASIC && memoryPrompt.isNotBlank()) add(memoryPrompt)
-        }.joinToString("\n\n")
-        val assembled = PromptInjectionEngine.assembleSystemPrompt(
-            baseSystemPrompt = baseSystem,
-            skills = skills,
-            lorebookEntries = activated.map { it.entry },
-            toolGuide = toolGuide,
-        )
-        val injectedHistory = applyInContextPromptInjections(
-            messages = history,
-            skills = skills,
-            lorebookEntries = activated.map { it.entry },
-        )
-        return assembled.takeIf(String::isNotBlank)?.let { listOf(UIMessage.system(it)) }.orEmpty() +
-            injectedHistory
-    }
-
-    private fun buildMcpTools(
-        snapshot: IosAppState,
-        assistant: IosAssistantPreferences,
-    ): List<Tool> {
-        return snapshot.mcpServers
-            .filter { it.enable && it.url.isNotBlank() && it.id in assistant.enabledMcpServerIds }
-            .flatMap { server ->
-                server.tools.filter { it.enable && it.name.isNotBlank() }.map { tool ->
-                    Tool(
-                        name = tool.name,
-                        description = tool.description ?: "MCP tool from ${server.name.ifBlank { server.url }}",
-                        parameters = { tool.inputSchema },
-                        execute = { arguments ->
-                            mcpClient.callTool(
-                                server = server,
-                                toolName = tool.name,
-                                arguments = arguments as? JsonObject ?: JsonObject(emptyMap()),
-                            )
+        val hasRag = snapshot.lorebooks.any { lorebook ->
+            lorebook.enabled && lorebook.id in lorebookIds &&
+                lorebook.entries.any { it.activationType == me.rerere.rikkahub.data.prompt.LorebookActivationKind.RAG }
+        }
+        val queryEmbedding = if (hasRag) {
+            runCatching {
+                embedMemory(recentText.takeLast(3).joinToString("\n"), assistant).firstOrNull()
+            }.getOrNull()
+        } else null
+        val memories = snapshot.memories
+            .filter { it.assistantId == assistant.id }
+            .map { PortableMemoryRecord(id = it.id, content = it.content, type = it.type, timestamp = it.timestampEpochMs) }
+        val prepared = PortableGenerationPrepare.prepare(
+            PortablePrepareRequest(
+                messages = history,
+                model = model,
+                tools = tools,
+                assistant = PortablePrepareAssistant(
+                    id = assistant.id,
+                    systemPrompt = assistant.systemPrompt,
+                    enableMemory = assistant.memoryMode != IosMemoryMode.OFF,
+                    useRagMemoryRetrieval = assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
+                        assistant.memoryMode == IosMemoryMode.ADAPTIVE,
+                    smartContextManagement = true,
+                    thinkingBudget = assistant.thinkingBudget.takeIf { it > 0 },
+                    enabledSkillIds = assistant.enabledSkillIds,
+                    enabledLorebookIds = assistant.enabledLorebookIds,
+                    workspaceEnabled = IosLocalToolOption.WORKSPACE in assistant.localTools,
+                ),
+                skills = snapshot.skills,
+                lorebooks = snapshot.lorebooks,
+                memories = memories,
+                conversationSkillIds = conversation.enabledSkillIds.orEmpty(),
+                turnScopedSkillIds = turnScopedSkillIds[conversation.id].orEmpty(),
+                conversationLorebookIds = conversation.enabledLorebookIds,
+                memoryPromptOverride = memoryPrompt.takeIf { it.isNotBlank() },
+                queryEmbedding = queryEmbedding,
+                transformers = defaultPortableInputTransformers(),
+                transformerContext = PortableTransformerContext(
+                    model = model,
+                    workspaceEnabled = IosLocalToolOption.WORKSPACE in assistant.localTools,
+                    documentRuntime = bytesDocumentRuntime(
+                        readBytes = { url ->
+                            fileStore.readBytes(url.removePrefix("file://"))
+                                ?: IosNativeFiles.readUrl(url)
                         },
-                    )
-                }
-            }
+                        pdfParser = documentParser?.let { parser ->
+                            { bytes -> parser.parse("document.pdf", "application/pdf", bytes) }
+                        },
+                    ),
+                ),
+            ),
+        )
+        return prepared.providerMessages
     }
 
     private suspend fun buildSearchTool(preferences: IosSearchPreferences): Tool? {

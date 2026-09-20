@@ -35,6 +35,14 @@ enum class LorebookActivationKind {
 }
 
 @Serializable
+data class PortablePromptAttachment(
+    val type: String = "document",
+    val url: String = "",
+    val fileName: String = "",
+    val mime: String = "",
+)
+
+@Serializable
 data class PortableSkill(
     val id: String,
     val name: String = "",
@@ -47,6 +55,11 @@ data class PortableSkill(
     val injectionPosition: PromptInjectionPosition = PromptInjectionPosition.AFTER_SYSTEM,
     val depth: Int = 0,
     val disableModelInvocation: Boolean = false,
+    val icon: String? = null,
+    val compatibility: String? = null,
+    val workspaceDirectory: String? = null,
+    val bundledResources: List<String> = emptyList(),
+    val attachments: List<PortablePromptAttachment> = emptyList(),
 ) {
     fun isAvailableForAssistant(assistantId: String): Boolean {
         return availableForAllAssistants || availableAssistantIds.contains(assistantId)
@@ -58,6 +71,18 @@ data class PortableSkill(
             appendLine()
         }
         append(instructions)
+        val directory = workspaceDirectory?.takeIf { it.isNotBlank() }
+        if (directory != null) {
+            appendLine()
+            append("Skill package: $directory")
+            if (bundledResources.isNotEmpty()) {
+                appendLine()
+                appendLine("Bundled resources (load only when needed):")
+                bundledResources.take(64).forEach { path ->
+                    appendLine("- $path")
+                }
+            }
+        }
     }
 }
 
@@ -75,6 +100,7 @@ data class PortableLorebookEntry(
     val useRegex: Boolean = false,
     val scanDepth: Int = 10,
     val embedding: List<Float>? = null,
+    val attachments: List<PortablePromptAttachment> = emptyList(),
 )
 
 @Serializable
@@ -84,6 +110,7 @@ data class PortableLorebook(
     val description: String = "",
     val entries: List<PortableLorebookEntry> = emptyList(),
     val enabled: Boolean = true,
+    val coverJson: String? = null,
 )
 
 data class ActivatedLorebookEntry(
@@ -226,8 +253,15 @@ object PromptInjectionEngine {
         }
     }.trim()
 
-    fun inContextSkillText(skill: PortableSkill): String =
-        "<system>\n[Skill: ${skill.name}]\n${skill.instructions}\n</system>"
+    fun inContextSkillText(skill: PortableSkill): String = buildString {
+        append("<system>\n")
+        append("[Skill: ${skill.name}]\n")
+        append(skill.instructions)
+        skill.workspaceDirectory?.takeIf { it.isNotBlank() }?.let { directory ->
+            append("\nSkill directory: $directory")
+        }
+        append("\n</system>")
+    }
 
     fun inContextLorebookText(entry: PortableLorebookEntry): String =
         "<system>\n${entry.prompt}\n</system>"
