@@ -30,7 +30,6 @@ import me.rerere.common.platform.android.AndroidPlatformJwtSigner
 import me.rerere.common.platform.android.AndroidPlatformMediaEncoder
 import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.rikkahub.BuildConfig
-import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
@@ -265,7 +264,6 @@ val dataSourceModule = module {
                     .build()
                 chain.proceed(request)
             }
-            .addInterceptor(AIRequestInterceptor(remoteConfig = get()))
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
@@ -396,11 +394,11 @@ val dataSourceModule = module {
     // On-device (LiteRT-LM) provider stack
     single { me.rerere.locallm.LocalModelStore(get()) }
     single { me.rerere.locallm.LiteRtCatalog(get()) }
-    single { 
+    single {
         me.rerere.locallm.ModelInstall(
             context = get(),
             huggingFaceTokenProvider = { get<me.rerere.rikkahub.data.datastore.SecretKeyManager>().getHuggingFaceToken() }
-        ) 
+        )
     }
     single {
         me.rerere.locallm.LocalDownloadManager(

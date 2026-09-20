@@ -46,14 +46,6 @@ val appModule = module {
     }
 
     single {
-        Firebase.crashlytics
-    }
-
-    single {
-        Firebase.remoteConfig
-    }
-
-    single {
         AILoggingManager()
     }
 

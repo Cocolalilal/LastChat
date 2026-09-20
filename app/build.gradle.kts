@@ -11,8 +11,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
 }
 
 val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
@@ -231,7 +229,7 @@ tasks.register("buildAll") {
 }
 
 tasks.named("preBuild") {
-    dependsOn(buildWebUi)
+    //dependsOn(buildWebUi)
     dependsOn(":speech:downloadSherpaOnnxAar")
 }
 
@@ -355,7 +353,7 @@ dependencies {
     // Paging3
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.compose)
-    
+
     // Palette (for color extraction from images)
     implementation(libs.androidx.palette.ktx)
 
