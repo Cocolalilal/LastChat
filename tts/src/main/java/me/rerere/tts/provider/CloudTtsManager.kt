@@ -15,7 +15,10 @@ import me.rerere.tts.provider.providers.PlayHTTTSProvider
 import me.rerere.tts.provider.providers.QwenTTSProvider
 
 /** Portable dispatcher for the eight network-backed TTS providers. */
-class CloudTtsManager(httpClient: PlatformHttpClient) : TtsSpeechGenerator {
+class CloudTtsManager(
+    httpClient: PlatformHttpClient,
+    private val systemTts: PlatformSystemTts = UnavailableSystemTts(),
+) : TtsSpeechGenerator {
     private val openAI = OpenAITTSProvider(httpClient)
     private val gemini = GeminiTTSProvider(httpClient)
     private val miniMax = MiniMaxTTSProvider(httpClient)
@@ -37,7 +40,10 @@ class CloudTtsManager(httpClient: PlatformHttpClient) : TtsSpeechGenerator {
         is TTSProviderSetting.FishAudio -> fishAudio.generateSpeech(providerSetting, request)
         is TTSProviderSetting.Cartesia -> cartesia.generateSpeech(providerSetting, request)
         is TTSProviderSetting.PlayHT -> playHT.generateSpeech(providerSetting, request)
-        is TTSProviderSetting.SystemTTS -> error("System TTS requires a platform provider")
+        is TTSProviderSetting.SystemTTS -> {
+            require(systemTts.available) { "System TTS requires a platform provider" }
+            systemTts.generateSpeech(providerSetting, request)
+        }
     }
 
     suspend fun listModels(providerSetting: TTSProviderSetting): List<TTSModelInfo> =
