@@ -514,11 +514,21 @@ Current iOS app status:
   `PlatformHttpClient.downloadTo`. `ModelCatalogService` and
   `mergeCatalogIntoProviders` live in `:ai`; iOS warms and refreshes
   `lastchat_catalog.json` the same way Android does. Display persists
+  Android `DisplaySetting` keys including jumper, blur, code wrap/collapse,
+  context stacks, new-chat header/content styles, generation haptics,
+  avatars, token/reasoning chrome, toolbar-at-bottom, STT-replaces-icon,
   `enableNotificationOnMessageGeneration`, `checkForUpdates`,
-  `createNewConversationOnStart`, and `ttsAutoplay`; generation-done alerts
+  `createNewConversationOnStart`, and `ttsAutoplay`. `fetchGithubLatestRelease`
+  is the shared GitHub `releases/latest` client (`PlatformHttpClient`);
+  Android keeps APK-only DownloadManager install, iOS offers IPA+APK and
+  opens the asset URL. Generation-done and web-host alerts
   use UserNotifications categories that match Android channel ids
   (`chat_completed`, `web_server`, `assistant_spontaneous`,
-  `assistant_scheduled`, `local_model_download`). The assistant overlay is an in-process Compose
+  `assistant_scheduled`, `local_model_download`); the web server posts
+  `web_server:status` while Ktor is bound. Sherpa archives unpack through
+  shared `PortableTarBz2` (bzip2 + ustar, required-file prefix match).
+  Remaining DisplaySetting no-ops: user avatar/nickname picker, per-role
+  `fontSettings`, `ttsTextFilterRules`, `providerViewMode`. The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep
   links, and App Group `pending_overlay_prompt`. Overlay settings (assistant,
   auto-STT, auto-send, auto-read) persist on iOS. Xcode screenshot QA is still required before 1:1

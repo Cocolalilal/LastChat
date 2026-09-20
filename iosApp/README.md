@@ -91,9 +91,20 @@ and Data navigate to working iOS editors; Android-only Assist/PRoot details stay
 explicit. Display includes generation notifications (UserNotifications
 categories matching Android channels), new-chat-on-start, update checks, TTS
 autoplay, and a Refresh catalog action that uses shared `ModelCatalogService`.
+UI customization now persists and applies the remaining Android
+`DisplaySetting` keys in the live chat UI: message jumper, chrome blur, code
+wrap/collapse, context stacks, new-chat GREETING/BIG_ICON/TEMPLATES/ACTIONS,
+generation haptics, avatars, token/reasoning chrome, toolbar-at-bottom, and
+STT-replaces-icon. `checkForUpdates` performs a live GitHub
+`releases/latest` fetch through `PlatformHttpClient`. Remaining DisplaySetting
+no-ops are the user avatar/nickname picker, per-role `fontSettings`,
+`ttsTextFilterRules`, and `providerViewMode`.
 Workspaces lists LiteRT/Sherpa catalogs and can download/delete files through
-`PortableOnDeviceModelManager`; inference still reports the shared unavailable
-runtime until LiteRT/PRoot exist on iOS. At Android's same 840 by 600 dp breakpoint
+`PortableOnDeviceModelManager`; Sherpa `.tar.bz2` archives unpack required
+files through shared `PortableTarBz2`. Inference still reports the shared unavailable
+runtime until LiteRT/PRoot exist on iOS. While the embedded Ktor host is bound,
+iOS posts a `web_server` UserNotifications status (`web_server:status`) and
+cancels it when the host stops. At Android's same 840 by 600 dp breakpoint
 iOS switches to the source-shared 336 dp adaptive pane, including identical
 grouping, expandable children, selected paint, corner morphing, row heights,
 press scale, and animation timing. The working Assistant, Provider,
