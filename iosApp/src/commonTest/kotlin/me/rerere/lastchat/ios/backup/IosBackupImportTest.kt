@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import me.rerere.lastchat.ios.IosLocalToolOption
 import me.rerere.lastchat.ios.IosMemoryMode
+import me.rerere.lastchat.ios.IosNewChatContentStyle
+import me.rerere.lastchat.ios.IosNewChatHeaderStyle
 import me.rerere.lastchat.ios.IosProviderType
 import me.rerere.lastchat.ios.IosSearchProviderType
 import me.rerere.lastchat.ios.IosTtsProviderType
@@ -115,6 +117,19 @@ class IosBackupImportTest {
         assertEquals(true, plan.appearance.ttsAutoplay)
         assertEquals(false, plan.appearance.showModelIcon)
         assertEquals(true, plan.appearance.showTokenUsage)
+        assertEquals(true, plan.appearance.showMessageJumper)
+        assertEquals(true, plan.appearance.messageJumperOnLeft)
+        assertEquals(true, plan.appearance.enableBlurEffect)
+        assertEquals(true, plan.appearance.codeBlockAutoWrap)
+        assertEquals(false, plan.appearance.codeBlockAutoCollapse)
+        assertEquals(true, plan.appearance.showContextStacks)
+        assertEquals(IosNewChatHeaderStyle.BIG_ICON, plan.appearance.newChatHeaderStyle)
+        assertEquals(IosNewChatContentStyle.TEMPLATES, plan.appearance.newChatContentStyle)
+        assertEquals(false, plan.appearance.newChatShowAvatar)
+        assertEquals(true, plan.appearance.enableMessageGenerationHapticEffect)
+        assertEquals(true, plan.appearance.chatToolbarAtBottom)
+        assertEquals(true, plan.appearance.sttReplaceModelIcon)
+        assertEquals(true, plan.appearance.reasoningPreviewEnabled)
 
         assertContains(plan.applied.single { "Chat model" in it }, "gpt-4.1-mini")
     }
@@ -213,7 +228,20 @@ private object AndroidFixtures {
             "enableNotificationOnMessageGeneration": true,
             "checkForUpdates": false,
             "showModelIcon": false,
-            "showTokenUsage": true
+            "showTokenUsage": true,
+            "showMessageJumper": true,
+            "messageJumperOnLeft": true,
+            "enableBlurEffect": true,
+            "codeBlockAutoWrap": true,
+            "codeBlockAutoCollapse": false,
+            "showContextStacks": true,
+            "newChatHeaderStyle": "BIG_ICON",
+            "newChatContentStyle": "TEMPLATES",
+            "newChatShowAvatar": false,
+            "enableMessageGenerationHapticEffect": true,
+            "chatToolbarAtBottom": true,
+            "sttReplaceModelIcon": true,
+            "reasoningPreviewEnabled": true
           },
           "ttsAutoplayMode": "WHILE_GENERATING"
         }

@@ -13,6 +13,7 @@ class IosDisplayCatalogTest {
         assertEquals("assistant_spontaneous", IosNotificationCategory.SPONTANEOUS)
         assertEquals("assistant_scheduled", IosNotificationCategory.SCHEDULED)
         assertEquals("local_model_download", IosNotificationCategory.LOCAL_MODEL_DOWNLOAD)
+        assertEquals("web_server:status", IosNotificationCategory.WEB_SERVER_STATUS_ID)
     }
 
     @Test

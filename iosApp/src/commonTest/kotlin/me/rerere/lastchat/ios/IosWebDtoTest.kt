@@ -50,5 +50,12 @@ class IosWebDtoTest {
         assertTrue(json.contains("\"assistantId\":\"a1\""))
         assertTrue(json.contains("\"enableWebSearch\":true"))
         assertTrue(json.contains("Ada"))
+        assertTrue(json.contains("\"showMessageJumper\":false"))
+        assertTrue(json.contains("\"newChatHeaderStyle\":\"GREETING\""))
+        assertTrue(json.contains("\"newChatContentStyle\":\"ACTIONS\""))
+        assertTrue(json.contains("\"enableMessageGenerationHapticEffect\":false"))
+        assertTrue(json.contains("\"sttReplaceModelIcon\":false"))
+        assertTrue(json.contains("\"codeBlockAutoWrap\":false"))
+        assertTrue(json.contains("\"showContextStacks\":false"))
     }
 }
