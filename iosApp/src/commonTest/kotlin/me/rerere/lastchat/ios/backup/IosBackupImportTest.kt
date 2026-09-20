@@ -110,6 +110,11 @@ class IosBackupImportTest {
 
         assertEquals("moonlight", assertNotNull(plan.appearance).themeId)
         assertEquals(1.25f, plan.appearance.fontSizeRatio)
+        assertEquals(true, plan.appearance.enableNotificationOnMessageGeneration)
+        assertEquals(false, plan.appearance.checkForUpdates)
+        assertEquals(true, plan.appearance.ttsAutoplay)
+        assertEquals(false, plan.appearance.showModelIcon)
+        assertEquals(true, plan.appearance.showTokenUsage)
 
         assertContains(plan.applied.single { "Chat model" in it }, "gpt-4.1-mini")
     }
@@ -203,7 +208,14 @@ private object AndroidFixtures {
             }
           ],
           "selectedTTSProviderId": "$TTS_PROVIDER_ID",
-          "displaySetting": {"fontSizeRatio": 1.25}
+          "displaySetting": {
+            "fontSizeRatio": 1.25,
+            "enableNotificationOnMessageGeneration": true,
+            "checkForUpdates": false,
+            "showModelIcon": false,
+            "showTokenUsage": true
+          },
+          "ttsAutoplayMode": "WHILE_GENERATING"
         }
         """.trimIndent(),
     ).jsonObject

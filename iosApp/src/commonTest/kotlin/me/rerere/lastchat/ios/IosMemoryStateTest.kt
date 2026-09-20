@@ -231,6 +231,14 @@ class IosMemoryStateTest {
                     colorHex = "#87CEEB",
                 )
             ),
+            enableNotificationOnMessageGeneration = true,
+            checkForUpdates = false,
+            createNewConversationOnStart = false,
+            ttsAutoplay = true,
+            showModelIcon = false,
+            showTokenUsage = true,
+            autoCloseThinking = false,
+            enableUIHaptics = false,
         )
         assertEquals(
             appearance,

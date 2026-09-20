@@ -24,13 +24,34 @@ class IosUserNotificationPlatform : IosLocalNotificationPlatform {
         }
     }
 
+    override suspend fun ensureCategories() {
+        val center = UNUserNotificationCenter.currentNotificationCenter()
+        val categories = listOf(
+            IosNotificationCategory.CHAT_COMPLETED,
+            IosNotificationCategory.WEB_SERVER,
+            IosNotificationCategory.SPONTANEOUS,
+            IosNotificationCategory.SCHEDULED,
+            IosNotificationCategory.LOCAL_MODEL_DOWNLOAD,
+        ).map { id ->
+            platform.UserNotifications.UNNotificationCategory.categoryWithIdentifier(
+                identifier = id,
+                actions = emptyList<platform.UserNotifications.UNNotificationAction>(),
+                intentIdentifiers = emptyList<String>(),
+                options = 0u,
+            )
+        }.toSet()
+        center.setNotificationCategories(categories)
+    }
+
     override suspend fun post(
         identifier: String,
         title: String,
         content: String,
         delayMinutes: Long,
+        category: String,
     ): IosLocalNotificationResult {
         val center = UNUserNotificationCenter.currentNotificationCenter()
+        ensureCategories()
         val granted = requestAuthorization()
         if (!granted) return IosLocalNotificationResult("error: permission denied")
 
@@ -38,6 +59,7 @@ class IosUserNotificationPlatform : IosLocalNotificationPlatform {
             setTitle(title)
             setBody(content)
             setSound(UNNotificationSound.defaultSound())
+            setCategoryIdentifier(category)
             setUserInfo(mapOf("conversation_id" to identifier.substringBefore(':')))
         }
         val delaySeconds = delayMinutes.coerceAtLeast(0) * 60

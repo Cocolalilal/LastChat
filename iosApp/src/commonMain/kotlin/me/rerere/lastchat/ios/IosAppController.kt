@@ -113,6 +113,17 @@ import me.rerere.common.runtime.OnDeviceLlmRuntime
 import me.rerere.common.runtime.OnDeviceWorkspaceRuntime
 import me.rerere.common.runtime.UnavailableOnDeviceLlmRuntime
 import me.rerere.common.runtime.UnavailableOnDeviceWorkspaceRuntime
+import me.rerere.common.runtime.local.InstalledLocalModel
+import me.rerere.common.runtime.local.InstalledSherpaModel
+import me.rerere.common.runtime.local.LocalModelCatalog
+import me.rerere.common.runtime.local.PortableDownload
+import me.rerere.common.runtime.local.PortableOnDeviceModelManager
+import me.rerere.common.runtime.local.SherpaModelCatalog
+import me.rerere.rikkahub.data.ai.models.MODEL_CATALOG_ASSET_NAME
+import me.rerere.rikkahub.data.ai.models.ModelCatalogService
+import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
+import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
+import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoProviders
 import me.rerere.document.PlatformDocumentParser
 import me.rerere.document.PortableDocumentText
 import me.rerere.rikkahub.data.mcp.PortableMcpClient
@@ -188,6 +199,14 @@ data class IosAppearancePreferences(
     val fontSizeRatio: Float = 1.0f,
     val rpStyleRules: List<IosRpStyleRule> = emptyList(),
     val developerMode: Boolean = false,
+    val enableNotificationOnMessageGeneration: Boolean = false,
+    val checkForUpdates: Boolean = true,
+    val createNewConversationOnStart: Boolean = true,
+    val ttsAutoplay: Boolean = false,
+    val showModelIcon: Boolean = true,
+    val showTokenUsage: Boolean = false,
+    val autoCloseThinking: Boolean = true,
+    val enableUIHaptics: Boolean = true,
 )
 
 @Serializable
@@ -442,6 +461,12 @@ data class IosAppState(
         UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON,
     val overlayVisible: Boolean = false,
     val overlay: IosOverlayPreferences = IosOverlayPreferences(),
+    val catalogStatus: ModelCatalogStatus = ModelCatalogStatus(),
+    val llmCatalog: LocalModelCatalog = LocalModelCatalog(),
+    val sttCatalog: SherpaModelCatalog = SherpaModelCatalog(),
+    val installedLlm: List<InstalledLocalModel> = emptyList(),
+    val installedStt: List<InstalledSherpaModel> = emptyList(),
+    val localDownloads: Map<String, PortableDownload> = emptyMap(),
     val dailyActivity: List<PortableDailyActivity> = emptyList(),
     val usageTotals: PortableUsageTotals = PortableUsageTotals(),
     val hasApiKey: Boolean = false,
@@ -589,6 +614,26 @@ class IosAppController(
     private val mcpClient = PortableMcpClient(httpClient, json)
     private val webDavClient = PortableWebDavClient(httpClient)
     private val webServer = IosLocalWebServer()
+    private val catalogService = ModelCatalogService(
+        httpClient = httpClient,
+        fileStore = fileStore,
+        bundledCatalogReader = {
+            IosNativeFiles.loadBundledCatalog(MODEL_CATALOG_ASSET_NAME)
+                ?: EMPTY_LASTCHAT_CATALOG
+        },
+    )
+    private val catalogResolver = ModelMetadataResolver { catalogService.snapshotOrNull() }
+    private val onDeviceModels = PortableOnDeviceModelManager(
+        httpClient = httpClient,
+        fileStore = fileStore,
+        bundledLlmCatalog = {
+            IosNativeFiles.loadBundledCatalog("litert_catalog.json") ?: EMPTY_LLM_CATALOG
+        },
+        bundledSttCatalog = {
+            IosNativeFiles.loadBundledCatalog("sherpa_stt_catalog.json") ?: EMPTY_STT_CATALOG
+        },
+        scope = scope,
+    )
     private val turnScopedSkillIds = mutableMapOf<String, MutableSet<String>>()
     private val webUploads = mutableMapOf<String, String>()
     private var webUploadSeq = 0L
@@ -612,6 +657,36 @@ class IosAppController(
         scope.launch {
             ttsController.error.collect { error ->
                 if (!error.isNullOrBlank()) mutableState.update { it.copy(error = error) }
+            }
+        }
+        scope.launch {
+            catalogService.status.collect { status ->
+                mutableState.update { it.copy(catalogStatus = status) }
+            }
+        }
+        scope.launch {
+            onDeviceModels.llmCatalog.collect { catalog ->
+                mutableState.update { it.copy(llmCatalog = catalog) }
+            }
+        }
+        scope.launch {
+            onDeviceModels.sttCatalog.collect { catalog ->
+                mutableState.update { it.copy(sttCatalog = catalog) }
+            }
+        }
+        scope.launch {
+            onDeviceModels.installedLlm.collect { models ->
+                mutableState.update { it.copy(installedLlm = models) }
+            }
+        }
+        scope.launch {
+            onDeviceModels.installedStt.collect { models ->
+                mutableState.update { it.copy(installedStt = models) }
+            }
+        }
+        scope.launch {
+            onDeviceModels.downloads.collect { downloads ->
+                mutableState.update { it.copy(localDownloads = downloads) }
             }
         }
     }
@@ -766,6 +841,29 @@ class IosAppController(
             }
             conversationStore.backfillDailyActivityIfNeeded()
             refreshAnalytics()
+            runCatching { notificationPlatform.ensureCategories() }
+            runCatching { catalogService.warmUp() }
+                .onFailure { PlatformLog.w(TAG, "Model catalog warm-up failed: ${it.message}") }
+            catalogService.snapshotOrNull()?.let { snapshot ->
+                val currentProviders = mutableState.value.providers
+                val merged = mergeCatalogIntoProviders(
+                    providers = currentProviders,
+                    snapshot = snapshot,
+                    resolver = catalogResolver,
+                )
+                if (merged != currentProviders) {
+                    mutableState.update { it.copy(providers = merged) }
+                    persist()
+                }
+            }
+            runCatching { onDeviceModels.warmUp() }
+                .onFailure { PlatformLog.w(TAG, "On-device catalog warm-up failed: ${it.message}") }
+            if (mutableState.value.appearance.createNewConversationOnStart) {
+                val selected = mutableState.value.selectedConversation
+                if (selected != null && selected.currentMessages.isNotEmpty()) {
+                    createConversation(restoredAssistantId)
+                }
+            }
         }
     }
 
@@ -1483,16 +1581,94 @@ class IosAppController(
         persistAsync()
     }
 
-    fun saveUiCustomization(showAssistantBubbles: Boolean, fontSizeRatio: Float) {
+    fun saveUiCustomization(
+        showAssistantBubbles: Boolean,
+        fontSizeRatio: Float,
+        showModelIcon: Boolean,
+        showTokenUsage: Boolean,
+        autoCloseThinking: Boolean,
+        enableUIHaptics: Boolean,
+    ) {
         mutableState.update {
             it.copy(
                 appearance = it.appearance.copy(
                     showAssistantBubbles = showAssistantBubbles,
                     fontSizeRatio = fontSizeRatio.coerceIn(0.5f, 2.0f),
+                    showModelIcon = showModelIcon,
+                    showTokenUsage = showTokenUsage,
+                    autoCloseThinking = autoCloseThinking,
+                    enableUIHaptics = enableUIHaptics,
                 )
             )
         }
         persistAsync()
+    }
+
+    fun saveDisplayKnobs(
+        enableNotificationOnMessageGeneration: Boolean,
+        checkForUpdates: Boolean,
+        createNewConversationOnStart: Boolean,
+        ttsAutoplay: Boolean,
+    ) {
+        mutableState.update { current ->
+            current.copy(
+                appearance = current.appearance.copy(
+                    enableNotificationOnMessageGeneration = enableNotificationOnMessageGeneration,
+                    checkForUpdates = checkForUpdates,
+                    createNewConversationOnStart = createNewConversationOnStart,
+                    ttsAutoplay = ttsAutoplay,
+                ),
+            )
+        }
+        persistAsync()
+        if (enableNotificationOnMessageGeneration) {
+            scope.launch { notificationPlatform.requestAuthorization() }
+        }
+    }
+
+    fun refreshModelCatalog() {
+        scope.launch {
+            mutableState.update { it.copy(error = null) }
+            runCatching {
+                catalogService.refreshCatalog()
+                val snapshot = catalogService.snapshotOrNull() ?: return@runCatching
+                val merged = mergeCatalogIntoProviders(
+                    providers = mutableState.value.providers,
+                    snapshot = snapshot,
+                    resolver = catalogResolver,
+                )
+                mutableState.update { it.copy(providers = merged) }
+                persist()
+            }.onFailure { failure ->
+                mutableState.update {
+                    it.copy(error = failure.message ?: "Catalog refresh failed")
+                }
+            }
+        }
+    }
+
+    fun downloadLocalLlm(id: String) {
+        val meta = onDeviceModels.llmCatalog.value.models.firstOrNull { it.id == id } ?: return
+        onDeviceModels.downloadLlm(meta)
+    }
+
+    fun downloadLocalStt(id: String) {
+        val meta = onDeviceModels.sttCatalog.value.models.firstOrNull { it.id == id } ?: return
+        onDeviceModels.downloadStt(meta)
+    }
+
+    fun cancelLocalDownload(id: String) = onDeviceModels.cancel(id)
+
+    fun deleteLocalLlm(id: String) {
+        scope.launch { onDeviceModels.deleteLlm(id) }
+    }
+
+    fun deleteLocalStt(id: String) {
+        scope.launch { onDeviceModels.deleteStt(id) }
+    }
+
+    fun requestNotificationPermission() {
+        scope.launch { notificationPlatform.requestAuthorization() }
     }
 
     fun saveFontSettings(usePhoneSystemFont: Boolean) {
@@ -2277,13 +2453,29 @@ class IosAppController(
                 if (generationSucceeded && snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE) {
                     scheduleAdaptiveMemory(conversation.id)
                 }
-                if (generationSucceeded && snapshot.overlayVisible && snapshot.overlay.autoReadReply) {
-                    val reply = mutableState.value.selectedConversation?.currentMessages
-                        ?.lastOrNull { it.role == MessageRole.ASSISTANT }
-                    val replyText = reply?.parts?.filterIsInstance<UIMessagePart.Text>()
-                        ?.joinToString("\n") { it.text }
-                        .orEmpty()
-                    if (replyText.isNotBlank()) speak(replyText)
+                val reply = mutableState.value.selectedConversation?.currentMessages
+                    ?.lastOrNull { it.role == MessageRole.ASSISTANT }
+                val replyText = reply?.parts?.filterIsInstance<UIMessagePart.Text>()
+                    ?.joinToString("\n") { it.text }
+                    .orEmpty()
+                val shouldSpeak = generationSucceeded && (
+                    snapshot.appearance.ttsAutoplay ||
+                        (snapshot.overlayVisible && snapshot.overlay.autoReadReply)
+                    )
+                if (shouldSpeak && replyText.isNotBlank()) speak(replyText)
+                if (
+                    generationSucceeded &&
+                    snapshot.appearance.enableNotificationOnMessageGeneration &&
+                    !snapshot.overlayVisible
+                ) {
+                    runCatching {
+                        notificationPlatform.post(
+                            identifier = conversation.id,
+                            title = snapshot.assistant.name,
+                            content = replyText.trim().ifBlank { "Reply ready" }.take(180),
+                            category = IosNotificationCategory.CHAT_COMPLETED,
+                        )
+                    }
                 }
                 generationJob = null
             }
@@ -2629,6 +2821,7 @@ class IosAppController(
             identifier = conversationId ?: assistant.id,
             title = title,
             content = content,
+            category = IosNotificationCategory.SPONTANEOUS,
         )
         if (result.status != "success") return
         recordNotification(title, content)
@@ -2799,6 +2992,7 @@ class IosAppController(
             identifier = "${conversation.id}:scheduled:${scheduled.id}",
             title = assistant.name,
             content = content,
+            category = IosNotificationCategory.SCHEDULED,
         )
         require(result.status == "success") { "The scheduled notification could not be posted." }
         recordNotification(assistant.name, content)
@@ -3435,6 +3629,7 @@ class IosAppController(
                             identifier = "$conversationId:${Uuid.random()}",
                             title = title,
                             content = content,
+                            category = IosNotificationCategory.CHAT_COMPLETED,
                         )
                         if (result.status == "success") recordNotification(title, content)
                         buildJsonObject { put("status", result.status) }
@@ -4647,6 +4842,11 @@ class IosAppController(
         const val STATE_PATH = "state/ios-app.json"
         const val CONVERSATIONS_PATH = "state/conversations.json"
         const val STREAMING_CHECKPOINT_INTERVAL_MS = PortableGenerationLoop.STREAMING_CHECKPOINT_INTERVAL_MS
+        const val TAG = "IosAppController"
+        const val EMPTY_LASTCHAT_CATALOG =
+            """{"schema_version":2,"providers":[],"model_families":[]}"""
+        const val EMPTY_LLM_CATALOG = """{"schema_version":1,"models":[]}"""
+        const val EMPTY_STT_CATALOG = """{"schemaVersion":1,"models":[]}"""
         const val MAX_TOOL_STEPS = PortableGenerationLoop.MAX_TOOL_STEPS
         const val DATA_RESTORE_MAX_ENTRY_BYTES = 256 * 1024 * 1024
         val IOS_BACKUP_DATABASE_ENTRIES = listOf("rikka_hub.db", "rikka_hub")

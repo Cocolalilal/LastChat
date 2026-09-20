@@ -104,8 +104,32 @@ val prepareIosWebUi by tasks.registering(Sync::class) {
     }
 }
 
+val catalogDir = rootProject.file("catalog")
+val iosCatalogDest = layout.projectDirectory.dir("xcode/LastChatIOS/catalog")
+
+val prepareIosCatalog by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Copies lastchat/litert/sherpa catalogs into iosApp/xcode/LastChatIOS/catalog for NSBundle."
+    from(catalogDir) {
+        include("lastchat_catalog.json")
+    }
+    from(rootProject.file("local-llm/src/main/assets")) {
+        include("litert_catalog.json")
+    }
+    from(rootProject.file("speech/src/main/assets")) {
+        include("sherpa_stt_catalog.json")
+    }
+    into(iosCatalogDest)
+    includeEmptyDirs = false
+    exclude(".gitkeep")
+    doLast {
+        iosCatalogDest.asFile.resolve(".gitkeep").takeIf { !it.exists() }?.writeText("")
+    }
+}
+
 tasks.matching { it.name.contains("embedAndSignAppleFrameworkForXcode") }.configureEach {
     dependsOn(prepareIosWebUi)
+    dependsOn(prepareIosCatalog)
 }
 
 tasks.register("iosWebUi") {

@@ -312,13 +312,34 @@ internal object IosBackupImporter {
         settings: JsonObject,
         warnings: MutableList<String>,
     ): IosAppearancePreferences? {
+        val display = settings["displaySetting"] as? JsonObject
         val themeId = settings.string("themeId")?.takeIf(String::isNotBlank)
-        val fontSizeRatio = (settings["displaySetting"] as? JsonObject)?.float("fontSizeRatio")
-        if (themeId == null && fontSizeRatio == null) return null
+        val fontSizeRatio = display?.float("fontSizeRatio")
+        val notify = display?.boolean("enableNotificationOnMessageGeneration")
+        val checkUpdates = display?.boolean("checkForUpdates")
+        val ttsAutoplayMode = settings.string("ttsAutoplayMode")
+        if (
+            themeId == null &&
+            fontSizeRatio == null &&
+            notify == null &&
+            checkUpdates == null &&
+            ttsAutoplayMode == null
+        ) {
+            return null
+        }
         warnings += "Appearance: dynamic color is not available on iOS; the Android theme id and font size are applied where supported"
+        val defaults = IosAppearancePreferences()
         return IosAppearancePreferences(
-            themeId = themeId ?: IosAppearancePreferences().themeId,
-            fontSizeRatio = fontSizeRatio ?: IosAppearancePreferences().fontSizeRatio,
+            themeId = themeId ?: defaults.themeId,
+            fontSizeRatio = fontSizeRatio ?: defaults.fontSizeRatio,
+            showAssistantBubbles = display?.boolean("showAssistantBubbles") ?: defaults.showAssistantBubbles,
+            showModelIcon = display?.boolean("showModelIcon") ?: defaults.showModelIcon,
+            showTokenUsage = display?.boolean("showTokenUsage") ?: defaults.showTokenUsage,
+            autoCloseThinking = display?.boolean("autoCloseThinking") ?: defaults.autoCloseThinking,
+            enableUIHaptics = display?.boolean("enableUIHaptics") ?: defaults.enableUIHaptics,
+            enableNotificationOnMessageGeneration = notify ?: defaults.enableNotificationOnMessageGeneration,
+            checkForUpdates = checkUpdates ?: defaults.checkForUpdates,
+            ttsAutoplay = ttsAutoplayMode != null && ttsAutoplayMode != "OFF",
         )
     }
 

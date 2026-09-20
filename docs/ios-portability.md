@@ -509,7 +509,16 @@ Current iOS app status:
   node mapping. `PortableConversationStore` /
   `PortableSettingsStore` remain the platform-agnostic persistence
   contracts; Room and the iOS file store remain the backing implementations. iOS on-device runtimes stay honest
-  unavailable shims. The assistant overlay is an in-process Compose
+  unavailable shims, but Workspaces now lists/downloads/deletes LiteRT and
+  Sherpa files through shared `PortableOnDeviceModelManager` +
+  `PlatformHttpClient.downloadTo`. `ModelCatalogService` and
+  `mergeCatalogIntoProviders` live in `:ai`; iOS warms and refreshes
+  `lastchat_catalog.json` the same way Android does. Display persists
+  `enableNotificationOnMessageGeneration`, `checkForUpdates`,
+  `createNewConversationOnStart`, and `ttsAutoplay`; generation-done alerts
+  use UserNotifications categories that match Android channel ids
+  (`chat_completed`, `web_server`, `assistant_spontaneous`,
+  `assistant_scheduled`, `local_model_download`). The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep
   links, and App Group `pending_overlay_prompt`. Overlay settings (assistant,
   auto-STT, auto-send, auto-read) persist on iOS. Xcode screenshot QA is still required before 1:1

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -27,6 +28,8 @@ import me.rerere.rikkahub.ui.components.settings.LastChatFormItem
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingGroupInputItem
 import me.rerere.rikkahub.ui.components.settings.LastChatSettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.common.runtime.local.LocalModelKind
+import me.rerere.common.runtime.local.PortableDownload
 import kotlin.uuid.Uuid
 
 @Composable
@@ -469,7 +472,16 @@ internal fun IosWebDavSettings(
 }
 
 @Composable
-internal fun IosWorkspaceSettings(state: IosAppState, darkTheme: Boolean) {
+internal fun IosWorkspaceSettings(
+    state: IosAppState,
+    darkTheme: Boolean,
+    onDownloadLlm: (String) -> Unit,
+    onDownloadStt: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onDeleteLlm: (String) -> Unit,
+    onDeleteStt: (String) -> Unit,
+) {
+    val installedSttIds = state.installedStt.map { it.id }.toSet()
     LastChatSettingsGroup(title = "Workspaces", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
         LastChatSettingGroupInputItem(
             title = if (state.onDeviceWorkspaceAvailable) "Linux sandbox" else "On-device sandbox",
@@ -499,8 +511,117 @@ internal fun IosWorkspaceSettings(state: IosAppState, darkTheme: Boolean) {
                 state.onDeviceLlmUnavailableReason
             },
             darkTheme = darkTheme,
-        ) {}
+        ) {
+            Text(
+                "Catalog, download, and delete use the shared PortableOnDeviceModelManager. Inference still goes through OnDeviceLlmRuntime — currently ${if (state.onDeviceLlmAvailable) "available" else "unavailable"}.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        state.llmCatalog.models.forEach { meta ->
+            val download = state.localDownloads[meta.id]
+            val installed = state.installedLlm.firstOrNull { it.id == meta.id }
+            LastChatSettingGroupInputItem(
+                title = meta.name,
+                subtitle = buildString {
+                    append(iosByteSize(meta.sizeInBytes))
+                    append(" · ")
+                    append(if (installed != null) "installed" else "catalog")
+                    if (meta.kind == LocalModelKind.EMBEDDING) append(" · embedding")
+                },
+                darkTheme = darkTheme,
+            ) {
+                Text(
+                    meta.description.ifBlank { meta.id },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                when (download) {
+                    is PortableDownload.Running -> {
+                        LinearProgressIndicator(
+                            progress = { download.progress.percent / 100f },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                        TextButton(onClick = { onCancelDownload(meta.id) }) { Text("Cancel") }
+                    }
+                    is PortableDownload.Failed -> {
+                        Text(
+                            download.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = { onDownloadLlm(meta.id) }) { Text("Retry") }
+                    }
+                    null -> {
+                        if (installed != null) {
+                            TextButton(onClick = { onDeleteLlm(meta.id) }) { Text("Delete") }
+                        } else {
+                            TextButton(onClick = { onDownloadLlm(meta.id) }) { Text("Download") }
+                        }
+                    }
+                }
+            }
+        }
+        LastChatSettingGroupInputItem(
+            title = "On-device speech-to-text",
+            subtitle = if (state.sttCatalog.models.isEmpty()) {
+                "No bundled Sherpa catalog"
+            } else {
+                "${state.sttCatalog.models.size} catalog models · ${installedSttIds.size} installed"
+            },
+            darkTheme = darkTheme,
+        ) {
+            Text(
+                "Downloads use the same manager as LLM files. On-device STT inference is not a separate iOS path — it reports the shared unavailable runtime until a native decoder exists.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        state.sttCatalog.models.forEach { meta ->
+            val download = state.localDownloads[meta.id]
+            val installed = installedSttIds.contains(meta.id)
+            LastChatSettingGroupInputItem(
+                title = meta.name,
+                subtitle = "${iosByteSize(meta.archiveSizeBytes)} · ${meta.family.name.lowercase()}",
+                darkTheme = darkTheme,
+            ) {
+                when (download) {
+                    is PortableDownload.Running -> {
+                        LinearProgressIndicator(
+                            progress = { download.progress.percent / 100f },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                        TextButton(onClick = { onCancelDownload(meta.id) }) { Text("Cancel") }
+                    }
+                    is PortableDownload.Failed -> {
+                        Text(
+                            download.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = { onDownloadStt(meta.id) }) { Text("Retry") }
+                    }
+                    null -> {
+                        if (installed) {
+                            TextButton(onClick = { onDeleteStt(meta.id) }) { Text("Delete") }
+                        } else {
+                            TextButton(onClick = { onDownloadStt(meta.id) }) { Text("Download") }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun iosByteSize(bytes: Long): String {
+    if (bytes < 1_000L) return "$bytes B"
+    if (bytes < 1_000_000L) return "${bytes / 1_000L} KB"
+    if (bytes < 1_000_000_000L) return "${bytes / 1_000_000L} MB"
+    val tenths = (bytes * 10L) / 1_000_000_000L
+    return "${tenths / 10}.${tenths % 10} GB"
 }
 
 @Composable

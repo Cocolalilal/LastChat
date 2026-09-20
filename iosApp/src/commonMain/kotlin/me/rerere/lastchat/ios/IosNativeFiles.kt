@@ -6,4 +6,6 @@ internal expect object IosNativeFiles {
     fun loadWebAsset(relativePath: String): ByteArray?
 
     fun readUrl(url: String): ByteArray?
+
+    fun loadBundledCatalog(fileName: String): String?
 }

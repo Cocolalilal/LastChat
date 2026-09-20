@@ -28,6 +28,14 @@ internal actual object IosNativeFiles {
         return readPath("$root/$normalized")
     }
 
+    actual fun loadBundledCatalog(fileName: String): String? {
+        val bundle = NSBundle.mainBundle.resourcePath ?: return null
+        val normalized = fileName.replace('\\', '/').substringAfterLast('/')
+        if (normalized.isBlank() || normalized.contains("..")) return null
+        return readPath("$bundle/catalog/$normalized")?.decodeToString()
+            ?: readPath("$bundle/$normalized")?.decodeToString()
+    }
+
     actual fun readUrl(url: String): ByteArray? {
         if (url.isBlank()) return null
         val nsUrl = NSURL.URLWithString(url) ?: return readPath(url.removePrefix("file://"))

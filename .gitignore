@@ -29,4 +29,6 @@ graphify-out/
 temp_aar/
 iosApp/xcode/LastChatIOS/webui/**
 !iosApp/xcode/LastChatIOS/webui/.gitkeep
+iosApp/xcode/LastChatIOS/catalog/**
+!iosApp/xcode/LastChatIOS/catalog/.gitkeep
 .commandcode/taste/workflow/taste.md

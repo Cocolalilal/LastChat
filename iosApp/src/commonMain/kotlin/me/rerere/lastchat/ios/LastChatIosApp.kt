@@ -233,6 +233,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.models.ModelCatalogSource
+import me.rerere.rikkahub.data.ai.models.ModelCatalogStatus
 
 private enum class IosRoute { Chat, Settings, Statistics, ImageGeneration }
 
@@ -405,6 +407,14 @@ fun LastChatIosApp(
                     onSaveAppearance = controller::saveAppearance,
                     onSaveFontSettings = controller::saveFontSettings,
                     onSaveUiCustomization = controller::saveUiCustomization,
+                    onSaveDisplayKnobs = controller::saveDisplayKnobs,
+                    onRefreshModelCatalog = controller::refreshModelCatalog,
+                    onDownloadLocalLlm = controller::downloadLocalLlm,
+                    onDownloadLocalStt = controller::downloadLocalStt,
+                    onCancelLocalDownload = controller::cancelLocalDownload,
+                    onDeleteLocalLlm = controller::deleteLocalLlm,
+                    onDeleteLocalStt = controller::deleteLocalStt,
+                    onRequestNotificationPermission = controller::requestNotificationPermission,
                     onSaveRpStyleRules = controller::saveRpStyleRules,
                     onSaveAssistant = controller::saveAssistant,
                     onSaveSpontaneousSettings = controller::saveSpontaneousSettings,
@@ -1847,7 +1857,15 @@ private fun SettingsPage(
     onSaveImageGeneration: (IosImageGenerationPreferences) -> Unit,
     onSaveAppearance: (String, IosColorMode) -> Unit,
     onSaveFontSettings: (Boolean) -> Unit,
-    onSaveUiCustomization: (Boolean, Float) -> Unit,
+    onSaveUiCustomization: (Boolean, Float, Boolean, Boolean, Boolean, Boolean) -> Unit,
+    onSaveDisplayKnobs: (Boolean, Boolean, Boolean, Boolean) -> Unit,
+    onRefreshModelCatalog: () -> Unit,
+    onDownloadLocalLlm: (String) -> Unit,
+    onDownloadLocalStt: (String) -> Unit,
+    onCancelLocalDownload: (String) -> Unit,
+    onDeleteLocalLlm: (String) -> Unit,
+    onDeleteLocalStt: (String) -> Unit,
+    onRequestNotificationPermission: () -> Unit,
     onSaveRpStyleRules: (List<IosRpStyleRule>) -> Unit,
     onSaveAssistant: (String, String) -> Unit,
     onSaveSpontaneousSettings: (Boolean, Int, Int, Int, String) -> Unit,
@@ -1925,6 +1943,30 @@ private fun SettingsPage(
     }
     var fontSizeRatio by remember(state.appearance.fontSizeRatio) {
         mutableStateOf(state.appearance.fontSizeRatio)
+    }
+    var showModelIcon by remember(state.appearance.showModelIcon) {
+        mutableStateOf(state.appearance.showModelIcon)
+    }
+    var showTokenUsage by remember(state.appearance.showTokenUsage) {
+        mutableStateOf(state.appearance.showTokenUsage)
+    }
+    var autoCloseThinking by remember(state.appearance.autoCloseThinking) {
+        mutableStateOf(state.appearance.autoCloseThinking)
+    }
+    var enableUIHaptics by remember(state.appearance.enableUIHaptics) {
+        mutableStateOf(state.appearance.enableUIHaptics)
+    }
+    var notifyOnGeneration by remember(state.appearance.enableNotificationOnMessageGeneration) {
+        mutableStateOf(state.appearance.enableNotificationOnMessageGeneration)
+    }
+    var checkForUpdates by remember(state.appearance.checkForUpdates) {
+        mutableStateOf(state.appearance.checkForUpdates)
+    }
+    var createNewConversationOnStart by remember(state.appearance.createNewConversationOnStart) {
+        mutableStateOf(state.appearance.createNewConversationOnStart)
+    }
+    var ttsAutoplay by remember(state.appearance.ttsAutoplay) {
+        mutableStateOf(state.appearance.ttsAutoplay)
     }
     var rpStyleRules by remember(state.appearance.rpStyleRules) {
         mutableStateOf(state.appearance.rpStyleRules)
@@ -3990,6 +4032,107 @@ private fun SettingsPage(
                                 onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
                                 onClick = { openSettingsDestination("RpOptimizations", "Roleplay optimizations") },
                             )
+                            LastChatSettingGroupInputItem(
+                                title = "Basic settings",
+                                subtitle = "Startup, notifications, catalog, and TTS autoplay",
+                                darkTheme = darkTheme,
+                            ) {
+                                LastChatFormItem(
+                                    label = { Text("New chat on start") },
+                                    description = { Text("Open a blank conversation when LastChat launches") },
+                                    tail = {
+                                        Switch(
+                                            checked = createNewConversationOnStart,
+                                            onCheckedChange = { enabled ->
+                                                createNewConversationOnStart = enabled
+                                                onSaveDisplayKnobs(
+                                                    notifyOnGeneration,
+                                                    checkForUpdates,
+                                                    enabled,
+                                                    ttsAutoplay,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Notify when a reply is ready") },
+                                    description = {
+                                        Text("Posts a UserNotifications alert on the chat_completed channel")
+                                    },
+                                    tail = {
+                                        Switch(
+                                            checked = notifyOnGeneration,
+                                            onCheckedChange = { enabled ->
+                                                notifyOnGeneration = enabled
+                                                if (enabled) onRequestNotificationPermission()
+                                                onSaveDisplayKnobs(
+                                                    enabled,
+                                                    checkForUpdates,
+                                                    createNewConversationOnStart,
+                                                    ttsAutoplay,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Check for updates") },
+                                    description = {
+                                        Text("Same preference Android uses before GitHub release checks")
+                                    },
+                                    tail = {
+                                        Switch(
+                                            checked = checkForUpdates,
+                                            onCheckedChange = { enabled ->
+                                                checkForUpdates = enabled
+                                                onSaveDisplayKnobs(
+                                                    notifyOnGeneration,
+                                                    enabled,
+                                                    createNewConversationOnStart,
+                                                    ttsAutoplay,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("TTS autoplay") },
+                                    description = { Text("Read assistant replies automatically after generation") },
+                                    tail = {
+                                        Switch(
+                                            checked = ttsAutoplay,
+                                            onCheckedChange = { enabled ->
+                                                ttsAutoplay = enabled
+                                                onSaveDisplayKnobs(
+                                                    notifyOnGeneration,
+                                                    checkForUpdates,
+                                                    createNewConversationOnStart,
+                                                    enabled,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                            LastChatSettingGroupInputItem(
+                                title = "Model catalog",
+                                subtitle = iosCatalogSubtitle(state.catalogStatus),
+                                darkTheme = darkTheme,
+                            ) {
+                                Button(
+                                    onClick = onRefreshModelCatalog,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !state.catalogStatus.isRefreshing,
+                                ) { Text("Refresh catalog") }
+                                if (state.catalogStatus.isRefreshing) {
+                                    Text(
+                                        "Downloading lastchat_catalog.json…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         } else {
                             LastChatSettingGroupInputItem(
                                 title = "UI customization",
@@ -4004,7 +4147,94 @@ private fun SettingsPage(
                                             checked = showAssistantBubbles,
                                             onCheckedChange = { enabled ->
                                                 showAssistantBubbles = enabled
-                                                onSaveUiCustomization(enabled, fontSizeRatio)
+                                                onSaveUiCustomization(
+                                                    enabled,
+                                                    fontSizeRatio,
+                                                    showModelIcon,
+                                                    showTokenUsage,
+                                                    autoCloseThinking,
+                                                    enableUIHaptics,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Show character avatar") },
+                                    description = { Text("Display the model/character icon on assistant messages") },
+                                    tail = {
+                                        Switch(
+                                            checked = showModelIcon,
+                                            onCheckedChange = { enabled ->
+                                                showModelIcon = enabled
+                                                onSaveUiCustomization(
+                                                    showAssistantBubbles,
+                                                    fontSizeRatio,
+                                                    enabled,
+                                                    showTokenUsage,
+                                                    autoCloseThinking,
+                                                    enableUIHaptics,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Show token usage") },
+                                    description = { Text("Show input/output token counts after a reply") },
+                                    tail = {
+                                        Switch(
+                                            checked = showTokenUsage,
+                                            onCheckedChange = { enabled ->
+                                                showTokenUsage = enabled
+                                                onSaveUiCustomization(
+                                                    showAssistantBubbles,
+                                                    fontSizeRatio,
+                                                    showModelIcon,
+                                                    enabled,
+                                                    autoCloseThinking,
+                                                    enableUIHaptics,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("Auto-collapse thinking") },
+                                    description = { Text("Collapse reasoning blocks when generation finishes") },
+                                    tail = {
+                                        Switch(
+                                            checked = autoCloseThinking,
+                                            onCheckedChange = { enabled ->
+                                                autoCloseThinking = enabled
+                                                onSaveUiCustomization(
+                                                    showAssistantBubbles,
+                                                    fontSizeRatio,
+                                                    showModelIcon,
+                                                    showTokenUsage,
+                                                    enabled,
+                                                    enableUIHaptics,
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                                LastChatFormItem(
+                                    label = { Text("UI haptics") },
+                                    description = { Text("Play PremiumHaptics patterns for toggles and presses") },
+                                    tail = {
+                                        Switch(
+                                            checked = enableUIHaptics,
+                                            onCheckedChange = { enabled ->
+                                                enableUIHaptics = enabled
+                                                onSaveUiCustomization(
+                                                    showAssistantBubbles,
+                                                    fontSizeRatio,
+                                                    showModelIcon,
+                                                    showTokenUsage,
+                                                    autoCloseThinking,
+                                                    enabled,
+                                                )
                                             },
                                         )
                                     },
@@ -4018,7 +4248,14 @@ private fun SettingsPage(
                                             value = fontSizeRatio,
                                             onValueChange = { fontSizeRatio = it },
                                             onValueChangeFinished = {
-                                                onSaveUiCustomization(showAssistantBubbles, fontSizeRatio)
+                                                onSaveUiCustomization(
+                                                    showAssistantBubbles,
+                                                    fontSizeRatio,
+                                                    showModelIcon,
+                                                    showTokenUsage,
+                                                    autoCloseThinking,
+                                                    enableUIHaptics,
+                                                )
                                             },
                                             valueRange = 0.5f..2f,
                                             steps = 11,
@@ -4183,7 +4420,17 @@ private fun SettingsPage(
                 item { IosWebSettings(state, darkTheme, onSaveWeb) }
             }
             if (section == IosSettingsSection.Workspaces) {
-                item { IosWorkspaceSettings(state, darkTheme) }
+                item {
+                    IosWorkspaceSettings(
+                        state = state,
+                        darkTheme = darkTheme,
+                        onDownloadLlm = onDownloadLocalLlm,
+                        onDownloadStt = onDownloadLocalStt,
+                        onCancelDownload = onCancelLocalDownload,
+                        onDeleteLlm = onDeleteLocalLlm,
+                        onDeleteStt = onDeleteLocalStt,
+                    )
+                }
             }
             if (section == IosSettingsSection.AndroidIntegration) {
                 item { IosAndroidIntegrationSettings(state, darkTheme, onSaveOverlaySettings) }
@@ -4942,4 +5189,13 @@ private fun IosAssistantOverlaySheet(
             }
         }
     }
+}
+
+internal fun iosCatalogSubtitle(status: ModelCatalogStatus): String {
+    val source = when (status.source) {
+        ModelCatalogSource.BUNDLED -> "bundled"
+        ModelCatalogSource.DOWNLOADED -> "downloaded"
+    }
+    val refreshing = if (status.isRefreshing) " · refreshing" else ""
+    return "$source · ${status.entryCount} models · ${status.providerCount} providers$refreshing"
 }
