@@ -461,6 +461,14 @@ val dataSourceModule = module {
         }
     }
 
+    single<me.rerere.common.runtime.OnDeviceLlmRuntime> {
+        me.rerere.locallm.AndroidOnDeviceLlmRuntime(
+            provider = get(),
+            store = get(),
+            embedder = get(),
+        )
+    }
+
     single {
         ModelCatalogService(
             context = get(),

@@ -76,6 +76,10 @@ val repositoryModule = module {
         )
     }
 
+    single<me.rerere.common.runtime.OnDeviceWorkspaceRuntime> {
+        me.rerere.workspace.AndroidOnDeviceWorkspaceRuntime(get())
+    }
+
     single {
         RootfsInstaller(get())
     }

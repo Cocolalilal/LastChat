@@ -45,6 +45,18 @@ val appModule = module {
         TTSManager(get())
     }
 
+    single<me.rerere.tts.provider.PlatformSystemTts> {
+        me.rerere.tts.provider.android.AndroidPlatformSystemTts(get())
+    }
+
+    single<me.rerere.common.platform.PlatformShareSheet> {
+        me.rerere.common.platform.android.AndroidPlatformShareSheet(get())
+    }
+
+    single<me.rerere.rikkahub.data.widget.PlatformWidgetStore> {
+        me.rerere.rikkahub.widget.AndroidPlatformWidgetStore(get())
+    }
+
     single {
         Firebase.crashlytics
     }
