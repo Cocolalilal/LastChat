@@ -12,6 +12,9 @@ val prepareSharedResources by tasks.registering(Sync::class) {
     from(rootProject.file("app/src/main/res/font/google_sans_flex.ttf")) {
         into("font")
     }
+    from(rootProject.file("app/src/main/res/font/google_sans_code.ttf")) {
+        into("font")
+    }
     from(rootProject.file("app/src/main/res/mipmap-xxxhdpi/ic_launcher_lastchat_foreground.png")) {
         into("drawable")
     }

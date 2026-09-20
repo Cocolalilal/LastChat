@@ -1,16 +1,25 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package me.rerere.rikkahub.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.rerere.common.font.clampFontGrade
+import me.rerere.common.font.clampFontRoundness
+import me.rerere.common.font.clampFontWidth
 import me.rerere.rikkahub.ui.core.generated.resources.Res
+import me.rerere.rikkahub.ui.core.generated.resources.google_sans_code
 import me.rerere.rikkahub.ui.core.generated.resources.google_sans_flex
 import org.jetbrains.compose.resources.Font
 
@@ -128,15 +137,44 @@ fun buildLastChatTypography(fontFamily: FontFamily): Typography = Typography(
     labelSmall = style(fontFamily, FontWeight.Medium, 11, 16, 0.5f),
 )
 
+fun lastChatFontVariationSettings(
+    width: Float = 100f,
+    roundness: Float = 100f,
+    grade: Float = 0f,
+): FontVariation.Settings = FontVariation.Settings(
+    FontVariation.width(clampFontWidth(width)),
+    FontVariation.Setting("ROND", clampFontRoundness(roundness)),
+    FontVariation.Setting("GRAD", clampFontGrade(grade)),
+)
+
 /** Loads the same Google Sans Flex binary that is canonical for the Android UI. */
-@androidx.compose.runtime.Composable
-fun rememberLastChatFontFamily(): FontFamily = FontFamily(
-    Font(Res.font.google_sans_flex, weight = FontWeight.Light),
-    Font(Res.font.google_sans_flex, weight = FontWeight.Normal),
-    Font(Res.font.google_sans_flex, weight = FontWeight.Medium),
-    Font(Res.font.google_sans_flex, weight = FontWeight.SemiBold),
-    Font(Res.font.google_sans_flex, weight = FontWeight.Bold),
-    Font(Res.font.google_sans_flex, weight = FontWeight.ExtraBold),
+@Composable
+fun rememberLastChatFontFamily(
+    width: Float = 100f,
+    roundness: Float = 100f,
+    grade: Float = 0f,
+): FontFamily {
+    val settings = remember(width, roundness, grade) {
+        lastChatFontVariationSettings(width, roundness, grade)
+    }
+    return FontFamily(
+        Font(Res.font.google_sans_flex, weight = FontWeight.Light, variationSettings = settings),
+        Font(Res.font.google_sans_flex, weight = FontWeight.Normal, variationSettings = settings),
+        Font(Res.font.google_sans_flex, weight = FontWeight.Medium, variationSettings = settings),
+        Font(Res.font.google_sans_flex, weight = FontWeight.SemiBold, variationSettings = settings),
+        Font(Res.font.google_sans_flex, weight = FontWeight.Bold, variationSettings = settings),
+        Font(Res.font.google_sans_flex, weight = FontWeight.ExtraBold, variationSettings = settings),
+    )
+}
+
+/** Loads the same Google Sans Code binary Android uses for SYSTEM_CODE. */
+@Composable
+fun rememberLastChatCodeFontFamily(): FontFamily = FontFamily(
+    Font(Res.font.google_sans_code, weight = FontWeight.Light),
+    Font(Res.font.google_sans_code, weight = FontWeight.Normal),
+    Font(Res.font.google_sans_code, weight = FontWeight.Medium),
+    Font(Res.font.google_sans_code, weight = FontWeight.SemiBold),
+    Font(Res.font.google_sans_code, weight = FontWeight.Bold),
 )
 
 private fun style(

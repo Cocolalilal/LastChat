@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package me.rerere.rikkahub.ui.theme
 
 import androidx.compose.ui.graphics.Color
@@ -23,6 +25,24 @@ class LastChatDesignTokensTest {
         assertEquals(16.sp, typography.bodyLarge.fontSize)
         assertEquals(0.5.sp, typography.bodyLarge.letterSpacing)
         assertEquals(11.sp, typography.labelSmall.fontSize)
+        val axes = lastChatFontVariationSettings(width = 10f, roundness = 140f, grade = -80f)
+            .settings
+            .map { it.axisName }
+        assertEquals(listOf("wdth", "ROND", "GRAD"), axes)
+        val custom = customFontVariationSettings(
+            width = 110f,
+            customAxes = listOf(
+                me.rerere.common.font.PortableFontAxis(
+                    tag = "opsz",
+                    name = "Optical Size",
+                    minValue = 8f,
+                    maxValue = 144f,
+                    defaultValue = 14f,
+                    currentValue = 18f,
+                ),
+            ),
+        )
+        assertTrue(custom.settings.any { it.axisName == "opsz" })
     }
 
     @Test
