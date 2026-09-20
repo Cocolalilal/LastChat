@@ -305,6 +305,20 @@ fun LastChatComposerAudioIcon() {
 }
 
 @Composable
+fun LastChatAudioAttachmentTile(
+    fileName: String,
+    playing: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LastChatDocumentAttachmentTile(
+        fileName = if (playing) "Stop $fileName" else "Play $fileName",
+        modifier = modifier,
+        onClick = onToggle,
+    )
+}
+
+@Composable
 private fun LastChatComposerInsetRemoveButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,

@@ -1,5 +1,6 @@
 package me.rerere.common.platform.ios
 
+import me.rerere.common.platform.PlatformAttachmentAudioPlayer
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHaptics
 import me.rerere.common.platform.PlatformHttpClient
@@ -19,4 +20,5 @@ class IosPlatformServices(
     val haptics: PlatformHaptics = IosPlatformHaptics(),
     val speechRecorder: PlatformSpeechRecorder = IosPlatformSpeechRecorder(),
     val documentParser: PlatformDocumentParser = IosPlatformDocumentParser(),
+    val attachmentAudioPlayer: PlatformAttachmentAudioPlayer = IosPlatformAttachmentAudioPlayer(),
 )
