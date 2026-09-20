@@ -397,11 +397,27 @@ Current iOS app status:
 - conversations, provider preferences, appearance, assistant name, and system
   prompt persist in the app container, while provider secrets persist in Keychain;
 - production provider networking and streaming chat orchestration are wired;
-- Search settings expose 14 portable providers (all except the advanced
-  SearXNG configuration), keep API keys in Keychain, and feed a real
+- Search settings expose 14 portable providers including SearXNG URL/auth
+  configuration, keep API keys in Keychain, and feed a real
   `search_web` tool into the OpenAI, Google, and Claude generation loop. Tool
   calls and results use the normal message protocol with Android's 256-step
   safety limit rather than a keyword-triggered search mode;
+- Skills, lorebooks, and MCP servers persist on iOS and use shared prompt
+  injection / JSON-RPC engines. `manage_skills` activates turn-scoped skills
+  with Android's available/active/unmatched payload. MCP tools are discovered
+  over PlatformHttpClient and enter the same 256-step tool loop;
+- OpenAI-compatible speech-to-text posts WAV recordings to
+  `/audio/transcriptions`. Microphone capture uses AVAudioRecorder; API keys
+  stay in Keychain;
+- PDF/DOCX/text attachments are converted into Android-shaped document prompts
+  (PDFKit on iOS, portable DOCX zip+xml elsewhere);
+- WebDAV backup uses a portable PROPFIND/PUT/GET/DELETE client. Local restore
+  still imports Android backup archives;
+- A password-gated JSON web API can bind on the configured port (conversations
+  list/detail). The React web-ui SPA is not yet packaged into the iOS app;
+- Darwin HTTP now honors per-request `PlatformHttpProxy` via NSURLSession
+  proxy dictionaries plus Proxy-Authorization;
+- generation can be cancelled from the composer without retaining a blank
 - all eight cloud TTS providers are configurable on iOS with Keychain-only
   credentials. Android and iOS now share the same chunking, prefetch, retry,
   queue, pause/resume, seeking, and playback-state controller; Android retains
@@ -423,9 +439,9 @@ Current iOS app status:
 - the Fonts destination applies its persisted phone-system-font toggle to the
   entire Material theme and previews app and code typography. The bundled
   Google Sans Flex family remains the default, matching Android;
-- inline attachment audio, local models, and the remaining
-  screens still require iOS adapters or portable repositories before the iOS
-  app is feature-complete.
+- inline attachment audio, local LiteRT models, the PRoot Linux workspace,
+  Android widgets/share/system TTS, and the full bundled web-ui SPA still
+  require platform-specific work before the iOS app is feature-complete.
 
 On macOS:
 
