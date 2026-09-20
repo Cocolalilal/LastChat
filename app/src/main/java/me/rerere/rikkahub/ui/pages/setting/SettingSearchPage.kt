@@ -137,7 +137,7 @@ val SEARCH_SERVICE_PRESETS = listOf(
         name = "Keyless",
         descriptionRes = R.string.setting_search_preset_keyless_desc,
         createOptions = { SearchServiceOptions.KeylessOptions() },
-        hasScraping = false
+        hasScraping = true
     ),
     SearchServicePreset(
         name = "Perplexity",
@@ -234,15 +234,51 @@ private fun KeylessOptionsDescription() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
+            text = stringResource(R.string.setting_search_keyless_health),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
             text = stringResource(R.string.setting_search_keyless_backends_label),
             style = MaterialTheme.typography.labelLarge,
         )
         KeylessSearchService.backends.forEach { backend ->
-            Text(
-                text = "• $backend",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Surface(
+                shape = AppShapes.ListItem,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = backend.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Tag(type = TagType.SUCCESS) {
+                            Text("No API key")
+                        }
+                    }
+                    Text(
+                        text = backend.role,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = backend.status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }

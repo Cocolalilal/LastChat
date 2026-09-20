@@ -326,9 +326,10 @@
     <string name="setting_search_service_generic">Search Service</string>
     <string name="setting_search_edit_service">Edit %1$s</string>
     <string name="setting_search_bing_no_config">Bing search doesn\'t require any configuration.</string>
-    <string name="setting_search_keyless_explainer">Keyless is a free search router. It queries several public backends and combines the useful results — no API key required.</string>
+    <string name="setting_search_keyless_explainer">Keyless is a free multi-source search router. It classifies the query (weather, news, sports, images, encyclopedia, or general web), queries several public backends in parallel, and merges the useful results. Failed backends are skipped automatically. No API key required.</string>
     <string name="setting_search_keyless_backends_label">Backends used</string>
-    <string name="setting_search_preset_keyless_desc">Free search router over DuckDuckGo, Wikipedia, and Bing. No API key.</string>
+    <string name="setting_search_keyless_health">Each backend is keyless. If a source times out or errors, Keyless continues with the others. Wikipedia is never the only source for weather or live news.</string>
+    <string name="setting_search_preset_keyless_desc">Free multi-source router for weather, news, web, and images. No API key.</string>
     <string name="setting_search_unknown_provider">Unknown</string>
     <string name="setting_search_preset_bing_desc">Free local Bing search, no API key needed</string>
     <string name="setting_search_preset_perplexity_desc">AI-powered search with citations</string>
