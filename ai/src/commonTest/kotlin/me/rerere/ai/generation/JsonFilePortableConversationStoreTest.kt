@@ -47,4 +47,45 @@ class JsonFilePortableConversationStoreTest {
         assertNull(reloaded.get("chat-1"))
         assertTrue(reloaded.list().isEmpty())
     }
+
+    @Test
+    fun listByAssistantOrdersAndLimits() = runBlocking {
+        var bytes: ByteArray? = null
+        val store = JsonFilePortableConversationStore(
+            loadBytes = { bytes },
+            saveBytes = { bytes = it },
+        )
+        store.save(
+            PortableConversationRecord(
+                id = "older",
+                assistantId = "asst-a",
+                title = "Older",
+                messageNodes = emptyList(),
+                updatedAtEpochMs = 10L,
+            ),
+        )
+        store.save(
+            PortableConversationRecord(
+                id = "newer",
+                assistantId = "asst-a",
+                title = "Newer",
+                messageNodes = emptyList(),
+                updatedAtEpochMs = 20L,
+            ),
+        )
+        store.save(
+            PortableConversationRecord(
+                id = "other",
+                assistantId = "asst-b",
+                title = "Other",
+                messageNodes = emptyList(),
+                updatedAtEpochMs = 30L,
+            ),
+        )
+        val listed = store.listByAssistant("asst-a", limit = 1)
+        assertEquals(listOf("newer"), listed.map { it.id })
+        assertEquals(2, store.listByAssistant("asst-a").size)
+        store.finalizeDeletion("newer")
+        assertEquals(listOf("older"), store.listByAssistant("asst-a").map { it.id })
+    }
 }

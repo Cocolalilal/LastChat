@@ -81,11 +81,28 @@ class PortableChatEngine(
         store.save(conversation, options)
     }
 
-    suspend fun deleteConversation(id: String) {
-        store.delete(id)
+    suspend fun deleteConversation(
+        id: String,
+        options: PortableDeleteOptions = PortableDeleteOptions(),
+    ) {
+        store.delete(id, options)
     }
 
-    suspend fun listConversations(): List<PortableConversationRecord> = store.list()
+    suspend fun finalizeConversationDeletion(id: String) {
+        store.finalizeDeletion(id)
+    }
+
+    suspend fun listConversations(
+        assistantId: String? = null,
+        limit: Int = Int.MAX_VALUE,
+    ): List<PortableConversationRecord> {
+        val records = if (assistantId == null) {
+            store.list()
+        } else {
+            store.listByAssistant(assistantId, limit)
+        }
+        return if (assistantId == null && limit != Int.MAX_VALUE) records.take(limit) else records
+    }
 
     fun editMessage(nodes: List<MessageNode>, messageId: Uuid, parts: List<UIMessagePart>): List<MessageNode> {
         return nodes.withEditedMessage(messageId, parts)

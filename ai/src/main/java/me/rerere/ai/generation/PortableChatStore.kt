@@ -6,7 +6,8 @@ import me.rerere.ai.ui.MessageNode
 /**
  * Conversation persistence that both Android Room and the iOS file store implement.
  * Room cannot move to KMP in this slice, so hosts keep their engines and adapt here.
- * Android ChatService uses a Room-backed adapter as the live save path.
+ * Android ChatService and UI-facing conversation CRUD use this as the live API;
+ * paging/FTS/usage stats stay on Room.
  */
 interface PortableConversationStore {
     suspend fun get(id: String): PortableConversationRecord?
@@ -15,12 +16,27 @@ interface PortableConversationStore {
         options: PortableSaveOptions = PortableSaveOptions(),
     )
     suspend fun list(): List<PortableConversationRecord> = emptyList()
-    suspend fun delete(id: String) {}
+    suspend fun listByAssistant(
+        assistantId: String,
+        limit: Int = Int.MAX_VALUE,
+    ): List<PortableConversationRecord> = list()
+        .filter { it.assistantId == assistantId }
+        .sortedByDescending { it.updatedAtEpochMs }
+        .let { records -> if (limit == Int.MAX_VALUE) records else records.take(limit) }
+    suspend fun delete(
+        id: String,
+        options: PortableDeleteOptions = PortableDeleteOptions(),
+    ) {}
+    suspend fun finalizeDeletion(id: String) {}
 }
 
 data class PortableSaveOptions(
     val preserveConsolidation: Boolean = false,
     val syncAttachments: Boolean = true,
+)
+
+data class PortableDeleteOptions(
+    val deleteFiles: Boolean = true,
 )
 
 @Serializable
@@ -79,9 +95,27 @@ class InMemoryPortableConversationStore(
         conversations[conversation.id] = conversation
     }
 
-    override suspend fun list(): List<PortableConversationRecord> = conversations.values.toList()
+    override suspend fun list(): List<PortableConversationRecord> =
+        conversations.values.sortedByDescending { it.updatedAtEpochMs }
 
-    override suspend fun delete(id: String) {
+    override suspend fun listByAssistant(
+        assistantId: String,
+        limit: Int,
+    ): List<PortableConversationRecord> {
+        val records = conversations.values
+            .filter { it.assistantId == assistantId }
+            .sortedByDescending { it.updatedAtEpochMs }
+        return if (limit == Int.MAX_VALUE) records else records.take(limit)
+    }
+
+    override suspend fun delete(
+        id: String,
+        options: PortableDeleteOptions,
+    ) {
+        conversations.remove(id)
+    }
+
+    override suspend fun finalizeDeletion(id: String) {
         conversations.remove(id)
     }
 }

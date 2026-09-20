@@ -34,10 +34,30 @@ class JsonFilePortableConversationStore(
 
     override suspend fun list(): List<PortableConversationRecord> {
         ensureLoaded()
-        return conversations.values.toList()
+        return conversations.values.sortedByDescending { it.updatedAtEpochMs }
     }
 
-    override suspend fun delete(id: String) {
+    override suspend fun listByAssistant(
+        assistantId: String,
+        limit: Int,
+    ): List<PortableConversationRecord> {
+        ensureLoaded()
+        val records = conversations.values
+            .filter { it.assistantId == assistantId }
+            .sortedByDescending { it.updatedAtEpochMs }
+        return if (limit == Int.MAX_VALUE) records else records.take(limit)
+    }
+
+    override suspend fun delete(
+        id: String,
+        options: PortableDeleteOptions,
+    ) {
+        ensureLoaded()
+        conversations.remove(id)
+        persist()
+    }
+
+    override suspend fun finalizeDeletion(id: String) {
         ensureLoaded()
         conversations.remove(id)
         persist()

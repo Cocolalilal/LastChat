@@ -1,7 +1,9 @@
 package me.rerere.rikkahub.data.datastore
 
+import kotlinx.coroutines.flow.first
 import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableConversationStore
+import me.rerere.ai.generation.PortableDeleteOptions
 import me.rerere.ai.generation.PortableSaveOptions
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -33,10 +35,30 @@ class RoomPortableConversationStore(
         }
     }
 
-    override suspend fun delete(id: String) {
+    override suspend fun list(): List<PortableConversationRecord> {
+        return conversationRepo.getAllConversations().first().map { it.toPortableRecord() }
+    }
+
+    override suspend fun listByAssistant(
+        assistantId: String,
+        limit: Int,
+    ): List<PortableConversationRecord> {
+        val uuid = runCatching { Uuid.parse(assistantId) }.getOrNull() ?: return emptyList()
+        return conversationRepo.getRecentConversations(uuid, limit).map { it.toPortableRecord() }
+    }
+
+    override suspend fun delete(
+        id: String,
+        options: PortableDeleteOptions,
+    ) {
         val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
         val existing = conversationRepo.getConversationById(uuid) ?: return
-        conversationRepo.deleteConversation(existing)
+        conversationRepo.deleteConversation(existing, deleteFiles = options.deleteFiles)
+    }
+
+    override suspend fun finalizeDeletion(id: String) {
+        val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
+        conversationRepo.finalizeConversationDeletion(uuid)
     }
 }
 
