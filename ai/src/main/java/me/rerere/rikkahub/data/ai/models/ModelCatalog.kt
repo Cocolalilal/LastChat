@@ -1021,7 +1021,7 @@ class ModelCatalogService(
     }
 }
 
-internal fun String.toCatalogIconUrl(): String {
+fun String.toCatalogIconUrl(): String {
     return when {
         startsWith("http://") || startsWith("https://") -> this
         else -> CATALOG_RAW_BASE_URL + trimStart('/')
