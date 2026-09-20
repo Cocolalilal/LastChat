@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.data.ai.models
 
-import android.content.Context
-import android.util.Log
-import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,8 +7,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.CustomBody
@@ -28,17 +27,23 @@ import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.common.platform.PlatformLog
 
 private const val TAG = "ModelCatalogService"
 private const val MODEL_CATALOG_DIR_NAME = "model_catalog"
 private const val MODEL_CATALOG_FILE_NAME = "lastchat_catalog.json"
-private const val MODEL_CATALOG_FILE_PATH = "$MODEL_CATALOG_DIR_NAME/$MODEL_CATALOG_FILE_NAME"
-private const val MODEL_CATALOG_ASSET_NAME = "lastchat_catalog.json"
-private const val MODEL_CATALOG_URL =
+const val MODEL_CATALOG_FILE_PATH = "$MODEL_CATALOG_DIR_NAME/$MODEL_CATALOG_FILE_NAME"
+const val MODEL_CATALOG_ASSET_NAME = "lastchat_catalog.json"
+const val MODEL_CATALOG_URL =
     "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/lastchat_catalog.json"
 private const val CATALOG_RAW_BASE_URL =
     "https://raw.githubusercontent.com/Cocolalilal/LastChat/LastChat/catalog/"
+
+internal val catalogJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+    coerceInputValues = true
+}
 
 enum class ModelCatalogSource {
     BUNDLED,
@@ -474,7 +479,7 @@ private data class LoadedCatalog(
 
 object ModelCatalogParser {
     fun parse(rawJson: String): ModelCatalogSnapshot {
-        val catalog = JsonInstant.decodeFromString<LastChatCatalog>(rawJson)
+        val catalog = catalogJson.decodeFromString<LastChatCatalog>(rawJson)
         val exactEntries = linkedMapOf<String, ModelCatalogEntry>()
         val canonicalEntries = linkedMapOf<String, MutableList<ModelCatalogEntry>>()
         val modelFamilies = catalog.effectiveModelFamilies
@@ -523,7 +528,7 @@ object ModelCatalogParser {
                 .filter { it.isNotBlank() }
                 .distinct()
                 .forEach { key ->
-                    exactEntries.putIfAbsent(key, entry)
+                    if (key !in exactEntries) exactEntries[key] = entry
                 }
             canonicalEntries.getOrPut(entry.canonicalModelId) { mutableListOf() }.add(entry)
         }
@@ -538,7 +543,7 @@ object ModelCatalogParser {
                 .filter { it.isNotBlank() }
                 .distinct()
                 .forEach { key ->
-                    exactEntries.putIfAbsent(key, entry)
+                    if (key !in exactEntries) exactEntries[key] = entry
                 }
             canonicalEntries.getOrPut(entry.canonicalModelId) { mutableListOf() }.add(entry)
         }
@@ -881,9 +886,9 @@ private class ModelCatalogEntryBuilder(
 }
 
 class ModelCatalogService(
-    private val context: Context,
     private val httpClient: PlatformHttpClient,
     private val fileStore: PlatformFileStore,
+    private val bundledCatalogReader: suspend () -> String,
 ) {
     @Volatile
     private var snapshot: ModelCatalogSnapshot? = null
@@ -984,16 +989,12 @@ class ModelCatalogService(
                 lastSuccessfulRefreshAt = fileStore.lastModified(MODEL_CATALOG_FILE_PATH),
             )
         }.onFailure {
-            Log.w(TAG, "Downloaded LastChat catalog is invalid; falling back to bundled snapshot", it)
+            PlatformLog.w(TAG, "Downloaded LastChat catalog is invalid; falling back to bundled snapshot: ${it.message}")
         }.getOrNull()
     }
 
     private suspend fun readBundledCatalog(): LoadedCatalog {
-        val rawJson = withContext(Dispatchers.IO) {
-            context.assets.open(MODEL_CATALOG_ASSET_NAME)
-                .bufferedReader()
-                .use { it.readText() }
-        }
+        val rawJson = withContext(Dispatchers.Default) { bundledCatalogReader() }
         return LoadedCatalog(
             snapshot = ModelCatalogParser.parse(rawJson),
             source = ModelCatalogSource.BUNDLED,
@@ -1001,7 +1002,7 @@ class ModelCatalogService(
         )
     }
 
-    private suspend fun downloadCatalogJson(): String = withContext(Dispatchers.IO) {
+    private suspend fun downloadCatalogJson(): String = withContext(Dispatchers.Default) {
         val response = httpClient.execute(
             PlatformHttpRequest(
                 method = "GET",
@@ -1009,10 +1010,10 @@ class ModelCatalogService(
             )
         )
         if (response.statusCode !in 200..299) {
-            throw IOException("Failed to download LastChat catalog: ${response.statusCode}")
+            error("Failed to download LastChat catalog: ${response.statusCode}")
         }
         response.body.decodeToString().takeIf { it.isNotBlank() }
-            ?: throw IOException("Downloaded LastChat catalog was empty")
+            ?: error("Downloaded LastChat catalog was empty")
     }
 
     private suspend fun writeDownloadedCatalog(rawJson: String) {

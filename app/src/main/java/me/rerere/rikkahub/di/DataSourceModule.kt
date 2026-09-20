@@ -32,6 +32,7 @@ import me.rerere.common.platform.android.OkHttpPlatformHttpClient
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.models.MODEL_CATALOG_ASSET_NAME
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.transformers.AndroidMessageTemplateContextFactory
@@ -479,9 +480,13 @@ val dataSourceModule = module {
 
     single {
         ModelCatalogService(
-            context = get(),
             httpClient = get(),
             fileStore = get(),
+            bundledCatalogReader = {
+                get<android.content.Context>().assets.open(MODEL_CATALOG_ASSET_NAME)
+                    .bufferedReader()
+                    .use { it.readText() }
+            },
         )
     }
 
