@@ -96,9 +96,14 @@ UI customization now persists and applies the remaining Android
 wrap/collapse, context stacks, new-chat GREETING/BIG_ICON/TEMPLATES/ACTIONS,
 generation haptics, avatars, token/reasoning chrome, toolbar-at-bottom, and
 STT-replaces-icon. `checkForUpdates` performs a live GitHub
-`releases/latest` fetch through `PlatformHttpClient`. Remaining DisplaySetting
-no-ops are the user avatar/nickname picker, per-role `fontSettings`,
-`ttsTextFilterRules`, and `providerViewMode`.
+`releases/latest` fetch through `PlatformHttpClient`. Display also persists
+the user avatar/nickname picker, per-role `fontSettings` (applied weight/size/
+line-height/tracking; width/roundness stored for backup parity),
+`ttsTextFilterRules` on iOS playback, `providerViewMode` LIST/GRID, and
+assistant-level DisplaySetting overrides. Dark mode uses the shared
+`withLastChatAmoledSurface` true-black canvas, matching Android's always-on
+OLED behavior without Material You. The chat composer Picker opens the same
+model sheet used in Settings.
 Workspaces lists LiteRT/Sherpa catalogs and can download/delete files through
 `PortableOnDeviceModelManager`; Sherpa `.tar.bz2` archives unpack required
 files through shared `PortableTarBz2`. Inference still reports the shared unavailable

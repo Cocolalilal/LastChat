@@ -527,8 +527,18 @@ Current iOS app status:
   `assistant_scheduled`, `local_model_download`); the web server posts
   `web_server:status` while Ktor is bound. Sherpa archives unpack through
   shared `PortableTarBz2` (bzip2 + ustar, required-file prefix match).
-  Remaining DisplaySetting no-ops: user avatar/nickname picker, per-role
-  `fontSettings`, `ttsTextFilterRules`, `providerViewMode`. The assistant overlay is an in-process Compose
+  Shared `applyTtsTextFilters` / `stripMarkdown` now back Android CustomTtsState,
+  Android LocalTools TTS, and iOS `IosAppController.speak`. iOS Display persists
+  `userAvatar`/`userNickname`, per-role `fontSettings`, `ttsTextFilterRules`,
+  `providerViewMode`, and assistant-level `uiSettings` (null = global, same
+  merge as Android `getEffectiveDisplaySetting`). Dark surfaces stay true-black
+  in CMP via `withLastChatAmoledSurface` without Material You, matching
+  Android's always-on OLED canvas. The composer Picker opens the in-chat model
+  sheet instead of dumping to Settings. Remaining 1:1 gaps: Simulator/Xcode
+  screenshot QA, live LiteRT-LM / PRoot inference, custom TTF binary loading
+  for `FontSource.Custom`, variable-axis width/roundness rendering, Android
+  Assist activity chrome, and pixel-level drawer/settings screenshot sign-off.
+  The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep
   links, and App Group `pending_overlay_prompt`. Overlay settings (assistant,
   auto-STT, auto-send, auto-read) persist on iOS. Xcode screenshot QA is still required before 1:1
