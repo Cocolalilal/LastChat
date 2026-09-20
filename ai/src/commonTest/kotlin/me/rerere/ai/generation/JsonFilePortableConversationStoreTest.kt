@@ -30,7 +30,7 @@ class JsonFilePortableConversationStoreTest {
         store.save(record)
         assertEquals("Castle", store.get("chat-1")?.title)
         assertEquals(1, store.list().size)
-        assertTrue(bytes != null && bytes!!.isNotEmpty())
+        assertTrue((bytes?.size ?: 0) > 0)
 
         val reloaded = JsonFilePortableConversationStore(
             loadBytes = { bytes },

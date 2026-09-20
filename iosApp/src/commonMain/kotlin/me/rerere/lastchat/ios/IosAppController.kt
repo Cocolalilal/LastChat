@@ -500,7 +500,7 @@ class IosAppController(
     private val onDeviceLlm: OnDeviceLlmRuntime = UnavailableOnDeviceLlmRuntime(),
     private val onDeviceWorkspace: OnDeviceWorkspaceRuntime = UnavailableOnDeviceWorkspaceRuntime(),
     injectedChatEngine: PortableChatEngine? = null,
-    private val imageOcr: PlatformImageOcr = UnavailablePlatformImageOcr(),
+    private val imageOcr: PlatformImageOcr = UnavailablePlatformImageOcr,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json {
@@ -4134,7 +4134,7 @@ class IosAppController(
     }
 
     private suspend fun skillWithBundledResources(skill: PortableSkill): PortableSkill {
-        val relative = skill.workspaceDirectory.removePrefix("/").ifBlank {
+        val relative = skill.workspaceDirectory.orEmpty().removePrefix("/").ifBlank {
             "skills/${skill.name.ifBlank { skill.id }}"
         }
         val files = fileStore.listFiles(relative)
@@ -4147,7 +4147,7 @@ class IosAppController(
     private fun isTodayEpochMs(epochMs: Long): Boolean {
         val zone = TimeZone.currentSystemDefault()
         val today = Clock.System.now().toLocalDateTime(zone).date
-        val date = kotlinx.datetime.Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
+        val date = kotlin.time.Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
         return date == today
     }
 
