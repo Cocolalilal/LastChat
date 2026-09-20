@@ -25,7 +25,14 @@ class SearchModelsSharedTest {
                     url = "https://example.com",
                     text = "Portable search result"
                 )
-            )
+            ),
+            images = listOf(
+                SearchResult.SearchResultImage(
+                    url = "https://example.com/photo.jpg",
+                    title = "Photo",
+                    markdownImage = "![Photo](https://example.com/photo.jpg)",
+                )
+            ),
         )
         val scraped = ScrapedResult(
             urls = listOf(
@@ -39,6 +46,7 @@ class SearchModelsSharedTest {
 
         assertEquals("summary", result.answer)
         assertEquals("LastChat", result.items.single().title)
+        assertEquals("https://example.com/photo.jpg", result.images.single().url)
         assertEquals("Example", scraped.urls.single().metadata?.title)
     }
 }

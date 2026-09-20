@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +34,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -65,6 +68,8 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -215,7 +220,8 @@ fun ToolCallItem(
                         )
                     }
                     val items = (content as? JsonObject)?.get("items")?.jsonArray ?: emptyList()
-                    if (items.isNotEmpty()) {
+                    val images = (content as? JsonObject)?.get("images")?.jsonArray ?: emptyList()
+                    if (items.isNotEmpty() || images.isNotEmpty()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -226,8 +232,22 @@ fun ToolCallItem(
                                 },
                                 size = 18.dp,
                             )
+                            val resultLabel = buildString {
+                                if (items.isNotEmpty()) {
+                                    append(
+                                        stringResource(
+                                            R.string.chat_message_tool_search_results_count,
+                                            items.size
+                                        )
+                                    )
+                                }
+                                if (images.isNotEmpty()) {
+                                    if (isNotEmpty()) append(" · ")
+                                    append("${images.size} images")
+                                }
+                            }
                             Text(
-                                text = stringResource(R.string.chat_message_tool_search_results_count, items.size),
+                                text = resultLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                             )
@@ -345,8 +365,9 @@ private fun ToolCallPreviewSheet(
                         )
                         val contentObj = content as? JsonObject
                         val items = contentObj?.get("items")?.jsonArray ?: emptyList()
+                        val images = contentObj?.get("images")?.jsonArray ?: emptyList()
                         val answer = contentObj?.get("answer")?.jsonPrimitive?.contentOrNull
-                        if (items.isNotEmpty()) {
+                        if (items.isNotEmpty() || images.isNotEmpty() || !answer.isNullOrBlank()) {
                             LazyColumn(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -417,6 +438,54 @@ private fun ToolCallPreviewSheet(
                                                         alpha = 0.6f
                                                     )
                                                 )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (images.isNotEmpty()) {
+                                    item {
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            items(images.size, key = { index -> "search_image_$index" }) { index ->
+                                                val imageObj = images[index] as? JsonObject ?: return@items
+                                                val imageUrl = imageObj["url"]
+                                                    ?.jsonPrimitiveOrNull?.contentOrNull ?: return@items
+                                                val imageTitle = imageObj["title"]
+                                                    ?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
+                                                Card(
+                                                    shape = AppShapes.CardSmall,
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                                    )
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.size(width = 160.dp, height = 160.dp)
+                                                    ) {
+                                                        ZoomableAsyncImage(
+                                                            model = imageUrl,
+                                                            contentDescription = imageTitle.ifBlank { null },
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .fillMaxWidth()
+                                                                .clip(AppShapes.CardSmall),
+                                                            contentScale = ContentScale.Crop,
+                                                        )
+                                                        if (imageTitle.isNotBlank()) {
+                                                            Text(
+                                                                text = imageTitle,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                modifier = Modifier.padding(
+                                                                    horizontal = 8.dp,
+                                                                    vertical = 6.dp
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

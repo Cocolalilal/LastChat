@@ -326,9 +326,10 @@
     <string name="setting_search_service_generic">Search Service</string>
     <string name="setting_search_edit_service">Edit %1$s</string>
     <string name="setting_search_bing_no_config">Bing search doesn\'t require any configuration.</string>
-    <string name="setting_search_keyless_explainer">Keyless is a free search router. It queries several public backends and combines the useful results — no API key required.</string>
+    <string name="setting_search_keyless_explainer">Keyless is a free multi-source search router. It classifies the query (weather, news, sports, images, encyclopedia, or general web), then fans out in parallel. Firecrawl Keyless is the high-priority backend for web search, news, images, and markdown scrape — no Firecrawl API key to paste. Other backends fill weather and act as fallbacks. Failed or rate-limited sources are skipped automatically.</string>
     <string name="setting_search_keyless_backends_label">Backends used</string>
-    <string name="setting_search_preset_keyless_desc">Free search router over DuckDuckGo, Wikipedia, and Bing. No API key.</string>
+    <string name="setting_search_keyless_health">Each backend is keyless. Firecrawl Keyless uses the public free tier (search, scrape, images); 401/402/429 and other free-tier failures fall through to Qwant, DuckDuckGo, Bing, Google News, and Jina. Wikipedia is never the only source for weather or live news. The separate Firecrawl provider (API key) is unchanged.</string>
+    <string name="setting_search_preset_keyless_desc">Free multi-source router. Firecrawl Keyless for web, news, images, and scrape, plus weather and fallbacks. No API key.</string>
     <string name="setting_search_unknown_provider">Unknown</string>
     <string name="setting_search_preset_bing_desc">Free local Bing search, no API key needed</string>
     <string name="setting_search_preset_perplexity_desc">AI-powered search with citations</string>

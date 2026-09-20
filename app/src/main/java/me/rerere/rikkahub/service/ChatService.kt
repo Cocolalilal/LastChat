@@ -2043,7 +2043,7 @@ class ChatService(
             add(
                 Tool(
                     name = "search_web",
-                    description = "search web for latest information",
+                    description = "Search the web for current information (news, weather, sports, facts, and images). Returns titles, URLs, snippets, dates, and optional inline images.",
                     parameters = {
                         val options = settings.searchServices.getOrElse(
                             index = effectiveIndex,
@@ -2090,10 +2090,13 @@ class ChatService(
                     ## tool: search_web
 
                     ### usage
-                    - You can use the search_web tool to search the internet for the latest news or to confirm some facts.
+                    - You can use the search_web tool to search the internet for the latest news, weather, sports, or to confirm some facts.
                     - You can perform multiple search if needed
-                    - Generate keywords based on the user's question
+                    - Generate keywords based on the user's question. For live data, prefer a `topic` of `weather`, `news`, `sports`, or `images` when it is obvious.
                     - Today is {{cur_date}}
+                    - Trust structured weather `answer` fields over encyclopedia snippets.
+                    - For news, prefer items with recent `publishedAt` dates. Do not treat Wikipedia as live news.
+                    - When the result includes an `images` array, put 1–4 relevant `markdown_image` values each on their own line in your reply so they render inline. Use photos, maps, product shots, or diagrams when they help.
                     """.trimIndent()
                         )
                         if (hasToolCall) {
@@ -2107,7 +2110,16 @@ class ChatService(
                                     "id": "random id in 6 characters",
                                     "title": "Title",
                                     "url": "https://example.com",
-                                    "text": "Some relevant snippets"
+                                    "text": "Some relevant snippets",
+                                    "source": "Example",
+                                    "publishedAt": "Sun, 20 Sep 2026 10:00:00 GMT"
+                                }
+                            ],
+                            "images": [
+                                {
+                                    "title": "Photo",
+                                    "url": "https://example.com/photo.jpg",
+                                    "markdown_image": "![Photo](https://example.com/photo.jpg)"
                                 }
                             ]
                         }

@@ -92,17 +92,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
-import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -137,7 +136,7 @@ val SEARCH_SERVICE_PRESETS = listOf(
         name = "Keyless",
         descriptionRes = R.string.setting_search_preset_keyless_desc,
         createOptions = { SearchServiceOptions.KeylessOptions() },
-        hasScraping = false
+        hasScraping = true
     ),
     SearchServicePreset(
         name = "Perplexity",
@@ -234,15 +233,51 @@ private fun KeylessOptionsDescription() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
+            text = stringResource(R.string.setting_search_keyless_health),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
             text = stringResource(R.string.setting_search_keyless_backends_label),
             style = MaterialTheme.typography.labelLarge,
         )
         KeylessSearchService.backends.forEach { backend ->
-            Text(
-                text = "• $backend",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Surface(
+                shape = AppShapes.ListItem,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = backend.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Tag(type = TagType.SUCCESS) {
+                            Text("No API key")
+                        }
+                    }
+                    Text(
+                        text = backend.role,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = backend.status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
@@ -579,7 +614,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     
     // Edit Search Service Bottom Sheet
     editingService?.let { service ->
-        val context = LocalContext.current
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         var currentService by remember(service) { mutableStateOf(service) }
@@ -611,14 +645,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
-                Text(
-                    text = stringResource(
-                        R.string.setting_search_edit_service,
-                        SearchServiceOptions.TYPES[service::class]
-                            ?: context.getString(R.string.setting_search_service_generic)
-                    ),
-                    style = MaterialTheme.typography.headlineSmall
+                SearchServiceEditHeader(
+                    service = currentService,
+                    catalogSnapshot = catalogSnapshot,
                 )
                 
                 // Configuration options based on service type
@@ -964,6 +993,7 @@ internal fun SearchProvidersContent(
     SearchServiceEditorSheet(
         service = editingService,
         settings = settings,
+        catalogSnapshot = catalogSnapshot,
         onDismiss = { editingService = null },
         onSave = { original, updated ->
             val newServices = settings.searchServices.map {
@@ -979,11 +1009,11 @@ internal fun SearchProvidersContent(
 private fun SearchServiceEditorSheet(
     service: SearchServiceOptions?,
     settings: Settings,
+    catalogSnapshot: ModelCatalogSnapshot?,
     onDismiss: () -> Unit,
     onSave: (SearchServiceOptions, SearchServiceOptions) -> Unit
 ) {
     service ?: return
-    val context = LocalContext.current
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var currentService by remember(service) { mutableStateOf(service) }
@@ -1013,13 +1043,9 @@ private fun SearchServiceEditorSheet(
                 .fillMaxHeight(0.8f),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(
-                    R.string.setting_search_edit_service,
-                    SearchServiceOptions.TYPES[service::class]
-                        ?: context.getString(R.string.setting_search_service_generic)
-                ),
-                style = MaterialTheme.typography.headlineSmall
+            SearchServiceEditHeader(
+                service = currentService,
+                catalogSnapshot = catalogSnapshot,
             )
 
             LazyColumn(
@@ -1239,9 +1265,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    AutoAIIconWithUrl(
+                                    SearchProviderIcon(
                                         name = preset.name,
-                                        customIconUri = catalogSnapshot?.searchProviderIconUri(preset.name),
+                                        catalogSnapshot = catalogSnapshot,
                                         modifier = Modifier.size(40.dp),
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -1285,6 +1311,32 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
 
 
 @Composable
+private fun SearchServiceEditHeader(
+    service: SearchServiceOptions,
+    catalogSnapshot: ModelCatalogSnapshot?,
+) {
+    val context = LocalContext.current
+    val serviceName = SearchServiceOptions.TYPES[service::class]
+        ?: context.getString(R.string.setting_search_service_generic)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SearchProviderIcon(
+            name = serviceName,
+            service = service,
+            catalogSnapshot = catalogSnapshot,
+            modifier = Modifier.size(32.dp),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.setting_search_edit_service, serviceName),
+            style = MaterialTheme.typography.headlineSmall,
+        )
+    }
+}
+
+@Composable
 private fun SearchServiceItemContent(
     service: SearchServiceOptions,
     catalogSnapshot: ModelCatalogSnapshot?,
@@ -1308,9 +1360,10 @@ private fun SearchServiceItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AutoAIIconWithUrl(
+        SearchProviderIcon(
             name = serviceName,
-            customIconUri = catalogSnapshot?.searchProviderIconUri(serviceName),
+            service = service,
+            catalogSnapshot = catalogSnapshot,
             modifier = Modifier.size(40.dp)
         )
         
