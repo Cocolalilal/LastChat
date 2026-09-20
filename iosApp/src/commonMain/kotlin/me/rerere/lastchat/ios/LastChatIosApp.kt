@@ -402,6 +402,10 @@ fun LastChatIosApp(
                     onSaveUiCustomization = controller::saveUiCustomization,
                     onSaveRpStyleRules = controller::saveRpStyleRules,
                     onSaveAssistant = controller::saveAssistant,
+                    onSaveSpontaneousSettings = controller::saveSpontaneousSettings,
+                    onSaveComfyUiProvider = controller::saveComfyUiProvider,
+                    onImportComfyUiWorkflow = controller::importComfyUiWorkflow,
+                    onRunStorageMaintenance = { controller.runStorageBackgroundMaintenance {} },
                     onNewAssistant = controller::newAssistant,
                     onSelectAssistant = controller::selectAssistant,
                     onDeleteAssistant = controller::deleteAssistant,
@@ -1832,6 +1836,10 @@ private fun SettingsPage(
     onSaveUiCustomization: (Boolean, Float) -> Unit,
     onSaveRpStyleRules: (List<IosRpStyleRule>) -> Unit,
     onSaveAssistant: (String, String) -> Unit,
+    onSaveSpontaneousSettings: (Boolean, Int, Int, Int, String) -> Unit,
+    onSaveComfyUiProvider: (String, String, String, String, String, String, String, String) -> Unit,
+    onImportComfyUiWorkflow: (String, String) -> Unit,
+    onRunStorageMaintenance: () -> Unit,
     onNewAssistant: () -> Unit,
     onSelectAssistant: (String) -> Unit,
     onDeleteAssistant: (String) -> Unit,
@@ -1909,6 +1917,27 @@ private fun SettingsPage(
     var showAddRpStyleRuleDialog by remember { mutableStateOf(false) }
     var assistantName by remember(state.assistant.name) { mutableStateOf(state.assistant.name) }
     var systemPrompt by remember(state.assistant.systemPrompt) { mutableStateOf(state.assistant.systemPrompt) }
+    var enableSpontaneous by remember(state.assistant.id, state.assistant.enableSpontaneous) {
+        mutableStateOf(state.assistant.enableSpontaneous)
+    }
+    var spontaneousStartHour by remember(state.assistant.id, state.assistant.notificationStartHour) {
+        mutableStateOf(state.assistant.notificationStartHour.toString())
+    }
+    var spontaneousEndHour by remember(state.assistant.id, state.assistant.notificationEndHour) {
+        mutableStateOf(state.assistant.notificationEndHour.toString())
+    }
+    var spontaneousFrequency by remember(state.assistant.id, state.assistant.notificationFrequencyHours) {
+        mutableStateOf(state.assistant.notificationFrequencyHours.coerceIn(1, 24).toFloat())
+    }
+    var spontaneousPrompt by remember(state.assistant.id, state.assistant.spontaneousPrompt) {
+        mutableStateOf(state.assistant.spontaneousPrompt)
+    }
+    var comfyWorkflowJson by remember { mutableStateOf("") }
+    var comfyPromptNodeId by remember { mutableStateOf("") }
+    var comfyPromptInputName by remember { mutableStateOf("text") }
+    var comfyModelNodeId by remember { mutableStateOf("") }
+    var comfyModelInputName by remember { mutableStateOf("ckpt_name") }
+    var comfyShowAdvanced by remember { mutableStateOf(false) }
     var memoryMode by remember(state.assistant.memoryMode) { mutableStateOf(state.assistant.memoryMode) }
     var embeddingProviderId by remember(state.assistant.embeddingProviderId) {
         mutableStateOf(state.assistant.embeddingProviderId)
@@ -2260,6 +2289,82 @@ private fun SettingsPage(
                                 onClick = { onSaveAssistant(assistantName, systemPrompt) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Save assistant") }
+                            LastChatFormItem(
+                                label = { Text("Spontaneous messages") },
+                                description = {
+                                    Text("Lets this assistant send in-app follow-ups through the shared scheduler")
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("Enable spontaneous messages")
+                                    Switch(
+                                        checked = enableSpontaneous,
+                                        onCheckedChange = { enableSpontaneous = it },
+                                    )
+                                }
+                            }
+                            if (enableSpontaneous) {
+                                LastChatFormItem(label = { Text("Active hours (0-23)") }) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        OutlinedTextField(
+                                            value = spontaneousStartHour,
+                                            onValueChange = { spontaneousStartHour = it.filter(Char::isDigit).take(2) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("Start") },
+                                        )
+                                        OutlinedTextField(
+                                            value = spontaneousEndHour,
+                                            onValueChange = { spontaneousEndHour = it.filter(Char::isDigit).take(2) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("End") },
+                                        )
+                                    }
+                                }
+                                LastChatFormItem(
+                                    label = { Text("Minimum gap: ${spontaneousFrequency.toInt()}h") },
+                                    description = { Text("Wait at least this many hours between messages") },
+                                ) {
+                                    Slider(
+                                        value = spontaneousFrequency,
+                                        onValueChange = { spontaneousFrequency = it },
+                                        valueRange = 1f..24f,
+                                        steps = 22,
+                                    )
+                                }
+                                LastChatFormItem(label = { Text("Optional prompt") }) {
+                                    OutlinedTextField(
+                                        value = spontaneousPrompt,
+                                        onValueChange = { spontaneousPrompt = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = AppShapes.InputField,
+                                        minLines = 2,
+                                        maxLines = 5,
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveSpontaneousSettings(
+                                        enableSpontaneous,
+                                        spontaneousStartHour.toIntOrNull()?.coerceIn(0, 23) ?: 7,
+                                        spontaneousEndHour.toIntOrNull()?.coerceIn(0, 23) ?: 22,
+                                        spontaneousFrequency.toInt().coerceIn(1, 24),
+                                        spontaneousPrompt,
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Save spontaneous settings") }
                             TextButton(
                                 onClick = { openSettingsDestination("AssistantMemory", "Memory") },
                                 modifier = Modifier.fillMaxWidth(),
@@ -2834,6 +2939,16 @@ private fun SettingsPage(
                                             is ProviderSetting.OpenAI -> providerBaseUrl = provider.baseUrl
                                             is ProviderSetting.Google -> providerBaseUrl = provider.baseUrl
                                             is ProviderSetting.Claude -> providerBaseUrl = provider.baseUrl
+                                            is ProviderSetting.ComfyUI -> {
+                                                providerBaseUrl = provider.baseUrl
+                                                comfyWorkflowJson = provider.workflowJson
+                                                comfyPromptNodeId = provider.promptNodeId
+                                                comfyPromptInputName = provider.promptInputName.ifBlank { "text" }
+                                                comfyModelNodeId = provider.modelNodeId
+                                                comfyModelInputName = provider.modelInputName.ifBlank { "ckpt_name" }
+                                                comfyShowAdvanced = provider.promptNodeId.isNotBlank() ||
+                                                    provider.modelNodeId.isNotBlank()
+                                            }
                                             else -> providerBaseUrl = ""
                                         }
                                         providerApiKey = ""
@@ -2875,6 +2990,127 @@ private fun SettingsPage(
                                         shape = AppShapes.InputField,
                                         singleLine = true,
                                     )
+                                }
+                                if (editingProvider is ProviderSetting.ComfyUI) {
+                                    LastChatFormItem(label = { Text("Server URL") }) {
+                                        OutlinedTextField(
+                                            value = providerBaseUrl,
+                                            onValueChange = { providerBaseUrl = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                        )
+                                    }
+                                    Text(
+                                        if (comfyWorkflowJson.isBlank()) {
+                                            "Workflow missing — import an API-format ComfyUI workflow JSON"
+                                        } else {
+                                            "Workflow ready (${comfyWorkflowJson.length} characters)"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (comfyWorkflowJson.isBlank()) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onPickBackupFile { result ->
+                                                val picked = result.getOrNull() ?: return@onPickBackupFile
+                                                onImportComfyUiWorkflow(
+                                                    editingProvider.id.toString(),
+                                                    picked.storagePath,
+                                                )
+                                                comfyWorkflowJson = "imported"
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) { Text("Import workflow JSON") }
+                                    LastChatFormItem(
+                                        label = { Text("Workflow JSON") },
+                                        description = { Text("Paste API-format workflow JSON if you are not importing a file") },
+                                    ) {
+                                        OutlinedTextField(
+                                            value = if (comfyWorkflowJson == "imported") "" else comfyWorkflowJson,
+                                            onValueChange = { comfyWorkflowJson = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            minLines = 3,
+                                            maxLines = 8,
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Advanced node mapping")
+                                            Text(
+                                                "Override prompt and checkpoint node IDs",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Switch(
+                                            checked = comfyShowAdvanced,
+                                            onCheckedChange = { comfyShowAdvanced = it },
+                                        )
+                                    }
+                                    if (comfyShowAdvanced) {
+                                        OutlinedTextField(
+                                            value = comfyPromptNodeId,
+                                            onValueChange = { comfyPromptNodeId = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("Prompt node ID") },
+                                        )
+                                        OutlinedTextField(
+                                            value = comfyPromptInputName,
+                                            onValueChange = { comfyPromptInputName = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("Prompt input name") },
+                                        )
+                                        OutlinedTextField(
+                                            value = comfyModelNodeId,
+                                            onValueChange = { comfyModelNodeId = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("Model node ID") },
+                                        )
+                                        OutlinedTextField(
+                                            value = comfyModelInputName,
+                                            onValueChange = { comfyModelInputName = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = AppShapes.InputField,
+                                            singleLine = true,
+                                            label = { Text("Model input name") },
+                                        )
+                                    }
+                                    Button(
+                                        onClick = {
+                                            onSaveComfyUiProvider(
+                                                editingProvider.id.toString(),
+                                                providerName,
+                                                providerBaseUrl,
+                                                if (comfyWorkflowJson == "imported") {
+                                                    (editingProvider as ProviderSetting.ComfyUI).workflowJson
+                                                } else {
+                                                    comfyWorkflowJson
+                                                },
+                                                comfyPromptNodeId,
+                                                comfyPromptInputName,
+                                                comfyModelNodeId,
+                                                comfyModelInputName,
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) { Text("Save ComfyUI workflow") }
                                 }
                                 if (editingProvider !is ProviderSetting.ComfyUI &&
                                     editingProvider !is ProviderSetting.LiteRtLocal
@@ -3716,6 +3952,15 @@ private fun SettingsPage(
                                     Text("Provider credentials are stored separately in Keychain")
                                 },
                             )
+                            Button(
+                                onClick = onRunStorageMaintenance,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Run storage maintenance") }
+                            Text(
+                                "Removes unreferenced uploads, images, and attachments from the app container. Also runs daily in the background.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -4467,6 +4712,7 @@ private fun IosProviderType.displayName(): String = when (this) {
     IosProviderType.GOOGLE -> "Google"
     IosProviderType.CLAUDE -> "Claude"
     IosProviderType.LOCAL -> "On-device"
+    IosProviderType.COMFY -> "ComfyUI"
 }
 
 private fun IosImageProviderType.displayName(): String = when (this) {
@@ -4485,6 +4731,7 @@ private fun IosProviderType.defaultBaseUrl(): String = when (this) {
     IosProviderType.GOOGLE -> "https://generativelanguage.googleapis.com/v1beta"
     IosProviderType.CLAUDE -> "https://api.anthropic.com/v1"
     IosProviderType.LOCAL -> "on-device"
+    IosProviderType.COMFY -> "http://127.0.0.1:8188"
 }
 
 private fun IosProviderType.defaultModelId(): String = when (this) {
@@ -4492,6 +4739,7 @@ private fun IosProviderType.defaultModelId(): String = when (this) {
     IosProviderType.GOOGLE -> "gemini-2.5-flash"
     IosProviderType.CLAUDE -> "claude-sonnet-4-5"
     IosProviderType.LOCAL -> "on-device"
+    IosProviderType.COMFY -> "workflow"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

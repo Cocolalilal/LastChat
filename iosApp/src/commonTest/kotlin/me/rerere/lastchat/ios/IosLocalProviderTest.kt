@@ -23,6 +23,13 @@ class IosLocalProviderTest {
     }
 
     @Test
+    fun comfyUiProviderMapsToComfyType() {
+        val provider = ProviderSetting.ComfyUI(name = "Local Comfy", baseUrl = "http://127.0.0.1:8188")
+        assertEquals(IosProviderType.COMFY, chatProviderType(provider))
+        assertIs<ProviderSetting.ComfyUI>(provider.withApiKey("", Model(modelId = "workflow", displayName = "Workflow")))
+    }
+
+    @Test
     fun sharePayloadPromptIsReadyForIngest() {
         val payload = PortableSharePayload(text = "hello from share", subject = "Page")
         assertTrue(payload.hasContent())

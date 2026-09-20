@@ -37,7 +37,8 @@ model schedules a follow-up:
 e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"lastchat.rikkafork.cocolal.ios.scheduled-message.refresh"]
 ```
 
-Spontaneous messages use the same pattern (`lastchat.rikkafork.cocolal.ios.spontaneous.refresh`) plus a 30-minute in-process fallback. Assistants imported with `enableSpontaneous` run through `PortableTaskScheduler`.
+Spontaneous messages use the same pattern (`lastchat.rikkafork.cocolal.ios.spontaneous.refresh`) plus a 30-minute in-process fallback. Assistants imported with `enableSpontaneous` run through `PortableTaskScheduler`. The iOS Assistant settings screen now exposes enable, active hours, minimum gap, and optional prompt so the flag is not stuck default-false.
+Chat storage maintenance uses `lastchat.rikkafork.cocolal.ios.storage.refresh` plus a daily in-process fallback and a Data settings "Run storage maintenance" action. It deletes unreferenced `uploads`/`images`/`attachments` files through `PortableChatStorageMaintenance`.
 
 iOS treats `earliestBeginDate` as a lower bound rather than an exact alarm; the
 existing foreground jobs remain active as fallbacks.
@@ -137,7 +138,7 @@ metadata in LastChat's app-container gallery state, and turns returned
 Imagine action now opens the standalone generator/gallery route with Android's
 generator/gallery switch, floating prompt surface, aspect/count sheet,
 generation cancellation, persistent media grid, preview opening, and deletion.
-The ComfyUI workflow editor remains to be ported.
+The ComfyUI provider editor on iOS can set the server URL, import API-format workflow JSON, and map prompt/checkpoint nodes the same way Android's provider configure screen does.
 
 Assistant memory is now functional on iOS for Off, Basic, Searchable, and Adaptive modes.
 Core memories are persisted per assistant, and the mode cards, settings rows,

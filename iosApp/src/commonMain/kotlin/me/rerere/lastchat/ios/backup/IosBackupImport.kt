@@ -486,6 +486,7 @@ internal object IosBackupImporter {
         is ProviderSetting.Google -> IosProviderType.GOOGLE
         is ProviderSetting.Claude -> IosProviderType.CLAUDE
         is ProviderSetting.LiteRtLocal -> IosProviderType.LOCAL
+        is ProviderSetting.ComfyUI -> IosProviderType.COMFY
         else -> null
     }
 

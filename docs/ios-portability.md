@@ -480,16 +480,28 @@ Current iOS app status:
   runtimes a second time). Android ChatService/UI conversation
   get/save/delete/undo/pin/title go through
   `PortableChatEngine` / `PortableConversationStore`
-  (`RoomPortableConversationStore`). iOS conversation CRUD uses the same
+  (`RoomPortableConversationStore`). Conversation **list/page/search/usage**
+  also go through that store: Room keeps SQL `LIMIT`/`OFFSET` + LIKE search
+  and DAO-backed 12-month usage totals; iOS `JsonFilePortableConversationStore`
+  filters/sorts in memory and bumps `observeListVersion` on save/delete.
+  Android ChatVM paging, MenuVM usage stats, Ktor `/api/conversations` plus
+  `/paged`/`/search`/`/stream`, and iOS `PortableWebApiRouter` paged/search
+  callbacks all call the store rather than `ConversationRepository` list
+  APIs. iOS conversation CRUD uses the same
   store via `JsonFilePortableConversationStore`
   (`state/conversations.json`); settings/keychain stay in `IosStoredState`.
   `PortableTaskScheduler` is the shared job API: Android
-  `WorkManagerPortableTaskScheduler` enqueues spontaneous/scheduled/memory
-  WorkManager jobs; iOS `InProcessPortableTaskScheduler` runs those jobs
-  with BGAppRefresh plus a foreground timer fallback, including a live
-  spontaneous pass. ComfyUI image-to-image is in `:ai`
-  `ComfyUIProvider` (`ImageGenerationParams.inputImages` → `/upload/image`
-  + LoadImage). `PortableConversationStore` /
+  `WorkManagerPortableTaskScheduler` enqueues spontaneous/scheduled/memory/
+  chat-storage-maintenance WorkManager jobs; iOS
+  `InProcessPortableTaskScheduler` runs those jobs with BGAppRefresh plus a
+  foreground timer fallback, including a live spontaneous pass and
+  `PortableChatStorageMaintenance` orphan-file cleanup
+  (`lastchat.rikkafork.cocolal.ios.storage.refresh`). iOS Assistant settings
+  expose `enableSpontaneous` plus hours/frequency/prompt. ComfyUI
+  image-to-image is in `:ai` `ComfyUIProvider`
+  (`ImageGenerationParams.inputImages` → `/upload/image` + LoadImage); iOS
+  can add a ComfyUI provider and import API workflow JSON with prompt/model
+  node mapping. `PortableConversationStore` /
   `PortableSettingsStore` remain the platform-agnostic persistence
   contracts; Room and the iOS file store remain the backing implementations. iOS on-device runtimes stay honest
   unavailable shims. The assistant overlay is an in-process Compose
