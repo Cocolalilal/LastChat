@@ -864,6 +864,8 @@ class ChatService(
 
     fun observeUsageTotals(): Flow<PortableUsageTotals> = chatEngine.observeUsageTotals()
 
+    fun observeDailyActivity() = chatEngine.observeDailyActivity()
+
     suspend fun hasPersistedConversation(conversationId: Uuid): Boolean {
         return loadPersistedConversation(conversationId) != null
     }
@@ -1355,7 +1357,7 @@ class ChatService(
 
                 // Record daily activity for the heatmap (persists even if chat is deleted)
                 withContext(Dispatchers.IO) {
-                    conversationRepo.recordDailyActivity()
+                    chatEngine.recordDailyActivity()
                 }
 
                 // 开始补全

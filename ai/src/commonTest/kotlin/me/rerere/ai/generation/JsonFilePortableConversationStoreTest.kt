@@ -88,4 +88,30 @@ class JsonFilePortableConversationStoreTest {
         store.finalizeDeletion("newer")
         assertEquals(listOf("older"), store.listByAssistant("asst-a").map { it.id })
     }
+
+    @Test
+    fun dailyActivityPersistsAfterConversationDelete() = runBlocking {
+        var bytes: ByteArray? = null
+        val store = JsonFilePortableConversationStore(
+            loadBytes = { bytes },
+            saveBytes = { bytes = it },
+        )
+        store.save(
+            PortableConversationRecord(
+                id = "chat-1",
+                assistantId = "asst",
+                title = "Photo",
+                messageNodes = emptyList(),
+                updatedAtEpochMs = 1L,
+            ),
+        )
+        store.recordDailyActivity(date = "2026-09-18", timestampEpochMs = 9L)
+        store.delete("chat-1")
+        val reloaded = JsonFilePortableConversationStore(
+            loadBytes = { bytes },
+            saveBytes = { bytes = it },
+        )
+        assertTrue(reloaded.list().isEmpty())
+        assertEquals(1, reloaded.dailyActivity().single { it.date == "2026-09-18" }.messageCount)
+    }
 }

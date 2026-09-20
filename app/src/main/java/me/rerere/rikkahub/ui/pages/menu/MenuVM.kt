@@ -15,7 +15,6 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.toUsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -33,7 +32,6 @@ data class HeatmapDay(
 )
 
 class MenuVM(
-    private val conversationRepository: ConversationRepository,
     private val conversationStore: PortableConversationStore,
     private val settingsStore: SettingsStore
 ) : ViewModel() {
@@ -43,12 +41,12 @@ class MenuVM(
 
     val uiState: StateFlow<MenuUiState> = combine(
         conversationStore.observeUsageTotals().map { it.toUsageStatsEntity() },
-        conversationRepository.getAllDailyActivityFlow()
+        conversationStore.observeDailyActivity()
     ) { usageStats, allActivity ->
         val today = LocalDate.now()
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-        val parsedActivity = allActivity.mapNotNull { entity ->
-            runCatching { LocalDate.parse(entity.date, formatter) to entity.messageCount }.getOrNull()
+        val parsedActivity = allActivity.mapNotNull { entry ->
+            runCatching { LocalDate.parse(entry.date, formatter) to entry.messageCount }.getOrNull()
         }
         val activityMap = parsedActivity.toMap()
         val strictWindowStartDate = today.withDayOfMonth(1).minusMonths(11)

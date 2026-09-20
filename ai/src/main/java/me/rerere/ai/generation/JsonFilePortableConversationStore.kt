@@ -3,6 +3,7 @@ package me.rerere.ai.generation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -20,7 +21,9 @@ class JsonFilePortableConversationStore(
     },
 ) : PortableConversationStore {
     private val conversations = LinkedHashMap<String, PortableConversationRecord>()
+    private val activity = LinkedHashMap<String, PortableDailyActivity>()
     private val listVersion = MutableStateFlow(0L)
+    private val activityFlow = MutableStateFlow<List<PortableDailyActivity>>(emptyList())
     private var loaded = false
 
     override suspend fun get(id: String): PortableConversationRecord? {
@@ -71,10 +74,53 @@ class JsonFilePortableConversationStore(
         bumpListVersion()
     }
 
+    override suspend fun usageTotals(): PortableUsageTotals {
+        ensureLoaded()
+        return PortableConversationQueries.displayUsageTotals(list(), dailyActivity())
+    }
+
     override fun observeListVersion(): Flow<Long> = listVersion.asStateFlow()
+
+    override fun observeUsageTotals(): Flow<PortableUsageTotals> =
+        combine(listVersion, activityFlow) { _, days ->
+            PortableConversationQueries.displayUsageTotals(
+                conversations.values.toList(),
+                days,
+            )
+        }
+
+    override suspend fun recordDailyActivity(date: String, timestampEpochMs: Long) {
+        ensureLoaded()
+        replaceActivity(PortableConversationQueries.incrementDailyActivity(dailyActivity(), date, timestampEpochMs))
+        persist()
+    }
+
+    override suspend fun mergeDailyActivity(entries: List<PortableDailyActivity>) {
+        ensureLoaded()
+        replaceActivity(PortableConversationQueries.mergeDailyActivity(dailyActivity(), entries))
+        persist()
+    }
+
+    override suspend fun dailyActivity(): List<PortableDailyActivity> {
+        ensureLoaded()
+        return activityFlow.value
+    }
+
+    override fun observeDailyActivity(): Flow<List<PortableDailyActivity>> = activityFlow.asStateFlow()
+
+    private fun replaceActivity(entries: List<PortableDailyActivity>) {
+        activity.clear()
+        entries.forEach { activity[it.date] = it }
+        publishActivity()
+        bumpListVersion()
+    }
 
     private fun bumpListVersion() {
         listVersion.value = listVersion.value + 1
+    }
+
+    private fun publishActivity() {
+        activityFlow.value = activity.values.sortedBy { it.date }
     }
 
     private suspend fun ensureLoaded() {
@@ -86,12 +132,18 @@ class JsonFilePortableConversationStore(
         }.getOrNull() ?: return
         conversations.clear()
         decoded.conversations.forEach { conversations[it.id] = it }
+        activity.clear()
+        decoded.dailyActivity.forEach { activity[it.date] = it }
+        publishActivity()
     }
 
     private suspend fun persist() {
         val payload = json.encodeToString(
             ConversationFile.serializer(),
-            ConversationFile(conversations.values.toList()),
+            ConversationFile(
+                conversations = conversations.values.toList(),
+                dailyActivity = activity.values.sortedBy { it.date },
+            ),
         )
         saveBytes(payload.encodeToByteArray())
     }
@@ -99,5 +151,6 @@ class JsonFilePortableConversationStore(
     @Serializable
     private data class ConversationFile(
         val conversations: List<PortableConversationRecord> = emptyList(),
+        val dailyActivity: List<PortableDailyActivity> = emptyList(),
     )
 }

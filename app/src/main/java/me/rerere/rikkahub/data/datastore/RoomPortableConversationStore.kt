@@ -8,10 +8,12 @@ import me.rerere.ai.generation.PortableConversationQuery
 import me.rerere.ai.generation.PortableConversationQueries
 import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableConversationStore
+import me.rerere.ai.generation.PortableDailyActivity
 import me.rerere.ai.generation.PortableDeleteOptions
 import me.rerere.ai.generation.PortableMessageSearchHit
 import me.rerere.ai.generation.PortableSaveOptions
 import me.rerere.ai.generation.PortableUsageTotals
+import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -115,6 +117,30 @@ class RoomPortableConversationStore(
     override fun observeUsageTotals(): Flow<PortableUsageTotals> {
         return conversationRepo.getUsageStatsLast12MonthsFlow().map { it.toPortableUsageTotals() }
     }
+
+    override suspend fun recordDailyActivity(date: String, timestampEpochMs: Long) {
+        conversationRepo.recordDailyActivity(date, timestampEpochMs)
+    }
+
+    override suspend fun mergeDailyActivity(entries: List<PortableDailyActivity>) {
+        entries.forEach { entry ->
+            conversationRepo.mergeDailyActivity(entry.date, entry.messageCount, entry.lastMessageEpochMs)
+        }
+    }
+
+    override suspend fun dailyActivity(): List<PortableDailyActivity> {
+        return conversationRepo.getAllDailyActivityFlow().first().map { it.toPortableDailyActivity() }
+    }
+
+    override fun observeDailyActivity(): Flow<List<PortableDailyActivity>> {
+        return conversationRepo.getAllDailyActivityFlow().map { rows ->
+            rows.map { it.toPortableDailyActivity() }
+        }
+    }
+
+    override suspend fun backfillDailyActivityIfNeeded() {
+        conversationRepo.backfillDailyActivityFromConversationHistoryIfNeeded()
+    }
 }
 
 fun Conversation.toPortableRecord(): PortableConversationRecord = PortableConversationRecord(
@@ -173,4 +199,10 @@ fun PortableUsageTotals.toUsageStatsEntity(): UsageStatsEntity = UsageStatsEntit
     inputTokens = inputTokens,
     outputTokens = outputTokens,
     cachedTokens = cachedTokens,
+)
+
+fun DailyActivityEntity.toPortableDailyActivity(): PortableDailyActivity = PortableDailyActivity(
+    date = date,
+    messageCount = messageCount,
+    lastMessageEpochMs = lastMessageTime,
 )

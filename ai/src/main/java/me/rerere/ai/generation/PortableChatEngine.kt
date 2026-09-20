@@ -118,6 +118,19 @@ class PortableChatEngine(
 
     fun observeUsageTotals() = store.observeUsageTotals()
 
+    suspend fun recordDailyActivity(
+        date: String = PortableConversationQueries.isoToday(),
+        timestampEpochMs: Long = PortableConversationQueries.nowEpochMs(),
+    ) {
+        store.recordDailyActivity(date, timestampEpochMs)
+    }
+
+    suspend fun dailyActivity(): List<PortableDailyActivity> = store.dailyActivity()
+
+    fun observeDailyActivity() = store.observeDailyActivity()
+
+    suspend fun backfillDailyActivityIfNeeded() = store.backfillDailyActivityIfNeeded()
+
     fun editMessage(nodes: List<MessageNode>, messageId: Uuid, parts: List<UIMessagePart>): List<MessageNode> {
         return nodes.withEditedMessage(messageId, parts)
     }

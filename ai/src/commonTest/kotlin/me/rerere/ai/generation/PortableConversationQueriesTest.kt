@@ -79,6 +79,36 @@ class PortableConversationQueriesTest {
     }
 
     @Test
+    fun dailyActivitySurvivesConversationDeletionAndFeedsMessageCount() = runBlocking {
+        val store = InMemoryPortableConversationStore(
+            listOf(
+                record(
+                    id = "c1",
+                    assistantId = "a",
+                    title = "Keep stats",
+                    updated = 1L,
+                    text = "hi",
+                    usage = TokenUsage(promptTokens = 4, completionTokens = 3, cachedTokens = 1, totalTokens = 7),
+                ),
+            ),
+        )
+        store.recordDailyActivity(date = "2026-09-20", timestampEpochMs = 1L)
+        store.recordDailyActivity(date = "2026-09-20", timestampEpochMs = 2L)
+        assertEquals(2, store.dailyActivity().single { it.date == "2026-09-20" }.messageCount)
+        store.delete("c1")
+        assertTrue(store.list().isEmpty())
+        assertEquals(2, store.dailyActivity().single().messageCount)
+        val totals = PortableConversationQueries.displayUsageTotals(
+            records = store.list(),
+            activity = store.dailyActivity(),
+            today = kotlinx.datetime.LocalDate(2026, 9, 20),
+        )
+        assertEquals(0, totals.conversationCount)
+        assertEquals(2, totals.messageCount)
+        assertEquals(0, totals.inputTokens)
+    }
+
+    @Test
     fun highlightSnippetReturnsNullWhenMissing() {
         assertNull(PortableConversationQueries.highlightSnippet("hello world", "lighthouse"))
         val snippet = PortableConversationQueries.highlightSnippet(
@@ -114,5 +144,6 @@ class PortableConversationQueriesTest {
         ),
         isPinned = pinned,
         updatedAtEpochMs = updated,
+        createdAtEpochMs = updated.takeIf { it > 1_000_000_000_000L } ?: PortableConversationQueries.nowEpochMs(),
     )
 }

@@ -429,12 +429,15 @@ class ConversationRepository(
      */
     suspend fun recordDailyActivity() {
         val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val timestamp = System.currentTimeMillis()
+        recordDailyActivity(today, System.currentTimeMillis())
+    }
+
+    suspend fun recordDailyActivity(date: String, timestamp: Long) {
         val delaysMs = longArrayOf(40L, 120L, 240L)
 
         repeat(delaysMs.size + 1) { attempt ->
             try {
-                dailyActivityDAO.recordActivity(today, timestamp)
+                dailyActivityDAO.recordActivity(date, timestamp)
                 return
             } catch (e: SQLiteException) {
                 if (!e.isTransientSqliteFailure() || attempt == delaysMs.size) {
@@ -660,6 +663,11 @@ class ConversationRepository(
     
     /** Get all daily activity entries for heatmap */
     fun getAllDailyActivityFlow() = dailyActivityDAO.getAllActivityFlow()
+
+    suspend fun mergeDailyActivity(date: String, messageCount: Int, timestamp: Long) {
+        dailyActivityDAO.insertBackfilledActivityIfMissing(date, messageCount, timestamp)
+        dailyActivityDAO.mergeBackfilledActivity(date, messageCount, timestamp)
+    }
     
     /** Add token usage to persistent cumulative counters */
     suspend fun addTokenUsage(inputTokens: Long, outputTokens: Long, cachedTokens: Long) {

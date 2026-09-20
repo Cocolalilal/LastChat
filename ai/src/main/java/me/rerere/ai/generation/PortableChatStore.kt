@@ -3,6 +3,7 @@ package me.rerere.ai.generation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.Serializable
@@ -50,11 +51,38 @@ interface PortableConversationStore {
         )
     }
 
-    suspend fun usageTotals(): PortableUsageTotals = PortableConversationQueries.usageTotals(list())
+    suspend fun usageTotals(): PortableUsageTotals =
+        PortableConversationQueries.displayUsageTotals(list(), dailyActivity())
 
     fun observeListVersion(): Flow<Long> = flowOf(0L)
 
     fun observeUsageTotals(): Flow<PortableUsageTotals> = flow { emit(usageTotals()) }
+
+    /**
+     * Heatmap counters persist independently of conversations so deleted chats
+     * still show on the activity calendar. Android Room keeps SQL; JSON/iOS
+     * stores the same sidecar in the conversation file.
+     */
+    suspend fun recordDailyActivity(
+        date: String = PortableConversationQueries.isoToday(),
+        timestampEpochMs: Long = PortableConversationQueries.nowEpochMs(),
+    ) {
+    }
+
+    suspend fun mergeDailyActivity(entries: List<PortableDailyActivity>) {}
+
+    suspend fun dailyActivity(): List<PortableDailyActivity> = emptyList()
+
+    fun observeDailyActivity(): Flow<List<PortableDailyActivity>> = flow { emit(dailyActivity()) }
+
+    suspend fun backfillDailyActivityIfNeeded() {
+        val existing = dailyActivity()
+        val derived = PortableConversationQueries.dailyActivityFromConversations(list())
+        if (derived.isEmpty()) return
+        val existingDates = existing.map { it.date }.toHashSet()
+        if (derived.all { it.date in existingDates }) return
+        mergeDailyActivity(derived)
+    }
 }
 
 data class PortableSaveOptions(
@@ -98,6 +126,13 @@ data class PortableUsageTotals(
 )
 
 @Serializable
+data class PortableDailyActivity(
+    val date: String,
+    val messageCount: Int = 0,
+    val lastMessageEpochMs: Long = 0L,
+)
+
+@Serializable
 data class PortableConversationRecord(
     val id: String,
     val assistantId: String?,
@@ -137,12 +172,17 @@ interface PortableSettingsStore {
 
 class InMemoryPortableConversationStore(
     initial: List<PortableConversationRecord> = emptyList(),
+    initialActivity: List<PortableDailyActivity> = emptyList(),
 ) : PortableConversationStore {
     private val conversations = LinkedHashMap<String, PortableConversationRecord>()
+    private val activity = LinkedHashMap<String, PortableDailyActivity>()
     private val listVersion = MutableStateFlow(0L)
+    private val activityFlow = MutableStateFlow<List<PortableDailyActivity>>(emptyList())
 
     init {
         initial.forEach { conversations[it.id] = it }
+        initialActivity.forEach { activity[it.date] = it }
+        publishActivity()
     }
 
     override suspend fun get(id: String): PortableConversationRecord? = conversations[id]
@@ -181,7 +221,41 @@ class InMemoryPortableConversationStore(
         bumpListVersion()
     }
 
+    override suspend fun usageTotals(): PortableUsageTotals =
+        PortableConversationQueries.displayUsageTotals(list(), dailyActivity())
+
     override fun observeListVersion(): Flow<Long> = listVersion.asStateFlow()
+
+    override fun observeUsageTotals(): Flow<PortableUsageTotals> =
+        combine(listVersion, activityFlow) { _, days ->
+            PortableConversationQueries.displayUsageTotals(
+                conversations.values.toList(),
+                days,
+            )
+        }
+
+    override suspend fun recordDailyActivity(date: String, timestampEpochMs: Long) {
+        replaceActivity(PortableConversationQueries.incrementDailyActivity(dailyActivity(), date, timestampEpochMs))
+    }
+
+    override suspend fun mergeDailyActivity(entries: List<PortableDailyActivity>) {
+        replaceActivity(PortableConversationQueries.mergeDailyActivity(dailyActivity(), entries))
+    }
+
+    override suspend fun dailyActivity(): List<PortableDailyActivity> = activityFlow.value
+
+    override fun observeDailyActivity(): Flow<List<PortableDailyActivity>> = activityFlow.asStateFlow()
+
+    private fun replaceActivity(entries: List<PortableDailyActivity>) {
+        activity.clear()
+        entries.forEach { activity[it.date] = it }
+        publishActivity()
+        bumpListVersion()
+    }
+
+    private fun publishActivity() {
+        activityFlow.value = activity.values.sortedBy { it.date }
+    }
 
     private fun bumpListVersion() {
         listVersion.value = listVersion.value + 1

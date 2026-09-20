@@ -1,7 +1,14 @@
 package me.rerere.ai.generation
 
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * In-memory list/search/usage helpers used by JSON/iOS stores and as the
@@ -98,6 +105,165 @@ object PortableConversationQueries {
             cachedTokens = cached,
         )
     }
+
+    fun isoToday(
+        clock: Clock = Clock.System,
+        timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    ): String = clock.now().toLocalDateTime(timeZone).date.toString()
+
+    fun nowEpochMs(clock: Clock = Clock.System): Long = clock.now().toEpochMilliseconds()
+
+    fun isoDateFromEpoch(
+        epochMs: Long,
+        timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    ): String? {
+        if (epochMs <= 0L) return null
+        return Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(timeZone).date.toString()
+    }
+
+    fun rollingWindowStart(today: LocalDate): LocalDate {
+        return LocalDate(today.year, today.month, 1).minus(DatePeriod(months = 11))
+    }
+
+    fun incrementDailyActivity(
+        existing: List<PortableDailyActivity>,
+        date: String,
+        timestampEpochMs: Long,
+    ): List<PortableDailyActivity> {
+        val current = existing.firstOrNull { it.date == date }
+        val updated = PortableDailyActivity(
+            date = date,
+            messageCount = (current?.messageCount ?: 0) + 1,
+            lastMessageEpochMs = maxOf(current?.lastMessageEpochMs ?: 0L, timestampEpochMs),
+        )
+        return (existing.filterNot { it.date == date } + updated).sortedBy { it.date }
+    }
+
+    fun mergeDailyActivity(
+        existing: List<PortableDailyActivity>,
+        incoming: List<PortableDailyActivity>,
+    ): List<PortableDailyActivity> {
+        val merged = existing.associateBy { it.date }.toMutableMap()
+        incoming.forEach { entry ->
+            val current = merged[entry.date]
+            merged[entry.date] = if (current == null) {
+                entry
+            } else {
+                PortableDailyActivity(
+                    date = entry.date,
+                    messageCount = maxOf(current.messageCount, entry.messageCount),
+                    lastMessageEpochMs = maxOf(current.lastMessageEpochMs, entry.lastMessageEpochMs),
+                )
+            }
+        }
+        return merged.values.sortedBy { it.date }
+    }
+
+    fun dailyActivityFromConversations(
+        records: List<PortableConversationRecord>,
+        timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    ): List<PortableDailyActivity> {
+        val counts = linkedMapOf<String, PortableDailyActivity>()
+        records.forEach { record ->
+            val fallback = isoDateFromEpoch(
+                epochMs = record.createdAtEpochMs.takeIf { it > 0L } ?: record.updatedAtEpochMs,
+                timeZone = timeZone,
+            )
+            val selectedDates = record.messageNodes.map { node ->
+                node.currentMessage.createdAt.date.toString()
+            }
+            val dates = selectedDates.ifEmpty { listOfNotNull(fallback) }
+            dates.forEach { date ->
+                val current = counts[date]
+                counts[date] = PortableDailyActivity(
+                    date = date,
+                    messageCount = (current?.messageCount ?: 0) + 1,
+                    lastMessageEpochMs = maxOf(
+                        current?.lastMessageEpochMs ?: 0L,
+                        record.updatedAtEpochMs,
+                    ),
+                )
+            }
+        }
+        return counts.values.sortedBy { it.date }
+    }
+
+    /**
+     * Shared 12-month statistics page semantics:
+     * conversations and tokens come from live chats in the window; message count
+     * is max(daily-activity in window, selected messages in window) so heatmap
+     * sends survive deletion on every host.
+     */
+    fun displayUsageTotals(
+        records: List<PortableConversationRecord>,
+        activity: List<PortableDailyActivity>,
+        today: LocalDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,
+        timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    ): PortableUsageTotals {
+        val windowStart = rollingWindowStart(today)
+        val conversationCount = records.count { record ->
+            val date = parseIsoDate(
+                isoDateFromEpoch(
+                    epochMs = record.createdAtEpochMs.takeIf { it > 0L } ?: record.updatedAtEpochMs,
+                    timeZone = timeZone,
+                ),
+            ) ?: return@count false
+            !date.isBefore(windowStart) && !date.isAfter(today)
+        }.toLong()
+        var selectedMessages = 0L
+        var input = 0L
+        var output = 0L
+        var cached = 0L
+        records.forEach { record ->
+            val fallback = parseIsoDate(
+                isoDateFromEpoch(
+                    epochMs = record.createdAtEpochMs.takeIf { it > 0L } ?: record.updatedAtEpochMs,
+                    timeZone = timeZone,
+                ),
+            )
+            record.messageNodes.forEach { node ->
+                val message = node.currentMessage
+                val date = message.createdAt.date
+                if (date.isBefore(windowStart) || date.isAfter(today)) return@forEach
+                selectedMessages += 1
+                val usage = message.usage ?: return@forEach
+                input += usage.promptTokens.toLong()
+                output += usage.completionTokens.toLong()
+                cached += usage.cachedTokens.toLong()
+            }
+            if (record.messageNodes.isEmpty() && fallback != null &&
+                !fallback.isBefore(windowStart) && !fallback.isAfter(today)
+            ) {
+                selectedMessages += 1
+            }
+        }
+        val activityMessages = activity.sumOf { entry ->
+            val date = parseIsoDate(entry.date) ?: return@sumOf 0L
+            if (!date.isBefore(windowStart) && !date.isAfter(today)) {
+                entry.messageCount.toLong()
+            } else {
+                0L
+            }
+        }
+        return PortableUsageTotals(
+            conversationCount = conversationCount,
+            messageCount = maxOf(activityMessages, selectedMessages),
+            inputTokens = input,
+            outputTokens = output,
+            cachedTokens = cached,
+        )
+    }
+
+    fun parseIsoDate(raw: String?): LocalDate? {
+        val value = raw?.trim().orEmpty()
+        if (value.length < 10) return null
+        return runCatching { LocalDate.parse(value.take(10)) }.getOrNull()
+    }
+
+    private fun LocalDate.isBefore(other: LocalDate): Boolean = this < other
+
+    private fun LocalDate.isAfter(other: LocalDate): Boolean = this > other
+
 
     fun searchableText(message: UIMessage): String {
         return message.parts.joinToString("\n") { part ->

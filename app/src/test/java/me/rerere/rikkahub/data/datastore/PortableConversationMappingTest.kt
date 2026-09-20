@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.generation.PortableDailyActivity
 import me.rerere.ai.generation.PortableSaveOptions
 import me.rerere.ai.generation.PortableUsageTotals
+import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
@@ -62,5 +64,16 @@ class PortableConversationMappingTest {
         assertEquals(12, entity.totalMessages)
         assertEquals(totals, entity.toPortableUsageTotals())
         assertEquals(0L, UsageStatsEntity().toPortableUsageTotals().conversationCount)
+    }
+
+    @Test
+    fun dailyActivityRoundTripThroughRoomEntity() {
+        val activity = PortableDailyActivity(date = "2026-09-20", messageCount = 4, lastMessageEpochMs = 9L)
+        val entity = DailyActivityEntity(
+            date = activity.date,
+            messageCount = activity.messageCount,
+            lastMessageTime = activity.lastMessageEpochMs,
+        )
+        assertEquals(activity, entity.toPortableDailyActivity())
     }
 }
