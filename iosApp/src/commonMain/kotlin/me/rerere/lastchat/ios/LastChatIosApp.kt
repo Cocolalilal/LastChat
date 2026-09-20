@@ -544,6 +544,9 @@ fun LastChatIosApp(
                     onRegenerateMemoryEmbeddings = controller::regenerateMemoryEmbeddings,
                     onSaveLocalTools = controller::saveLocalTools,
                     onSavePromptInjections = controller::savePromptInjections,
+                    onImportSkillPackage = controller::importSkillPackage,
+                    onExportSkillPackage = controller::exportSkillPackage,
+                    onSaveAssistantRegexes = controller::saveAssistantRegexes,
                     onSaveMcpServers = controller::saveMcpServers,
                     onRefreshMcpTools = controller::refreshMcpTools,
                     onSaveStt = controller::saveStt,
@@ -691,7 +694,8 @@ private fun ChatPage(
             }
         }.filter { it.isNotBlank() }.joinToString("\n")
         DisplayMessage(
-            text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim(),
+            text = rawText.replace(GENERATED_MARKDOWN_IMAGE_REGEX, "").trim()
+                .applyIosRegexes(state.assistant.regexes, outgoing, visual = true),
             outgoing = outgoing,
             position = position,
             parts = message.parts + markdownImages,
@@ -699,7 +703,7 @@ private fun ChatPage(
             branchNode = if (!outgoing) node else null,
             canRegenerate = !outgoing && !state.generating &&
                 index == conversationMessages.lastIndex && node != null,
-            reasoning = reasoning,
+            reasoning = reasoning.applyIosRegexes(state.assistant.regexes, outgoing, visual = true),
             usage = message.usage,
             modelName = state.selectedChatModel?.second?.displayName
                 ?: state.selectedChatModel?.second?.modelId,
@@ -2628,6 +2632,9 @@ private fun SettingsPage(
     onRegenerateMemoryEmbeddings: () -> Unit,
     onSaveLocalTools: (Set<IosLocalToolOption>) -> Unit,
     onSavePromptInjections: (List<me.rerere.rikkahub.data.prompt.PortableSkill>, List<me.rerere.rikkahub.data.prompt.PortableLorebook>, Set<String>, Set<String>) -> Unit,
+    onImportSkillPackage: (String) -> Unit = {},
+    onExportSkillPackage: (String) -> Unit = {},
+    onSaveAssistantRegexes: (List<me.rerere.rikkahub.data.model.PortableAssistantRegex>) -> Unit = {},
     onSaveMcpServers: (List<me.rerere.rikkahub.data.mcp.PortableMcpServer>, Set<String>) -> Unit,
     onRefreshMcpTools: (String) -> Unit,
     onSaveStt: (IosSttPreferences, String) -> Unit,
@@ -3434,6 +3441,13 @@ private fun SettingsPage(
                             }
                         }
                     }
+                }
+                item {
+                    IosAssistantRegexSettings(
+                        state = state,
+                        darkTheme = darkTheme,
+                        onSave = onSaveAssistantRegexes,
+                    )
                 }
             }
             if (section == IosSettingsSection.Memory) {
@@ -5812,7 +5826,16 @@ private fun SettingsPage(
                 }
             }
             if (section == IosSettingsSection.Skills) {
-                item { IosSkillsSettings(state, darkTheme, onSavePromptInjections) }
+                item {
+                    IosSkillsSettings(
+                        state,
+                        darkTheme,
+                        onSavePromptInjections,
+                        onPickSkillPackage = onPickBackupFile,
+                        onImportSkillPackage = onImportSkillPackage,
+                        onExportSkillPackage = onExportSkillPackage,
+                    )
+                }
                 item {
                     LastChatSettingGroupItem(
                         title = "Lorebooks",

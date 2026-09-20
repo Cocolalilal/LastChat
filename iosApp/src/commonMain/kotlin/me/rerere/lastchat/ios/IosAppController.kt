@@ -136,7 +136,11 @@ import me.rerere.rikkahub.data.mcp.PortableMcpServer
 import me.rerere.rikkahub.data.mcp.withDiscoveredTools
 import me.rerere.rikkahub.data.model.PortableCharacterCardParser
 import me.rerere.rikkahub.data.prompt.PortableLorebook
+import me.rerere.rikkahub.data.model.PortableAffectScope
+import me.rerere.rikkahub.data.model.PortableAssistantRegex
+import me.rerere.rikkahub.data.model.replacePortableRegexes
 import me.rerere.rikkahub.data.prompt.PortableSkill
+import me.rerere.rikkahub.data.skill.PortableSkillPackage
 import me.rerere.rikkahub.data.sync.PortableWebDavClient
 import me.rerere.rikkahub.data.sync.PortableWebDavConfig
 import me.rerere.rikkahub.data.sync.PortableWebDavItem
@@ -355,6 +359,7 @@ data class IosAssistantPreferences(
     val avatar: IosAvatar = IosAvatar.Dummy,
     val useAssistantAvatar: Boolean = false,
     val uiSettings: IosAssistantUiSettings = IosAssistantUiSettings(),
+    val regexes: List<PortableAssistantRegex> = emptyList(),
 )
 
 @Serializable
@@ -2163,6 +2168,7 @@ class IosAppController(
         enabledSkillIds: Set<String>,
         enabledLorebookIds: Set<String>,
     ) {
+        val removed = mutableState.value.skills.filter { existing -> skills.none { it.id == existing.id } }
         mutableState.update { current ->
             val assistantId = current.assistant.id
             current.copy(
@@ -2179,6 +2185,83 @@ class IosAppController(
             )
         }
         persistAsync()
+        if (removed.isNotEmpty()) {
+            scope.launch { removed.forEach { deleteSkillPackageFiles(it) } }
+        }
+    }
+
+    fun importSkillPackage(storagePath: String) {
+        scope.launch {
+            val bytes = fileStore.readBytes(storagePath)
+            if (bytes == null) {
+                mutableState.update { it.copy(error = "Could not read the skill package.") }
+                return@launch
+            }
+            when (val imported = PortableSkillPackage.importFromBytes(bytes)) {
+                is PortableSkillPackage.ImportResult.Error -> {
+                    mutableState.update { it.copy(error = imported.message) }
+                }
+                is PortableSkillPackage.ImportResult.Success -> {
+                    val skill = imported.toPortableSkill()
+                    val root = PortableSkillPackage.safePackageRoot(skill.id, skill.packageRoot)
+                    imported.packageFiles.forEach { (relative, data) ->
+                        fileStore.writeBytes("skills/$root/$relative", data)
+                    }
+                    mutableState.update { current ->
+                        current.copy(
+                            skills = current.skills.upsertSkill(skill),
+                            assistants = current.assistants.map { assistant ->
+                                if (assistant.id == current.assistant.id) {
+                                    assistant.copy(enabledSkillIds = assistant.enabledSkillIds + skill.id)
+                                } else assistant
+                            },
+                            error = null,
+                        )
+                    }
+                    persist()
+                }
+            }
+        }
+    }
+
+    fun exportSkillPackage(skillId: String) {
+        scope.launch {
+            val skill = mutableState.value.skills.firstOrNull { it.id == skillId } ?: return@launch
+            val root = PortableSkillPackage.safePackageRoot(skill.id, skill.packageRoot)
+            val listed = fileStore.listFiles("skills/$root")
+            val files = listed.associate { path ->
+                val relative = path.removePrefix("skills/$root/").trimStart('/')
+                relative to (fileStore.readBytes(path) ?: ByteArray(0))
+            }.filterKeys { it.isNotBlank() }.toMutableMap()
+            if (!files.containsKey("SKILL.md")) {
+                files["SKILL.md"] = PortableSkillPackage.exportToSkillMd(skill).encodeToByteArray()
+            }
+            val zip = PortableSkillPackage.exportZip(skill.name.ifBlank { "skill" }, files)
+            shareSheet.shareFile(
+                title = skill.name.ifBlank { "Skill" },
+                fileName = PortableSkillPackage.suggestedFileName(skill.name, "zip"),
+                mimeType = "application/zip",
+                bytes = zip,
+            )
+        }
+    }
+
+    fun saveAssistantRegexes(regexes: List<PortableAssistantRegex>) {
+        mutableState.update { current ->
+            val selectedId = current.assistant.id
+            current.copy(
+                assistants = current.assistants.map { assistant ->
+                    if (assistant.id == selectedId) assistant.copy(regexes = regexes) else assistant
+                },
+            )
+        }
+        persistAsync()
+    }
+
+    private suspend fun deleteSkillPackageFiles(skill: PortableSkill) {
+        val root = PortableSkillPackage.safePackageRoot(skill.id, skill.packageRoot)
+        fileStore.listFiles("skills/$root").forEach { path -> fileStore.delete(path) }
+        fileStore.delete("skills/$root/SKILL.md")
     }
 
     fun saveMcpServers(servers: List<PortableMcpServer>, enabledIds: Set<String>) {
@@ -2698,8 +2781,15 @@ class IosAppController(
                 generationJob = null
                 return@launch
             }
+            val regexes = snapshot.assistant.regexes
             val userParts = buildList {
-                if (prompt.isNotEmpty()) add(UIMessagePart.Text(prompt))
+                if (prompt.isNotEmpty()) {
+                    add(
+                        UIMessagePart.Text(
+                            prompt.replacePortableRegexes(regexes, PortableAffectScope.USER, visual = false),
+                        ),
+                    )
+                }
                 snapshot.pendingAttachments.forEach { attachment ->
                     add(when (attachment.kind) {
                         PlatformPickedFileKind.Image -> UIMessagePart.Image(attachment.localUrl)
@@ -2831,8 +2921,24 @@ class IosAppController(
     /** Branches the node containing [messageId] with a new version carrying the edited parts. */
     fun editMessage(conversationId: String, messageId: String, parts: List<UIMessagePart>) {
         if (parts.isEmpty()) return
+        val snapshot = mutableState.value
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+        val assistant = snapshot.assistants.firstOrNull { it.id == conversation?.assistantId }
+            ?: snapshot.assistant
+        val processed = parts.map { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.copy(
+                    text = part.text.replacePortableRegexes(
+                        assistant.regexes,
+                        PortableAffectScope.USER,
+                        visual = false,
+                    ),
+                )
+                else -> part
+            }
+        }
         updateConversation(conversationId) { current ->
-            current.withEditedMessage(messageId, parts)
+            current.withEditedMessage(messageId, processed)
         }
         persistAsync()
     }
@@ -3023,6 +3129,12 @@ class IosAppController(
                         bindPendingAskUser(conversationId, messages)
                     }
                 },
+                visualTransform = { messages ->
+                    generationAssistantRegexes(conversationId).let { messages.applyIosRegexes(it, visual = false) }
+                },
+                afterAssistantTurn = { messages ->
+                    generationAssistantRegexes(conversationId).let { messages.applyIosRegexes(it, visual = false) }
+                },
                 onCheckpoint = { persist() },
                 onExecutingTool = { currentExecutingToolCallId = it },
             )
@@ -3030,6 +3142,14 @@ class IosAppController(
         if (result.pendingApproval) {
             bindPendingAskUser(conversationId, result.messages)
         }
+    }
+
+    private fun generationAssistantRegexes(conversationId: String): List<PortableAssistantRegex> {
+        val snapshot = mutableState.value
+        val conversation = snapshot.conversations.firstOrNull { it.id == conversationId }
+        val assistant = snapshot.assistants.firstOrNull { it.id == conversation?.assistantId }
+            ?: snapshot.assistant
+        return assistant.regexes
     }
 
     private fun bindPendingAskUser(conversationId: String, messages: List<UIMessage>) {

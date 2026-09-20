@@ -5,6 +5,8 @@ interface PlatformShareSheet {
     val available: Boolean get() = true
 
     fun shareText(title: String, text: String)
+
+    fun shareFile(title: String, fileName: String, mimeType: String, bytes: ByteArray) = Unit
 }
 
 class UnavailableShareSheet(

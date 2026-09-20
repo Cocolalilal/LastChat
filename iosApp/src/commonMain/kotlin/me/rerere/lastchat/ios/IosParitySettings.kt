@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.common.log.PortableDebugLog
 import me.rerere.rikkahub.data.ai.AILogging
+import me.rerere.rikkahub.data.model.PortableAffectScope
+import me.rerere.rikkahub.data.model.PortableAssistantRegex
 import me.rerere.rikkahub.data.mcp.PortableMcpServer
 import me.rerere.rikkahub.data.mcp.PortableMcpTransport
 import me.rerere.rikkahub.data.prompt.LorebookActivationKind
@@ -41,6 +43,9 @@ internal fun IosSkillsSettings(
     state: IosAppState,
     darkTheme: Boolean,
     onSave: (List<PortableSkill>, List<PortableLorebook>, Set<String>, Set<String>) -> Unit,
+    onPickSkillPackage: ((Result<me.rerere.common.platform.PlatformPickedFile?>) -> Unit) -> Unit = {},
+    onImportSkillPackage: (String) -> Unit = {},
+    onExportSkillPackage: (String) -> Unit = {},
 ) {
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -98,6 +103,15 @@ internal fun IosSkillsSettings(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Add skill") }
+                Button(
+                    onClick = {
+                        onPickSkillPackage { result ->
+                            val picked = result.getOrNull() ?: return@onPickSkillPackage
+                            onImportSkillPackage(picked.storagePath)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Import SKILL.md package") }
             }
         }
         state.skills.forEach { skill ->
@@ -157,6 +171,7 @@ internal fun IosSkillsSettings(
                         },
                     )
                 }
+                TextButton(onClick = { onExportSkillPackage(skill.id) }) { Text("Export package") }
                 TextButton(onClick = {
                     onSave(
                         state.skills.filterNot { it.id == skill.id },
@@ -1125,3 +1140,114 @@ internal fun IosDeveloperSettings(
         ) {}
     }
 }
+
+@Composable
+internal fun IosAssistantRegexSettings(
+    state: IosAppState,
+    darkTheme: Boolean,
+    onSave: (List<PortableAssistantRegex>) -> Unit,
+) {
+    LastChatSettingsGroup(title = "Message regexes", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
+        LastChatSettingGroupInputItem(
+            title = "Find and replace",
+            subtitle = "Same find/replace rules as Android. Generation rules rewrite stored text; visual-only rules apply in the chat renderer.",
+            darkTheme = darkTheme,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.assistant.regexes.forEachIndexed { index, regex ->
+                    IosRegexEditor(
+                        regex = regex,
+                        onChange = { updated ->
+                            onSave(state.assistant.regexes.mapIndexed { i, item -> if (i == index) updated else item })
+                        },
+                        onDelete = { onSave(state.assistant.regexes.filterIndexed { i, _ -> i != index }) },
+                    )
+                }
+                Button(
+                    onClick = {
+                        onSave(
+                            state.assistant.regexes + PortableAssistantRegex(
+                                id = Uuid.random().toString(),
+                                name = "Rule ${state.assistant.regexes.size + 1}",
+                                affectingScope = setOf(PortableAffectScope.ASSISTANT),
+                            ),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Add regex") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IosRegexEditor(
+    regex: PortableAssistantRegex,
+    onChange: (PortableAssistantRegex) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var name by remember(regex.id) { mutableStateOf(regex.name) }
+    var findRegex by remember(regex.id) { mutableStateOf(regex.findRegex) }
+    var replace by remember(regex.id) { mutableStateOf(regex.replaceString) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LastChatFormItem(
+            label = { Text(regex.name.ifBlank { "Regex" }) },
+            tail = {
+                Switch(
+                    checked = regex.enabled,
+                    onCheckedChange = { onChange(regex.copy(enabled = it)) },
+                )
+            },
+        )
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            modifier = Modifier.fillMaxWidth(),
+            shape = AppShapes.InputField,
+            singleLine = true,
+            label = { Text("Name") },
+        )
+        OutlinedTextField(
+            value = findRegex,
+            onValueChange = { findRegex = it },
+            modifier = Modifier.fillMaxWidth(),
+            shape = AppShapes.InputField,
+            singleLine = true,
+            label = { Text("Find regex") },
+        )
+        OutlinedTextField(
+            value = replace,
+            onValueChange = { replace = it },
+            modifier = Modifier.fillMaxWidth(),
+            shape = AppShapes.InputField,
+            singleLine = true,
+            label = { Text("Replace with") },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            PortableAffectScope.entries.forEach { scope ->
+                val selected = scope in regex.affectingScope
+                val label = if (scope == PortableAffectScope.USER) "User" else "Assistant"
+                if (selected) {
+                    Button(onClick = { onChange(regex.copy(affectingScope = regex.affectingScope - scope)) }) { Text(label) }
+                } else {
+                    TextButton(onClick = { onChange(regex.copy(affectingScope = regex.affectingScope + scope)) }) { Text(label) }
+                }
+            }
+        }
+        LastChatFormItem(
+            label = { Text("Visual only") },
+            tail = {
+                Switch(
+                    checked = regex.visualOnly,
+                    onCheckedChange = { onChange(regex.copy(visualOnly = it)) },
+                )
+            },
+        )
+        Button(
+            onClick = { onChange(regex.copy(name = name.trim(), findRegex = findRegex, replaceString = replace)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Save regex") }
+        TextButton(onClick = onDelete) { Text("Delete regex") }
+    }
+}
+
