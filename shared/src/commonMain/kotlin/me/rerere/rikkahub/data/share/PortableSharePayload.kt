@@ -26,6 +26,7 @@ data class PortableSharePayload(
 
     companion object {
         const val PENDING_SHARE_TEXT_KEY = "pending_share_text"
+        const val PENDING_OVERLAY_PROMPT_KEY = "pending_overlay_prompt"
     }
 }
 

@@ -31,8 +31,16 @@ data class IosWorkspacePreferences(
     val enabled: Boolean = false,
 )
 
+@Serializable
+data class IosOverlayPreferences(
+    val assistantId: String? = null,
+    val autoStartStt: Boolean = true,
+    val autoSendOnSttFinish: Boolean = false,
+    val autoReadReply: Boolean = true,
+)
+
 internal const val ANDROID_INTEGRATION_UNAVAILABLE_REASON =
-    "Android share trampolines remain activity-owned. iOS hosts the assistant overlay in-process and ingests clipboard share-in through PortableSharePayload."
+    "Android Assist is a translucent activity. iOS uses the in-process overlay, Siri App Intent \"Ask LastChat\", and lastchat://overlay deep links through PortableSharePayload / pending_overlay_prompt."
 
 internal const val WORKSPACE_UNAVAILABLE_REASON =
     UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON

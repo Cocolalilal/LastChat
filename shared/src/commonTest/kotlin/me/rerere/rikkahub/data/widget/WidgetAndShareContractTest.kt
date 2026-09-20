@@ -14,6 +14,7 @@ class WidgetAndShareContractTest {
         assertEquals("group.lastchat.rikkafork.cocolal", AssistantWidgetSnapshot.USER_DEFAULTS_SUITE)
         assertEquals("assistant_widget_snapshot", AssistantWidgetSnapshot.USER_DEFAULTS_KEY)
         assertEquals("pending_share_text", PortableSharePayload.PENDING_SHARE_TEXT_KEY)
+        assertEquals("pending_overlay_prompt", PortableSharePayload.PENDING_OVERLAY_PROMPT_KEY)
     }
 
     @Test

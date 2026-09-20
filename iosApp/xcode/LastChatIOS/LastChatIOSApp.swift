@@ -1,6 +1,7 @@
 import SwiftUI
 import BackgroundTasks
 import UserNotifications
+import AppIntents
 import LastChatUI
 
 @main
@@ -11,7 +12,45 @@ struct LastChatIOSApp: App {
         WindowGroup {
             LastChatRootView()
                 .ignoresSafeArea()
+                .onOpenURL { url in
+                    guard url.scheme?.lowercased() == "lastchat" else { return }
+                    let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                        .queryItems?
+                        .first(where: { $0.name == "text" })?
+                        .value
+                    MainViewControllerKt.HandleIosAssistantOverlayDeepLink(text: text)
+                }
         }
+    }
+}
+
+struct AskLastChatIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ask LastChat"
+    static var description = IntentDescription("Open LastChat's assistant overlay.")
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Prompt")
+    var prompt: String?
+
+    func perform() async throws -> some IntentResult {
+        let defaults = UserDefaults(suiteName: "group.lastchat.rikkafork.cocolal")
+        defaults?.set(prompt ?? "", forKey: "pending_overlay_prompt")
+        defaults?.synchronize()
+        return .result()
+    }
+}
+
+struct LastChatShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: AskLastChatIntent(),
+            phrases: [
+                "Ask \(.applicationName)",
+                "Open \(.applicationName) assistant"
+            ],
+            shortTitle: "Ask LastChat",
+            systemImageName: "bubble.left.and.bubble.right"
+        )
     }
 }
 

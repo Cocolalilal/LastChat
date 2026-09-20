@@ -39,6 +39,7 @@ e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWith
 
 Spontaneous messages use the same pattern (`lastchat.rikkafork.cocolal.ios.spontaneous.refresh`) plus a 30-minute in-process fallback. Assistants imported with `enableSpontaneous` run through `PortableTaskScheduler`. The iOS Assistant settings screen now exposes enable, active hours, minimum gap, and optional prompt so the flag is not stuck default-false.
 Chat storage maintenance uses `lastchat.rikkafork.cocolal.ios.storage.refresh` plus a daily in-process fallback and a Data settings "Run storage maintenance" action. It deletes unreferenced `uploads`/`images`/`attachments` files through `PortableChatStorageMaintenance`.
+The digital assistant overlay is the in-process Compose sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=`, and long-press on the overlay icon. Those paths write App Group `pending_overlay_prompt` or call `IosAppController.openOverlayFromExternal`.
 
 iOS treats `earliestBeginDate` as a lower bound rather than an exact alarm; the
 existing foreground jobs remain active as fallbacks.
@@ -85,8 +86,9 @@ Settings now opens on the same compact grouped-card renderer used by Android:
 matching section typography/insets, 24 dp group clipping, 10 dp rows, paint
 tokens, 20 by 18 dp home-row padding, rounded icons, and spring press behavior.
 The compact home exposes Android's full top-level hierarchy. Display,
-Assistant, Providers, and Data navigate to working iOS editors; unported routes
-show an explicit unavailable detail. At Android's same 840 by 600 dp breakpoint
+Assistant, Providers, Search, TTS, STT, MCP, Web, Backup, Overlay, Developer,
+and Data navigate to working iOS editors; Android-only Assist/PRoot details stay
+explicit. At Android's same 840 by 600 dp breakpoint
 iOS switches to the source-shared 336 dp adaptive pane, including identical
 grouping, expandable children, selected paint, corner morphing, row heights,
 press scale, and animation timing. The working Assistant, Provider,

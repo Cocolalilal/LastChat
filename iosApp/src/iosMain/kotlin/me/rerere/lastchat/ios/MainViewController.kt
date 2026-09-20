@@ -93,6 +93,10 @@ fun RunIosStorageBackgroundMaintenance(completion: (Boolean) -> Unit) {
     controller.runStorageBackgroundMaintenance(completion)
 }
 
+fun HandleIosAssistantOverlayDeepLink(text: String?) {
+    controller.openOverlayFromExternal(text.orEmpty())
+}
+
 fun MainViewController(): UIViewController {
     lateinit var viewController: UIViewController
     val filePicker = IosPlatformFilePicker(platformServices.fileStore) { viewController }

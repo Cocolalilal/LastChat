@@ -28,6 +28,8 @@ interface PlatformWidgetStore {
     fun clear()
 
     fun consumePendingShareText(): String? = null
+
+    fun consumePendingOverlayPrompt(): String? = null
 }
 
 class NoOpWidgetStore : PlatformWidgetStore {

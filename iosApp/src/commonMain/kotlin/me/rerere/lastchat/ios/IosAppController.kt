@@ -40,6 +40,7 @@ import me.rerere.ai.generation.PortableChatEngine
 import me.rerere.ai.generation.PortableChatStorageMaintenance
 import me.rerere.ai.generation.PortableConversationQuery
 import me.rerere.ai.generation.PortableConversationRecord
+import me.rerere.ai.generation.PortableDailyActivity
 import me.rerere.ai.generation.PortableSpontaneousCandidate
 import me.rerere.ai.generation.PortableSpontaneousMessaging
 import me.rerere.ai.generation.PortableSpontaneousRelation
@@ -61,6 +62,7 @@ import me.rerere.ai.generation.PortableToolAssemblyOptions
 import me.rerere.ai.generation.PortableToolRuntimes
 import me.rerere.ai.generation.PortableTransformerContext
 import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.PortableUsageTotals
 import me.rerere.ai.generation.PortableWorkspaceReminder
 import me.rerere.ai.generation.assemblePortableTools
 import me.rerere.ai.generation.bytesDocumentRuntime
@@ -185,6 +187,7 @@ data class IosAppearancePreferences(
     val showAssistantBubbles: Boolean = true,
     val fontSizeRatio: Float = 1.0f,
     val rpStyleRules: List<IosRpStyleRule> = emptyList(),
+    val developerMode: Boolean = false,
 )
 
 @Serializable
@@ -438,6 +441,9 @@ data class IosAppState(
     val onDeviceWorkspaceUnavailableReason: String =
         UnavailableOnDeviceWorkspaceRuntime.DEFAULT_UNAVAILABLE_REASON,
     val overlayVisible: Boolean = false,
+    val overlay: IosOverlayPreferences = IosOverlayPreferences(),
+    val dailyActivity: List<PortableDailyActivity> = emptyList(),
+    val usageTotals: PortableUsageTotals = PortableUsageTotals(),
     val hasApiKey: Boolean = false,
     val hasSearchApiKey: Boolean = false,
     val hasTtsApiKey: Boolean = false,
@@ -701,6 +707,7 @@ class IosAppController(
                 favoriteModels = stored?.favoriteModels.orEmpty(),
                 spontaneousQuietUntil = stored?.spontaneousQuietUntil ?: 0L,
                 lastSpontaneousAssistantId = stored?.lastSpontaneousAssistantId,
+                overlay = stored?.overlay ?: IosOverlayPreferences(),
                 onDeviceLlmAvailable = onDeviceLlm.available,
                 onDeviceLlmUnavailableReason = onDeviceLlm.unavailableReason
                     ?: UnavailableOnDeviceLlmRuntime.DEFAULT_UNAVAILABLE_REASON,
@@ -754,6 +761,11 @@ class IosAppController(
             widgetStore.consumePendingShareText()?.takeIf { it.isNotBlank() }?.let { pending ->
                 ingestShareText(pending)
             }
+            widgetStore.consumePendingOverlayPrompt()?.let { pending ->
+                openOverlayFromExternal(pending)
+            }
+            conversationStore.backfillDailyActivityIfNeeded()
+            refreshAnalytics()
         }
     }
 
@@ -1011,11 +1023,28 @@ class IosAppController(
     }
 
     fun showAssistantOverlay() {
+        val overlay = mutableState.value.overlay
+        val overlayAssistantId = overlay.assistantId
+        if (overlayAssistantId != null) {
+            selectAssistant(overlayAssistantId)
+        }
+        val current = mutableState.value
         mutableState.update { it.copy(overlayVisible = true, error = null) }
+        if (overlay.autoStartStt && current.stt.enabled && current.hasSttApiKey) {
+            startSpeechRecognition()
+        }
     }
 
     fun hideAssistantOverlay() {
         mutableState.update { it.copy(overlayVisible = false) }
+    }
+
+    fun openOverlayFromExternal(prompt: String) {
+        showAssistantOverlay()
+        val text = prompt.trim()
+        if (text.isNotBlank()) {
+            send(text)
+        }
     }
 
     fun ingestShare(payload: PortableSharePayload) {
@@ -1421,7 +1450,12 @@ class IosAppController(
                         language = snapshot.stt.language,
                     ),
                 )
-            }.onSuccess(onTranscript).onFailure { failure ->
+            }.onSuccess { transcript ->
+                onTranscript(transcript)
+                if (snapshot.overlayVisible && snapshot.overlay.autoSendOnSttFinish && transcript.isNotBlank()) {
+                    send(transcript)
+                }
+            }.onFailure { failure ->
                 mutableState.update { it.copy(error = failure.message ?: "Speech transcription failed") }
             }
         }
@@ -1528,6 +1562,32 @@ class IosAppController(
                     )
                 },
             )
+        }
+        persistAsync()
+    }
+
+    fun saveOverlaySettings(
+        assistantId: String?,
+        autoStartStt: Boolean,
+        autoSendOnSttFinish: Boolean,
+        autoReadReply: Boolean,
+    ) {
+        mutableState.update { current ->
+            current.copy(
+                overlay = IosOverlayPreferences(
+                    assistantId = assistantId?.takeIf { id -> current.assistants.any { it.id == id } },
+                    autoStartStt = autoStartStt,
+                    autoSendOnSttFinish = autoSendOnSttFinish,
+                    autoReadReply = autoReadReply,
+                ),
+            )
+        }
+        persistAsync()
+    }
+
+    fun saveDeveloperMode(enabled: Boolean) {
+        mutableState.update { current ->
+            current.copy(appearance = current.appearance.copy(developerMode = enabled))
         }
         persistAsync()
     }
@@ -2179,6 +2239,8 @@ class IosAppController(
                 it.copy(generating = true, pendingAttachments = emptyList(), error = null)
             }
             persist()
+            conversationStore.recordDailyActivity()
+            refreshAnalytics()
 
             val model = target.model
             val selectedMemories = runCatching {
@@ -2211,8 +2273,17 @@ class IosAppController(
             } finally {
                 mutableState.update { it.copy(generating = false) }
                 persist()
+                refreshAnalytics()
                 if (generationSucceeded && snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE) {
                     scheduleAdaptiveMemory(conversation.id)
+                }
+                if (generationSucceeded && snapshot.overlayVisible && snapshot.overlay.autoReadReply) {
+                    val reply = mutableState.value.selectedConversation?.currentMessages
+                        ?.lastOrNull { it.role == MessageRole.ASSISTANT }
+                    val replyText = reply?.parts?.filterIsInstance<UIMessagePart.Text>()
+                        ?.joinToString("\n") { it.text }
+                        .orEmpty()
+                    if (replyText.isNotBlank()) speak(replyText)
                 }
                 generationJob = null
             }
@@ -4498,6 +4569,12 @@ class IosAppController(
         scope.launch { persist() }
     }
 
+    private suspend fun refreshAnalytics() {
+        val activity = conversationStore.dailyActivity()
+        val totals = conversationStore.usageTotals()
+        mutableState.update { it.copy(dailyActivity = activity, usageTotals = totals) }
+    }
+
     private suspend fun persist() = persistMutex.withLock {
         val snapshot = mutableState.value
         persistConversations(snapshot.conversations)
@@ -4535,6 +4612,7 @@ class IosAppController(
             favoriteModels = snapshot.favoriteModels,
             spontaneousQuietUntil = snapshot.spontaneousQuietUntil,
             lastSpontaneousAssistantId = snapshot.lastSpontaneousAssistantId,
+            overlay = snapshot.overlay,
         )
         fileStore.writeBytes(STATE_PATH, json.encodeToString(stored).encodeToByteArray())
     }
@@ -4787,6 +4865,7 @@ private data class IosStoredState(
     val favoriteModels: List<String> = emptyList(),
     val spontaneousQuietUntil: Long = 0L,
     val lastSpontaneousAssistantId: String? = null,
+    val overlay: IosOverlayPreferences = IosOverlayPreferences(),
 )
 
 internal fun IosTtsProviderType.displayName(): String = when (this) {

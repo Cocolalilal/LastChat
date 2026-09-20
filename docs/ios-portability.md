@@ -484,7 +484,12 @@ Current iOS app status:
   also go through that store: Room keeps SQL `LIMIT`/`OFFSET` + LIKE search
   and DAO-backed 12-month usage totals; iOS `JsonFilePortableConversationStore`
   filters/sorts in memory and bumps `observeListVersion` on save/delete.
-  Android ChatVM paging, MenuVM usage stats, Ktor `/api/conversations` plus
+  Daily-activity heatmap days live on the same store (`recordDailyActivity` /
+  `observeDailyActivity`); Android Room keeps `DailyActivityDAO` behind the
+  adapter, iOS JSON persists a sidecar that survives conversation deletion.
+  Displayed 12-month usage totals use one formula on both hosts: live chats
+  supply conversation/token counts, message count is
+  max(heatmap-in-window, selected-messages-in-window). Android ChatVM paging, MenuVM usage stats, Ktor `/api/conversations` plus
   `/paged`/`/search`/`/stream`, and iOS `PortableWebApiRouter` paged/search
   callbacks all call the store rather than `ConversationRepository` list
   APIs. iOS conversation CRUD uses the same
@@ -505,8 +510,9 @@ Current iOS app status:
   `PortableSettingsStore` remain the platform-agnostic persistence
   contracts; Room and the iOS file store remain the backing implementations. iOS on-device runtimes stay honest
   unavailable shims. The assistant overlay is an in-process Compose
-  sheet that also ingests clipboard/App Group share-in through
-  `PortableSharePayload`. Xcode screenshot QA is still required before 1:1
+  sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep
+  links, and App Group `pending_overlay_prompt`. Overlay settings (assistant,
+  auto-STT, auto-send, auto-read) persist on iOS. Xcode screenshot QA is still required before 1:1
   visual sign-off. Live LiteRT-LM and PRoot remain Android-only.
 
 On macOS:

@@ -14,6 +14,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -120,6 +122,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Assistant
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -163,6 +166,7 @@ import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.lastchat.ios.backup.IosBackupImportReport
 import me.rerere.common.platform.PlatformHapticPattern
 import me.rerere.common.platform.PlatformHaptics
+import me.rerere.ai.generation.PortableConversationQueries
 import me.rerere.common.calendar.CalendarHeatmapDay
 import me.rerere.common.calendar.CalendarMonth
 import me.rerere.rikkahub.ui.components.chat.BubblePosition
@@ -253,6 +257,7 @@ private enum class IosSettingsSection(val title: String) {
     Backup("Backup"),
     BackupWebDav("WebDAV backup"),
     About("About"),
+    Developer("Developer"),
     Unavailable("Unavailable"),
 }
 
@@ -427,6 +432,8 @@ fun LastChatIosApp(
                     onBackupWebDav = controller::backupToWebDav,
                     onRestoreWebDav = controller::restoreFromWebDav,
                     onDeleteWebDav = controller::deleteWebDavBackup,
+                    onSaveOverlaySettings = controller::saveOverlaySettings,
+                    onSaveDeveloperMode = controller::saveDeveloperMode,
                     onPickBackupFile = { filePicker.pickFile(it) },
                     onRestoreBackup = controller::restoreAndroidBackup,
                     platformHaptics = platformHaptics,
@@ -463,7 +470,7 @@ fun LastChatIosApp(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ChatPage(
     state: IosAppState,
@@ -586,7 +593,12 @@ private fun ChatPage(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onOpenOverlay) {
+                    Box(
+                        modifier = Modifier.combinedClickable(
+                            onClick = onOpenOverlay,
+                            onLongClick = onOpenOverlay,
+                        ),
+                    ) {
                         Icon(Icons.Rounded.Assistant, contentDescription = "Assistant overlay")
                     }
                     IconButton(onClick = onShareConversation) {
@@ -1561,18 +1573,20 @@ private fun StatisticsPage(
     platformHaptics: PlatformHaptics,
     onBack: () -> Unit,
 ) {
-    val messages = state.conversations.flatMap { it.currentMessages }
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    val heatmapData = remember(messages) {
-        messages
-            .groupingBy { message -> message.createdAt.date }
-            .eachCount()
-            .map { (date, count) -> CalendarHeatmapDay(date, count) }
-            .sortedBy { it.date }
+    val heatmapData = remember(state.dailyActivity) {
+        state.dailyActivity.mapNotNull { entry ->
+            val date = PortableConversationQueries.parseIsoDate(entry.date) ?: return@mapNotNull null
+            CalendarHeatmapDay(date, entry.messageCount)
+        }.sortedBy { it.date }
     }
-    val promptTokens = messages.sumOf { it.usage?.promptTokens?.toLong() ?: 0L }
-    val completionTokens = messages.sumOf { it.usage?.completionTokens?.toLong() ?: 0L }
-    val cachedTokens = messages.sumOf { it.usage?.cachedTokens?.toLong() ?: 0L }
+    val totals = state.usageTotals
+    val promptTokens = totals.inputTokens
+    val completionTokens = totals.outputTokens
+    val cachedTokens = totals.cachedTokens
+    val emptyStats = heatmapData.none { it.count > 0 } &&
+        totals.conversationCount == 0L &&
+        totals.messageCount == 0L
     val neutralContainer = if (darkTheme) {
         MaterialTheme.colorScheme.surfaceContainerHigh
     } else {
@@ -1605,7 +1619,7 @@ private fun StatisticsPage(
                     messageCountText = { count ->
                         "${formatCompactCount(count)} ${if (count == 1L) "message" else "messages"}"
                     },
-                    showEmptyState = messages.isEmpty(),
+                    showEmptyState = emptyStats,
                     darkTheme = darkTheme,
                     onMonthSelected = {
                         platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -1616,7 +1630,7 @@ private fun StatisticsPage(
             item {
                 LastChatStatCard(
                     title = "Conversations",
-                    value = formatCompactCount(state.conversations.size.toLong()),
+                    value = formatCompactCount(totals.conversationCount),
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.fillMaxWidth().fillMaxHeight(),
@@ -1630,7 +1644,7 @@ private fun StatisticsPage(
                 ) {
                     LastChatStatCard(
                         title = "Messages",
-                        value = formatCompactCount(messages.size.toLong()),
+                        value = formatCompactCount(totals.messageCount),
                         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -1861,6 +1875,8 @@ private fun SettingsPage(
     onBackupWebDav: () -> Unit,
     onRestoreWebDav: (String) -> Unit,
     onDeleteWebDav: (String) -> Unit,
+    onSaveOverlaySettings: (String?, Boolean, Boolean, Boolean) -> Unit,
+    onSaveDeveloperMode: (Boolean) -> Unit,
     onPickBackupFile: ((Result<PlatformPickedFile?>) -> Unit) -> Unit,
     onRestoreBackup: (String, (Result<IosBackupImportReport>) -> Unit) -> Unit,
     platformHaptics: PlatformHaptics,
@@ -1984,6 +2000,7 @@ private fun SettingsPage(
             "Backup", "BackupLocal" -> section = IosSettingsSection.Backup
             "BackupWebDav" -> section = IosSettingsSection.BackupWebDav
             "About" -> section = IosSettingsSection.About
+            "Developer" -> section = IosSettingsSection.Developer
             else -> {
                 unavailableDestinationId = destinationId
                 unavailableDestinationTitle = title
@@ -2014,11 +2031,14 @@ private fun SettingsPage(
             IosSettingsSection.Backup -> activeDestinationId.ifBlank { "Backup" }
             IosSettingsSection.BackupWebDav -> "BackupWebDav"
             IosSettingsSection.About -> "About"
+            IosSettingsSection.Developer -> "Developer"
             IosSettingsSection.Unavailable -> unavailableDestinationId
             IosSettingsSection.Home -> ""
         }
         val selectedMainId = iosSettingsMainDestination(selectedPaneId)
-        val paneGroups = remember { iosSettingsPaneGroups() }
+        val paneGroups = remember(state.appearance.developerMode) {
+            iosSettingsPaneGroups(developerMode = state.appearance.developerMode)
+        }
         Row(
             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         ) {
@@ -2232,6 +2252,16 @@ private fun SettingsPage(
                             onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
                             onClick = { openSettingsDestination("About", "About") },
                         )
+                        if (state.appearance.developerMode) {
+                            LastChatSettingGroupItem(
+                                title = "Developer",
+                                darkTheme = darkTheme,
+                                icon = { Icon(Icons.Rounded.Build, null, Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                onClick = { openSettingsDestination("Developer", "Developer") },
+                            )
+                        }
                     }
                 }
             }
@@ -2780,6 +2810,32 @@ private fun SettingsPage(
                                         }
                                         Text(
                                             selectedModel?.displayName?.ifBlank { selectedModel.modelId } ?: "Select model",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                        LastChatModelFeatureCard(
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.Mic, null) },
+                            title = { Text("Speech-to-text", maxLines = 1) },
+                            description = { Text("OpenAI-compatible transcriptions") },
+                            actions = {
+                                Box(Modifier.weight(1f)) {
+                                    TextButton(
+                                        onClick = {
+                                            openSettingsDestination("SpeechToText", "Speech-to-text")
+                                        },
+                                    ) {
+                                        Text(
+                                            if (state.stt.enabled) {
+                                                state.stt.model.ifBlank { "Configured" }
+                                            } else {
+                                                "Configure"
+                                            },
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             style = MaterialTheme.typography.bodySmall,
@@ -3682,6 +3738,17 @@ private fun SettingsPage(
                         }
                     }
                 }
+                item {
+                    LastChatSettingGroupItem(
+                        title = "Speech-to-text",
+                        subtitle = "OpenAI-compatible transcriptions",
+                        darkTheme = darkTheme,
+                        icon = { Icon(Icons.Rounded.Mic, null, Modifier.size(20.dp)) },
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                        onClick = { openSettingsDestination("SpeechToText", "Speech-to-text") },
+                    )
+                }
             }
             if (section == IosSettingsSection.Appearance) {
                 item {
@@ -3885,7 +3952,44 @@ private fun SettingsPage(
                                         }
                                     }
                                 }
+                                LastChatFormItem(
+                                    label = { Text("Developer mode") },
+                                    description = { Text("Unlocks the Developer destination for overlay and analytics diagnostics") },
+                                    tail = {
+                                        Switch(
+                                            checked = state.appearance.developerMode,
+                                            onCheckedChange = onSaveDeveloperMode,
+                                        )
+                                    },
+                                )
                             }
+                            LastChatSettingGroupItem(
+                                title = "Fonts",
+                                subtitle = "Choose the app-wide typeface",
+                                darkTheme = darkTheme,
+                                icon = { Icon(Icons.Rounded.Tune, null, Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                onClick = { openSettingsDestination("Fonts", "Fonts") },
+                            )
+                            LastChatSettingGroupItem(
+                                title = "UI customization",
+                                subtitle = "Chat presentation and content scale",
+                                darkTheme = darkTheme,
+                                icon = { Icon(Icons.Rounded.Brush, null, Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                onClick = { openSettingsDestination("UiCustomization", "UI customization") },
+                            )
+                            LastChatSettingGroupItem(
+                                title = "Roleplay optimizations",
+                                subtitle = "Color roleplay and Markdown patterns in chat",
+                                darkTheme = darkTheme,
+                                icon = { Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                                onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                                onClick = { openSettingsDestination("RpOptimizations", "Roleplay optimizations") },
+                            )
                         } else {
                             LastChatSettingGroupInputItem(
                                 title = "UI customization",
@@ -4015,6 +4119,15 @@ private fun SettingsPage(
                                 Text(if (restoringBackup) "Restoring…" else "Restore from file")
                             }
                         }
+                        LastChatSettingGroupItem(
+                            title = "WebDAV backup",
+                            subtitle = "Cloud sync using the same portable archive as Android",
+                            darkTheme = darkTheme,
+                            icon = { Icon(Icons.Rounded.CloudUpload, null, Modifier.size(20.dp)) },
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                            onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                            onClick = { openSettingsDestination("BackupWebDav", "WebDAV backup") },
+                        )
                     }
                 }
             }
@@ -4034,9 +4147,31 @@ private fun SettingsPage(
             }
             if (section == IosSettingsSection.Skills) {
                 item { IosSkillsSettings(state, darkTheme, onSavePromptInjections) }
+                item {
+                    LastChatSettingGroupItem(
+                        title = "Lorebooks",
+                        subtitle = "World info and keyword activation",
+                        darkTheme = darkTheme,
+                        icon = { Icon(Icons.Rounded.Folder, null, Modifier.size(20.dp)) },
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                        onClick = { openSettingsDestination("Lorebooks", "Lorebooks") },
+                    )
+                }
             }
             if (section == IosSettingsSection.Lorebooks) {
                 item { IosLorebookSettings(state, darkTheme, onSavePromptInjections) }
+                item {
+                    LastChatSettingGroupItem(
+                        title = "Skills",
+                        subtitle = "Prompt skills and manage_skills",
+                        darkTheme = darkTheme,
+                        icon = { Icon(Icons.Rounded.Code, null, Modifier.size(20.dp)) },
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+                        onHaptic = { platformHaptics.perform(PlatformHapticPattern.Pop) },
+                        onClick = { openSettingsDestination("Skills", "Skills") },
+                    )
+                }
             }
             if (section == IosSettingsSection.Mcp) {
                 item { IosMcpSettings(state, darkTheme, onSaveMcpServers, onRefreshMcpTools) }
@@ -4051,7 +4186,10 @@ private fun SettingsPage(
                 item { IosWorkspaceSettings(state, darkTheme) }
             }
             if (section == IosSettingsSection.AndroidIntegration) {
-                item { IosAndroidIntegrationSettings(darkTheme) }
+                item { IosAndroidIntegrationSettings(state, darkTheme, onSaveOverlaySettings) }
+            }
+            if (section == IosSettingsSection.Developer) {
+                item { IosDeveloperSettings(state, darkTheme, onSaveDeveloperMode) }
             }
             if (section == IosSettingsSection.Unavailable) {
                 item {
@@ -4599,7 +4737,7 @@ private fun ReportSection(title: String, entries: List<String>) {
     }
 }
 
-private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
+private fun iosSettingsPaneGroups(developerMode: Boolean = false): List<LastChatSettingsPaneGroup> {
     val assistantChildren = listOf(
         LastChatSettingsPaneEntry("AssistantMemory", "Memory", Icons.Rounded.Memory),
         LastChatSettingsPaneEntry("AssistantTools", "Tools", Icons.Rounded.Extension),
@@ -4666,9 +4804,12 @@ private fun iosSettingsPaneGroups(): List<LastChatSettingsPaneGroup> {
         LastChatSettingsPaneGroup(
             id = "about",
             title = "About",
-            entries = listOf(
-                LastChatSettingsPaneEntry("About", "About", Icons.Rounded.Info),
-            ),
+            entries = buildList {
+                add(LastChatSettingsPaneEntry("About", "About", Icons.Rounded.Info))
+                if (developerMode) {
+                    add(LastChatSettingsPaneEntry("Developer", "Developer", Icons.Rounded.Build))
+                }
+            },
         ),
     )
 }
@@ -4763,7 +4904,7 @@ private fun IosAssistantOverlaySheet(
         ) {
             Text("Assistant overlay", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "Same composer as Android's digital assistant overlay. Share-in pastes clipboard text into a new chat.",
+                "Same composer as Android's digital assistant overlay. Siri \"Ask LastChat\", lastchat://overlay, and long-press on the overlay icon all open this sheet. Share-in pastes clipboard text into a new chat.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

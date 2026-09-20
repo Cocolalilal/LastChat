@@ -37,4 +37,6 @@ class IosPlatformWidgetStore : PlatformWidgetStore {
     }
 
     override fun consumePendingShareText(): String? = IosAppGroupDefaults.consumePendingShareText()
+
+    override fun consumePendingOverlayPrompt(): String? = IosAppGroupDefaults.consumePendingOverlayPrompt()
 }

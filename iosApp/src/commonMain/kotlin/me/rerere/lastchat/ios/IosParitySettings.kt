@@ -504,13 +504,62 @@ internal fun IosWorkspaceSettings(state: IosAppState, darkTheme: Boolean) {
 }
 
 @Composable
-internal fun IosAndroidIntegrationSettings(darkTheme: Boolean) {
+internal fun IosAndroidIntegrationSettings(
+    state: IosAppState,
+    darkTheme: Boolean,
+    onSaveOverlay: (String?, Boolean, Boolean, Boolean) -> Unit,
+) {
+    var overlayAssistantId by remember(state.overlay.assistantId) {
+        mutableStateOf(state.overlay.assistantId)
+    }
+    var autoStartStt by remember(state.overlay.autoStartStt) { mutableStateOf(state.overlay.autoStartStt) }
+    var autoSend by remember(state.overlay.autoSendOnSttFinish) {
+        mutableStateOf(state.overlay.autoSendOnSttFinish)
+    }
+    var autoRead by remember(state.overlay.autoReadReply) { mutableStateOf(state.overlay.autoReadReply) }
     LastChatSettingsGroup(title = "Platform integrations", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
         LastChatSettingGroupInputItem(
             title = "Digital assistant overlay",
-            subtitle = "In-process Compose overlay plus clipboard share-in, using the same chat send path as Android.",
+            subtitle = "Siri shortcut \"Ask LastChat\", lastchat://overlay deep links, and the in-app overlay composer share the same send path as Android Assist.",
             darkTheme = darkTheme,
-        ) {}
+        ) {
+            LastChatFormItem(label = { Text("Overlay assistant") }) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    state.assistants.forEach { assistant ->
+                        val selected = (overlayAssistantId ?: state.assistant.id) == assistant.id
+                        if (selected) {
+                            Button(onClick = {}) { Text(assistant.name) }
+                        } else {
+                            TextButton(onClick = { overlayAssistantId = assistant.id }) {
+                                Text(assistant.name)
+                            }
+                        }
+                    }
+                }
+            }
+            LastChatFormItem(
+                label = { Text("Start speech-to-text when overlay opens") },
+                tail = {
+                    Switch(checked = autoStartStt, onCheckedChange = { autoStartStt = it })
+                },
+            )
+            LastChatFormItem(
+                label = { Text("Send when transcription finishes") },
+                tail = {
+                    Switch(checked = autoSend, onCheckedChange = { autoSend = it })
+                },
+            )
+            LastChatFormItem(
+                label = { Text("Read replies aloud") },
+                tail = {
+                    Switch(checked = autoRead, onCheckedChange = { autoRead = it })
+                },
+            )
+            Button(
+                onClick = { onSaveOverlay(overlayAssistantId, autoStartStt, autoSend, autoRead) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save overlay settings") }
+        }
         LastChatSettingGroupInputItem(
             title = "Share sheet",
             subtitle = "Conversation export uses the iOS share sheet (UIActivityViewController).",
@@ -529,6 +578,41 @@ internal fun IosAndroidIntegrationSettings(darkTheme: Boolean) {
         LastChatSettingGroupInputItem(
             title = "Android-only surfaces",
             subtitle = ANDROID_INTEGRATION_UNAVAILABLE_REASON,
+            darkTheme = darkTheme,
+        ) {}
+    }
+}
+
+@Composable
+internal fun IosDeveloperSettings(
+    state: IosAppState,
+    darkTheme: Boolean,
+    onSaveDeveloperMode: (Boolean) -> Unit,
+) {
+    LastChatSettingsGroup(title = "Developer", horizontalPadding = 0.dp, titleStartPadding = 0.dp) {
+        LastChatSettingGroupInputItem(
+            title = "Developer mode",
+            subtitle = "Same product knob as Android's developer destination. Live request logs stay in the Android debug page until a portable log ring is shared.",
+            darkTheme = darkTheme,
+        ) {
+            LastChatFormItem(
+                label = { Text("Enable developer tools") },
+                tail = {
+                    Switch(
+                        checked = state.appearance.developerMode,
+                        onCheckedChange = onSaveDeveloperMode,
+                    )
+                },
+            )
+        }
+        LastChatSettingGroupInputItem(
+            title = "Siri and overlays",
+            subtitle = "Ask LastChat App Intent writes pending_overlay_prompt into the App Group suite. lastchat://overlay?text= opens the same overlay.",
+            darkTheme = darkTheme,
+        ) {}
+        LastChatSettingGroupInputItem(
+            title = "Portable analytics",
+            subtitle = "${state.usageTotals.conversationCount} conversations · ${state.usageTotals.messageCount} messages · ${state.dailyActivity.size} heatmap days (survives chat deletion)",
             darkTheme = darkTheme,
         ) {}
     }

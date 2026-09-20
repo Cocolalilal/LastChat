@@ -48,6 +48,15 @@ internal object IosAppGroupDefaults {
         return value?.takeIf { it.isNotBlank() }
     }
 
+    fun consumePendingOverlayPrompt(): String? {
+        val key = PortableSharePayload.PENDING_OVERLAY_PROMPT_KEY
+        val fromDefaults = userDefaults.stringForKey(key)
+        val fromFile = readContainerFile("$key.txt")
+        if (fromDefaults == null && fromFile == null) return null
+        remove(key)
+        return fromDefaults ?: fromFile.orEmpty()
+    }
+
     private fun resolveSuiteDefaults(): NSUserDefaults {
         val suite = runCatching {
             NSUserDefaults(suiteName = suiteName)
