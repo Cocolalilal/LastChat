@@ -534,10 +534,17 @@ Current iOS app status:
   merge as Android `getEffectiveDisplaySetting`). Dark surfaces stay true-black
   in CMP via `withLastChatAmoledSurface` without Material You, matching
   Android's always-on OLED canvas. The composer Picker opens the in-chat model
-  sheet instead of dumping to Settings. Remaining 1:1 gaps: Simulator/Xcode
-  screenshot QA, live LiteRT-LM / PRoot inference, custom TTF binary loading
-  for `FontSource.Custom`, variable-axis width/roundness rendering, Android
-  Assist activity chrome, and pixel-level drawer/settings screenshot sign-off.
+  sheet instead of dumping to Settings. Custom TTF/OTF files import through
+  shared `PortableCustomFontStore` + `OpenTypeFontTables` (`fvar` axes) and
+  render via `fontFamilyFromBytes` (Android file-backed Font, iOS Skia
+  `Font(identity, data)`). Width/roundness/grade apply with CMP
+  `FontVariation` `wdth`/`ROND`/`GRAD` on Google Sans Flex and imported
+  variable fonts. SillyTavern/Chub character cards (JSON V1/V2 and PNG `tEXt`
+  `chara`) import through shared `PortableCharacterCardParser`.   Remaining 1:1
+  gaps: Simulator/Xcode screenshot QA, live LiteRT-LM / PRoot inference,
+  Android Assist activity chrome, developer AI request-log ring, skills/lorebook
+  in-place editors, PNG `zTXt` character cards (KMP has no Inflater), and
+  pixel-level drawer/settings screenshot sign-off.
   The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep
   links, and App Group `pending_overlay_prompt`. Overlay settings (assistant,

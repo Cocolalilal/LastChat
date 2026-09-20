@@ -97,13 +97,15 @@ wrap/collapse, context stacks, new-chat GREETING/BIG_ICON/TEMPLATES/ACTIONS,
 generation haptics, avatars, token/reasoning chrome, toolbar-at-bottom, and
 STT-replaces-icon. `checkForUpdates` performs a live GitHub
 `releases/latest` fetch through `PlatformHttpClient`. Display also persists
-the user avatar/nickname picker, per-role `fontSettings` (applied weight/size/
-line-height/tracking; width/roundness stored for backup parity),
+the user avatar/nickname picker, per-role `fontSettings` (weight/size/
+line-height/tracking plus CMP `FontVariation` width/roundness/grade),
+imported TTF/OTF via `PortableCustomFontStore`,
 `ttsTextFilterRules` on iOS playback, `providerViewMode` LIST/GRID, and
 assistant-level DisplaySetting overrides. Dark mode uses the shared
 `withLastChatAmoledSurface` true-black canvas, matching Android's always-on
 OLED behavior without Material You. The chat composer Picker opens the same
-model sheet used in Settings.
+model sheet used in Settings. Assistants can import SillyTavern/Chub JSON or
+PNG character cards through `PortableCharacterCardParser`.
 Workspaces lists LiteRT/Sherpa catalogs and can download/delete files through
 `PortableOnDeviceModelManager`; Sherpa `.tar.bz2` archives unpack required
 files through shared `PortableTarBz2`. Inference still reports the shared unavailable
