@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.remoteConfigSettings
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -32,11 +33,13 @@ import me.rerere.rikkahub.data.datastore.withRecoveredAssistantsFromConversation
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.mergeCatalogIntoSettings
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import me.rerere.rikkahub.service.CHAT_STORAGE_MAINTENANCE_WORK_NAME
 import me.rerere.rikkahub.service.ChatStorageMaintenanceWorker
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
@@ -45,9 +48,9 @@ import me.rerere.rikkahub.service.SPONTANEOUS_WORK_INTERVAL_MINUTES
 import me.rerere.rikkahub.service.SPONTANEOUS_WORK_NAME
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.WebServerService
+import me.rerere.rikkahub.service.initializeLastChatWorkManager
 import me.rerere.rikkahub.data.search.AndroidBingSearchClient
 import java.util.concurrent.TimeUnit
-import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.inference.LocalInferenceManager
@@ -60,6 +63,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
+import me.rerere.rikkahub.ui.modifier.isHazeDetachedCoordinateCrash
 
 private const val TAG = "LastChatApp"
 private const val MEMORY_MAINTENANCE_WORK_NAME = "memory_consolidation_automatic"
@@ -84,10 +88,10 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
         startKoin {
             androidLogger()
             androidContext(this@LastChatApp)
-            workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
         SingletonImageLoader.setSafe(this)
+        installHazeDetachedCoordinateCrashGuard()
         val searchHttpClient = get<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT))
         SearchService.installPlatformHttpClient(searchHttpClient)
         SearchService.installBingSearchClient(AndroidBingSearchClient(searchHttpClient))
@@ -109,7 +113,8 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             fetchAndActivate()
         }
 
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        val workManager = initializeLastChatWorkManager()
+        workManager?.enqueueUniquePeriodicWork(
             SPONTANEOUS_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<SpontaneousWorker>(
@@ -124,7 +129,7 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                 .build()
         )
 
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        workManager?.enqueueUniquePeriodicWork(
             CHAT_STORAGE_MAINTENANCE_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<ChatStorageMaintenanceWorker>(
@@ -141,7 +146,7 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
 
         // Post-reply jobs do the normal Core + Episodic consolidation. This periodic scan is the
         // durable safety net for process death, provider failures, and restored data.
-        WorkManager.getInstance(this).apply {
+        workManager?.apply {
             cancelUniqueWork("memory_consolidation")
             cancelUniqueWork("memory_maintenance_v3")
             enqueueUniquePeriodicWork(
@@ -166,12 +171,18 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                 }
         }
 
-        get<AppScope>().launch {
-            val settings = get<SettingsStore>().settingsFlowRaw.first()
-            if (settings.webServerEnabled) {
-                WebServerService.start(this@LastChatApp, settings.webServerPort)
+        // Restricted FGS types cannot start from BOOT_COMPLETED / WorkManager process starts.
+        // Defer until the app is in the foreground (Activity), which is a permitted start path.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                get<AppScope>().launch {
+                    val settings = get<SettingsStore>().settingsFlowRaw.first()
+                    if (settings.webServerEnabled) {
+                        WebServerService.start(this@LastChatApp, settings.webServerPort)
+                    }
+                }
             }
-        }
+        })
         
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
@@ -215,6 +226,18 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             }.onFailure {
                 Log.w(TAG, "Local model metadata sync failed", it)
             }
+        }
+    }
+
+    private fun installHazeDetachedCoordinateCrashGuard() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            if (isHazeDetachedCoordinateCrash(throwable)) {
+                Log.w(TAG, "Suppressed Haze LayoutCoordinate crash after detach", throwable)
+                runCatching { get<FirebaseCrashlytics>().recordException(throwable) }
+                return@setDefaultUncaughtExceptionHandler
+            }
+            previous?.uncaughtException(thread, throwable)
         }
     }
 

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import me.rerere.common.android.Logging
 
 class ScheduledMessageReceiver : BroadcastReceiver() {
@@ -44,7 +43,7 @@ class ScheduledMessageReceiver : BroadcastReceiver() {
             )
             .build()
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
+        context.workManagerOrNull()?.enqueueUniqueWork(
             uniqueWorkName,
             androidx.work.ExistingWorkPolicy.KEEP,
             workRequest
