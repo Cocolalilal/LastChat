@@ -34,9 +34,8 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.repository.GenMediaRepository
-import me.rerere.rikkahub.data.datastore.TtsFilterMode
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
-import me.rerere.rikkahub.utils.stripMarkdown
+import me.rerere.rikkahub.utils.prepareTtsPlaybackText
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.provider.android.TTSManager
@@ -662,36 +661,10 @@ class LocalTools(
     }
 
     private fun prepareTtsText(text: String): String {
-        return applyTtsTextFilters(text).stripMarkdown().trim()
-    }
-
-    private fun applyTtsTextFilters(text: String): String {
-        val settings = settingsStore.settingsFlow.value
-        val rules = settings.displaySetting.ttsTextFilterRules.filter { it.enabled }
-        if (rules.isEmpty()) return text
-
-        var result = text
-        val onlyReadRules = rules.filter { it.mode == TtsFilterMode.ONLY_READ }
-        if (onlyReadRules.isNotEmpty()) {
-            val extracted = StringBuilder()
-            onlyReadRules.forEach { rule ->
-                val pattern = Regex.escape(rule.pattern)
-                val regex = Regex("$pattern(.+?)$pattern")
-                regex.findAll(result).forEach { match ->
-                    if (extracted.isNotEmpty()) extracted.append(" ")
-                    extracted.append(match.groupValues.getOrNull(1).orEmpty())
-                }
-            }
-            result = extracted.toString()
-        }
-
-        rules.filter { it.mode == TtsFilterMode.SKIP }.forEach { rule ->
-            val pattern = Regex.escape(rule.pattern)
-            val regex = Regex("$pattern.+?$pattern")
-            result = result.replace(regex, "")
-        }
-
-        return result
+        return prepareTtsPlaybackText(
+            text,
+            settingsStore.settingsFlow.value.displaySetting.ttsTextFilterRules,
+        )
     }
     
     /**

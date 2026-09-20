@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 import me.rerere.tts.model.PlaybackState
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
-import me.rerere.rikkahub.utils.stripMarkdown
+import me.rerere.rikkahub.utils.prepareTtsPlaybackText
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.android.TTSManager
@@ -140,9 +140,10 @@ private class CustomTtsStateImpl(
 
     override fun speak(text: String, flushCalled: Boolean, overrideSetting: TTSProviderSetting?) {
         // Apply TTS filters FIRST (before markdown stripping), so patterns like * can match
-        val filtered = applyTtsTextFilters(text)
-        val processed = filtered.stripMarkdown()
-        
+        val processed = prepareTtsPlaybackText(
+            text,
+            settingsStore.settingsFlow.value.displaySetting.ttsTextFilterRules,
+        )
         if (processed.isBlank()) {
             Log.d(TAG, "Text fully filtered, nothing to speak")
             return
@@ -155,47 +156,6 @@ private class CustomTtsStateImpl(
         }
     }
     
-    /**
-     * Apply TTS text filter rules to the text.
-     * - SKIP rules: Remove text matching the pattern
-     * - ONLY_READ rules: Extract only text matching the pattern
-     */
-    private fun applyTtsTextFilters(text: String): String {
-        val settings = settingsStore.settingsFlow.value
-        val rules = settings.displaySetting.ttsTextFilterRules.filter { it.enabled }
-        
-        if (rules.isEmpty()) return text
-        
-        var result = text
-        
-        // Check for ONLY_READ rules first (they take precedence)
-        val onlyReadRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ }
-        if (onlyReadRules.isNotEmpty()) {
-            // Extract only matched content from ONLY_READ rules
-            val extracted = StringBuilder()
-            for (rule in onlyReadRules) {
-                val pattern = Regex.escape(rule.pattern)
-                val regex = Regex("$pattern(.+?)$pattern")
-                val matches = regex.findAll(result)
-                for (match in matches) {
-                    if (extracted.isNotEmpty()) extracted.append(" ")
-                    extracted.append(match.groupValues[1])
-                }
-            }
-            result = extracted.toString()
-        }
-        
-        // Apply SKIP rules
-        val skipRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP }
-        for (rule in skipRules) {
-            val pattern = Regex.escape(rule.pattern)
-            val regex = Regex("$pattern.+?$pattern")
-            result = result.replace(regex, "")
-        }
-        
-        return result.trim()
-    }
-
     override fun stop() {
         controller.stop()
     }

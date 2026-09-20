@@ -121,19 +121,8 @@ data class RpStyleRule(
     val enabled: Boolean = true
 )
 
-@Serializable
-data class TtsTextFilterRule(
-    val id: String = kotlin.uuid.Uuid.random().toString(),
-    val pattern: String = "*",
-    val mode: TtsFilterMode = TtsFilterMode.SKIP,
-    val enabled: Boolean = true
-)
-
-@Serializable
-enum class TtsFilterMode {
-    SKIP,
-    ONLY_READ
-}
+typealias TtsTextFilterRule = me.rerere.rikkahub.utils.TtsTextFilterRule
+typealias TtsFilterMode = me.rerere.rikkahub.utils.TtsFilterMode
 
 @Serializable
 enum class TtsAutoplayMode {
