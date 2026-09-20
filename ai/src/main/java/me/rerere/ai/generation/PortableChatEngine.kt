@@ -104,6 +104,20 @@ class PortableChatEngine(
         return if (assistantId == null && limit != Int.MAX_VALUE) records.take(limit) else records
     }
 
+    suspend fun pageConversations(
+        query: PortableConversationQuery,
+    ): PortableConversationPage = store.page(query)
+
+    suspend fun searchMessages(
+        query: PortableConversationQuery,
+    ): List<PortableMessageSearchHit> = store.searchMessages(query)
+
+    suspend fun usageTotals(): PortableUsageTotals = store.usageTotals()
+
+    fun observeListVersion() = store.observeListVersion()
+
+    fun observeUsageTotals() = store.observeUsageTotals()
+
     fun editMessage(nodes: List<MessageNode>, messageId: Uuid, parts: List<UIMessagePart>): List<MessageNode> {
         return nodes.withEditedMessage(messageId, parts)
     }

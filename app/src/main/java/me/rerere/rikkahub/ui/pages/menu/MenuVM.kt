@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import me.rerere.ai.generation.PortableConversationStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.toUsageStatsEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.DayOfWeek
@@ -32,6 +34,7 @@ data class HeatmapDay(
 
 class MenuVM(
     private val conversationRepository: ConversationRepository,
+    private val conversationStore: PortableConversationStore,
     private val settingsStore: SettingsStore
 ) : ViewModel() {
     val currentAssistant = settingsStore.settingsFlow
@@ -39,7 +42,7 @@ class MenuVM(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val uiState: StateFlow<MenuUiState> = combine(
-        conversationRepository.getUsageStatsLast12MonthsFlow(),
+        conversationStore.observeUsageTotals().map { it.toUsageStatsEntity() },
         conversationRepository.getAllDailyActivityFlow()
     ) { usageStats, allActivity ->
         val today = LocalDate.now()

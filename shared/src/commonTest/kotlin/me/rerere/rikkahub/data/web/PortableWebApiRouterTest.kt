@@ -32,6 +32,25 @@ class PortableWebApiRouterTest {
         val allowed = handle("GET", "/api/conversations", authorization = "Bearer secret")
         assertEquals(200, allowed.statusCode)
         assertTrue(allowed.body.contains("\"id\":\"1\""))
+
+        val paged = handle(
+            method = "GET",
+            path = "/api/conversations/paged",
+            authorization = "Bearer secret",
+            query = mapOf("offset" to "0", "limit" to "10", "query" to "Hello"),
+        )
+        assertEquals(200, paged.statusCode)
+        assertTrue(paged.body.contains("\"id\":\"1\""))
+        assertTrue(paged.body.contains("\"hasMore\":false"))
+
+        val search = handle(
+            method = "GET",
+            path = "/api/conversations/search",
+            authorization = "Bearer secret",
+            query = mapOf("query" to "Hello"),
+        )
+        assertEquals(200, search.statusCode)
+        assertTrue(search.body.contains("\"id\":\"1\""))
     }
 
     @Test

@@ -1,10 +1,18 @@
 package me.rerere.rikkahub.data.datastore
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import me.rerere.ai.generation.PortableConversationPage
+import me.rerere.ai.generation.PortableConversationQuery
+import me.rerere.ai.generation.PortableConversationQueries
 import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableConversationStore
 import me.rerere.ai.generation.PortableDeleteOptions
+import me.rerere.ai.generation.PortableMessageSearchHit
 import me.rerere.ai.generation.PortableSaveOptions
+import me.rerere.ai.generation.PortableUsageTotals
+import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import java.time.Instant
@@ -60,6 +68,53 @@ class RoomPortableConversationStore(
         val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
         conversationRepo.finalizeConversationDeletion(uuid)
     }
+
+    override suspend fun page(query: PortableConversationQuery): PortableConversationPage {
+        val assistantId = query.assistantId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+        if (query.assistantId != null && assistantId == null) {
+            return PortableConversationPage(items = emptyList(), totalCount = 0, nextOffset = null)
+        }
+        val (items, total) = conversationRepo.pageConversations(
+            assistantId = assistantId,
+            query = query.query,
+            offset = query.offset,
+            limit = query.limit,
+            includeMessages = query.includeMessages,
+        )
+        val nextOffset = (query.offset.coerceAtLeast(0) + items.size).takeIf { it < total }
+        return PortableConversationPage(
+            items = items.map { it.toPortableRecord() },
+            totalCount = total,
+            nextOffset = nextOffset,
+        )
+    }
+
+    override suspend fun searchMessages(query: PortableConversationQuery): List<PortableMessageSearchHit> {
+        val assistantId = query.assistantId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+        if (query.assistantId != null && assistantId == null) return emptyList()
+        val (items, _) = conversationRepo.pageConversations(
+            assistantId = assistantId,
+            query = query.query,
+            offset = 0,
+            limit = 200,
+            includeMessages = true,
+        )
+        return PortableConversationQueries.searchMessages(
+            records = items.map { it.toPortableRecord() },
+            query = query.query,
+            limit = query.limit.coerceAtMost(PortableConversationQueries.MAX_SEARCH_HITS),
+        )
+    }
+
+    override suspend fun usageTotals(): PortableUsageTotals {
+        return conversationRepo.getUsageStatsLast12MonthsFlow().first().toPortableUsageTotals()
+    }
+
+    override fun observeListVersion(): Flow<Long> = conversationRepo.observeConversationListVersion()
+
+    override fun observeUsageTotals(): Flow<PortableUsageTotals> {
+        return conversationRepo.getUsageStatsLast12MonthsFlow().map { it.toPortableUsageTotals() }
+    }
 }
 
 fun Conversation.toPortableRecord(): PortableConversationRecord = PortableConversationRecord(
@@ -102,4 +157,20 @@ fun PortableConversationRecord.toConversation(): Conversation = Conversation(
     lastPruneMessageCount = lastPruneMessageCount,
     lastRefreshTime = lastRefreshTime,
     isFork = isFork,
+)
+
+fun UsageStatsEntity.toPortableUsageTotals(): PortableUsageTotals = PortableUsageTotals(
+    conversationCount = totalConversations,
+    messageCount = totalMessages,
+    inputTokens = inputTokens,
+    outputTokens = outputTokens,
+    cachedTokens = cachedTokens,
+)
+
+fun PortableUsageTotals.toUsageStatsEntity(): UsageStatsEntity = UsageStatsEntity(
+    totalConversations = conversationCount,
+    totalMessages = messageCount,
+    inputTokens = inputTokens,
+    outputTokens = outputTokens,
+    cachedTokens = cachedTokens,
 )

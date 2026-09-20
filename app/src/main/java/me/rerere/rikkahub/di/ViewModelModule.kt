@@ -22,7 +22,6 @@ val viewModelModule = module {
             id = params[0],
             context = get(),
             settingsStore = get(),
-            conversationRepo = get(),
             chatAttachmentRepository = get(),
             memoryRepository = get(),
             chatService = get(),

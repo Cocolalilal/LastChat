@@ -5,6 +5,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.rerere.ai.generation.PortableConversationPage
+import me.rerere.ai.generation.PortableMessageSearchHit
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
@@ -23,6 +25,37 @@ internal object IosWebDto {
                 add(conversationListItem(conversation, generatingId == conversation.id))
             }
         }.toString()
+
+    fun pagedConversations(
+        page: PortableConversationPage,
+        generatingId: String?,
+    ): String = buildJsonObject {
+        put(
+            "items",
+            buildJsonArray {
+                page.items.forEach { record ->
+                    add(conversationListItem(record.toIosConversation(), generatingId == record.id))
+                }
+            },
+        )
+        page.nextOffset?.let { put("nextOffset", it) }
+        put("hasMore", page.nextOffset != null)
+    }.toString()
+
+    fun searchHits(hits: List<PortableMessageSearchHit>): String = buildJsonArray {
+        hits.forEach { hit ->
+            add(
+                buildJsonObject {
+                    put("nodeId", hit.nodeId)
+                    put("messageId", hit.messageId)
+                    put("conversationId", hit.conversationId)
+                    put("title", hit.conversationTitle)
+                    put("updateAt", hit.updatedAtEpochMs)
+                    put("snippet", hit.snippet)
+                },
+            )
+        }
+    }.toString()
 
     fun conversation(conversation: IosConversation, generating: Boolean): String =
         conversationObject(conversation, generating).toString()

@@ -1,13 +1,18 @@
 package me.rerere.ai.generation
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.Serializable
 import me.rerere.ai.ui.MessageNode
 
 /**
  * Conversation persistence that both Android Room and the iOS file store implement.
  * Room cannot move to KMP in this slice, so hosts keep their engines and adapt here.
- * Android ChatService and UI-facing conversation CRUD use this as the live API;
- * paging/FTS/usage stats stay on Room.
+ * Android ChatService, UI paging, usage stats, and web conversation lists use this
+ * as the live API; Room keeps efficient SQL behind the adapter.
  */
 interface PortableConversationStore {
     suspend fun get(id: String): PortableConversationRecord?
@@ -28,6 +33,28 @@ interface PortableConversationStore {
         options: PortableDeleteOptions = PortableDeleteOptions(),
     ) {}
     suspend fun finalizeDeletion(id: String) {}
+
+    suspend fun page(query: PortableConversationQuery): PortableConversationPage =
+        PortableConversationQueries.page(list(), query)
+
+    suspend fun searchMessages(query: PortableConversationQuery): List<PortableMessageSearchHit> {
+        val records = if (query.assistantId == null) {
+            list()
+        } else {
+            listByAssistant(query.assistantId, Int.MAX_VALUE)
+        }
+        return PortableConversationQueries.searchMessages(
+            records = records,
+            query = query.query,
+            limit = query.limit.coerceAtMost(PortableConversationQueries.MAX_SEARCH_HITS),
+        )
+    }
+
+    suspend fun usageTotals(): PortableUsageTotals = PortableConversationQueries.usageTotals(list())
+
+    fun observeListVersion(): Flow<Long> = flowOf(0L)
+
+    fun observeUsageTotals(): Flow<PortableUsageTotals> = flow { emit(usageTotals()) }
 }
 
 data class PortableSaveOptions(
@@ -37,6 +64,37 @@ data class PortableSaveOptions(
 
 data class PortableDeleteOptions(
     val deleteFiles: Boolean = true,
+)
+
+data class PortableConversationQuery(
+    val assistantId: String? = null,
+    val query: String = "",
+    val offset: Int = 0,
+    val limit: Int = PortableConversationQueries.DEFAULT_PAGE_SIZE,
+    val includeMessages: Boolean = false,
+)
+
+data class PortableConversationPage(
+    val items: List<PortableConversationRecord>,
+    val totalCount: Int,
+    val nextOffset: Int? = null,
+)
+
+data class PortableMessageSearchHit(
+    val conversationId: String,
+    val conversationTitle: String,
+    val nodeId: String,
+    val messageId: String,
+    val snippet: String,
+    val updatedAtEpochMs: Long,
+)
+
+data class PortableUsageTotals(
+    val conversationCount: Long = 0,
+    val messageCount: Long = 0,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cachedTokens: Long = 0,
 )
 
 @Serializable
@@ -81,6 +139,7 @@ class InMemoryPortableConversationStore(
     initial: List<PortableConversationRecord> = emptyList(),
 ) : PortableConversationStore {
     private val conversations = LinkedHashMap<String, PortableConversationRecord>()
+    private val listVersion = MutableStateFlow(0L)
 
     init {
         initial.forEach { conversations[it.id] = it }
@@ -93,6 +152,7 @@ class InMemoryPortableConversationStore(
         options: PortableSaveOptions,
     ) {
         conversations[conversation.id] = conversation
+        bumpListVersion()
     }
 
     override suspend fun list(): List<PortableConversationRecord> =
@@ -113,9 +173,17 @@ class InMemoryPortableConversationStore(
         options: PortableDeleteOptions,
     ) {
         conversations.remove(id)
+        bumpListVersion()
     }
 
     override suspend fun finalizeDeletion(id: String) {
         conversations.remove(id)
+        bumpListVersion()
+    }
+
+    override fun observeListVersion(): Flow<Long> = listVersion.asStateFlow()
+
+    private fun bumpListVersion() {
+        listVersion.value = listVersion.value + 1
     }
 }

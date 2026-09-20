@@ -62,6 +62,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.toConversation
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.Conversation
@@ -143,7 +144,11 @@ fun Application.configureWebApi(
                 val settings = settingsStore.settingsFlow.value
                 val generationJobs = chatService.getConversationJobs().first()
                 val conversations = withContext(Dispatchers.IO) {
-                    conversationRepo.getConversationsOfAssistant(settings.assistantId).first()
+                    chatService.pageConversations(
+                        assistantId = settings.assistantId,
+                        offset = 0,
+                        limit = Int.MAX_VALUE,
+                    ).items.map { it.toConversation() }
                 }
 
                 call.respond(
@@ -278,7 +283,11 @@ private fun Route.webRoutes(
             val settings = settingsStore.settingsFlow.value
             val generationJobs = chatService.getConversationJobs().first()
             val conversations = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationsOfAssistant(settings.assistantId).first()
+                chatService.pageConversations(
+                    assistantId = settings.assistantId,
+                    offset = 0,
+                    limit = Int.MAX_VALUE,
+                ).items.map { it.toConversation() }
             }.sortedForWeb()
 
             call.respond(
@@ -302,18 +311,16 @@ private fun Route.webRoutes(
             }
 
             val generationJobs = chatService.getConversationJobs().first()
-            val conversations = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationsOfAssistant(settings.assistantId).first()
+            val page = withContext(Dispatchers.IO) {
+                chatService.pageConversations(
+                    assistantId = settings.assistantId,
+                    query = query,
+                    offset = offset,
+                    limit = limit,
+                )
             }
-                .asSequence()
-                .filter { conversation ->
-                    query.isBlank() || conversation.title.contains(query, ignoreCase = true)
-                }
-                .sortedWith(compareByDescending<Conversation> { it.isPinned }.thenByDescending { it.updateAt })
-                .toList()
-
-            val items = conversations.drop(offset).take(limit)
-            val nextOffset = (offset + items.size).takeIf { it < conversations.size }
+            val items = page.items.map { it.toConversation() }
+            val nextOffset = page.nextOffset
 
             call.respond(
                 PagedResult(
@@ -334,24 +341,17 @@ private fun Route.webRoutes(
             }
 
             val results = withContext(Dispatchers.IO) {
-                conversationRepo.getConversationsOfAssistant(settings.assistantId).first()
-            }.flatMap { conversation ->
-                conversation.safeSelectedMessages()
-                    .mapNotNull { message ->
-                        val searchableText = message.toSearchableText().trim()
-                        val snippet = searchableText.highlightSnippet(query) ?: return@mapNotNull null
-                        MessageSearchResultDto(
-                            nodeId = conversation.getMessageNodeByMessageId(message.id)?.id?.toString().orEmpty(),
-                            messageId = message.id.toString(),
-                            conversationId = conversation.id.toString(),
-                            title = conversation.title.ifBlank { "New chat" },
-                            updateAt = conversation.updateAt.toEpochMilli(),
-                            snippet = snippet,
-                        )
-                    }
+                chatService.searchConversationMessages(settings.assistantId, query)
+            }.map { hit ->
+                MessageSearchResultDto(
+                    nodeId = hit.nodeId,
+                    messageId = hit.messageId,
+                    conversationId = hit.conversationId,
+                    title = hit.conversationTitle,
+                    updateAt = hit.updatedAtEpochMs,
+                    snippet = hit.snippet,
+                )
             }
-                .sortedByDescending { it.updateAt }
-                .take(100)
 
             call.respond(results)
         }
@@ -363,27 +363,21 @@ private fun Route.webRoutes(
                     .distinctUntilChanged()
                     .collectLatest { assistantId ->
                         combine(
-                            conversationRepo.getConversationsOfAssistant(assistantId),
+                            chatService.observeConversationListVersion(),
                             chatService.getConversationJobs(),
-                        ) { conversations, generationJobs ->
-                            conversations.map { conversation ->
-                                Triple(
-                                    conversation.id,
-                                    conversation.updateAt.toEpochMilli(),
-                                    generationJobs[conversation.id] != null,
+                        ) { version, jobs -> version to jobs.keys }
+                            .distinctUntilChanged()
+                            .collect {
+                                send(
+                                    event = "invalidate",
+                                    data = JsonInstant.encodeToString(
+                                        ConversationListInvalidateEvent(
+                                            assistantId = assistantId.toString(),
+                                            timestamp = System.currentTimeMillis(),
+                                        )
+                                    ),
                                 )
                             }
-                        }.distinctUntilChanged().collect {
-                            send(
-                                event = "invalidate",
-                                data = JsonInstant.encodeToString(
-                                    ConversationListInvalidateEvent(
-                                        assistantId = assistantId.toString(),
-                                        timestamp = System.currentTimeMillis(),
-                                    )
-                                ),
-                            )
-                        }
                     }
             }
         }

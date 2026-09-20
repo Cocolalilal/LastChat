@@ -106,4 +106,47 @@ interface ConversationDAO {
     // Batch query for backfill tasks to prevent OOM
     @Query("SELECT * FROM conversationentity ORDER BY update_at DESC LIMIT :limit OFFSET :offset")
     suspend fun getBackfillDataBatch(limit: Int, offset: Int): List<ConversationEntity>
+
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageConversationsOfAssistant(assistantId: String, limit: Int, offset: Int): List<ConversationEntity>
+
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_fork as isFork FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageConversationsOfAssistantLight(assistantId: String, limit: Int, offset: Int): List<LightConversationEntity>
+
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId")
+    suspend fun countConversationsOfAssistant(assistantId: String): Int
+
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageSearchConversationsOfAssistant(
+        assistantId: String,
+        searchText: String,
+        limit: Int,
+        offset: Int,
+    ): List<ConversationEntity>
+
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_fork as isFork FROM conversationentity WHERE assistant_id = :assistantId AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageSearchConversationsOfAssistantLight(
+        assistantId: String,
+        searchText: String,
+        limit: Int,
+        offset: Int,
+    ): List<LightConversationEntity>
+
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%')")
+    suspend fun countSearchConversationsOfAssistant(assistantId: String, searchText: String): Int
+
+    @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageAllConversations(limit: Int, offset: Int): List<ConversationEntity>
+
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_fork as isFork FROM conversationentity ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageAllConversationsLight(limit: Int, offset: Int): List<LightConversationEntity>
+
+    @Query("SELECT COUNT(*) FROM conversationentity")
+    suspend fun countAllConversations(): Int
+
+    @Query("SELECT * FROM conversationentity WHERE title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC LIMIT :limit OFFSET :offset")
+    suspend fun pageSearchAllConversations(searchText: String, limit: Int, offset: Int): List<ConversationEntity>
+
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%'")
+    suspend fun countSearchAllConversations(searchText: String): Int
 }

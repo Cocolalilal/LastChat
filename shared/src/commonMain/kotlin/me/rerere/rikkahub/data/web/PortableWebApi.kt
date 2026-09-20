@@ -100,10 +100,36 @@ data class PortableWebApiActions(
 private fun notImplemented() =
     PortableWebApiResponse.json(501, """{"error":"not_implemented","code":501}""")
 
+private val CONVERSATION_LIST_OBJECT_ITEM = Regex("""\{[^{}]*\}""")
+
+private fun filterConversations(listJson: String, query: String): String {
+    if (query.isBlank()) return listJson
+    val needle = query.lowercase()
+    val items = CONVERSATION_LIST_OBJECT_ITEM.findAll(listJson).map { it.value }.filter { item ->
+        item.lowercase().contains(needle)
+    }.toList()
+    return items.joinToString(prefix = "[", postfix = "]")
+}
+
+private fun pageConversationListJson(listJson: String, offset: Int, limit: Int, query: String): String {
+    val filtered = filterConversations(listJson, query)
+    val items = CONVERSATION_LIST_OBJECT_ITEM.findAll(filtered).map { it.value }.toList()
+    val window = items.drop(offset.coerceAtLeast(0)).take(limit.coerceAtLeast(1))
+    val nextOffset = (offset + window.size).takeIf { it < items.size }
+    val nextJson = nextOffset?.toString() ?: "null"
+    return """{"items":[${window.joinToString(",")}],"nextOffset":$nextJson,"hasMore":${nextOffset != null}}"""
+}
+
 data class PortableWebApiSource(
     val webUiBundled: Boolean,
     val authRequired: Boolean,
     val conversationsListJson: String,
+    val conversationsPagedJson: (offset: Int, limit: Int, query: String) -> String = { offset, limit, query ->
+        pageConversationListJson(conversationsListJson, offset, limit, query)
+    },
+    val conversationsSearchJson: (query: String) -> String = { query ->
+        filterConversations(conversationsListJson, query)
+    },
     val bootstrapJson: String,
     val settingsJson: String,
     val conversationJson: (String) -> String?,
@@ -238,14 +264,17 @@ object PortableWebApiRouter {
             return actions.onCreateConversation(body.orEmpty())
         }
         if (get && normalized == "/api/conversations/paged") {
-            return PortableWebApiResponse.json(
-                200,
-                """{"items":${source.conversationsListJson},"nextOffset":null,"hasMore":false}""",
-            )
+            val offset = query["offset"]?.toIntOrNull() ?: 0
+            val limit = (query["limit"]?.toIntOrNull() ?: 20).coerceIn(1, 100)
+            val q = query["query"].orEmpty().ifBlank { query["q"].orEmpty() }
+            if (offset < 0) {
+                return PortableWebApiResponse.json(400, """{"error":"offset must be >= 0","code":400}""")
+            }
+            return PortableWebApiResponse.json(200, source.conversationsPagedJson(offset, limit, q))
         }
         if (get && normalized == "/api/conversations/search") {
-            val q = query["q"].orEmpty()
-            return PortableWebApiResponse.json(200, filterConversations(source.conversationsListJson, q))
+            val q = query["query"].orEmpty().ifBlank { query["q"].orEmpty() }
+            return PortableWebApiResponse.json(200, source.conversationsSearchJson(q))
         }
         if (post && normalized == "/api/files/upload") {
             return actions.onUploadFiles(parseMultipartFiles(bodyBytes, contentType))
@@ -450,15 +479,6 @@ object PortableWebApiRouter {
         return PortableWebApiResponse.json(200, """{"token":"$token","expiresAt":$expiresAt}""")
     }
 
-    private fun filterConversations(listJson: String, query: String): String {
-        if (query.isBlank()) return listJson
-        val needle = query.lowercase()
-        val items = OBJECT_ITEM.findAll(listJson).map { it.value }.filter { item ->
-            item.lowercase().contains(needle)
-        }.toList()
-        return items.joinToString(prefix = "[", postfix = "]")
-    }
-
     fun jsonString(body: String, key: String): String? {
         val quoted = Regex(""""${Regex.escape(key)}"\s*:\s*"((?:\\.|[^"\\])*)"""").find(body)
             ?.groupValues?.getOrNull(1)
@@ -529,7 +549,6 @@ object PortableWebApiRouter {
     private val FILE_ID = Regex("^/api/files/([^/]+)$")
     private val PASSWORD_FIELD = Regex(""""password"\s*:\s*"((?:\\.|[^"\\])*)"""")
     private val TEXT_PART = Regex(""""type"\s*:\s*"text"\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"""")
-    private val OBJECT_ITEM = Regex("""\{[^{}]*\}""")
     private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
     private const val PLACEHOLDER_AI_ICON_SVG =
         """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#7a9bb8"/></svg>"""

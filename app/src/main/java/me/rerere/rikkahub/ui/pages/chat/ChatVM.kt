@@ -15,6 +15,8 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
@@ -54,7 +56,6 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
@@ -79,7 +80,6 @@ class ChatVM(
     id: String,
     private val context: Application,
     private val settingsStore: SettingsStore,
-    private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
     private val chatService: ChatService,
@@ -231,15 +231,27 @@ class ChatVM(
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(
             conversation.map { it.assistantId }.distinctUntilChanged(),
-            _searchQuery
-        ) { assistantId, query -> assistantId to query }
+            _searchQuery,
+            chatService.observeConversationListVersion(),
+        ) { assistantId, query, _ -> assistantId to query }
             .flatMapLatest { (assistantId, query) ->
-                // 根据搜索关键词决定使用哪个数据源
-                if (query.isBlank()) {
-                    conversationRepo.getConversationsOfAssistantPaging(assistantId)
-                } else {
-                    conversationRepo.searchConversationsOfAssistantPaging(assistantId, query)
-                }
+                Pager(
+                    config = PagingConfig(
+                        pageSize = 20,
+                        initialLoadSize = 40,
+                        enablePlaceholders = false,
+                    ),
+                    pagingSourceFactory = {
+                        PortableConversationPagingSource { offset, loadSize ->
+                            chatService.pageConversations(
+                                assistantId = assistantId,
+                                query = query,
+                                offset = offset,
+                                limit = loadSize,
+                            )
+                        }
+                    },
+                ).flow
             }
             .map { pagingData ->
 

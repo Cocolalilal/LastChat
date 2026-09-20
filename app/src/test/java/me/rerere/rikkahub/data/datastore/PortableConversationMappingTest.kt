@@ -2,6 +2,8 @@ package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.generation.PortableSaveOptions
+import me.rerere.ai.generation.PortableUsageTotals
+import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.model.Conversation
@@ -44,5 +46,21 @@ class PortableConversationMappingTest {
         assertTrue(restored.isPinned)
         assertTrue(restored.isFork)
         assertEquals(PortableSaveOptions().preserveConsolidation, false)
+    }
+
+    @Test
+    fun usageTotalsRoundTripThroughRoomEntity() {
+        val totals = PortableUsageTotals(
+            conversationCount = 4,
+            messageCount = 12,
+            inputTokens = 100,
+            outputTokens = 80,
+            cachedTokens = 9,
+        )
+        val entity = totals.toUsageStatsEntity()
+        assertEquals(4, entity.totalConversations)
+        assertEquals(12, entity.totalMessages)
+        assertEquals(totals, entity.toPortableUsageTotals())
+        assertEquals(0L, UsageStatsEntity().toPortableUsageTotals().conversationCount)
     }
 }

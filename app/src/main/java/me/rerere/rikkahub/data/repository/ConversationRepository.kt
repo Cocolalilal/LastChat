@@ -105,6 +105,65 @@ class ConversationRepository(
         }
     }
 
+    suspend fun pageConversations(
+        assistantId: Uuid?,
+        query: String,
+        offset: Int,
+        limit: Int,
+        includeMessages: Boolean,
+    ): Pair<List<Conversation>, Int> = withContext(Dispatchers.IO) {
+        val needle = query.trim()
+        val safeOffset = offset.coerceAtLeast(0)
+        val safeLimit = limit.coerceAtLeast(1)
+        if (assistantId != null) {
+            val id = assistantId.toString()
+            if (needle.isBlank()) {
+                val total = conversationDAO.countConversationsOfAssistant(id)
+                val items = if (includeMessages) {
+                    conversationDAO.pageConversationsOfAssistant(id, safeLimit, safeOffset)
+                        .map { conversationEntityToConversation(it) }
+                } else {
+                    conversationDAO.pageConversationsOfAssistantLight(id, safeLimit, safeOffset)
+                        .map { conversationSummaryToConversation(it) }
+                }
+                items to total
+            } else {
+                val total = conversationDAO.countSearchConversationsOfAssistant(id, needle)
+                val items = if (includeMessages) {
+                    conversationDAO.pageSearchConversationsOfAssistant(id, needle, safeLimit, safeOffset)
+                        .map { conversationEntityToConversation(it) }
+                } else {
+                    conversationDAO.pageSearchConversationsOfAssistantLight(id, needle, safeLimit, safeOffset)
+                        .map { conversationSummaryToConversation(it) }
+                }
+                items to total
+            }
+        } else if (needle.isBlank()) {
+            val total = conversationDAO.countAllConversations()
+            val items = if (includeMessages) {
+                conversationDAO.pageAllConversations(safeLimit, safeOffset)
+                    .map { conversationEntityToConversation(it) }
+            } else {
+                conversationDAO.pageAllConversationsLight(safeLimit, safeOffset)
+                    .map { conversationSummaryToConversation(it) }
+            }
+            items to total
+        } else {
+            val total = conversationDAO.countSearchAllConversations(needle)
+            val items = conversationDAO.pageSearchAllConversations(needle, safeLimit, safeOffset)
+                .map { conversationEntityToConversation(it) }
+            items to total
+        }
+    }
+
+    fun observeConversationListVersion(): Flow<Long> {
+        return conversationDAO.getAllLight().map { rows ->
+            rows.fold(0L) { acc, row ->
+                acc * 31L + row.id.hashCode() + row.updateAt + if (row.isPinned) 1L else 0L
+            }
+        }
+    }
+
     fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,

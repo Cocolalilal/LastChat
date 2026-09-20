@@ -53,7 +53,12 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.generation.PortableBackgroundTask
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableConversationPage
+import me.rerere.ai.generation.PortableConversationQuery
+import me.rerere.ai.generation.PortableConversationQueries
 import me.rerere.ai.generation.PortableDeleteOptions
+import me.rerere.ai.generation.PortableMessageSearchHit
+import me.rerere.ai.generation.PortableUsageTotals
 import me.rerere.ai.generation.PortableMcpToolBinding
 import me.rerere.ai.generation.PortablePersistenceMode
 import me.rerere.ai.generation.PortableSaveOptions
@@ -820,6 +825,44 @@ class ChatService(
                 .map { it.toConversation() }
         }
     }
+
+    suspend fun pageConversations(
+        assistantId: Uuid,
+        query: String = "",
+        offset: Int = 0,
+        limit: Int = PortableConversationQueries.DEFAULT_PAGE_SIZE,
+        includeMessages: Boolean = false,
+    ): PortableConversationPage = withContext(Dispatchers.IO) {
+        chatEngine.pageConversations(
+            PortableConversationQuery(
+                assistantId = assistantId.toString(),
+                query = query,
+                offset = offset,
+                limit = limit,
+                includeMessages = includeMessages,
+            ),
+        )
+    }
+
+    suspend fun searchConversationMessages(
+        assistantId: Uuid,
+        query: String,
+        limit: Int = PortableConversationQueries.MAX_SEARCH_HITS,
+    ): List<PortableMessageSearchHit> = withContext(Dispatchers.IO) {
+        chatEngine.searchMessages(
+            PortableConversationQuery(
+                assistantId = assistantId.toString(),
+                query = query,
+                offset = 0,
+                limit = limit,
+                includeMessages = true,
+            ),
+        )
+    }
+
+    fun observeConversationListVersion(): Flow<Long> = chatEngine.observeListVersion()
+
+    fun observeUsageTotals(): Flow<PortableUsageTotals> = chatEngine.observeUsageTotals()
 
     suspend fun hasPersistedConversation(conversationId: Uuid): Boolean {
         return loadPersistedConversation(conversationId) != null
