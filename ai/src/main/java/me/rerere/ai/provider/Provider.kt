@@ -73,6 +73,13 @@ data class TextGenerationParams(
 )
 
 @Serializable
+data class ImageGenerationInput(
+    val data: String,
+    val mimeType: String = "image/png",
+    val fileName: String = "input.png",
+)
+
+@Serializable
 data class ImageGenerationParams(
     val model: Model,
     val prompt: String,
@@ -80,4 +87,5 @@ data class ImageGenerationParams(
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    val inputImages: List<ImageGenerationInput> = emptyList(),
 )

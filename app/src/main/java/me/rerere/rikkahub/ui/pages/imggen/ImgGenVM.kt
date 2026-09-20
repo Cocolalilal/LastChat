@@ -153,7 +153,8 @@ class ImgGenVM(
                             numOfImages = _numberOfImages.value,
                             aspectRatio = _aspectRatio.value,
                             customHeaders = model.customHeaders,
-                            customBody = model.customBodies
+                            customBody = model.customBodies,
+                            inputImages = selectedInputImages(),
                         )
                         val result = providerManager.getProviderByType(provider)
                             .generateImage(providerSetting, params)
@@ -273,6 +274,30 @@ class ImgGenVM(
         return images
     }
 
+    private fun selectedInputImages(): List<me.rerere.ai.provider.ImageGenerationInput> {
+        val uri = _selectedImageUri.value ?: return emptyList()
+        return try {
+            val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
+            val bytes = inputStream?.readBytes()
+            inputStream?.close()
+            if (bytes == null) {
+                emptyList()
+            } else {
+                val mimeType = getApplication<Application>().contentResolver.getType(uri) ?: "image/jpeg"
+                val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "input.png"
+                listOf(
+                    me.rerere.ai.provider.ImageGenerationInput(
+                        data = base64Encode(bytes),
+                        mimeType = mimeType,
+                        fileName = fileName,
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read selected image for image-to-image", e)
+            emptyList()
+        }
+    }
 
     fun cancelGeneration() {
         cancelJob?.cancel()

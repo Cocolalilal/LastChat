@@ -27,6 +27,8 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.common.http.MultipartFormBody
+import me.rerere.common.http.MultipartFormPart
 import me.rerere.common.http.urlEncode
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
@@ -74,13 +76,18 @@ class ComfyUIProvider(
         }
 
         val workflow = parseWorkflow(providerSetting.workflowJson)
+        val uploadedImages = uploadInputImages(
+            providerSetting = providerSetting,
+            images = params.inputImages,
+            customHeaders = params.customHeaders,
+        )
         val requestedCount = params.numOfImages.coerceIn(1, 4)
         val items = mutableListOf<ImageGenerationItem>()
 
         repeat(requestedCount) {
             val promptId = queuePrompt(
                 providerSetting = providerSetting,
-                workflow = workflow.prepareForGeneration(providerSetting, params),
+                workflow = workflow.prepareForGeneration(providerSetting, params, uploadedImages),
                 customHeaders = params.customHeaders,
             )
             items += waitForImages(
@@ -111,6 +118,7 @@ class ComfyUIProvider(
     private fun JsonObject.prepareForGeneration(
         providerSetting: ProviderSetting.ComfyUI,
         params: ImageGenerationParams,
+        uploadedImages: List<String> = emptyList(),
     ): JsonObject {
         var updated = this
         val promptNodeId = providerSetting.promptNodeId.ifBlank {
@@ -131,11 +139,94 @@ class ComfyUIProvider(
             value = JsonPrimitive(params.model.modelId.withDefaultSafetensorsExtension()),
         )
         updated = updated.applyAspectRatio(params.aspectRatio)
+        updated = updated.applyUploadedImages(uploadedImages)
         updated = params.customBody.fold(updated) { current, body ->
             current.applyCustomBody(body)
         }
 
         return updated
+    }
+
+    private suspend fun uploadInputImages(
+        providerSetting: ProviderSetting.ComfyUI,
+        images: List<me.rerere.ai.provider.ImageGenerationInput>,
+        customHeaders: List<CustomHeader>,
+    ): List<String> {
+        if (images.isEmpty()) return emptyList()
+        return images.mapIndexed { index, image ->
+            val bytes = runCatching {
+                Base64.Default.decode(image.data.substringAfterLast(','))
+            }.getOrElse {
+                error("ComfyUI image-to-image input is not valid base64")
+            }
+            val fileName = image.fileName
+                .substringAfterLast('/')
+                .ifBlank { "input-$index.png" }
+                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val encoded = MultipartFormBody.encode(
+                parts = listOf(
+                    MultipartFormPart.file(
+                        name = "image",
+                        filename = fileName,
+                        bytes = bytes,
+                        contentType = image.mimeType.ifBlank { "image/png" },
+                    ),
+                    MultipartFormPart.text("type", "input"),
+                    MultipartFormPart.text("overwrite", "true"),
+                ),
+            )
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = providerSetting.endpoint("upload/image"),
+                    headers = customHeaders.toHeaderMap() + ("Content-Type" to encoded.contentType),
+                    body = encoded.body,
+                    mediaType = encoded.contentType,
+                    proxy = providerSetting.proxy.toPlatformProxy(),
+                )
+            )
+            val responseBody = response.body.decodeToString()
+            if (response.statusCode !in 200..299) {
+                error("ComfyUI image upload failed: ${response.statusCode} $responseBody")
+            }
+            val jsonObject = json.parseToJsonElement(responseBody) as? JsonObject
+                ?: error("Invalid ComfyUI upload response")
+            val name = jsonObject["name"]?.jsonPrimitive?.contentOrNull ?: fileName
+            val subfolder = jsonObject["subfolder"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (subfolder.isBlank()) name else "$subfolder/$name"
+        }
+    }
+
+    private fun JsonObject.applyUploadedImages(uploadedImages: List<String>): JsonObject {
+        if (uploadedImages.isEmpty()) return this
+        val nodeIds = findLoadImageNodeIds()
+        if (nodeIds.isEmpty()) {
+            error("This ComfyUI workflow has no LoadImage node for image-to-image input")
+        }
+        var updated = this
+        nodeIds.forEachIndexed { index, nodeId ->
+            val fileName = uploadedImages.getOrElse(index) { uploadedImages.first() }
+            updated = updated.setNodeInput(nodeId, "image", JsonPrimitive(fileName))
+        }
+        return updated
+    }
+
+    private fun JsonObject.findLoadImageNodeIds(): List<String> {
+        val preferred = entries.mapNotNull { (nodeId, element) ->
+            val node = element as? JsonObject ?: return@mapNotNull null
+            val classType = node["class_type"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val inputs = node["inputs"] as? JsonObject
+            val looksLikeLoader = classType.contains("LoadImage", ignoreCase = true) ||
+                (inputs?.containsKey("image") == true && classType.contains("Load", ignoreCase = true))
+            if (!looksLikeLoader) return@mapNotNull null
+            nodeId
+        }
+        if (preferred.isNotEmpty()) return preferred
+        return entries.mapNotNull { (nodeId, element) ->
+            val inputs = (element as? JsonObject)?.get("inputs") as? JsonObject ?: return@mapNotNull null
+            val image = inputs["image"] as? JsonPrimitive ?: return@mapNotNull null
+            if (image.isString && image.contentOrNull.orEmpty().contains('.')) nodeId else null
+        }
     }
 
     private suspend fun queuePrompt(
