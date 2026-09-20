@@ -69,6 +69,8 @@ val appModule = module {
         AILoggingManager()
     }
 
+    single { me.rerere.ai.generation.PortableChatEngine() }
+
     single {
         ChatService(
             context = get(),
@@ -82,7 +84,8 @@ val appModule = module {
             providerManager = get(),
             localTools = get(),
             workspaceRepository = get(),
-            mcpManager = get()
+            mcpManager = get(),
+            chatEngine = get(),
         )
     }
 

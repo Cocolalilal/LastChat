@@ -51,6 +51,14 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
+import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortablePersistenceMode
+import me.rerere.ai.generation.applyToolApprovalState
+import me.rerere.ai.generation.forkThroughMessage
+import me.rerere.ai.generation.mergeRegeneratedTurn
+import me.rerere.ai.generation.selectTurnVersion
+import me.rerere.ai.generation.withDeletedMessage
+import me.rerere.ai.generation.withEditedMessage
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
@@ -270,50 +278,10 @@ internal fun selectConversationTurnVersion(
     if (nodeIndex == -1) {
         return normalizedConversation
     }
-
-    val node = normalizedConversation.messageNodes[nodeIndex]
-    val clampedSelectIndex = selectIndex.coerceIn(0, node.messages.lastIndex)
-    if (node.role == MessageRole.USER) {
-        return normalizedConversation.copy(
-            messageNodes = normalizedConversation.messageNodes.mapIndexed { index, current ->
-                if (index == nodeIndex) {
-                    current.copy(selectIndex = clampedSelectIndex)
-                } else {
-                    current
-                }
-            }
-        )
-    }
-
-    val targetTag = node.messages[clampedSelectIndex].versionTag
-    val turnStartIndex = normalizedConversation.messageNodes
-        .subList(0, nodeIndex + 1)
-        .indexOfLast { it.role == MessageRole.USER } + 1
-    val turnEndIndex = normalizedConversation.messageNodes
-        .subList(nodeIndex, normalizedConversation.messageNodes.size)
-        .indexOfFirst { it.role == MessageRole.USER }
-        .let { if (it == -1) normalizedConversation.messageNodes.size else nodeIndex + it }
-    val versionDelta = clampedSelectIndex - node.selectIndex
-
-    val updatedNodes = normalizedConversation.messageNodes.mapIndexed { index, current ->
-        when {
-            index == nodeIndex -> current.copy(selectIndex = clampedSelectIndex)
-            index in turnStartIndex until turnEndIndex && current.role != MessageRole.USER -> {
-                val matchingIndex = current.messages.indexOfLast { it.versionTag == targetTag }
-                val fallbackIndex = if (matchingIndex >= 0) {
-                    matchingIndex
-                } else {
-                    (current.selectIndex + versionDelta).coerceIn(0, current.messages.lastIndex)
-                }
-                current.copy(selectIndex = fallbackIndex)
-            }
-
-            else -> current
-        }
-    }
-
     return normalizeConversation(
-        normalizedConversation.copy(messageNodes = updatedNodes)
+        normalizedConversation.copy(
+            messageNodes = normalizedConversation.messageNodes.selectTurnVersion(nodeId, selectIndex),
+        )
     )
 }
 
@@ -324,38 +292,13 @@ internal fun mergeRegeneratedAssistantTurn(
     generatedMessages: List<UIMessage>,
 ): Conversation {
     if (turnStartIndex !in 0..conversation.messageNodes.size) return conversation
-
-    val nodes = conversation.messageNodes.toMutableList()
-    generatedMessages.forEachIndexed { offset, generatedMessage ->
-        val taggedMessage = if (generatedMessage.versionTag == versionTag) {
-            generatedMessage
-        } else {
-            generatedMessage.copy(versionTag = versionTag)
-        }
-        val nodeIndex = turnStartIndex + offset
-        val currentTurnEnd = nodes
-            .subList(turnStartIndex, nodes.size)
-            .indexOfFirst { it.role == MessageRole.USER }
-            .let { if (it == -1) nodes.size else turnStartIndex + it }
-
-        if (nodeIndex < currentTurnEnd) {
-            val node = nodes[nodeIndex]
-            val existingIndex = node.messages.indexOfFirst { it.id == taggedMessage.id }
-            val updatedMessages = node.messages.toMutableList()
-            val selectedIndex = if (existingIndex >= 0) {
-                updatedMessages[existingIndex] = taggedMessage
-                existingIndex
-            } else {
-                updatedMessages += taggedMessage
-                updatedMessages.lastIndex
-            }
-            nodes[nodeIndex] = node.copy(messages = updatedMessages, selectIndex = selectedIndex)
-        } else {
-            nodes.add(nodeIndex, MessageNode.of(taggedMessage))
-        }
-    }
-
-    return conversation.copy(messageNodes = nodes)
+    return conversation.copy(
+        messageNodes = conversation.messageNodes.mergeRegeneratedTurn(
+            turnStartIndex = turnStartIndex,
+            versionTag = versionTag,
+            generatedMessages = generatedMessages,
+        )
+    )
 }
 
 internal suspend fun buildForkConversationSnapshot(
@@ -365,31 +308,24 @@ internal suspend fun buildForkConversationSnapshot(
     newConversationId: Uuid = Uuid.random(),
     now: Instant = Instant.now(),
 ): Conversation? {
-    val targetNode = conversation.getMessageNodeByMessageId(messageId) ?: return null
-    val targetIndex = conversation.messageNodes.indexOf(targetNode)
-    if (targetIndex < 0) {
-        return null
-    }
-
-    val copiedNodes = conversation.messageNodes
-        .subList(0, targetIndex + 1)
-        .map { node ->
-            node.copy(
-                messages = node.messages.map { message ->
-                    message.copy(
-                        parts = message.parts.map { part ->
-                            when (part) {
-                                is UIMessagePart.Image -> part.copy(url = copyAttachmentUrl(part.url))
-                                is UIMessagePart.Document -> part.copy(url = copyAttachmentUrl(part.url))
-                                is UIMessagePart.Video -> part.copy(url = copyAttachmentUrl(part.url))
-                                is UIMessagePart.Audio -> part.copy(url = copyAttachmentUrl(part.url))
-                                else -> part
-                            }
+    val prefix = conversation.messageNodes.forkThroughMessage(messageId) ?: return null
+    val copiedNodes = prefix.map { node ->
+        node.copy(
+            messages = node.messages.map { message ->
+                message.copy(
+                    parts = message.parts.map { part ->
+                        when (part) {
+                            is UIMessagePart.Image -> part.copy(url = copyAttachmentUrl(part.url))
+                            is UIMessagePart.Document -> part.copy(url = copyAttachmentUrl(part.url))
+                            is UIMessagePart.Video -> part.copy(url = copyAttachmentUrl(part.url))
+                            is UIMessagePart.Audio -> part.copy(url = copyAttachmentUrl(part.url))
+                            else -> part
                         }
-                    )
-                }
-            )
-        }
+                    }
+                )
+            }
+        )
+    }
 
     return normalizeConversation(
         conversation.copy(
@@ -603,29 +539,8 @@ private fun Conversation.updateToolApprovalState(
     toolCallId: String,
     approvalState: ToolApprovalState,
 ): Conversation {
-    val updatedNodes = messageNodes.map { node ->
-        val updatedMessages = node.messages.map { message ->
-            val updatedParts = message.parts.map { part ->
-                if (part is UIMessagePart.ToolCall && part.toolCallId == toolCallId) {
-                    part.copy(approvalState = approvalState)
-                } else {
-                    part
-                }
-            }
-            if (updatedParts == message.parts) {
-                message
-            } else {
-                message.copy(parts = updatedParts)
-            }
-        }
-        if (updatedMessages == node.messages) {
-            node
-        } else {
-            node.copy(messages = updatedMessages)
-        }
-    }
     return copy(
-        messageNodes = updatedNodes,
+        messageNodes = messageNodes.applyToolApprovalState(toolCallId, approvalState),
         updateAt = Instant.now(),
     )
 }
@@ -643,6 +558,7 @@ class ChatService(
     private val localTools: LocalTools,
     private val workspaceRepository: WorkspaceRepository,
     val mcpManager: McpManager,
+    private val chatEngine: PortableChatEngine = PortableChatEngine(),
 ) {
     // 存储每个对话的状态
     private val conversationsLock = Any()
@@ -840,6 +756,14 @@ class ChatService(
     }
 
     private fun setConversationPersistenceMode(conversationId: Uuid, mode: ChatPersistenceMode) {
+        chatEngine.setPersistenceMode(
+            conversationId.toString(),
+            when (mode) {
+                ChatPersistenceMode.NORMAL -> PortablePersistenceMode.NORMAL
+                ChatPersistenceMode.TEMPORARY -> PortablePersistenceMode.TEMPORARY
+                ChatPersistenceMode.PERSIST_ON_REPLY -> PortablePersistenceMode.PERSIST_ON_REPLY
+            },
+        )
         _conversationPersistenceModes.value = _conversationPersistenceModes.value.toMutableMap().apply {
             if (mode == ChatPersistenceMode.NORMAL) {
                 remove(conversationId)
@@ -854,6 +778,7 @@ class ChatService(
             removeGenerationJob(conversationId)
             return
         }
+        chatEngine.attachJob(conversationId.toString(), job)
         _generationJobs.value = _generationJobs.value.toMutableMap().apply {
             this[conversationId] = job
         }.toMap() // 确保创建新的不可变Map实例
@@ -1092,6 +1017,7 @@ class ChatService(
     }
 
     fun stopGeneration(conversationId: Uuid) {
+        chatEngine.stop(conversationId.toString())
         getGenerationJob(conversationId)?.cancel()
     }
 
@@ -1130,17 +1056,7 @@ class ChatService(
         }
 
         val updatedConversation = currentConversation.copy(
-            messageNodes = currentConversation.messageNodes.map { node ->
-                val originalMessage = node.messages.find { it.id == messageId } ?: return@map node
-                node.copy(
-                    messages = node.messages + UIMessage(
-                        role = originalMessage.role,
-                        parts = processedParts,
-                        versionTag = originalMessage.versionTag,
-                    ),
-                    selectIndex = node.messages.size,
-                )
-            },
+            messageNodes = currentConversation.messageNodes.withEditedMessage(messageId, processedParts),
             updateAt = Instant.now(),
         )
 
@@ -1174,42 +1090,9 @@ class ChatService(
             .firstOrNull { it.id == messageId }
             ?: return
 
-        val updatedConversation = if (message.role == MessageRole.USER) {
-            // User message: delete this message and ALL messages after it
-            val node = currentConversation.getMessageNodeByMessageId(messageId) ?: return
-            val nodeIndex = currentConversation.messageNodes.indexOf(node)
-            if (nodeIndex == -1) return
-
-            if (node.messages.size > 1) {
-                // Multi-version node: remove just this version and truncate everything after
-                val remainingMessages = node.messages.filter { it.id != messageId }
-                val updatedNode = node.copy(
-                    messages = remainingMessages,
-                    selectIndex = if (node.selectIndex >= remainingMessages.size) {
-                        remainingMessages.lastIndex
-                    } else {
-                        node.selectIndex
-                    }
-                )
-                currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex) +
-                        listOf(updatedNode)
-                )
-            } else {
-                // Single-version node: truncate everything from this node onward
-                currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex)
-                )
-            }
-        } else {
-            // Assistant/Tool message: existing behavior
-            val relatedMessages = collectRelatedMessages(currentConversation, message)
-            var result = deleteMessageInternal(currentConversation, message)
-            relatedMessages.forEach { related ->
-                result = deleteMessageInternal(result, related)
-            }
-            result
-        }
+        val updatedConversation = currentConversation.copy(
+            messageNodes = currentConversation.messageNodes.withDeletedMessage(messageId),
+        )
 
         saveConversation(
             conversationId = conversationId,
@@ -2444,84 +2327,6 @@ class ChatService(
         }
 
         return chatAttachmentRepository.copyOrReuseUrl(url)
-    }
-
-    private fun collectRelatedMessages(
-        conversation: Conversation,
-        message: UIMessage,
-    ): List<UIMessage> {
-        val currentMessages = conversation.currentMessages
-        val index = currentMessages.indexOfFirst { it.id == message.id }
-        if (index == -1) return emptyList()
-
-        val relatedMessages = linkedSetOf<UIMessage>()
-        for (i in index - 1 downTo 0) {
-            if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) {
-                relatedMessages += currentMessages[i]
-            } else {
-                break
-            }
-        }
-        for (i in index + 1 until currentMessages.size) {
-            if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) {
-                relatedMessages += currentMessages[i]
-            } else {
-                break
-            }
-        }
-        return relatedMessages.toList()
-    }
-
-    private fun deleteMessageInternal(
-        conversation: Conversation,
-        message: UIMessage,
-    ): Conversation {
-        val node = conversation.getMessageNodeByMessageId(message.id) ?: return conversation
-        val nodeIndex = conversation.messageNodes.indexOf(node)
-        if (nodeIndex == -1) return conversation
-
-        val deleteVersionTag = message.versionTag
-        val turnStartIndex = conversation.messageNodes
-            .subList(0, nodeIndex + 1)
-            .indexOfLast { it.role == MessageRole.USER } + 1
-        val turnEndIndex = conversation.messageNodes
-            .subList(nodeIndex, conversation.messageNodes.size)
-            .indexOfFirst { it.role == MessageRole.USER }
-            .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
-
-        return if (node.messages.size == 1 && deleteVersionTag == null) {
-            conversation.copy(
-                messageNodes = conversation.messageNodes.filterIndexed { index, _ -> index != nodeIndex }
-            )
-        } else {
-            val updatedNodes = conversation.messageNodes.mapIndexedNotNull { index, messageNode ->
-                val canDeleteByVersionTag = deleteVersionTag != null &&
-                    index in turnStartIndex until turnEndIndex &&
-                    messageNode.role != MessageRole.USER
-
-                val remainingMessages = messageNode.messages.filter { currentMessage ->
-                    if (canDeleteByVersionTag && currentMessage.versionTag == deleteVersionTag) {
-                        false
-                    } else {
-                        currentMessage.id != message.id
-                    }
-                }
-
-                if (remainingMessages.isEmpty()) {
-                    null
-                } else {
-                    messageNode.copy(
-                        messages = remainingMessages,
-                        selectIndex = if (messageNode.selectIndex >= remainingMessages.size) {
-                            remainingMessages.lastIndex
-                        } else {
-                            messageNode.selectIndex
-                        }
-                    )
-                }
-            }
-            conversation.copy(messageNodes = updatedNodes)
-        }
     }
 
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {

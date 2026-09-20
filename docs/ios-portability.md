@@ -366,8 +366,10 @@ Current iOS app status:
 
 - Conversations use Android's `MessageNode` branching model. The node
   layer (`MessageNode`, version-tag turn resolution, and the message
-  merge) is source-shared with Android from `:ai`, the iOS state file
-  migrates legacy flat conversations on load, and the chat renders the
+  merge) is source-shared with Android from `:ai`. Edit/fork/delete/select
+  and regenerate seeding go through `PortableChatEngine` /
+  `PortableConversationOps` so iOS no longer keeps a second copy of those
+  mutations. The chat renders the
   same per-message action row as Android: copy, regenerate, edit
   (branching the node like ChatService.editMessage), fork-from-message,
   and delete (user messages truncate, assistant messages remove their
@@ -456,8 +458,19 @@ Current iOS app status:
   LiteRT-LM and PRoot are `OnDeviceLlmRuntime` / `OnDeviceWorkspaceRuntime`
   implementations. Android `GenerationHandler` and `ProviderManager` talk to
   `OnDeviceLlmProvider` (not `LiteRtProvider` directly); workspace tools use
-  shared `createPortableWorkspaceTools`. iOS keeps the same generation loop
-  with honest unavailable shims. The assistant overlay is an in-process Compose
+  shared `createPortableWorkspaceTools`. Chat generation is no longer a
+  dual engine: `:ai` `PortableChatEngine` owns `PortableGenerationLoop`
+  (stream merge via `handleMessageChunk`, tool execute, approval pending,
+  injected images, 256-step ceiling, 1s checkpoints) plus node mutations
+  (edit/fork/select/delete/regenerate seed) and job/persistence-mode
+  tracking. Android `GenerationHandler.generateText` and
+  `ChatService` (jobs, persistence mode, edit/fork/delete/select) call
+  that class; iOS `IosAppController` is a thin host that prepares
+  tools/memory/MCP/provider messages and calls the same `generate()`.
+  `PortableConversationStore` / `PortableSettingsStore` are the
+  platform-agnostic persistence contracts; Room and the iOS file store
+  remain the backing implementations. iOS on-device runtimes stay honest
+  unavailable shims. The assistant overlay is an in-process Compose
   sheet that also ingests clipboard/App Group share-in through
   `PortableSharePayload`. Xcode screenshot QA is still required before 1:1
   visual sign-off. Live LiteRT-LM and PRoot remain Android-only.

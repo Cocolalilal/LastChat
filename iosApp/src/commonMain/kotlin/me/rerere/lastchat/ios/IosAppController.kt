@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.coroutineContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -30,6 +31,15 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
+import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableGenerationLoop
+import me.rerere.ai.generation.PortableGenerationSession
+import me.rerere.ai.generation.PortableGenerationUpdate
+import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.dropTrailingBlankAssistant
+import me.rerere.ai.generation.forkThroughMessage
+import me.rerere.ai.generation.withDeletedMessage
+import me.rerere.ai.generation.withEditedMessage
 import me.rerere.ai.memory.MemoryVectorMath
 import me.rerere.ai.memory.PortableMemoryChunker
 import me.rerere.ai.provider.Model
@@ -42,10 +52,11 @@ import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.ImageGenerationMethod
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.withComfyDefaults
-import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.MessageNode
+import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.currentVersionMessages
 import me.rerere.ai.ui.mergeCurrentVersionMessages
 import me.rerere.ai.ui.toMessageNode
@@ -457,6 +468,7 @@ class IosAppController(
     private val widgetStore: PlatformWidgetStore = NoOpWidgetStore(),
     private val onDeviceLlm: OnDeviceLlmRuntime = UnavailableOnDeviceLlmRuntime(),
     private val onDeviceWorkspace: OnDeviceWorkspaceRuntime = UnavailableOnDeviceWorkspaceRuntime(),
+    private val chatEngine: PortableChatEngine = PortableChatEngine(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json {
@@ -1784,6 +1796,7 @@ class IosAppController(
     }
 
     fun cancelGeneration() {
+        mutableState.value.selectedConversationId?.let(chatEngine::stop)
         generationJob?.cancel()
     }
 
@@ -1846,8 +1859,8 @@ class IosAppController(
         val prompt = text.trim()
         val snapshot = mutableState.value
         val conversation = snapshot.selectedConversation ?: return
-        if ((prompt.isEmpty() && snapshot.pendingAttachments.isEmpty()) || snapshot.generating) return
         generationJob = scope.launch {
+            chatEngine.attachJob(conversation.id, coroutineContext[Job]!!)
             turnScopedSkillIds.remove(conversation.id)
             val target = resolveChatGeneration()
             if (target == null) {
@@ -1906,34 +1919,15 @@ class IosAppController(
                 memories = selectedMemories,
                 includeToolGuide = snapshot.assistant.memoryMode != IosMemoryMode.OFF,
             )
-            val requestUserMessage = if (
-                snapshot.assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
-                snapshot.assistant.memoryMode == IosMemoryMode.ADAPTIVE
-            ) {
-                userMessage.copy(
-                    parts = if (memoryPrompt.isBlank()) userMessage.parts else {
-                        listOf(UIMessagePart.Text("<system>\n$memoryPrompt\n</system>\n\n")) + userMessage.parts
-                    },
-                )
-            } else userMessage
             var generationSucceeded = false
             try {
                 val tools = buildGenerationTools(snapshot, snapshot.assistant, conversation.id)
-                val providerRequestMessages = prepareProviderMessages(
-                    snapshot = snapshot,
-                    assistant = snapshot.assistant,
-                    conversation = conversation,
-                    history = conversation.currentMessages + requestUserMessage,
-                    tools = tools,
+                runSharedGeneration(
+                    providerSetting = target.providerSetting,
                     model = model,
+                    conversationId = conversation.id,
+                    tools = tools,
                     memoryPrompt = memoryPrompt,
-                )
-                runProviderToolLoop(
-                    target.providerSetting,
-                    model,
-                    conversation.id,
-                    tools,
-                    providerRequestMessages,
                 )
                 generationSucceeded = true
             } catch (cancellation: CancellationException) {
@@ -1967,12 +1961,11 @@ class IosAppController(
     }
 
     fun updateNodeSelection(conversationId: String, nodeId: String, selectIndex: Int) {
+        val parsedId = runCatching { Uuid.parse(nodeId) }.getOrNull() ?: return
         updateConversation(conversationId) { current ->
             current.copy(
                 messages = emptyList(),
-                messageNodes = current.messageNodes.map { node ->
-                    if (node.id.toString() == nodeId) node.copy(selectIndex = selectIndex) else node
-                },
+                messageNodes = chatEngine.selectTurnVersion(current.messageNodes, parsedId, selectIndex),
             )
         }
     }
@@ -2038,6 +2031,7 @@ class IosAppController(
             ?.plus(turnStart)
             ?: return
         generationJob = scope.launch {
+            chatEngine.attachJob(conversationId, coroutineContext[Job]!!)
             turnScopedSkillIds.remove(conversationId)
             val target = resolveChatGeneration()
             if (target == null) {
@@ -2046,15 +2040,14 @@ class IosAppController(
             }
             val tag = Uuid.random().toString()
             updateConversation(conversationId) { current ->
-                val currentNodes = current.messageNodes.toMutableList()
-                val node = currentNodes.getOrNull(firstAssistantOfTurn)
-                    ?: return@updateConversation current
-                val placeholder = UIMessage.assistant("").copy(versionTag = tag)
-                currentNodes[firstAssistantOfTurn] = node.copy(
-                    messages = node.messages + placeholder,
-                    selectIndex = node.messages.size,
+                current.copy(
+                    messages = emptyList(),
+                    messageNodes = chatEngine.seedAssistantRegeneration(
+                        nodes = current.messageNodes,
+                        turnStartIndex = firstAssistantOfTurn,
+                        placeholder = UIMessage.assistant("").copy(versionTag = tag),
+                    ),
                 )
-                current.copy(messages = emptyList(), messageNodes = currentNodes)
             }
             mutableState.update { it.copy(generating = true, error = null) }
             persist()
@@ -2075,37 +2068,14 @@ class IosAppController(
                     memories = selectedMemories,
                     includeToolGuide = assistant.memoryMode != IosMemoryMode.OFF,
                 )
-                val requestMessages = if (
-                    assistant.memoryMode == IosMemoryMode.SEARCHABLE ||
-                    assistant.memoryMode == IosMemoryMode.ADAPTIVE
-                ) {
-                    history.mapIndexed { index, message ->
-                        if (index == history.lastIndex && message.role == MessageRole.USER) {
-                            message.copy(
-                                parts = if (memoryPrompt.isBlank()) message.parts else {
-                                    listOf(UIMessagePart.Text("<system>\n$memoryPrompt\n</system>\n\n")) + message.parts
-                                },
-                            )
-                        } else message
-                    }
-                } else history
                 val model = target.model
                 val tools = buildGenerationTools(snapshot, assistant, conversationId)
-                val providerRequestMessages = prepareProviderMessages(
-                    snapshot = snapshot,
-                    assistant = assistant,
-                    conversation = conversation,
-                    history = requestMessages,
-                    tools = tools,
+                runSharedGeneration(
+                    providerSetting = target.providerSetting,
                     model = model,
+                    conversationId = conversationId,
+                    tools = tools,
                     memoryPrompt = memoryPrompt,
-                )
-                runProviderToolLoop(
-                    target.providerSetting,
-                    model,
-                    conversationId,
-                    tools,
-                    providerRequestMessages,
                 )
                 generationSucceeded = true
             } catch (cancellation: CancellationException) {
@@ -2128,92 +2098,121 @@ class IosAppController(
         }
     }
 
-    private suspend fun runProviderToolLoop(
+    private suspend fun runSharedGeneration(
         providerSetting: ProviderSetting,
         model: Model,
         conversationId: String,
         tools: List<Tool>,
-        initialProviderMessages: List<UIMessage>,
+        memoryPrompt: String,
     ) {
-        var currentTools = tools
-        var providerMessages = initialProviderMessages
-        var toolStep = 0
-        var lastCheckpointAt = Clock.System.now().toEpochMilliseconds()
-        while (true) {
-            providerFlow(providerSetting, model, providerMessages, currentTools).collect { chunk ->
-                updateConversation(conversationId) { current ->
-                    val currentMessages = current.currentMessages
-                    val last = currentMessages.lastOrNull()
-                    if (last?.role != MessageRole.ASSISTANT) current else current.merged(
-                        currentMessages.dropLast(1) + (last + chunk),
+        val initialMessages = mutableState.value.conversations
+            .firstOrNull { it.id == conversationId }
+            ?.currentMessages
+            ?: return
+        val result = chatEngine.generate(
+            PortableGenerationSession(
+                model = model,
+                initialMessages = initialMessages,
+                tools = tools,
+                streamText = { messages, params ->
+                    providerManager.getProviderByType(providerSetting).streamText(
+                        providerSetting,
+                        messages,
+                        params,
                     )
-                }
-                val now = Clock.System.now().toEpochMilliseconds()
-                if (now - lastCheckpointAt >= STREAMING_CHECKPOINT_INTERVAL_MS) {
-                    persist()
-                    lastCheckpointAt = now
-                }
-            }
-            val assistantResponse = mutableState.value.conversations
-                .firstOrNull { it.id == conversationId }
-                ?.currentMessages
-                ?.lastOrNull()
-                ?: break
-            val toolCalls = assistantResponse.getToolCalls()
-            if (toolCalls.isEmpty()) break
-            if (++toolStep > MAX_TOOL_STEPS) error("Too many tool-use steps")
-            val results = toolCalls.map { toolCall ->
-                val tool = currentTools.firstOrNull { it.name == toolCall.toolName }
-                val arguments = runCatching { json.parseToJsonElement(toolCall.arguments) }
-                    .getOrElse { JsonObject(emptyMap()) }
-                UIMessagePart.ToolResult(
-                    toolCallId = toolCall.toolCallId,
-                    toolName = toolCall.toolName,
-                    arguments = arguments,
-                    metadata = toolCall.metadata,
-                    content = runCatching {
-                        requireNotNull(tool) { "Tool ${toolCall.toolName} not found" }
-                        currentExecutingToolCallId = toolCall.toolCallId
-                        try {
-                            tool.execute(arguments)
-                        } finally {
-                            currentExecutingToolCallId = null
-                        }
-                    }.getOrElse { failure ->
-                        buildJsonObject { put("error", JsonPrimitive(failure.message ?: "Tool failed")) }
-                    },
-                )
-            }
-            val toolMessage = UIMessage(role = MessageRole.TOOL, parts = results)
-            updateConversation(conversationId) { current ->
-                current.merged(current.currentMessages + toolMessage + UIMessage.assistant(""))
-            }
-            val activatedExtra = results.filter { it.toolName == "manage_skills" }
-                .mapNotNull { result ->
-                    val activated = (result.content as? JsonObject)?.get("activated") as? JsonArray
-                    activated?.mapNotNull { item ->
-                        val obj = item as? JsonObject ?: return@mapNotNull null
-                        val id = (obj["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                        mutableState.value.skills.firstOrNull { it.id == id }
+                },
+                generateText = { messages, params ->
+                    providerManager.getProviderByType(providerSetting).generateText(
+                        providerSetting,
+                        messages,
+                        params,
+                    )
+                },
+                rebuildTools = { _, _ -> rebuildGenerationTools(conversationId) },
+                prepareTurn = { _, conversationMessages, stepTools ->
+                    val snapshot = mutableState.value
+                    val conversation = snapshot.conversations.first { it.id == conversationId }
+                    val assistant = snapshot.assistants.firstOrNull { it.id == conversation.assistantId }
+                        ?: snapshot.assistant
+                    val history = injectMemoryPrompt(
+                        messages = conversationMessages.dropTrailingBlankAssistant(),
+                        assistant = assistant,
+                        memoryPrompt = memoryPrompt,
+                    )
+                    PortableTurnRequest(
+                        conversationMessages = conversationMessages,
+                        providerMessages = prepareProviderMessages(
+                            snapshot = snapshot,
+                            assistant = assistant,
+                            conversation = conversation,
+                            history = history,
+                            tools = stepTools,
+                            model = model,
+                            memoryPrompt = memoryPrompt,
+                        ),
+                        params = TextGenerationParams(model = model, tools = stepTools),
+                    )
+                },
+                onMessages = { messages, reason ->
+                    updateConversation(conversationId) { current -> current.merged(messages) }
+                    if (reason == PortableGenerationUpdate.PendingApproval) {
+                        bindPendingAskUser(conversationId, messages)
                     }
-                }
-                .flatten()
-            providerMessages = providerMessages + assistantResponse + toolMessage +
-                activatedExtra.map { UIMessage.user(PromptInjectionEngine.inContextSkillText(it)) }
-            currentTools = rebuildGenerationTools(conversationId)
-            persist()
+                },
+                onCheckpoint = { persist() },
+                onExecutingTool = { currentExecutingToolCallId = it },
+            )
+        )
+        if (result.pendingApproval) {
+            bindPendingAskUser(conversationId, result.messages)
         }
     }
 
-    private suspend fun providerFlow(
-        providerSetting: ProviderSetting,
-        model: Model,
+    private fun injectMemoryPrompt(
         messages: List<UIMessage>,
-        tools: List<Tool>,
-    ): kotlinx.coroutines.flow.Flow<MessageChunk> {
-        return providerManager.getProviderByType(providerSetting).streamText(
-            providerSetting, messages, TextGenerationParams(model = model, tools = tools),
-        )
+        assistant: IosAssistantPreferences,
+        memoryPrompt: String,
+    ): List<UIMessage> {
+        if (memoryPrompt.isBlank()) return messages
+        if (
+            assistant.memoryMode != IosMemoryMode.SEARCHABLE &&
+            assistant.memoryMode != IosMemoryMode.ADAPTIVE
+        ) {
+            return messages
+        }
+        val lastUser = messages.indexOfLast { it.role == MessageRole.USER }
+        if (lastUser < 0) return messages
+        return messages.mapIndexed { index, message ->
+            if (index != lastUser) {
+                message
+            } else {
+                message.copy(
+                    parts = listOf(UIMessagePart.Text("<system>\n$memoryPrompt\n</system>\n\n")) + message.parts,
+                )
+            }
+        }
+    }
+
+    private fun bindPendingAskUser(conversationId: String, messages: List<UIMessage>) {
+        val pendingCall = messages.asReversed().asSequence()
+            .flatMap { it.getToolCalls().asSequence() }
+            .firstOrNull { call ->
+                call.approvalState is ToolApprovalState.Pending && call.toolName == "ask_user"
+            }
+            ?: return
+        val arguments = runCatching { json.parseToJsonElement(pendingCall.arguments) }
+            .getOrElse { JsonObject(emptyMap()) }
+        val questions = parseIosAskUserQuestions(arguments)
+        if (questions.isEmpty()) return
+        mutableState.update {
+            it.copy(
+                pendingQuestionnaire = IosPendingQuestionnaire(
+                    toolCallId = pendingCall.toolCallId,
+                    conversationId = conversationId,
+                    questions = questions,
+                ),
+            )
+        }
     }
 
     private fun scheduleAdaptiveMemory(conversationId: String) {
@@ -2425,28 +2424,19 @@ class IosAppController(
         mutableState.update { it.copy(generating = true, pendingQuestionnaire = null, error = null) }
         persist()
         generationJob = scope.launch {
+            chatEngine.attachJob(conversation.id, coroutineContext[Job]!!)
             try {
                 val target = resolveChatGeneration()
                     ?: error("Configure a chat model and its API key first.")
                 val currentSnapshot = mutableState.value
                 val tools = buildGenerationTools(currentSnapshot, assistant, conversation.id)
-                val storedMessages = currentSnapshot.conversations
-                    .first { it.id == conversation.id }.currentMessages.dropLast(1)
                 val model = target.model
-                runProviderToolLoop(
+                runSharedGeneration(
                     providerSetting = target.providerSetting,
                     model = model,
                     conversationId = conversation.id,
                     tools = tools,
-                    initialProviderMessages = prepareProviderMessages(
-                        snapshot = currentSnapshot,
-                        assistant = assistant,
-                        conversation = conversation,
-                        history = storedMessages,
-                        tools = tools,
-                        model = model,
-                        memoryPrompt = "",
-                    ),
+                    memoryPrompt = "",
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -4094,8 +4084,8 @@ class IosAppController(
 
     private companion object {
         const val STATE_PATH = "state/ios-app.json"
-        const val STREAMING_CHECKPOINT_INTERVAL_MS = 1_000L
-        const val MAX_TOOL_STEPS = 256
+        const val STREAMING_CHECKPOINT_INTERVAL_MS = PortableGenerationLoop.STREAMING_CHECKPOINT_INTERVAL_MS
+        const val MAX_TOOL_STEPS = PortableGenerationLoop.MAX_TOOL_STEPS
         const val DATA_RESTORE_MAX_ENTRY_BYTES = 256 * 1024 * 1024
         val IOS_BACKUP_DATABASE_ENTRIES = listOf("rikka_hub.db", "rikka_hub")
         const val ADAPTIVE_MEMORY_MESSAGE_THRESHOLD = 8
@@ -4199,123 +4189,22 @@ internal fun buildAskUserAnswerPayload(
 internal fun IosConversation.withEditedMessage(
     messageId: String,
     parts: List<UIMessagePart>,
-): IosConversation = copy(
-    messages = emptyList(),
-    messageNodes = messageNodes.map { node ->
-        val original = node.messages.find { it.id.toString() == messageId } ?: return@map node
-        node.copy(
-            messages = node.messages + UIMessage(
-                role = original.role,
-                parts = parts,
-                versionTag = original.versionTag,
-            ),
-            selectIndex = node.messages.size,
-        )
-    },
-)
+): IosConversation {
+    val parsedId = runCatching { Uuid.parse(messageId) }.getOrNull() ?: return this
+    return copy(
+        messages = emptyList(),
+        messageNodes = messageNodes.withEditedMessage(parsedId, parts),
+    )
+}
 
 /** Mirrors Android ChatService.deleteMessage: user messages truncate, assistant/tool
  *  messages remove themselves plus the adjacent tool-call/result chain. */
 internal fun IosConversation.withDeletedMessage(messageId: String): IosConversation {
-    val message = messageNodes
-        .flatMap { it.messages }
-        .firstOrNull { it.id.toString() == messageId }
-        ?: return this
-    val nodes = messageNodes
-
-    if (message.role == MessageRole.USER) {
-        val nodeIndex = nodes.indexOfFirst { it.messages.any { it.id.toString() == messageId } }
-        if (nodeIndex == -1) return this
-        val node = nodes[nodeIndex]
-        return if (node.messages.size > 1) {
-            val remaining = node.messages.filter { it.id.toString() != messageId }
-            val updatedNode = node.copy(
-                messages = remaining,
-                selectIndex = if (node.selectIndex >= remaining.size) remaining.lastIndex else node.selectIndex,
-            )
-            copy(
-                messages = emptyList(),
-                messageNodes = nodes.subList(0, nodeIndex) + listOf(updatedNode),
-            )
-        } else {
-            copy(messages = emptyList(), messageNodes = nodes.subList(0, nodeIndex))
-        }
-    }
-
-    val currentMessages = currentMessages
-    val viewIndex = currentMessages.indexOfFirst { it.id.toString() == messageId }
-    val related = if (viewIndex == -1) {
-        emptyList()
-    } else {
-        buildList {
-            for (i in viewIndex - 1 downTo 0) {
-                val candidate = currentMessages[i]
-                if (candidate.getToolCalls().isNotEmpty() || candidate.getToolResults().isNotEmpty()) {
-                    add(candidate)
-                } else break
-            }
-            for (i in viewIndex + 1 until currentMessages.size) {
-                val candidate = currentMessages[i]
-                if (candidate.getToolCalls().isNotEmpty() || candidate.getToolResults().isNotEmpty()) {
-                    add(candidate)
-                } else break
-            }
-        }
-    }
-    var result = withDeletedNodeMessage(message)
-    related.forEach { relatedMessage ->
-        val target = result.messageNodes
-            .flatMap { it.messages }
-            .firstOrNull { it.id == relatedMessage.id }
-            ?: return@forEach
-        result = result.withDeletedNodeMessage(target)
-    }
-    return result
-}
-
-/** Mirrors Android ChatService.deleteMessageInternal. */
-private fun IosConversation.withDeletedNodeMessage(message: UIMessage): IosConversation {
-    val nodeIndex = messageNodes
-        .indexOfFirst { it.messages.any { it.id == message.id } }
-    if (nodeIndex == -1) return this
-    val nodes = messageNodes
-    val node = nodes[nodeIndex]
-    val deleteVersionTag = message.versionTag
-    val turnStartIndex = nodes.subList(0, nodeIndex + 1)
-        .indexOfLast { it.role == MessageRole.USER } + 1
-    val turnEndIndex = nodes.subList(nodeIndex, nodes.size)
-        .indexOfFirst { it.role == MessageRole.USER }
-        .let { if (it == -1) nodes.size else nodeIndex + it }
-
-    val updatedNodes = if (node.messages.size == 1 && deleteVersionTag == null) {
-        nodes.filterIndexed { index, _ -> index != nodeIndex }
-    } else {
-        nodes.mapIndexedNotNull { index, messageNode ->
-            val canDeleteByVersionTag = deleteVersionTag != null &&
-                index in turnStartIndex until turnEndIndex &&
-                messageNode.role != MessageRole.USER
-            val remaining = messageNode.messages.filter { currentMessage ->
-                if (canDeleteByVersionTag && currentMessage.versionTag == deleteVersionTag) {
-                    false
-                } else {
-                    currentMessage.id != message.id
-                }
-            }
-            if (remaining.isEmpty()) {
-                null
-            } else {
-                messageNode.copy(
-                    messages = remaining,
-                    selectIndex = if (messageNode.selectIndex >= remaining.size) {
-                        remaining.lastIndex
-                    } else {
-                        messageNode.selectIndex
-                    },
-                )
-            }
-        }
-    }
-    return copy(messages = emptyList(), messageNodes = updatedNodes)
+    val parsedId = runCatching { Uuid.parse(messageId) }.getOrNull() ?: return this
+    return copy(
+        messages = emptyList(),
+        messageNodes = messageNodes.withDeletedMessage(parsedId),
+    )
 }
 
 /** Mirrors Android buildForkConversationSnapshot: copies nodes up to and including the
@@ -4325,15 +4214,15 @@ internal fun buildIosForkConversation(
     conversation: IosConversation,
     messageId: String,
 ): IosConversation? {
-    val targetIndex = conversation.messageNodes
-        .indexOfFirst { it.messages.any { it.id.toString() == messageId } }
-    if (targetIndex == -1) return null
+    val parsedId = runCatching { Uuid.parse(messageId) }.getOrNull() ?: return null
+    val forked = conversation.messageNodes.forkThroughMessage(
+        messageId = parsedId,
+        remapNodeId = { Uuid.random() },
+    ) ?: return null
     return IosConversation(
         assistantId = conversation.assistantId,
         title = conversation.title,
-        messageNodes = conversation.messageNodes.subList(0, targetIndex + 1).map { node ->
-            node.copy(id = Uuid.random())
-        },
+        messageNodes = forked,
     )
 }
 

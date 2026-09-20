@@ -22,7 +22,6 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
-import me.rerere.ai.core.ToolApprovalMode
 import me.rerere.ai.core.merge
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
@@ -39,6 +38,11 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
+import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableGenerationLoop
+import me.rerere.ai.generation.PortableGenerationSession
+import me.rerere.ai.generation.PortableGenerationUpdate
+import me.rerere.ai.generation.PortableTurnRequest
 import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -46,14 +50,12 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
-import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
-import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -125,7 +127,7 @@ internal fun smartContextSafeCustomBodies(bodies: List<CustomBody>): List<Custom
  * images as a synthetic USER message right after the tool results, where every provider
  * accepts them. Used by the assistant-overlay `look_at_screen` tool.
  */
-internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_image_parts"
+internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = PortableGenerationLoop.INJECTED_IMAGE_KEY
 
 /**
  * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] payloads out of [results], returning
@@ -135,26 +137,39 @@ internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_imag
 internal fun extractInjectedImageParts(
     results: List<UIMessagePart.ToolResult>,
 ): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
-    val images = mutableListOf<UIMessagePart.Image>()
-    val sanitized = results.map { result ->
-        val content = result.content
-        if (content is JsonObject && content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)) {
-            val urls = (content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray)
-                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf { url -> url.isNotBlank() } }
-                .orEmpty()
-            urls.forEach { images += UIMessagePart.Image(url = it) }
-            result.copy(
-                content = JsonObject(content - TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)
-            )
-        } else {
-            result
-        }
-    }
-    return sanitized to images
+    return me.rerere.ai.generation.extractInjectedImageParts(results)
 }
 
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
     return assistant.enableMemory && assistant.enableMemorySearchTool
+}
+
+internal data class PreparedGenerationTurn(
+    val conversationMessages: List<UIMessage>,
+    val providerMessages: List<UIMessage>,
+    val params: TextGenerationParams,
+    val transformedUsage: ContextUsageBreakdown?,
+    val usedLorebookEntries: List<me.rerere.ai.ui.UsedLorebookEntry>,
+    val usedModes: List<me.rerere.ai.ui.UsedMode>,
+    val usedMemories: List<me.rerere.ai.ui.UsedMemory>,
+) {
+    fun attachContextSources(messages: List<UIMessage>): List<UIMessage> {
+        val hasContextSources = usedLorebookEntries.isNotEmpty() ||
+            usedModes.isNotEmpty() ||
+            usedMemories.isNotEmpty()
+        if (!hasContextSources) return messages
+        return messages.mapIndexed { index, message ->
+            if (index == messages.lastIndex && message.role == MessageRole.ASSISTANT) {
+                message.copy(
+                    usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                    usedModes = usedModes.ifEmpty { null },
+                    usedMemories = usedMemories.ifEmpty { null },
+                )
+            } else {
+                message
+            }
+        }
+    }
 }
 private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
 private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
@@ -562,6 +577,7 @@ class GenerationHandler(
     private val memorySearchService: MemorySearchService,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
     private val onDeviceLlm: me.rerere.common.runtime.OnDeviceLlmRuntime,
+    private val chatEngine: PortableChatEngine = PortableChatEngine(),
 ) {
     fun generateText(
         settings: Settings,
@@ -605,208 +621,209 @@ class GenerationHandler(
             .let { assistant.enabledSkillIds.intersect(it) }
         val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
+        var lastPrepared: PreparedGenerationTurn? = null
 
-        for (stepIndex in 0 until maxSteps) {
-            Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
-
-            val toolsInternal = buildList {
-                Log.i(TAG, "generateInternal: build tools($assistant)")
-                // Add memory tools if memory is enabled for this assistant
-                if (assistant.enableMemory) {
-                    buildMemoryTools(
-                        onCreation = { content ->
-                            memoryRepo.addMemory(assistant.id.toString(), content)
-                        },
-                        onUpdate = { id, content ->
-                            memoryRepo.updateContent(id, content)
-                        },
-                        onDelete = { id ->
-                            memoryRepo.deleteMemory(id)
-                        },
-                        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
-                            { query, limit, timeRange ->
-                                memorySearchService.searchMemory(
-                                    assistant = assistant,
-                                    activeConversationId = activeConversationId,
-                                    query = query,
-                                    limit = limit,
-                                    timeRange = timeRange,
-                                )
-                            }
-                        } else {
-                            null
-                        }
-                    ).let(this::addAll)
-                }
-                createSkillManagementTool(
-                    state = buildSkillToolState(
-                        skills = settings.skills,
-                        assistantId = assistant.id,
-                        assistantDefaultSkillIds = assistantDefaultSkillIds,
-                        conversationSkillIds = conversationSkillIds,
-                        turnScopedSkillIds = currentTurnScopedSkillIds,
-                    ),
-                    currentTurnScopedSkillIds = currentTurnScopedSkillIds,
-                    automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
-                        model.abilities.contains(ModelAbility.TOOL),
-                    onUpdateTurnScopedSkillIds = { updatedIds ->
-                        currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
-                    },
-                )?.let(this::add)
-                addAll(tools)
-            }
-
-            generateInternal(
-                assistant = assistant,
-                settings = settings,
-                messages = messages,
-                onUpdateMessages = {
-                    messages = it
-                    send(
-                        GenerationChunk.Messages(
-                            messages.visualTransforms(
-                                transformers = outputTransformers,
-                                context = context,
-                                model = model,
-                                assistant = assistant,
-                                onlyLatest = true
-                            )
-                        )
+        chatEngine.generate(
+            PortableGenerationSession(
+                model = model,
+                initialMessages = messages,
+                tools = tools,
+                stream = assistant.streamOutput,
+                maxSteps = maxSteps,
+                streamText = { providerMessages, params ->
+                    providerImpl.streamText(
+                        providerSetting = provider,
+                        messages = providerMessages,
+                        params = params,
                     )
                 },
-                transformers = inputTransformers,
-                model = model,
-                providerImpl = providerImpl,
-                provider = provider,
-                tools = toolsInternal,
-                memories = memories ?: emptyList(),
-                truncateIndex = truncateIndex,
-                stream = assistant.streamOutput,
-                conversationEnabledModeIds = conversationSkillIds,
-                turnScopedEnabledModeIds = currentTurnScopedSkillIds,
-                conversationEnabledLorebookIds = enabledLorebookIds,
-                activeConversationId = activeConversationId,
-                contextSummary = contextSummary,
-                contextSummaryUpToIndex = contextSummaryUpToIndex,
-                onContextUsage = onContextUsage,
-                contextUsageSourceKey = contextUsageSourceKey,
-                contextBudgetScale = contextBudgetScale,
-            )
-            messages = messages.visualTransforms(
-                transformers = outputTransformers,
-                context = context,
-                model = model,
-                assistant = assistant
-            )
-            messages = messages.onGenerationFinish(
-                transformers = outputTransformers,
-                context = context,
-                model = model,
-                assistant = assistant
-            )
-            messages = messages.recoverInlineAskUserToolCall(json)
-            send(GenerationChunk.Messages(messages))
-
-            val toolCalls = messages.last().getToolCalls()
-            if (toolCalls.isEmpty()) {
-                // no tool calls, break
-                break
-            }
-            // handle tool calls
-            val results = arrayListOf<UIMessagePart.ToolResult>()
-            val pendingToolCallIds = mutableSetOf<String>()
-            toolCalls.forEach { toolCall ->
-                runCatching {
-                    val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
-                        ?: error("Tool ${toolCall.toolName} not found")
-                    val args = parseToolCallArguments(toolCall.arguments)
-                    if (tool.approvalMode == ToolApprovalMode.RequiresApproval) {
-                        pendingToolCallIds += toolCall.toolCallId
-                        return@runCatching
-                    }
-                    Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
-                    val result = tool.execute(args)
-                    results += UIMessagePart.ToolResult(
-                        toolName = toolCall.toolName,
-                        toolCallId = toolCall.toolCallId,
-                        content = result,
-                        arguments = args,
-                        metadata = toolCall.metadata
+                generateText = { providerMessages, params ->
+                    providerImpl.generateText(
+                        providerSetting = provider,
+                        messages = providerMessages,
+                        params = params,
                     )
-                }.onFailure {
-                    Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", it)
-                    results += UIMessagePart.ToolResult(
-                        toolName = toolCall.toolName,
-                        toolCallId = toolCall.toolCallId,
-                        metadata = toolCall.metadata,
-                        content = buildJsonObject {
-                            put(
-                                "error",
-                                JsonPrimitive(formatToolExecutionError(it))
+                },
+                rebuildTools = { stepIndex, _ ->
+                    Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+                    buildList {
+                        Log.i(TAG, "generateInternal: build tools($assistant)")
+                        if (assistant.enableMemory) {
+                            buildMemoryTools(
+                                onCreation = { content ->
+                                    memoryRepo.addMemory(assistant.id.toString(), content)
+                                },
+                                onUpdate = { id, content ->
+                                    memoryRepo.updateContent(id, content)
+                                },
+                                onDelete = { id ->
+                                    memoryRepo.deleteMemory(id)
+                                },
+                                onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
+                                    { query, limit, timeRange ->
+                                        memorySearchService.searchMemory(
+                                            assistant = assistant,
+                                            activeConversationId = activeConversationId,
+                                            query = query,
+                                            limit = limit,
+                                            timeRange = timeRange,
+                                        )
+                                    }
+                                } else {
+                                    null
+                                }
+                            ).let(this::addAll)
+                        }
+                        createSkillManagementTool(
+                            state = buildSkillToolState(
+                                skills = settings.skills,
+                                assistantId = assistant.id,
+                                assistantDefaultSkillIds = assistantDefaultSkillIds,
+                                conversationSkillIds = conversationSkillIds,
+                                turnScopedSkillIds = currentTurnScopedSkillIds,
+                            ),
+                            currentTurnScopedSkillIds = currentTurnScopedSkillIds,
+                            automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
+                                model.abilities.contains(ModelAbility.TOOL),
+                            onUpdateTurnScopedSkillIds = { updatedIds ->
+                                currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
+                            },
+                        )?.let(this::add)
+                        addAll(tools)
+                    }
+                },
+                prepareTurn = { _, conversationMessages, stepTools ->
+                    val prepared = prepareGenerationTurn(
+                        assistant = assistant,
+                        settings = settings,
+                        messages = conversationMessages,
+                        onUpdateMessages = { updated ->
+                            send(
+                                GenerationChunk.Messages(
+                                    updated.visualTransforms(
+                                        transformers = outputTransformers,
+                                        context = context,
+                                        model = model,
+                                        assistant = assistant,
+                                        onlyLatest = true,
+                                    )
+                                )
                             )
                         },
-                        arguments = runCatching {
-                            parseToolCallArguments(toolCall.arguments)
-                        }.getOrElse { JsonObject(emptyMap()) }
+                        transformers = inputTransformers,
+                        model = model,
+                        tools = stepTools,
+                        memories = memories ?: emptyList(),
+                        truncateIndex = truncateIndex,
+                        conversationEnabledModeIds = conversationSkillIds,
+                        turnScopedEnabledModeIds = currentTurnScopedSkillIds,
+                        conversationEnabledLorebookIds = enabledLorebookIds,
+                        activeConversationId = activeConversationId,
+                        contextSummary = contextSummary,
+                        contextSummaryUpToIndex = contextSummaryUpToIndex,
+                        onContextUsage = onContextUsage,
+                        contextUsageSourceKey = contextUsageSourceKey,
+                        contextBudgetScale = contextBudgetScale,
+                        providerImpl = providerImpl,
+                        provider = provider,
                     )
-                }
-            }
-            if (pendingToolCallIds.isNotEmpty()) {
-                messages = messages.markPendingToolCalls(pendingToolCallIds)
-                send(GenerationChunk.Messages(messages))
-                if (results.isNotEmpty()) {
-                    val (sanitized, injectedImages) = extractInjectedImageParts(results)
-                    messages = messages + UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = sanitized
-                    )
-                    if (injectedImages.isNotEmpty()) {
-                        messages = messages + UIMessage(
-                            role = MessageRole.USER,
-                            parts = listOf(
-                                UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                            ) + injectedImages,
-                        )
-                    }
-                    send(
-                        GenerationChunk.Messages(
-                            messages.transforms(
-                                transformers = outputTransformers,
-                                context = context,
-                                model = model,
-                                assistant = assistant
-                            )
+                    lastPrepared = prepared
+                    aiLoggingManager.addLog(
+                        AILogging.Generation(
+                            params = prepared.params,
+                            messages = prepared.conversationMessages,
+                            providerSetting = provider,
+                            stream = assistant.streamOutput,
                         )
                     )
-                }
-                break
-            }
-            val (sanitizedResults, injectedImages) = extractInjectedImageParts(results)
-            messages = messages + UIMessage(
-                role = MessageRole.TOOL,
-                parts = sanitizedResults
-            )
-            // Re-deliver any tool-provided images (e.g. the overlay screenshot) as a USER
-            // message the provider accepts, instead of stuffing base64 into a tool result.
-            if (injectedImages.isNotEmpty()) {
-                messages = messages + UIMessage(
-                    role = MessageRole.USER,
-                    parts = listOf(
-                        UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                    ) + injectedImages,
-                )
-            }
-            send(
-                GenerationChunk.Messages(
-                    messages.transforms(
+                    PortableTurnRequest(
+                        conversationMessages = prepared.conversationMessages,
+                        providerMessages = prepared.providerMessages,
+                        params = prepared.params,
+                    )
+                },
+                visualTransform = { current ->
+                    current.visualTransforms(
                         transformers = outputTransformers,
                         context = context,
                         model = model,
-                        assistant = assistant
+                        assistant = assistant,
+                        onlyLatest = true,
                     )
-                )
+                },
+                onStreamChunk = { current, chunk, chunkModel ->
+                    var next = current.handleMessageChunk(chunk = chunk, model = chunkModel)
+                    chunk.usage?.let { usage ->
+                        lastPrepared?.transformedUsage?.let { estimate ->
+                            onContextUsage(
+                                ContextTokenEstimator.reconcileProviderCount(
+                                    breakdown = estimate,
+                                    promptTokens = usage.promptTokens,
+                                    model = model,
+                                    confidence = if (provider is ProviderSetting.LiteRtLocal) {
+                                        me.rerere.ai.context.ContextCountConfidence.EXACT
+                                    } else {
+                                        me.rerere.ai.context.ContextCountConfidence.PROVIDER_COUNTED
+                                    },
+                                )
+                            )
+                        }
+                        next = next.mapIndexed { index, message ->
+                            if (index == next.lastIndex) {
+                                message.copy(usage = message.usage.merge(usage))
+                            } else {
+                                message
+                            }
+                        }
+                    }
+                    next
+                },
+                afterAssistantTurn = { current ->
+                    var next = lastPrepared?.attachContextSources(current) ?: current
+                    next = next.visualTransforms(
+                        transformers = outputTransformers,
+                        context = context,
+                        model = model,
+                        assistant = assistant,
+                    )
+                    next = next.onGenerationFinish(
+                        transformers = outputTransformers,
+                        context = context,
+                        model = model,
+                        assistant = assistant,
+                    )
+                    next = next.recoverInlineAskUserToolCall(json)
+                    next.lastOrNull()?.usage?.let { usage ->
+                        if (usage.promptTokens > 0 || usage.completionTokens > 0) {
+                            try {
+                                conversationRepo.addTokenUsage(
+                                    inputTokens = usage.promptTokens.toLong(),
+                                    outputTokens = usage.completionTokens.toLong(),
+                                    cachedTokens = usage.cachedTokens.toLong(),
+                                )
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to persist token usage", e)
+                            }
+                        }
+                    }
+                    next
+                },
+                afterToolResults = { current ->
+                    current.transforms(
+                        transformers = outputTransformers,
+                        context = context,
+                        model = model,
+                        assistant = assistant,
+                    )
+                },
+                onMessages = { current, reason ->
+                    if (reason != PortableGenerationUpdate.Streaming) {
+                        messages = current
+                    }
+                    send(GenerationChunk.Messages(current))
+                },
             )
-        }
+        )
 
     }.flowOn(Dispatchers.IO)
 
@@ -1651,19 +1668,16 @@ class GenerationHandler(
         }.asReversed()
     }
 
-    private suspend fun generateInternal(
+    private suspend fun prepareGenerationTurn(
         assistant: Assistant,
         settings: Settings,
         messages: List<UIMessage>,
         onUpdateMessages: suspend (List<UIMessage>) -> Unit,
         transformers: List<MessageTransformer>,
         model: Model,
-        providerImpl: Provider<ProviderSetting>,
-        provider: ProviderSetting,
         tools: List<Tool>,
         memories: List<AssistantMemory>,
         truncateIndex: Int,
-        stream: Boolean,
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
@@ -1673,7 +1687,9 @@ class GenerationHandler(
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
-    ) {
+        providerImpl: Provider<ProviderSetting>,
+        provider: ProviderSetting,
+    ): PreparedGenerationTurn {
         val buildResult = buildMessages(
             assistant = assistant,
             settings = settings,
@@ -1729,7 +1745,6 @@ class GenerationHandler(
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
         val usedMemories = buildResult.usedMemories
-        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
 
         var messages: List<UIMessage> = uiMessages
         if (transformedInput.annotations.isNotEmpty()) {
@@ -1854,128 +1869,15 @@ class GenerationHandler(
                 }
             }
         }
-        if (stream) {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = messages,
-                providerSetting = provider,
-                stream = true
-            ))
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    transformedUsage?.let { estimate ->
-                        onContextUsage(
-                            ContextTokenEstimator.reconcileProviderCount(
-                                breakdown = estimate,
-                                promptTokens = usage.promptTokens,
-                                model = model,
-                                confidence = if (provider is ProviderSetting.LiteRtLocal) {
-                                    me.rerere.ai.context.ContextCountConfidence.EXACT
-                                } else {
-                                    me.rerere.ai.context.ContextCountConfidence.PROVIDER_COUNTED
-                                },
-                            )
-                        )
-                    }
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
-                        }
-                    }
-                }
-                onUpdateMessages(messages)
-            }
-            // Attach all context sources to the last assistant message after streaming completes
-            if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
-                onUpdateMessages(messages)
-            }
-        } else {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = messages,
-                providerSetting = provider,
-                stream = false
-            ))
-            val chunk = providerImpl.generateText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params,
-            )
-            messages = messages.handleMessageChunk(chunk = chunk, model = model)
-            chunk.usage?.let { usage ->
-                transformedUsage?.let { estimate ->
-                    onContextUsage(
-                        ContextTokenEstimator.reconcileProviderCount(
-                            breakdown = estimate,
-                            promptTokens = usage.promptTokens,
-                            model = model,
-                            confidence = if (provider is ProviderSetting.LiteRtLocal) {
-                                me.rerere.ai.context.ContextCountConfidence.EXACT
-                            } else {
-                                me.rerere.ai.context.ContextCountConfidence.PROVIDER_COUNTED
-                            },
-                        )
-                    )
-                }
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex) {
-                        message.copy(
-                            usage = message.usage.merge(usage)
-                        )
-                    } else {
-                        message
-                    }
-                }
-            }
-            // Attach all context sources to the last assistant message
-            if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
-            }
-            onUpdateMessages(messages)
-        }
-        
-        // Persist token usage to cumulative stats
-        messages.lastOrNull()?.usage?.let { usage ->
-            if (usage.promptTokens > 0 || usage.completionTokens > 0) {
-                try {
-                    conversationRepo.addTokenUsage(
-                        inputTokens = usage.promptTokens.toLong(),
-                        outputTokens = usage.completionTokens.toLong(),
-                        cachedTokens = usage.cachedTokens.toLong()
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to persist token usage", e)
-                }
-            }
-        }
+        return PreparedGenerationTurn(
+            conversationMessages = messages,
+            providerMessages = internalMessages,
+            params = params,
+            transformedUsage = transformedUsage,
+            usedLorebookEntries = usedLorebookEntries,
+            usedModes = usedModes,
+            usedMemories = usedMemories,
+        )
     }
 
     private fun buildMemoryTools(
@@ -2209,23 +2111,10 @@ class GenerationHandler(
         }
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * Attempts to sanitize malformed JSON from streamed tool call arguments.
-     * Handles cases where the model outputs content after a valid JSON object.
-     */
-    private fun parseToolCallArguments(arguments: String): JsonElement {
-        return parseJsonElementWithRecovery(arguments, json) ?: run {
-            Log.w(TAG, "Failed to parse tool arguments after recovery: ${arguments.take(200)}")
-            error("Invalid tool arguments")
-        }
-    }
-
 }
 
 internal fun formatToolExecutionError(throwable: Throwable): String {
-    return throwable.message
-        ?.takeIf { it.isNotBlank() }
-        ?: (throwable::class.simpleName ?: "Tool execution failed")
+    return me.rerere.ai.generation.formatToolExecutionError(throwable)
 }
 
 internal fun List<UIMessage>.upsertOcrPlaceholder(
@@ -2269,23 +2158,4 @@ internal fun UIMessage?.isTrailingOcrPlaceholder(): Boolean {
         parts.isEmpty() &&
         annotations.isNotEmpty() &&
         annotations.all { annotation -> annotation is UIMessageAnnotation.OcrActivity }
-}
-
-private fun List<UIMessage>.markPendingToolCalls(toolCallIds: Set<String>): List<UIMessage> {
-    if (toolCallIds.isEmpty()) return this
-    return mapIndexed { index, message ->
-        if (index != lastIndex) {
-            message
-        } else {
-            message.copy(
-                parts = message.parts.map { part ->
-                    if (part is UIMessagePart.ToolCall && toolCallIds.contains(part.toolCallId)) {
-                        part.copy(approvalState = ToolApprovalState.Pending)
-                    } else {
-                        part
-                    }
-                }
-            )
-        }
-    }
 }
