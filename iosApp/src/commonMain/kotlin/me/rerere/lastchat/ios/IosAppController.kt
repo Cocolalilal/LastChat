@@ -31,7 +31,9 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolApprovalMode
+import me.rerere.ai.generation.JsonFilePortableConversationStore
 import me.rerere.ai.generation.PortableChatEngine
+import me.rerere.ai.generation.PortableConversationRecord
 import me.rerere.ai.generation.PortableGenerationLoop
 import me.rerere.ai.generation.PortableGenerationPrepare
 import me.rerere.ai.generation.PortableGenerationSession
@@ -39,13 +41,16 @@ import me.rerere.ai.generation.PortableGenerationUpdate
 import me.rerere.ai.generation.PortableMemoryRecord
 import me.rerere.ai.generation.PortableMemoryToolRuntime
 import me.rerere.ai.generation.PortableMcpToolBinding
+import me.rerere.ai.generation.PortableOcrRuntime
 import me.rerere.ai.generation.PortablePrepareAssistant
 import me.rerere.ai.generation.PortablePrepareRequest
+import me.rerere.ai.generation.PortableRecentChat
 import me.rerere.ai.generation.PortableSkillToolBinding
 import me.rerere.ai.generation.PortableToolAssemblyOptions
 import me.rerere.ai.generation.PortableToolRuntimes
 import me.rerere.ai.generation.PortableTransformerContext
 import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.PortableWorkspaceReminder
 import me.rerere.ai.generation.assemblePortableTools
 import me.rerere.ai.generation.bytesDocumentRuntime
 import me.rerere.ai.generation.defaultPortableInputTransformers
@@ -56,6 +61,7 @@ import me.rerere.ai.generation.withEditedMessage
 import me.rerere.ai.memory.MemoryVectorMath
 import me.rerere.ai.memory.PortableMemoryChunker
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
@@ -80,12 +86,14 @@ import me.rerere.asr.CloudSpeechTranscriptionRequest
 import me.rerere.common.platform.PlatformFileStore
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.common.platform.PlatformImageOcr
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.platform.PlatformPickedFile
 import me.rerere.common.platform.PlatformPickedFileKind
 import me.rerere.common.platform.PlatformShareSheet
 import me.rerere.common.platform.PlatformSpeechRecorder
 import me.rerere.common.platform.SecureSettingsStore
+import me.rerere.common.platform.UnavailablePlatformImageOcr
 import me.rerere.common.platform.UnavailableShareSheet
 import me.rerere.common.platform.UnavailableSpeechRecorder
 import me.rerere.common.runtime.OnDeviceLlmRuntime
@@ -138,6 +146,7 @@ import me.rerere.rikkahub.data.memory.TemporalRecallPacket
 import me.rerere.rikkahub.data.memory.buildTemporalMemoryExtractionPrompt
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
@@ -190,6 +199,7 @@ data class IosAssistantPreferences(
     val enabledLorebookIds: Set<String> = emptySet(),
     val enabledMcpServerIds: Set<String> = emptySet(),
     val thinkingBudget: Int = 0,
+    val messageTemplate: String = "{{ message }}",
     /** Legacy per-type embedding provider; migrated into [embeddingProviderId] on load. */
     val embeddingProviderType: IosProviderType? = null,
 )
@@ -291,6 +301,16 @@ data class IosConversation(
     val memoryLastMessageId: String? = null,
     val enabledSkillIds: Set<String>? = null,
     val enabledLorebookIds: Set<String>? = null,
+    val truncateIndex: Int = -1,
+    val contextSummary: String? = null,
+    val contextSummaryUpToIndex: Int = -1,
+    val chatSuggestions: List<String> = emptyList(),
+    val createdAtEpochMs: Long = 0L,
+    val isConsolidated: Boolean = false,
+    val lastPruneTime: Long = 0L,
+    val lastPruneMessageCount: Int = 0,
+    val lastRefreshTime: Long = 0L,
+    val isFork: Boolean = false,
 ) {
     /** The visible message path, resolved with the same version-selection semantics as Android. */
     val currentMessages: List<UIMessage>
@@ -479,7 +499,8 @@ class IosAppController(
     private val widgetStore: PlatformWidgetStore = NoOpWidgetStore(),
     private val onDeviceLlm: OnDeviceLlmRuntime = UnavailableOnDeviceLlmRuntime(),
     private val onDeviceWorkspace: OnDeviceWorkspaceRuntime = UnavailableOnDeviceWorkspaceRuntime(),
-    private val chatEngine: PortableChatEngine = PortableChatEngine(),
+    injectedChatEngine: PortableChatEngine? = null,
+    private val imageOcr: PlatformImageOcr = UnavailablePlatformImageOcr(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json {
@@ -487,6 +508,12 @@ class IosAppController(
         encodeDefaults = true
         explicitNulls = false
     }
+    private val conversationStore = JsonFilePortableConversationStore(
+        loadBytes = { fileStore.readBytes(CONVERSATIONS_PATH) },
+        saveBytes = { bytes -> fileStore.writeBytes(CONVERSATIONS_PATH, bytes) },
+        json = json,
+    )
+    private val chatEngine = injectedChatEngine ?: PortableChatEngine(store = conversationStore)
     private val mutableState = MutableStateFlow(IosAppState())
     private var generationJob: Job? = null
     private var imageGenerationJob: Job? = null
@@ -559,7 +586,9 @@ class IosAppController(
             val selectedAssistantId = stored?.selectedAssistantId
                 ?.takeIf { selected -> assistants.any { it.id == selected } }
                 ?: assistants.first().id
-            val conversations = stored?.conversations.orEmpty()
+            val storedConversations = chatEngine.listConversations().map { it.toIosConversation() }
+            val conversations = storedConversations
+                .ifEmpty { stored?.conversations.orEmpty() }
                 .ifEmpty { listOf(IosConversation(assistantId = selectedAssistantId)) }
                 .map { conversation ->
                     val withAssistant = if (conversation.assistantId == null) {
@@ -634,6 +663,9 @@ class IosAppController(
                 hasSttApiKey = sttApiKey.isNotBlank(),
                 hasWebDavPassword = !secureStore.readString(WEBDAV_PASSWORD_KEY).isNullOrBlank(),
             )
+            if (storedConversations.isEmpty()) {
+                persistConversations(conversations)
+            }
             ttsController.setProvider(
                 ttsPreferences.takeIf { it.enabled && ttsApiKey.isNotBlank() }
                     ?.toProviderSetting(ttsApiKey)
@@ -3446,6 +3478,18 @@ class IosAppController(
         val memories = snapshot.memories
             .filter { it.assistantId == assistant.id }
             .map { PortableMemoryRecord(id = it.id, content = it.content, type = it.type, timestamp = it.timestampEpochMs) }
+        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        val workspaceEnabled = IosLocalToolOption.WORKSPACE in assistant.localTools
+        val workspaceReady = workspaceEnabled && onDeviceWorkspace.available
+        val recentChats = snapshot.conversations.map { chat ->
+            PortableRecentChat(
+                id = chat.id,
+                title = chat.title,
+                updatedAtEpochMs = chat.updatedAtEpochMs,
+                isToday = isTodayEpochMs(chat.updatedAtEpochMs),
+            )
+        }
+        val skills = snapshot.skills.map { skill -> skillWithBundledResources(skill) }
         val prepared = PortableGenerationPrepare.prepare(
             PortablePrepareRequest(
                 messages = history,
@@ -3461,9 +3505,11 @@ class IosAppController(
                     thinkingBudget = assistant.thinkingBudget.takeIf { it > 0 },
                     enabledSkillIds = assistant.enabledSkillIds,
                     enabledLorebookIds = assistant.enabledLorebookIds,
-                    workspaceEnabled = IosLocalToolOption.WORKSPACE in assistant.localTools,
+                    workspaceEnabled = workspaceEnabled,
+                    enableRecentChatsReference = assistant.memoryMode != IosMemoryMode.OFF,
+                    messageTemplate = assistant.messageTemplate,
                 ),
-                skills = snapshot.skills,
+                skills = skills,
                 lorebooks = snapshot.lorebooks,
                 memories = memories,
                 conversationSkillIds = conversation.enabledSkillIds.orEmpty(),
@@ -3474,7 +3520,7 @@ class IosAppController(
                 transformers = defaultPortableInputTransformers(),
                 transformerContext = PortableTransformerContext(
                     model = model,
-                    workspaceEnabled = IosLocalToolOption.WORKSPACE in assistant.localTools,
+                    workspaceEnabled = workspaceEnabled,
                     documentRuntime = bytesDocumentRuntime(
                         readBytes = { url ->
                             fileStore.readBytes(url.removePrefix("file://"))
@@ -3484,7 +3530,34 @@ class IosAppController(
                             { bytes -> parser.parse("document.pdf", "application/pdf", bytes) }
                         },
                     ),
+                    ocrRuntime = PortableOcrRuntime { url ->
+                        val bytes = fileStore.readBytes(url.removePrefix("file://"))
+                            ?: IosNativeFiles.readUrl(url)
+                            ?: return@PortableOcrRuntime null
+                        imageOcr.recognizeText(bytes)
+                    },
+                    messageTemplate = assistant.messageTemplate,
+                    templateTime = now.time.toString(),
+                    templateDate = now.date.toString(),
+                    workspaceReminder = if (workspaceEnabled) {
+                        PortableWorkspaceReminder(
+                            name = "Workspace",
+                            ready = workspaceReady,
+                            toolCapable = ModelAbility.TOOL in model.abilities,
+                            cwd = "/workspace",
+                            unavailableReason = when {
+                                ModelAbility.TOOL !in model.abilities ->
+                                    "The selected model is not marked as tool-capable, so workspace_shell, workspace_read_file, workspace_write_file, and workspace_edit_file are not available in this chat."
+                                !workspaceReady -> WORKSPACE_UNAVAILABLE_REASON
+                                else -> null
+                            },
+                        )
+                    } else {
+                        null
+                    },
                 ),
+                recentChats = recentChats,
+                activeConversationId = conversation.id,
             ),
         )
         return prepared.providerMessages
@@ -4015,8 +4088,9 @@ class IosAppController(
 
     private suspend fun persist() = persistMutex.withLock {
         val snapshot = mutableState.value
+        persistConversations(snapshot.conversations)
         val stored = IosStoredState(
-            conversations = snapshot.conversations,
+            conversations = emptyList(),
             selectedConversationId = snapshot.selectedConversationId,
             providers = snapshot.providers,
             selectedChatModelId = snapshot.selectedChatModelId,
@@ -4051,8 +4125,35 @@ class IosAppController(
         fileStore.writeBytes(STATE_PATH, json.encodeToString(stored).encodeToByteArray())
     }
 
+    private suspend fun persistConversations(conversations: List<IosConversation>) {
+        val records = conversations.map { it.toPortableRecord() }
+        val nextIds = records.map { it.id }.toSet()
+        val existingIds = chatEngine.listConversations().map { it.id }.toSet()
+        records.forEach { chatEngine.saveConversation(it) }
+        (existingIds - nextIds).forEach { id -> chatEngine.deleteConversation(id) }
+    }
+
+    private suspend fun skillWithBundledResources(skill: PortableSkill): PortableSkill {
+        val relative = skill.workspaceDirectory.removePrefix("/").ifBlank {
+            "skills/${skill.name.ifBlank { skill.id }}"
+        }
+        val files = fileStore.listFiles(relative)
+            .filterNot { it.substringAfterLast('/').equals("SKILL.md", ignoreCase = true) }
+            .map { path -> if (path.startsWith("/")) path else "/$path" }
+            .take(64)
+        return if (files.isEmpty()) skill else skill.copy(bundledResources = files)
+    }
+
+    private fun isTodayEpochMs(epochMs: Long): Boolean {
+        val zone = TimeZone.currentSystemDefault()
+        val today = Clock.System.now().toLocalDateTime(zone).date
+        val date = kotlinx.datetime.Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
+        return date == today
+    }
+
     private companion object {
         const val STATE_PATH = "state/ios-app.json"
+        const val CONVERSATIONS_PATH = "state/conversations.json"
         const val STREAMING_CHECKPOINT_INTERVAL_MS = PortableGenerationLoop.STREAMING_CHECKPOINT_INTERVAL_MS
         const val MAX_TOOL_STEPS = PortableGenerationLoop.MAX_TOOL_STEPS
         const val DATA_RESTORE_MAX_ENTRY_BYTES = 256 * 1024 * 1024
@@ -4155,6 +4256,51 @@ internal fun buildAskUserAnswerPayload(
 
 /** Branches the node containing [messageId] with a new version carrying the edited parts,
  *  mirroring Android ChatService.editMessage. */
+internal fun IosConversation.toPortableRecord(): PortableConversationRecord = PortableConversationRecord(
+    id = id,
+    assistantId = assistantId,
+    title = title,
+    messageNodes = messageNodes.ifEmpty { messages.map { it.toMessageNode() } },
+    isPinned = isPinned,
+    updatedAtEpochMs = updatedAtEpochMs,
+    enabledSkillIds = enabledSkillIds,
+    enabledLorebookIds = enabledLorebookIds,
+    truncateIndex = truncateIndex,
+    contextSummary = contextSummary,
+    contextSummaryUpToIndex = contextSummaryUpToIndex,
+    chatSuggestions = chatSuggestions,
+    createdAtEpochMs = createdAtEpochMs,
+    isConsolidated = isConsolidated,
+    lastPruneTime = lastPruneTime,
+    lastPruneMessageCount = lastPruneMessageCount,
+    lastRefreshTime = lastRefreshTime,
+    isFork = isFork,
+    memoryLastMessageId = memoryLastMessageId,
+)
+
+internal fun PortableConversationRecord.toIosConversation(): IosConversation = IosConversation(
+    id = id,
+    assistantId = assistantId,
+    title = title,
+    messages = emptyList(),
+    messageNodes = messageNodes,
+    isPinned = isPinned,
+    updatedAtEpochMs = updatedAtEpochMs,
+    memoryLastMessageId = memoryLastMessageId,
+    enabledSkillIds = enabledSkillIds,
+    enabledLorebookIds = enabledLorebookIds,
+    truncateIndex = truncateIndex,
+    contextSummary = contextSummary,
+    contextSummaryUpToIndex = contextSummaryUpToIndex,
+    chatSuggestions = chatSuggestions,
+    createdAtEpochMs = createdAtEpochMs,
+    isConsolidated = isConsolidated,
+    lastPruneTime = lastPruneTime,
+    lastPruneMessageCount = lastPruneMessageCount,
+    lastRefreshTime = lastRefreshTime,
+    isFork = isFork,
+)
+
 internal fun IosConversation.withEditedMessage(
     messageId: String,
     parts: List<UIMessagePart>,

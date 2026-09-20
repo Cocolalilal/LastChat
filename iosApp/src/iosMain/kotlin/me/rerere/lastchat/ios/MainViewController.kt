@@ -45,6 +45,7 @@ private val controller = run {
         widgetStore = IosPlatformWidgetStore(),
         onDeviceLlm = UnavailableOnDeviceLlmRuntime(),
         onDeviceWorkspace = UnavailableOnDeviceWorkspaceRuntime(),
+        imageOcr = platformServices.imageOcr,
     )
 }
 

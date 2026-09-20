@@ -42,6 +42,9 @@ fun Assistant.toPortablePrepareAssistant(): PortablePrepareAssistant = PortableP
     customBodies = customBodies,
     contextPriority = contextPriority.toPortable(),
     workspaceEnabled = workspaceId != null,
+    archiveImagesAfterMessageAge = archiveImagesAfterMessageAge,
+    enableRecentChatsReference = enableRecentChatsReference,
+    messageTemplate = messageTemplate,
 )
 
 fun AssistantMemory.toPortableMemory(): PortableMemoryRecord = PortableMemoryRecord(

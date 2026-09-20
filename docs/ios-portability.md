@@ -287,7 +287,7 @@ The current shared boundary should stay green with:
 - `SecureSettingsStore`: hide Android DataStore and encrypted preferences behind a shared settings contract.
 - `DocumentPromptParser`: keep AI prompt construction independent from Android file URIs, MuPDF file paths, DOCX zip streams, render-cache file creation, and JVM hashing. Android currently uses `AndroidDocumentPromptParser`; iOS can provide an equivalent parser/renderer while preserving the exact generated prompt text and OCR fallback annotations.
 - `PlaceholderRuntimeValues`: keep assistant placeholder definitions independent from Android `Build`, battery, location, geocoder, and `java.time` formatting. Android currently collects these values through `AndroidPlaceholderRuntimeValues`; iOS can provide the same strings from native device/time/location APIs without changing placeholder keys, display names, or replacement behavior.
-- `MessageTemplateRenderer`: keep message-template transformation independent from Pebble, JVM `Reader`/`Writer`, and template-cache APIs. Android currently binds `PebbleMessageTemplateRenderer` and `AndroidMessageTemplateContextFactory`; iOS can bind a native renderer while preserving the existing template context keys and generated message text.
+- `MessageTemplateRenderer`: keep message-template transformation independent from Pebble, JVM `Reader`/`Writer`, and template-cache APIs. Android currently binds `PebbleMessageTemplateRenderer` and `AndroidMessageTemplateContextFactory` and injects that renderer as a `PortableTemplateRuntime`. iOS uses shared `renderSimpleMessageTemplate` (`message`/`role`/`time`/`date` plus `{% if %}`) because Pebble cannot run on Kotlin/Native. Full Pebble syntax remains Android-only.
 - `TimeAwarenessRuntimeInfo`: keep time-awareness prompt assembly independent from Android/JVM `ZonedDateTime`, timezone display APIs, and locale-specific zone labels. Android currently maps the system clock and zone through `AndroidTimeAwarenessRuntimeInfo`; iOS can provide the same neutral timestamp/zone snapshot while reusing the shared prompt logic.
 - `GenerationRuntimeInfo`: keep generation-time prompt decisions independent from JVM date/time APIs. Android currently maps recent-conversation "today" checks and episodic-memory grouping through `AndroidGenerationRuntimeInfo`; iOS can provide native calendar/clock behavior while preserving the exact generated prompt labels.
 - `LocalToolPlatform`: keep local-tool helper behavior independent from JVM hashing, file existence checks, Android gallery file persistence, Android content URI parsing, notification posting, notification listening, and WorkManager scheduling. Android currently owns SHA-256 sandbox suffixes, generated-image gallery writes, Python sandbox content/file URIs, assistant notifications, recent-notification snapshots, and scheduled follow-up work through `AndroidLocalToolPlatform`, `AndroidGeneratedToolImageSaver`, `AndroidLocalToolPythonSandbox`, and `AndroidLocalToolNotificationPlatform`; iOS can provide native equivalents while preserving tool JSON, sandbox filenames, generated file links, and attachment-import behavior.
@@ -469,13 +469,21 @@ Current iOS app status:
   tools/memory/MCP/provider messages and calls the same `generate()`.
   Prepare is no longer dual-code: `:ai` `PortableGenerationPrepare` owns
   lorebook/skill/RAG activation, smart-context packing, memory injection,
-  and portable input transformers (placeholder/document/OCR/unsupported).
-  Tool lists are built by `assemblePortableTools` (local, workspace via
-  `OnDeviceWorkspaceRuntime`, memory, `manage_skills`, MCP, search). Hosts
-  inject runtimes and do not hand-roll the list. Android
+  image-archive/OCR preprocess, recent-chat memories, and portable input
+  transformers (placeholder, Pebble-subset / injected Pebble templates,
+  document, OCR, unsupported, workspace reminder). Android injects a
+  Pebble-backed `PortableTemplateRuntime`; iOS uses
+  `renderSimpleMessageTemplate` (`{{ message }}`/`role`/`time`/`date` plus
+  `{% if %}`). iOS OCR is Vision `IosPlatformImageOcr`. Tool lists are
+  built by one `assemblePortableTools` call that includes memory and
+  `manage_skills` (hosts pass extra tools; they do not append those
+  runtimes a second time). Android
   `ChatService.persistConversationToRepository` saves through
   `PortableChatEngine.saveConversation` backed by
-  `RoomPortableConversationStore`. `PortableConversationStore` /
+  `RoomPortableConversationStore`. iOS conversation CRUD uses the same
+  `PortableConversationStore` via `JsonFilePortableConversationStore`
+  (`state/conversations.json`); settings/keychain stay in `IosStoredState`.
+  `PortableConversationStore` /
   `PortableSettingsStore` remain the platform-agnostic persistence
   contracts; Room and the iOS file store remain the backing implementations. iOS on-device runtimes stay honest
   unavailable shims. The assistant overlay is an in-process Compose

@@ -32,6 +32,12 @@ class RoomPortableConversationStore(
             )
         }
     }
+
+    override suspend fun delete(id: String) {
+        val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
+        val existing = conversationRepo.getConversationById(uuid) ?: return
+        conversationRepo.deleteConversation(existing)
+    }
 }
 
 fun Conversation.toPortableRecord(): PortableConversationRecord = PortableConversationRecord(

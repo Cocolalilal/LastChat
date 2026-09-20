@@ -8,6 +8,7 @@ import me.rerere.common.platform.PlatformJwtSigner
 import me.rerere.common.platform.PlatformMediaEncoder
 import me.rerere.common.platform.PlatformSpeechRecorder
 import me.rerere.common.platform.SecureSettingsStore
+import me.rerere.common.platform.PlatformImageOcr
 import me.rerere.document.PlatformDocumentParser
 
 /** Single composition root for the platform contracts consumed by shared features. */
@@ -21,4 +22,5 @@ class IosPlatformServices(
     val speechRecorder: PlatformSpeechRecorder = IosPlatformSpeechRecorder(),
     val documentParser: PlatformDocumentParser = IosPlatformDocumentParser(),
     val attachmentAudioPlayer: PlatformAttachmentAudioPlayer = IosPlatformAttachmentAudioPlayer(),
+    val imageOcr: PlatformImageOcr = IosPlatformImageOcr(),
 )

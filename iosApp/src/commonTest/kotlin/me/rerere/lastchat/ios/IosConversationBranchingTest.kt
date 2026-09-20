@@ -269,4 +269,29 @@ class IosConversationBranchingTest {
         assertNull(remap("file:///data/user/0/me.rerere.rikkahub/files/workspaces/root/file.txt"))
         assertNull(remap("file:///data/user/0/me.rerere.rikkahub/files/upload/missing.jpg"))
     }
+
+    @Test
+    fun portableStoreRecordRoundTripKeepsNodesAndSummary() {
+        val conversation = IosConversation(
+            id = "chat-1",
+            assistantId = "asst",
+            title = "Castle",
+            messageNodes = listOf(MessageNode.of(UIMessage.user("hello"))),
+            isPinned = true,
+            updatedAtEpochMs = 42L,
+            truncateIndex = 2,
+            contextSummary = "Earlier we walked.",
+            contextSummaryUpToIndex = 3,
+            memoryLastMessageId = "msg-9",
+        )
+        val restored = conversation.toPortableRecord().toIosConversation()
+        assertEquals("chat-1", restored.id)
+        assertEquals("asst", restored.assistantId)
+        assertEquals("Castle", restored.title)
+        assertEquals(1, restored.messageNodes.size)
+        assertEquals(2, restored.truncateIndex)
+        assertEquals("Earlier we walked.", restored.contextSummary)
+        assertEquals("msg-9", restored.memoryLastMessageId)
+        assertTrue(restored.isPinned)
+    }
 }

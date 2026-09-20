@@ -250,6 +250,8 @@ val dataSourceModule = module {
             embeddingService = get(),
             memorySearchService = get(),
             onDeviceLlm = get(),
+            templateRenderer = get(),
+            workspaceRepository = get(),
             chatEngine = get(),
         )
     }

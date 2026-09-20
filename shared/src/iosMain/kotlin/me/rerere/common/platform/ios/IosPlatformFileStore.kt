@@ -88,6 +88,22 @@ class IosPlatformFileStore(
 
     override fun localUrl(path: String): String? = NSURL.fileURLWithPath(resolve(path)).absoluteString
 
+    override suspend fun listFiles(path: String): List<String> {
+        val root = resolve(path)
+        if (!fileManager.fileExistsAtPath(root)) return emptyList()
+        val enumerator = fileManager.enumeratorAtPath(root) ?: return emptyList()
+        val prefix = path.replace('\\', '/').trimStart('/')
+        val files = mutableListOf<String>()
+        while (true) {
+            val relative = enumerator.nextObject() as? String ?: break
+            val absolute = "$root/$relative"
+            val nested = fileManager.contentsOfDirectoryAtPath(absolute, error = null)
+            if (nested != null) continue
+            files += if (prefix.isEmpty()) relative else "$prefix/$relative"
+        }
+        return files
+    }
+
     private fun resolve(path: String): String {
         val normalized = path.replace('\\', '/').trimStart('/')
         require(normalized.split('/').none { it == ".." }) { "Path traversal is not allowed" }

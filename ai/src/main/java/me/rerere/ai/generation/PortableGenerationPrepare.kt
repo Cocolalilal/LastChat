@@ -5,6 +5,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
+import me.rerere.ai.context.adaptiveImageLimit
 import me.rerere.ai.context.ContextPlanner
 import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
@@ -62,6 +63,9 @@ data class PortablePrepareAssistant(
     val customBodies: List<CustomBody> = emptyList(),
     val contextPriority: PortableContextPriority = PortableContextPriority.BALANCED,
     val workspaceEnabled: Boolean = false,
+    val archiveImagesAfterMessageAge: Int? = null,
+    val enableRecentChatsReference: Boolean = false,
+    val messageTemplate: String = "{{ message }}",
 )
 
 data class PortableMemoryRecord(
@@ -69,6 +73,13 @@ data class PortableMemoryRecord(
     val content: String,
     val type: Int = 0,
     val timestamp: Long = 0L,
+)
+
+data class PortableRecentChat(
+    val id: String,
+    val title: String,
+    val updatedAtEpochMs: Long,
+    val isToday: Boolean = false,
 )
 
 data class PortablePrepareRequest(
@@ -95,6 +106,8 @@ data class PortablePrepareRequest(
     val episodeGroup: (Long) -> String = { "Older" },
     val timeZoneId: String = TimeZone.currentSystemDefault().id,
     val timeZoneShortName: String = TimeZone.currentSystemDefault().id,
+    val recentChats: List<PortableRecentChat> = emptyList(),
+    val activeConversationId: String? = null,
 )
 
 data class PortablePrepareResult(
@@ -142,6 +155,12 @@ object PortableGenerationPrepare {
                 (budget * request.contextBudgetScale.coerceIn(0.08, 1.0)).toInt().coerceAtLeast(1)
             } else budget
         }
+        val history = preprocessImages(request, smartEnabled, maxTokens)
+        val extraMemories = recentChatMemories(request, history)
+        val request = request.copy(
+            messages = history,
+            memories = (request.memories + extraMemories).distinctBy { it.content },
+        )
         val smartPlan = if (smartEnabled) {
             ContextPlanner.plan(
                 messages = request.messages,
@@ -746,5 +765,82 @@ object PortableGenerationPrepare {
                 else -> true
             }
         }
+    }
+
+    private suspend fun preprocessImages(
+        request: PortablePrepareRequest,
+        smartEnabled: Boolean,
+        maxTokens: Int,
+    ): List<UIMessage> {
+        val messages = request.messages
+        val ocr = request.transformerContext?.ocrRuntime
+        if (smartEnabled) {
+            val imageLimit = adaptiveImageLimit(request.model, maxTokens)
+            var retainedImages = 0
+            return messages.asReversed().map { message ->
+                val reversedParts = message.parts.asReversed().map { part ->
+                    if (part !is UIMessagePart.Image) return@map part
+                    if (retainedImages < imageLimit) {
+                        retainedImages++
+                        return@map part
+                    }
+                    val ocrText = ocr?.describeImage(part.url)
+                    if (ocrText.isNullOrBlank()) {
+                        part
+                    } else {
+                        UIMessagePart.Text("[Earlier image OCR]\n$ocrText")
+                    }
+                }.asReversed()
+                message.copy(parts = reversedParts)
+            }.asReversed()
+        }
+        val threshold = request.assistant.archiveImagesAfterMessageAge?.takeIf { it > 0 } ?: return messages
+        val archiveBeforeIndex = (messages.size - threshold).coerceAtLeast(0)
+        if (archiveBeforeIndex <= 0) return messages
+        return messages.mapIndexed { index, message ->
+            if (index >= archiveBeforeIndex) return@mapIndexed message
+            var changed = false
+            val updatedParts = message.parts.map { part ->
+                if (part is UIMessagePart.Image) {
+                    val ocrText = ocr?.describeImage(part.url)
+                    if (!ocrText.isNullOrBlank()) {
+                        changed = true
+                        UIMessagePart.Text("[Archived image OCR]\n$ocrText")
+                    } else {
+                        part
+                    }
+                } else {
+                    part
+                }
+            }
+            if (changed) message.copy(parts = updatedParts) else message
+        }
+    }
+
+    private fun recentChatMemories(
+        request: PortablePrepareRequest,
+        history: List<UIMessage>,
+    ): List<PortableMemoryRecord> {
+        if (!request.assistant.enableMemory ||
+            !request.assistant.enableRecentChatsReference ||
+            history.size > 2
+        ) {
+            return emptyList()
+        }
+        return request.recentChats
+            .filter { chat ->
+                chat.isToday &&
+                    chat.title.isNotBlank() &&
+                    chat.id != request.activeConversationId
+            }
+            .take(3)
+            .map { chat ->
+                PortableMemoryRecord(
+                    id = -1,
+                    content = "Participated in conversation: ${chat.title}",
+                    type = 1,
+                    timestamp = chat.updatedAtEpochMs,
+                )
+            }
     }
 }

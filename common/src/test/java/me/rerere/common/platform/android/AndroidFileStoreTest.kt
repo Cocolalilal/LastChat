@@ -2,6 +2,7 @@ package me.rerere.common.platform.android
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -22,6 +23,13 @@ class AndroidFileStoreTest {
                 // Expected.
             }
             assertTrue(store.localUrl("attachments/image.png").startsWith("file:"))
+            runBlocking {
+                store.writeBytes("skills/guide/notes.md", "note".encodeToByteArray())
+                store.writeBytes("skills/guide/SKILL.md", "skill".encodeToByteArray())
+                val listed = store.listFiles("skills")
+                assertTrue(listed.any { it.endsWith("notes.md") })
+                assertTrue(listed.any { it.endsWith("SKILL.md") })
+            }
         } finally {
             parent.deleteRecursively()
         }

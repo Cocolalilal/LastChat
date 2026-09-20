@@ -13,4 +13,11 @@ interface PlatformFileStore {
 
     /** Returns a platform URL for an app-private file when the platform can expose one. */
     fun localUrl(path: String): String? = null
+
+    /**
+     * Recursively lists files under [path], returning paths relative to the store root
+     * using `/` separators. Directories themselves are omitted. Default is empty so
+     * stubs stay source-compatible.
+     */
+    suspend fun listFiles(path: String): List<String> = emptyList()
 }

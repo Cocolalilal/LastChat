@@ -1,5 +1,6 @@
 package me.rerere.ai.generation
 
+import kotlinx.serialization.Serializable
 import me.rerere.ai.ui.MessageNode
 
 /**
@@ -14,6 +15,7 @@ interface PortableConversationStore {
         options: PortableSaveOptions = PortableSaveOptions(),
     )
     suspend fun list(): List<PortableConversationRecord> = emptyList()
+    suspend fun delete(id: String) {}
 }
 
 data class PortableSaveOptions(
@@ -21,6 +23,7 @@ data class PortableSaveOptions(
     val syncAttachments: Boolean = true,
 )
 
+@Serializable
 data class PortableConversationRecord(
     val id: String,
     val assistantId: String?,
@@ -40,6 +43,7 @@ data class PortableConversationRecord(
     val lastPruneMessageCount: Int = 0,
     val lastRefreshTime: Long = 0L,
     val isFork: Boolean = false,
+    val memoryLastMessageId: String? = null,
 )
 
 enum class PortablePersistenceMode {
@@ -76,4 +80,8 @@ class InMemoryPortableConversationStore(
     }
 
     override suspend fun list(): List<PortableConversationRecord> = conversations.values.toList()
+
+    override suspend fun delete(id: String) {
+        conversations.remove(id)
+    }
 }

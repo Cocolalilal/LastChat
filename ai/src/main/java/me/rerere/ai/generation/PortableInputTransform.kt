@@ -1,10 +1,12 @@
 package me.rerere.ai.generation
 
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.MessageTemplateContext
 import me.rerere.document.PortableDocumentText
 
 /**
@@ -24,6 +26,11 @@ class PortableTransformerContext(
     val placeholders: Map<String, String> = emptyMap(),
     val documentRuntime: PortableDocumentRuntime? = null,
     val ocrRuntime: PortableOcrRuntime? = null,
+    val messageTemplate: String = "{{ message }}",
+    val templateRuntime: PortableTemplateRuntime? = null,
+    val templateTime: String = "",
+    val templateDate: String = "",
+    val workspaceReminder: PortableWorkspaceReminder? = null,
     private val generationAnnotations: MutableList<UIMessageAnnotation> = mutableListOf(),
     private val progressAnnotations: MutableList<UIMessageAnnotation> = mutableListOf(),
     private val onProgressAnnotationsChanged: (suspend (List<UIMessageAnnotation>) -> Unit)? = null,
@@ -56,6 +63,14 @@ fun interface PortableDocumentRuntime {
 fun interface PortableOcrRuntime {
     suspend fun describeImage(url: String): String?
 }
+
+data class PortableWorkspaceReminder(
+    val name: String,
+    val ready: Boolean,
+    val toolCapable: Boolean,
+    val cwd: String? = null,
+    val unavailableReason: String? = null,
+)
 
 data class PortableInputTransformResult(
     val messages: List<UIMessage>,
@@ -229,11 +244,140 @@ object PortableUnsupportedFileTransformer : PortableInputTransformer {
     }
 }
 
+object PortableTemplateTransformer : PortableInputTransformer {
+    override suspend fun transform(
+        ctx: PortableTransformerContext,
+        messages: List<UIMessage>,
+    ): List<UIMessage> {
+        val template = ctx.messageTemplate.ifBlank { "{{ message }}" }
+        val runtime = ctx.templateRuntime ?: PortableTemplateRuntime(::renderSimpleMessageTemplate)
+        return messages.map { message ->
+            message.copy(
+                parts = message.parts.map { part ->
+                    if (part is UIMessagePart.Text) {
+                        val context = MessageTemplateContext.build(
+                            message = part.text,
+                            role = message.role,
+                            time = ctx.templateTime,
+                            date = ctx.templateDate,
+                        ).asMap()
+                        part.copy(text = runtime.render(template, context))
+                    } else {
+                        part
+                    }
+                },
+            )
+        }
+    }
+}
+
+object PortableWorkspaceReminderTransformer : PortableInputTransformer {
+    override suspend fun transform(
+        ctx: PortableTransformerContext,
+        messages: List<UIMessage>,
+    ): List<UIMessage> {
+        val reminder = ctx.workspaceReminder ?: return messages
+        val prompt = buildPortableWorkspaceReminderPrompt(reminder)
+        val withSystem = appendSystemPrompt(messages, prompt)
+        val cwd = reminder.cwd
+        if (cwd.isNullOrBlank()) return withSystem
+        return withSystem.map { message ->
+            if (message.role != MessageRole.USER) {
+                message
+            } else {
+                val synced = message.parts.mapNotNull { part ->
+                    val url = when (part) {
+                        is UIMessagePart.Image -> part.url
+                        is UIMessagePart.Document -> part.url
+                        else -> null
+                    } ?: return@mapNotNull null
+                    if (!url.startsWith("file://")) return@mapNotNull null
+                    val fileName = when (part) {
+                        is UIMessagePart.Document -> part.fileName
+                        else -> null
+                    } ?: url.substringAfterLast("/").substringBefore("?")
+                    "$cwd/uploads/$fileName"
+                }
+                if (synced.isEmpty()) {
+                    message
+                } else {
+                    appendText(
+                        message,
+                        "\n[System: The attachments in this message have been synced to your workspace at: ${synced.joinToString(", ")}]\n",
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun buildPortableWorkspaceReminderPrompt(reminder: PortableWorkspaceReminder): String {
+    if (!reminder.toolCapable || !reminder.ready) {
+        val reason = reminder.unavailableReason ?: when {
+            !reminder.toolCapable ->
+                "The selected model is not marked as tool-capable, so workspace_shell, workspace_read_file, workspace_write_file, and workspace_edit_file are not available in this chat."
+            else ->
+                "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run."
+        }
+        return buildString {
+            appendLine("<workspace>")
+            appendLine("A Linux workspace named \"${reminder.name}\" is configured, but it is not currently usable.")
+            appendLine("- $reason")
+            appendLine("- Do not claim that you can run workspace commands, inspect Python, read/write workspace files, or create files in the workspace during this turn.")
+            appendLine("- If the user asks about the Linux environment, explain this limitation briefly and tell them what needs to be enabled or fixed.")
+            append("</workspace>")
+        }
+    }
+    return buildString {
+        appendLine("<workspace>")
+        appendLine("You have access to a persistent Linux workspace named \"${reminder.name}\", running in a sandboxed proot rootfs environment.")
+        appendLine("- The workspace files area is mounted at `/workspace`. Use it as your working directory; files written there persist across turns of this conversation.")
+        appendLine("- All paths passed to workspace tools must be absolute and inside the Rootfs (for example `/workspace/notes.md`).")
+        appendLine("- Available tools:")
+        appendLine("  - `workspace_read_file`: read file contents.")
+        appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
+        appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
+        appendLine("- If you need to inspect the environment, call `workspace_shell`. Do not claim that you checked, installed, read, wrote, or generated anything unless a workspace tool result is present in the conversation.")
+        appendLine("- If a workspace tool call is pending user approval, wait for the approval/result instead of guessing the outcome.")
+        appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
+        appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
+        if (!reminder.cwd.isNullOrBlank()) {
+            appendLine("- Current working directory: `${reminder.cwd}`. Use this as the default context for file operations and shell commands.")
+        }
+        append("</workspace>")
+    }
+}
+
+private fun appendSystemPrompt(messages: List<UIMessage>, prompt: String): List<UIMessage> {
+    val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
+    return if (systemIndex >= 0) {
+        messages.toMutableList().apply {
+            this[systemIndex] = appendText(this[systemIndex], "\n\n$prompt")
+        }
+    } else {
+        listOf(UIMessage.system(prompt)) + messages
+    }
+}
+
+private fun appendText(message: UIMessage, extra: String): UIMessage {
+    val updatedParts = message.parts.toMutableList()
+    val firstTextIndex = updatedParts.indexOfFirst { it is UIMessagePart.Text }
+    if (firstTextIndex >= 0) {
+        val text = updatedParts[firstTextIndex] as UIMessagePart.Text
+        updatedParts[firstTextIndex] = text.copy(text = text.text + extra)
+    } else {
+        updatedParts.add(UIMessagePart.Text(extra))
+    }
+    return message.copy(parts = updatedParts)
+}
+
 fun defaultPortableInputTransformers(): List<PortableInputTransformer> = listOf(
     PortablePlaceholderTransformer,
+    PortableTemplateTransformer,
     PortableDocumentAsPromptTransformer,
     PortableOcrTransformer,
     PortableUnsupportedFileTransformer,
+    PortableWorkspaceReminderTransformer,
 )
 
 fun bytesDocumentRuntime(

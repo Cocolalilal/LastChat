@@ -81,6 +81,12 @@ class PortableChatEngine(
         store.save(conversation, options)
     }
 
+    suspend fun deleteConversation(id: String) {
+        store.delete(id)
+    }
+
+    suspend fun listConversations(): List<PortableConversationRecord> = store.list()
+
     fun editMessage(nodes: List<MessageNode>, messageId: Uuid, parts: List<UIMessagePart>): List<MessageNode> {
         return nodes.withEditedMessage(messageId, parts)
     }

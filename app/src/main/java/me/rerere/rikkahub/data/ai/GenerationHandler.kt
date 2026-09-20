@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -48,12 +49,18 @@ import me.rerere.ai.generation.PortableInputTransformer
 import me.rerere.ai.generation.PortableMemoryToolRuntime
 import me.rerere.ai.generation.PortablePrepareRequest
 import me.rerere.ai.generation.PortablePlaceholderTransformer
+import me.rerere.ai.generation.PortableRecentChat
 import me.rerere.ai.generation.PortableSkillToolBinding
+import me.rerere.ai.generation.PortableTemplateRuntime
+import me.rerere.ai.generation.PortableToolAssemblyOptions
+import me.rerere.ai.generation.PortableToolRuntimes
 import me.rerere.ai.generation.PortableTransformerContext
 import me.rerere.ai.generation.PortableTurnRequest
+import me.rerere.ai.generation.PortableWorkspaceReminder
+import me.rerere.ai.generation.assemblePortableTools
 import me.rerere.ai.generation.createPortableManageSkillsTool
-import me.rerere.ai.generation.createPortableMemoryTools
 import me.rerere.ai.generation.defaultPortableInputTransformers
+import me.rerere.ai.generation.withoutPortableRuntimeTools
 import me.rerere.ai.generation.SKILL_MANAGEMENT_TOOL_NAME
 import me.rerere.ai.provider.OnDeviceLlmProvider
 import me.rerere.ai.provider.ProviderManager
@@ -76,8 +83,11 @@ import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
+import me.rerere.rikkahub.data.ai.transformers.MessageTemplateRenderer
+import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.TransformerContext
 import me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.androidPortableDocumentRuntime
 import me.rerere.rikkahub.data.ai.transformers.androidPortableOcrRuntime
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
@@ -99,9 +109,14 @@ import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.SkillExportImport
+import me.rerere.rikkahub.utils.toLocalDate
+import me.rerere.rikkahub.utils.toLocalTime
+import me.rerere.workspace.WorkspaceShellStatus
 import java.io.File
+import java.time.Instant
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -445,8 +460,10 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
-    private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
     private val onDeviceLlm: me.rerere.common.runtime.OnDeviceLlmRuntime,
+    private val templateRenderer: MessageTemplateRenderer,
+    private val workspaceRepository: WorkspaceRepository,
+    private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
     private val chatEngine: PortableChatEngine = PortableChatEngine(),
 ) {
     fun generateText(
@@ -468,6 +485,7 @@ class GenerationHandler(
         onContextUsage: suspend (ContextUsageBreakdown) -> Unit = {},
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
+        workspaceCwd: String? = null,
     ): Flow<GenerationChunk> = channelFlow {
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
@@ -516,51 +534,40 @@ class GenerationHandler(
                 },
                 rebuildTools = { stepIndex, _ ->
                     Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
-                    buildList {
-                        Log.i(TAG, "generateInternal: build tools($assistant)")
-                        if (assistant.enableMemory) {
-                            buildMemoryTools(
-                                onCreation = { content ->
-                                    memoryRepo.addMemory(assistant.id.toString(), content)
-                                },
-                                onUpdate = { id, content ->
-                                    memoryRepo.updateContent(id, content)
-                                },
-                                onDelete = { id ->
-                                    memoryRepo.deleteMemory(id)
-                                },
-                                onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
-                                    { query, limit, timeRange ->
-                                        memorySearchService.searchMemory(
-                                            assistant = assistant,
-                                            activeConversationId = activeConversationId,
-                                            query = query,
-                                            limit = limit,
-                                            timeRange = timeRange,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                }
-                            ).let(this::addAll)
-                        }
-                        createSkillManagementTool(
-                            state = buildSkillToolState(
-                                skills = settings.skills,
-                                assistantId = assistant.id,
-                                assistantDefaultSkillIds = assistantDefaultSkillIds,
-                                conversationSkillIds = conversationSkillIds,
-                                turnScopedSkillIds = currentTurnScopedSkillIds,
-                            ),
-                            currentTurnScopedSkillIds = currentTurnScopedSkillIds,
-                            automaticInvocationEnabled = assistant.enableAutomaticSkillInvocation &&
+                    assemblePortableTools(
+                        options = PortableToolAssemblyOptions(
+                            model = model,
+                            includeMemory = assistant.enableMemory,
+                            includeMemorySearch = shouldRegisterMemorySearchTool(assistant),
+                            includeSkills = true,
+                            automaticSkillInvocation = assistant.enableAutomaticSkillInvocation &&
                                 model.abilities.contains(ModelAbility.TOOL),
-                            onUpdateTurnScopedSkillIds = { updatedIds ->
-                                currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
+                        ),
+                        runtimes = PortableToolRuntimes(
+                            memory = if (assistant.enableMemory) {
+                                memoryToolRuntime(
+                                    assistant = assistant,
+                                    activeConversationId = activeConversationId,
+                                )
+                            } else {
+                                null
                             },
-                        )?.let(this::add)
-                        addAll(tools)
-                    }
+                            skills = PortableSkillToolBinding(
+                                skills = settings.skills.map { it.toPortableSkill() },
+                                assistantId = assistant.id.toString(),
+                                assistantDefaultSkillIds = assistantDefaultSkillIds.map { it.toString() }.toSet(),
+                                conversationSkillIds = conversationSkillIds.map { it.toString() }.toSet(),
+                                turnScopedSkillIds = currentTurnScopedSkillIds.map { it.toString() }.toSet(),
+                                onUpdateTurnScopedSkillIds = { updatedIds ->
+                                    currentTurnScopedSkillIds = updatedIds
+                                        .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
+                                        .toSet()
+                                        .intersect(allSkillIds)
+                                },
+                            ),
+                            extraTools = tools.withoutPortableRuntimeTools(),
+                        ),
+                    )
                 },
                 prepareTurn = { _, conversationMessages, stepTools ->
                     val prepared = prepareGenerationTurn(
@@ -596,6 +603,7 @@ class GenerationHandler(
                         contextBudgetScale = contextBudgetScale,
                         providerImpl = providerImpl,
                         provider = provider,
+                        workspaceCwd = workspaceCwd,
                     )
                     lastPrepared = prepared
                     aiLoggingManager.addLog(
@@ -716,19 +724,7 @@ class GenerationHandler(
         transformers: List<PortableInputTransformer> = emptyList(),
         transformerContext: PortableTransformerContext? = null,
     ): BuildMessagesResult {
-        val smartEnabled = assistant.smartContextManagement &&
-            model.contextCapacityTokens?.let { it > 0 } == true
-        val history = if (smartEnabled) {
-            preserveOcrForImagesBeyondSmartLimit(
-                messages = messages,
-                model = model,
-                inputBudgetTokens = (smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage)
-                    .coerceAtLeast(1),
-            )
-        } else {
-            archiveOldImageMessages(messages, assistant)
-        }
-        val recentMessagesForScan = history.takeLast(10).map { it.toText() }
+        val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
         val lorebooksForAssistant = settings.lorebooks.filter { lorebook ->
             lorebook.enabled && (conversationEnabledLorebookIds ?: assistant.enabledLorebookIds).contains(lorebook.id)
         }
@@ -744,24 +740,19 @@ class GenerationHandler(
                 null
             }
         } else null
-        val extraMemories = if (assistant.enableMemory && assistant.enableRecentChatsReference && history.size <= 2) {
-            conversationRepo.getRecentConversations(assistant.id, limit = 4)
-                .filter { conversation ->
-                    conversation.id != activeConversationId &&
-                        conversation.title.isNotBlank() &&
-                        runtimeInfo.isToday(conversation.updateAt)
-                }
-                .take(3)
-                .map { conversation ->
-                    AssistantMemory(
-                        id = -1,
-                        content = "Participated in conversation: ${conversation.title}",
-                        type = 1,
-                        timestamp = conversation.updateAt.toEpochMilli(),
-                    )
-                }
-        } else emptyList()
-        val portableMemories = (memories + extraMemories).distinctBy { it.content }.map { it.toPortableMemory() }
+        val recentChats = if (assistant.enableMemory && assistant.enableRecentChatsReference) {
+            conversationRepo.getRecentConversations(assistant.id, limit = 4).map { conversation ->
+                PortableRecentChat(
+                    id = conversation.id.toString(),
+                    title = conversation.title,
+                    updatedAtEpochMs = conversation.updateAt.toEpochMilli(),
+                    isToday = runtimeInfo.isToday(conversation.updateAt),
+                )
+            }
+        } else {
+            emptyList()
+        }
+        val portableMemories = memories.map { it.toPortableMemory() }
         val portableSkills = settings.skills.map { it.toPortableSkill(context) }
         val portableLorebooks = settings.lorebooks.map { lorebook ->
             val coverJson = lorebook.cover?.let { cover ->
@@ -771,7 +762,7 @@ class GenerationHandler(
         }
         val prepared = PortableGenerationPrepare.prepare(
             PortablePrepareRequest(
-                messages = history,
+                messages = messages,
                 model = model,
                 tools = tools,
                 assistant = assistant.toPortablePrepareAssistant(),
@@ -791,6 +782,8 @@ class GenerationHandler(
                 contextBudgetScale = contextBudgetScale,
                 contextUsageSourceKey = contextUsageSourceKey,
                 episodeGroup = runtimeInfo::episodicMemoryGroup,
+                recentChats = recentChats,
+                activeConversationId = activeConversationId?.toString(),
             ),
         )
         return BuildMessagesResult(
@@ -803,84 +796,6 @@ class GenerationHandler(
             effectiveInputBudgetTokens = prepared.effectiveInputBudgetTokens,
             contextUsage = prepared.contextUsage,
         )
-    }
-
-    private suspend fun archiveOldImageMessages(
-        messages: List<UIMessage>,
-        assistant: Assistant,
-    ): List<UIMessage> {
-        val threshold = assistant.archiveImagesAfterMessageAge?.takeIf { it > 0 } ?: return messages
-        val archiveBeforeIndex = (messages.size - threshold).coerceAtLeast(0)
-        if (archiveBeforeIndex <= 0) {
-            return messages
-        }
-
-        return messages.mapIndexed { index, message ->
-            if (index >= archiveBeforeIndex) {
-                return@mapIndexed message
-            }
-
-            var changed = false
-            val updatedParts = buildList {
-                message.parts.forEach { part ->
-                    if (part is UIMessagePart.Image) {
-                        val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
-                            part = part,
-                            ensureAvailable = true,
-                        )
-                        if (!ocrText.isNullOrBlank()) {
-                            changed = true
-                            add(
-                                UIMessagePart.Text(
-                                    """
-                                    [Archived image OCR]
-                                    $ocrText
-                                    """.trimIndent()
-                                )
-                            )
-                        } else {
-                            add(part)
-                        }
-                    } else {
-                        add(part)
-                    }
-                }
-            }
-
-            if (changed) {
-                message.copy(parts = updatedParts)
-            } else {
-                message
-            }
-        }
-    }
-
-    private suspend fun preserveOcrForImagesBeyondSmartLimit(
-        messages: List<UIMessage>,
-        model: Model,
-        inputBudgetTokens: Int,
-    ): List<UIMessage> {
-        val imageLimit = adaptiveImageLimit(model, inputBudgetTokens)
-        var retainedImages = 0
-        return messages.asReversed().map { message ->
-            val reversedParts = message.parts.asReversed().map { part ->
-                if (part !is UIMessagePart.Image) return@map part
-                if (retainedImages < imageLimit) {
-                    retainedImages++
-                    return@map part
-                }
-                val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
-                    part = part,
-                    ensureAvailable = true,
-                )
-                if (ocrText.isNullOrBlank()) {
-                    part
-                } else {
-                    UIMessagePart.Text("[Earlier image OCR]\n$ocrText")
-                }
-            }.asReversed()
-            message.copy(parts = reversedParts)
-        }.asReversed()
     }
 
     private suspend fun prepareGenerationTurn(
@@ -904,13 +819,41 @@ class GenerationHandler(
         contextBudgetScale: Double = 1.0,
         providerImpl: Provider<ProviderSetting>,
         provider: ProviderSetting,
+        workspaceCwd: String? = null,
     ): PreparedGenerationTurn {
         var uiMessages = messages
+        val now = Instant.now()
+        val workspaceId = assistant.workspaceId?.toString()
+        val workspace = workspaceId?.let { workspaceRepository.getById(it) }
+        val toolCapable = model.abilities.contains(ModelAbility.TOOL)
+        val workspaceReminder = workspace?.let { entity ->
+            val ready = entity.shellStatus == WorkspaceShellStatus.READY.name
+            PortableWorkspaceReminder(
+                name = entity.name,
+                ready = ready,
+                toolCapable = toolCapable,
+                cwd = workspaceCwd,
+                unavailableReason = when {
+                    !toolCapable ->
+                        "The selected model is not marked as tool-capable, so workspace_shell, workspace_read_file, workspace_write_file, and workspace_edit_file are not available in this chat."
+                    !ready ->
+                        "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run."
+                    else -> null
+                },
+            )
+        }
         val transformerCtx = PortableTransformerContext(
             model = model,
             workspaceEnabled = assistant.workspaceId != null,
             documentRuntime = androidPortableDocumentRuntime(context),
             ocrRuntime = androidPortableOcrRuntime(chatAttachmentRepository),
+            messageTemplate = assistant.messageTemplate,
+            templateRuntime = PortableTemplateRuntime { _, templateContext ->
+                templateRenderer.render(assistant.id.toString(), templateContext)
+            },
+            templateTime = now.toLocalTime(),
+            templateDate = now.toLocalDate(),
+            workspaceReminder = workspaceReminder,
             onProgressAnnotationsChanged = { annotations ->
                 val updatedMessages = uiMessages.upsertOcrPlaceholder(annotations)
                 if (updatedMessages != uiMessages) {
@@ -931,7 +874,9 @@ class GenerationHandler(
             it === PlaceholderTransformer ||
                 it === DocumentAsPromptTransformer ||
                 it === OcrTransformer ||
-                it === UnsupportedFileTransformer
+                it === UnsupportedFileTransformer ||
+                it is TemplateTransformer ||
+                it is WorkspaceReminderTransformer
         }
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1120,52 +1065,62 @@ class GenerationHandler(
         )
     }
 
-    private fun buildMemoryTools(
-        onCreation: suspend (String) -> AssistantMemory,
-        onUpdate: suspend (Int, String) -> AssistantMemory,
-        onDelete: suspend (Int) -> Unit,
-        onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
-    ): List<Tool> = createPortableMemoryTools(
-        runtime = PortableMemoryToolRuntime(
-            onCreate = { content ->
-                json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
-            },
-            onUpdate = { id, content ->
-                val before = memoryRepo.getMemoryById(id)
-                val updated = onUpdate(id, content)
-                buildJsonObject {
-                    put("id", JsonPrimitive(updated.id))
-                    put("content", JsonPrimitive(updated.content))
-                    put("type", JsonPrimitive(updated.type))
-                    put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
-                    updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
-                    put("timestamp", JsonPrimitive(updated.timestamp))
-                    updated.significance?.let { put("significance", JsonPrimitive(it)) }
-                    before?.let { previous ->
-                        put("before_content", JsonPrimitive(previous.content))
-                        put("before_timestamp", JsonPrimitive(previous.timestamp))
-                    }
+    private fun memoryToolRuntime(
+        assistant: Assistant,
+        activeConversationId: Uuid?,
+    ): PortableMemoryToolRuntime = PortableMemoryToolRuntime(
+        onCreate = { content ->
+            json.encodeToJsonElement(
+                AssistantMemory.serializer(),
+                memoryRepo.addMemory(assistant.id.toString(), content),
+            )
+        },
+        onUpdate = { id, content ->
+            val before = memoryRepo.getMemoryById(id)
+            val updated = memoryRepo.updateContent(id, content)
+            buildJsonObject {
+                put("id", JsonPrimitive(updated.id))
+                put("content", JsonPrimitive(updated.content))
+                put("type", JsonPrimitive(updated.type))
+                put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
+                updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                put("timestamp", JsonPrimitive(updated.timestamp))
+                updated.significance?.let { put("significance", JsonPrimitive(it)) }
+                before?.let { previous ->
+                    put("before_content", JsonPrimitive(previous.content))
+                    put("before_timestamp", JsonPrimitive(previous.timestamp))
                 }
-            },
-            onDelete = { id ->
-                val before = memoryRepo.getMemoryById(id)
-                onDelete(id)
-                buildJsonObject {
-                    put("deleted", JsonPrimitive(true))
-                    before?.let { memory ->
-                        put("id", JsonPrimitive(memory.id))
-                        put("content", JsonPrimitive(memory.content))
-                        put("type", JsonPrimitive(memory.type))
-                        put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
-                        memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
-                        put("timestamp", JsonPrimitive(memory.timestamp))
-                        memory.significance?.let { put("significance", JsonPrimitive(it)) }
-                    }
+            }
+        },
+        onDelete = { id ->
+            val before = memoryRepo.getMemoryById(id)
+            memoryRepo.deleteMemory(id)
+            buildJsonObject {
+                put("deleted", JsonPrimitive(true))
+                before?.let { memory ->
+                    put("id", JsonPrimitive(memory.id))
+                    put("content", JsonPrimitive(memory.content))
+                    put("type", JsonPrimitive(memory.type))
+                    put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
+                    memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                    put("timestamp", JsonPrimitive(memory.timestamp))
+                    memory.significance?.let { put("significance", JsonPrimitive(it)) }
                 }
-            },
-            onSearch = onSearch,
-        ),
-        includeSearch = onSearch != null,
+            }
+        },
+        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
+            { query, limit, timeRange ->
+                memorySearchService.searchMemory(
+                    assistant = assistant,
+                    activeConversationId = activeConversationId,
+                    query = query,
+                    limit = limit,
+                    timeRange = timeRange,
+                )
+            }
+        } else {
+            null
+        },
     )
 
     @Suppress("UNCHECKED_CAST")

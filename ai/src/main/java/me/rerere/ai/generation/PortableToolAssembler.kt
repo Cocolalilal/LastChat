@@ -27,6 +27,17 @@ const val EDIT_MEMORY_TOOL_NAME = "edit_memory"
 const val DELETE_MEMORY_TOOL_NAME = "delete_memory"
 const val SEARCH_MEMORY_TOOL_NAME = "search_memory"
 
+val PORTABLE_RUNTIME_TOOL_NAMES = setOf(
+    CREATE_MEMORY_TOOL_NAME,
+    EDIT_MEMORY_TOOL_NAME,
+    DELETE_MEMORY_TOOL_NAME,
+    SEARCH_MEMORY_TOOL_NAME,
+    SKILL_MANAGEMENT_TOOL_NAME,
+)
+
+fun List<Tool>.withoutPortableRuntimeTools(): List<Tool> =
+    filterNot { it.name in PORTABLE_RUNTIME_TOOL_NAMES }
+
 data class PortableToolAssemblyOptions(
     val model: Model,
     val includeSearch: Boolean = false,

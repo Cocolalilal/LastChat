@@ -186,6 +186,97 @@ class PortableGenerationPrepareTest {
         )
         assertEquals("Hello Aria from gpt", replaced)
     }
+
+    @Test
+    fun templateTransformerRendersSimpleMessageAndRole() = runBlocking {
+        val result = PortableTemplateTransformer.transform(
+            PortableTransformerContext(
+                model = chatModel,
+                messageTemplate = "{{ role }}: {{ message }}",
+                templateTime = "10:00",
+                templateDate = "2026-09-20",
+            ),
+            listOf(UIMessage.user("Hello")),
+        )
+        assertEquals("user: Hello", result.single().toText())
+    }
+
+    @Test
+    fun workspaceReminderInjectsUnavailablePrompt() = runBlocking {
+        val result = PortableWorkspaceReminderTransformer.transform(
+            PortableTransformerContext(
+                model = chatModel,
+                workspaceReminder = PortableWorkspaceReminder(
+                    name = "DevBox",
+                    ready = false,
+                    toolCapable = true,
+                    unavailableReason = "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run.",
+                ),
+            ),
+            listOf(UIMessage.system("You are LastChat."), UIMessage.user("Hi")),
+        )
+        val system = result.first { it.role == MessageRole.SYSTEM }.toText()
+        assertTrue(system.contains("<workspace>"))
+        assertTrue(system.contains("DevBox"))
+        assertTrue(system.contains("not currently usable"))
+    }
+
+    @Test
+    fun archiveOldImagesUsesOcrText() = runBlocking {
+        val old = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Image(url = "file://old.png")),
+        )
+        val recent = UIMessage.user("latest")
+        val result = PortableGenerationPrepare.prepare(
+            PortablePrepareRequest(
+                messages = listOf(old, recent),
+                model = chatModel,
+                tools = emptyList(),
+                assistant = PortablePrepareAssistant(
+                    id = "asst",
+                    smartContextManagement = false,
+                    archiveImagesAfterMessageAge = 1,
+                ),
+                transformerContext = PortableTransformerContext(
+                    model = chatModel,
+                    ocrRuntime = PortableOcrRuntime { "castle gate" },
+                ),
+            ),
+        )
+        val archived = result.providerMessages.first { it.role == MessageRole.USER && it.toText().contains("Archived") }
+        assertTrue(archived.toText().contains("castle gate"))
+        assertTrue(archived.parts.none { it is UIMessagePart.Image })
+    }
+
+    @Test
+    fun recentChatMemoriesInjectWhenHistoryIsShort() = runBlocking {
+        val result = PortableGenerationPrepare.prepare(
+            PortablePrepareRequest(
+                messages = listOf(UIMessage.user("Hi")),
+                model = chatModel,
+                tools = emptyList(),
+                assistant = PortablePrepareAssistant(
+                    id = "asst",
+                    enableMemory = true,
+                    enableRecentChatsReference = true,
+                    smartContextManagement = false,
+                ),
+                recentChats = listOf(
+                    PortableRecentChat(
+                        id = "other",
+                        title = "Castle walk",
+                        updatedAtEpochMs = 1L,
+                        isToday = true,
+                    ),
+                ),
+                activeConversationId = "current",
+            ),
+        )
+        val used = result.usedMemories.single()
+        assertEquals(-1, used.memoryId)
+        assertTrue(used.memoryContent.contains("Castle walk"))
+    }
 }
 
 class PortableToolAssemblerTest {
@@ -312,5 +403,57 @@ class PortableToolAssemblerTest {
             ),
         )
         assertTrue(tools.isEmpty())
+    }
+
+    @Test
+    fun rebuildDoesNotAppendDuplicateMemoryOrSkillTools() {
+        val host = assemblePortableTools(
+            options = PortableToolAssemblyOptions(
+                model = toolModel,
+                includeSearch = true,
+            ),
+            runtimes = PortableToolRuntimes(
+                searchTool = Tool(
+                    name = SEARCH_WEB_TOOL_NAME,
+                    description = "Search",
+                    execute = { JsonPrimitive("ok") },
+                ),
+                extraTools = listOf(
+                    Tool(name = CREATE_MEMORY_TOOL_NAME, description = "dup", execute = { JsonPrimitive("x") }),
+                    Tool(name = "look_at_screen", description = "Screen", execute = { JsonPrimitive("ok") }),
+                ),
+            ),
+        )
+        val live = assemblePortableTools(
+            options = PortableToolAssemblyOptions(
+                model = toolModel,
+                includeMemory = true,
+                includeSkills = true,
+            ),
+            runtimes = PortableToolRuntimes(
+                memory = PortableMemoryToolRuntime(
+                    onCreate = { JsonPrimitive(it) },
+                    onUpdate = { _, content -> JsonPrimitive(content) },
+                    onDelete = { JsonPrimitive(it) },
+                ),
+                skills = PortableSkillToolBinding(
+                    skills = listOf(
+                        PortableSkill(id = "a", name = "A", instructions = "do a", description = "A"),
+                    ),
+                    assistantId = "asst",
+                    assistantDefaultSkillIds = emptySet(),
+                    conversationSkillIds = emptySet(),
+                    turnScopedSkillIds = emptySet(),
+                    onUpdateTurnScopedSkillIds = {},
+                ),
+                extraTools = host.withoutPortableRuntimeTools(),
+            ),
+        )
+        val names = live.map { it.name }
+        assertEquals(1, names.count { it == CREATE_MEMORY_TOOL_NAME })
+        assertEquals(1, names.count { it == SKILL_MANAGEMENT_TOOL_NAME })
+        assertEquals(1, names.count { it == SEARCH_WEB_TOOL_NAME })
+        assertTrue("look_at_screen" in names)
+        assertEquals(names.toSet().size, names.size)
     }
 }

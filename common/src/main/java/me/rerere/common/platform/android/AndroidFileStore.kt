@@ -61,6 +61,16 @@ class AndroidFileStore(
 
     override fun localUrl(path: String): String = resolvePath(path).toURI().toString()
 
+    override suspend fun listFiles(path: String): List<String> = withContext(Dispatchers.IO) {
+        val dir = resolvePath(path)
+        if (!dir.isDirectory) return@withContext emptyList()
+        val root = rootDir.canonicalFile
+        dir.walkTopDown()
+            .filter { it.isFile }
+            .map { it.relativeTo(root).invariantSeparatorsPath }
+            .toList()
+    }
+
     private fun resolvePath(path: String): File {
         val root = rootDir.canonicalFile
         val file = File(root, path).canonicalFile

@@ -105,9 +105,7 @@ import me.rerere.rikkahub.data.ai.tools.parseAskUserQuestionnaire
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.toJsonElement
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
-import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
-import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -559,7 +557,6 @@ class ChatService(
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
     private val generationHandler: GenerationHandler,
-    private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
     private val localTools: LocalTools,
     private val workspaceRepository: WorkspaceRepository,
@@ -1539,22 +1536,18 @@ class ChatService(
                 },
                 assistant = assistant,
                 memories = requestMemories,
-                inputTransformers = buildList {
-                    addAll(defaultChatInputTransformers)
-                    val cwd = getWorkspaceCwd(
-                        assistantName = assistant?.name ?: "",
-                        chatTitle = conversation.title,
-                        chatId = conversation.id.toString()
-                    )
-                    add(WorkspaceReminderTransformer(workspaceRepository, cwd))
-                    add(templateTransformer)
-                },
+                inputTransformers = defaultChatInputTransformers,
                 outputTransformers = defaultChatOutputTransformers,
                 tools = tools,
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
                 enabledLorebookIds = conversation.enabledLorebookIds,
                 activeConversationId = conversation.id,
+                workspaceCwd = getWorkspaceCwd(
+                    assistantName = assistant?.name ?: "",
+                    chatTitle = conversation.title,
+                    chatId = conversation.id.toString(),
+                ),
                 contextSummary = conversation.contextSummary,
                 contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
                 contextBudgetScale = contextBudgetScale,
