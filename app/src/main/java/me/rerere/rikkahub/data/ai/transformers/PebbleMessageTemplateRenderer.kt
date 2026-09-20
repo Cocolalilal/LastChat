@@ -2,7 +2,10 @@ package me.rerere.rikkahub.data.ai.transformers
 
 import io.pebbletemplates.pebble.PebbleEngine
 import io.pebbletemplates.pebble.loader.Loader
+import io.pebbletemplates.pebble.loader.StringLoader
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.generation.PortableTemplateRuntime
+import me.rerere.ai.generation.renderMessageTemplate
 import me.rerere.ai.util.MessageTemplateContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.utils.toLocalDate
@@ -35,6 +38,24 @@ class AndroidMessageTemplateContextFactory(
             time = now.toLocalTime(),
             date = now.toLocalDate(),
         ).asMap()
+    }
+}
+
+class PebblePortableTemplateRuntime(
+    private val engine: PebbleEngine = PebbleEngine.Builder()
+        .loader(StringLoader())
+        .autoEscaping(false)
+        .cacheActive(false)
+        .build(),
+) : PortableTemplateRuntime {
+    override fun render(template: String, context: Map<String, String>): String {
+        return try {
+            val output = StringWriter()
+            engine.getTemplate(template).evaluate(output, context)
+            output.toString()
+        } catch (_: Exception) {
+            renderMessageTemplate(template, context)
+        }
     }
 }
 

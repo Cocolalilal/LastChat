@@ -250,7 +250,7 @@ object PortableTemplateTransformer : PortableInputTransformer {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         val template = ctx.messageTemplate.ifBlank { "{{ message }}" }
-        val runtime = ctx.templateRuntime ?: PortableTemplateRuntime(::renderSimpleMessageTemplate)
+        val runtime = ctx.templateRuntime ?: DefaultPortableTemplateRuntime
         return messages.map { message ->
             message.copy(
                 parts = message.parts.map { part ->

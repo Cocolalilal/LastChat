@@ -147,6 +147,10 @@ val dataSourceModule = module {
             .build()
     }
 
+    single<me.rerere.ai.generation.PortableTemplateRuntime> {
+        me.rerere.rikkahub.data.ai.transformers.PebblePortableTemplateRuntime()
+    }
+
     single {
         PebbleMessageTemplateRenderer(engine = get())
     }
@@ -250,7 +254,7 @@ val dataSourceModule = module {
             embeddingService = get(),
             memorySearchService = get(),
             onDeviceLlm = get(),
-            templateRenderer = get(),
+            templateRuntime = get(),
             workspaceRepository = get(),
             chatEngine = get(),
         )

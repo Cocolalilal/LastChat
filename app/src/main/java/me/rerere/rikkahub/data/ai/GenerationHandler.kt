@@ -83,7 +83,6 @@ import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
-import me.rerere.rikkahub.data.ai.transformers.MessageTemplateRenderer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.TransformerContext
 import me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer
@@ -461,7 +460,7 @@ class GenerationHandler(
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
     private val onDeviceLlm: me.rerere.common.runtime.OnDeviceLlmRuntime,
-    private val templateRenderer: MessageTemplateRenderer,
+    private val templateRuntime: PortableTemplateRuntime,
     private val workspaceRepository: WorkspaceRepository,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
     private val chatEngine: PortableChatEngine = PortableChatEngine(),
@@ -741,12 +740,12 @@ class GenerationHandler(
             }
         } else null
         val recentChats = if (assistant.enableMemory && assistant.enableRecentChatsReference) {
-            conversationRepo.getRecentConversations(assistant.id, limit = 4).map { conversation ->
+            chatEngine.listConversations(assistantId = assistant.id.toString(), limit = 4).map { conversation ->
                 PortableRecentChat(
-                    id = conversation.id.toString(),
+                    id = conversation.id,
                     title = conversation.title,
-                    updatedAtEpochMs = conversation.updateAt.toEpochMilli(),
-                    isToday = runtimeInfo.isToday(conversation.updateAt),
+                    updatedAtEpochMs = conversation.updatedAtEpochMs,
+                    isToday = runtimeInfo.isToday(Instant.ofEpochMilli(conversation.updatedAtEpochMs)),
                 )
             }
         } else {
@@ -848,9 +847,7 @@ class GenerationHandler(
             documentRuntime = androidPortableDocumentRuntime(context),
             ocrRuntime = androidPortableOcrRuntime(chatAttachmentRepository),
             messageTemplate = assistant.messageTemplate,
-            templateRuntime = PortableTemplateRuntime { _, templateContext ->
-                templateRenderer.render(assistant.id.toString(), templateContext)
-            },
+            templateRuntime = templateRuntime,
             templateTime = now.toLocalTime(),
             templateDate = now.toLocalDate(),
             workspaceReminder = workspaceReminder,
