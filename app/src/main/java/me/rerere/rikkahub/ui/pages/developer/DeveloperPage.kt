@@ -86,9 +86,9 @@ fun LoggingPaging(vm: DeveloperVM) {
                     Card {
                         Column(
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-
+                            Text(log.developerLine())
                         }
                     }
                 }
