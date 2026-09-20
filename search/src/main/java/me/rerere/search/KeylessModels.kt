@@ -9,6 +9,11 @@ data class KeylessBackendInfo(
     val status: String = "No API key · skipped automatically if unreachable",
 )
 
+internal data class KeylessHttpResponse(
+    val statusCode: Int,
+    val body: String,
+)
+
 internal data class KeylessGeo(
     val name: String,
     val country: String = "",

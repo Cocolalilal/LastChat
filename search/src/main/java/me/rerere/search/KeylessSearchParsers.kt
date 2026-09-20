@@ -311,6 +311,120 @@ internal fun parseWikimediaCommonsImages(json: String): List<SearchResultImage> 
     }
 }
 
+internal fun parseFirecrawlKeylessSearch(json: String): KeylessFetch? {
+    val root = json.parseJsonObject() ?: return null
+    val success = root["success"]?.jsonPrimitiveOrNull?.content?.toBooleanStrictOrNull() ?: true
+    if (!success) return null
+    val data = root["data"]?.jsonObjectOrNull?.takeIf { it.isNotEmpty() } ?: root
+    val items = LinkedHashMap<String, SearchResultItem>()
+    val images = LinkedHashMap<String, SearchResultImage>()
+
+    data["web"].asArray().forEach { element ->
+        val obj = element.jsonObjectOrNull ?: return@forEach
+        val url = obj.string("url")
+        val title = obj.string("title").ifBlank { url }
+        if (url.isBlank() || title.isBlank()) return@forEach
+        items.putIfAbsent(
+            normalizeResultUrl(url),
+            SearchResultItem(
+                title = title,
+                url = url,
+                text = obj.string("description").ifBlank { obj.string("markdown") }.asSearchSnippet(),
+                source = "Firecrawl",
+            ),
+        )
+    }
+    data["news"].asArray().forEach { element ->
+        val obj = element.jsonObjectOrNull ?: return@forEach
+        val url = obj.string("url")
+        val title = obj.string("title").ifBlank { url }
+        if (url.isBlank() || title.isBlank()) return@forEach
+        val snippet = obj.string("snippet").ifBlank { obj.string("description") }.asSearchSnippet()
+        val date = obj.string("date")
+        items.putIfAbsent(
+            normalizeResultUrl(url),
+            SearchResultItem(
+                title = title,
+                url = url,
+                text = listOfNotNull(
+                    date.takeIf { it.isNotBlank() },
+                    snippet.takeIf { it.isNotBlank() },
+                ).joinToString(" — "),
+                source = "Firecrawl",
+                publishedAt = date.ifBlank { null },
+            ),
+        )
+    }
+    data["images"].asArray().forEach { element ->
+        val obj = element.jsonObjectOrNull ?: return@forEach
+        val imageUrl = obj.string("imageUrl").ifBlank { obj.string("url") }
+        if (!isUsableImageUrl(imageUrl)) return@forEach
+        images.putIfAbsent(
+            normalizeResultUrl(imageUrl),
+            searchResultImage(
+                url = imageUrl,
+                title = obj.string("title"),
+                thumbnailUrl = obj.string("thumbnailUrl").ifBlank { null },
+                sourcePageUrl = obj.string("url").ifBlank { null },
+            ),
+        )
+    }
+
+    if (items.isEmpty() && images.isEmpty()) return null
+    return KeylessFetch(
+        backend = FIRECRAWL_KEYLESS_BACKEND,
+        items = items.values.toList(),
+        images = images.values.toList(),
+    )
+}
+
+internal fun parseFirecrawlKeylessScrape(json: String, url: String): ScrapedResult? {
+    val root = json.parseJsonObject() ?: return null
+    val success = root["success"]?.jsonPrimitiveOrNull?.content?.toBooleanStrictOrNull() ?: true
+    if (!success) return null
+    val data = root["data"].asObject()
+    val markdown = data.string("markdown").trim()
+    if (markdown.length <= 40) return null
+    val title = data["metadata"].asObject().string("title").ifBlank { null }
+    val description = data["metadata"].asObject().string("description").ifBlank { null }
+    val language = data["metadata"].asObject().string("language").ifBlank { null }
+    return ScrapedResult(
+        urls = listOf(
+            ScrapedResultUrl(
+                url = url,
+                content = markdown.take(12_000),
+                metadata = if (title != null || description != null || language != null) {
+                    ScrapedResultMetadata(
+                        title = title,
+                        description = description,
+                        language = language,
+                    )
+                } else {
+                    null
+                },
+            )
+        )
+    )
+}
+
+internal fun isFirecrawlKeylessSkippableStatus(statusCode: Int): Boolean {
+    return statusCode == 401 ||
+        statusCode == 402 ||
+        statusCode == 403 ||
+        statusCode == 408 ||
+        statusCode == 429 ||
+        statusCode >= 500
+}
+
+internal fun firecrawlKeylessSources(intent: KeylessIntent): List<String>? {
+    return when (intent) {
+        KeylessIntent.WEATHER -> null
+        KeylessIntent.NEWS, KeylessIntent.SPORTS -> listOf("news", "web", "images")
+        KeylessIntent.IMAGES -> listOf("images")
+        KeylessIntent.ENCYCLOPEDIA, KeylessIntent.GENERAL -> listOf("web", "images")
+    }
+}
+
 internal fun parseWikipediaPageImages(json: String): List<SearchResultImage> {
     val root = json.parseJsonObject() ?: return emptyList()
     val pages = root["query"].asObject()["pages"].asObject()
@@ -474,6 +588,16 @@ private fun Double.oneDecimal(): String {
     val rounded = kotlin.math.round(this * 10.0) / 10.0
     return if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
 }
+
+private fun String.asSearchSnippet(maxChars: Int = 800): String {
+    val compact = replace(Regex("\\s+"), " ").trim()
+    if (compact.length <= maxChars) return compact
+    return compact.take(maxChars).trimEnd() + "…"
+}
+
+internal const val FIRECRAWL_KEYLESS_BACKEND = "Firecrawl Keyless"
+internal const val FIRECRAWL_KEYLESS_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
+internal const val FIRECRAWL_KEYLESS_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
 
 private val RESULT_LINK_REGEX = Regex(
     """<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""",

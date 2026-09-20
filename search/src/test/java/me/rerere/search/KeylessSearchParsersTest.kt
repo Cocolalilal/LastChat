@@ -429,4 +429,210 @@ class KeylessRouterTest {
         )
         assertEquals(listOf("https://kotlinlang.org/docs", "https://en.wikipedia.org/wiki/Coroutine"), merged.items.map { it.url })
     }
+
+    @Test
+    fun parseFirecrawlKeylessSearchExtractsWebNewsAndImages() {
+        val json = """
+            {
+              "success": true,
+              "data": {
+                "web": [
+                  {"url":"https://kotlinlang.org/docs","title":"Kotlin docs","description":"Official coroutines guide"}
+                ],
+                "news": [
+                  {"title":"R8 made coroutines faster","url":"https://android-developers.example/r8","snippet":"AGP 9.2","date":"1 month ago"}
+                ],
+                "images": [
+                  {
+                    "title":"Saturn",
+                    "imageUrl":"https://cdn.example/saturn.jpg",
+                    "url":"https://nasa.example/saturn",
+                    "position": 1
+                  },
+                  {
+                    "title":"Diagram",
+                    "imageUrl":"https://kotlinlang.org/docs/images/flow.svg",
+                    "url":"https://kotlinlang.org/docs"
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+        val fetch = requireNotNull(parseFirecrawlKeylessSearch(json))
+        assertEquals("Firecrawl Keyless", fetch.backend)
+        assertTrue(fetch.items.any { it.url.contains("kotlinlang.org") })
+        assertTrue(fetch.items.any { it.url.contains("android-developers.example") })
+        assertEquals("1 month ago", fetch.items.first { it.url.contains("android-developers") }.publishedAt)
+        assertEquals("https://cdn.example/saturn.jpg", fetch.images.single().url)
+        assertTrue(fetch.images.single().markdownImage.contains(fetch.images.single().url))
+        assertTrue(fetch.images.none { it.url.endsWith(".svg") })
+    }
+
+    @Test
+    fun parseFirecrawlKeylessSearchSkipsFailedPayloads() {
+        assertEquals(null, parseFirecrawlKeylessSearch("""{"success":false,"error":"rate limited"}"""))
+        assertEquals(null, parseFirecrawlKeylessSearch("""{"success":true,"data":{}}"""))
+    }
+
+    @Test
+    fun parseFirecrawlKeylessScrapeReadsMarkdown() {
+        val scraped = requireNotNull(
+            parseFirecrawlKeylessScrape(
+                """{"success":true,"data":{"markdown":"# Example Domain\n\nThis domain is for use in documentation examples.","metadata":{"title":"Example Domain","language":"en"}}}""",
+                "https://example.com",
+            )
+        )
+        assertEquals("https://example.com", scraped.urls.single().url)
+        assertTrue(scraped.urls.single().content.contains("Example Domain"))
+        assertEquals("Example Domain", scraped.urls.single().metadata?.title)
+    }
+
+    @Test
+    fun firecrawlKeylessSourcesSkipWeatherAndPreferLiveSources() {
+        assertEquals(null, firecrawlKeylessSources(KeylessIntent.WEATHER))
+        assertEquals(listOf("news", "web", "images"), firecrawlKeylessSources(KeylessIntent.NEWS))
+        assertEquals(listOf("images"), firecrawlKeylessSources(KeylessIntent.IMAGES))
+        assertEquals(listOf("web", "images"), firecrawlKeylessSources(KeylessIntent.GENERAL))
+        assertTrue(isFirecrawlKeylessSkippableStatus(401))
+        assertTrue(isFirecrawlKeylessSkippableStatus(402))
+        assertTrue(isFirecrawlKeylessSkippableStatus(429))
+        assertTrue(isFirecrawlKeylessSkippableStatus(503))
+        assertFalse(isFirecrawlKeylessSkippableStatus(200))
+        assertFalse(isFirecrawlKeylessSkippableStatus(400))
+        assertEquals("Firecrawl Keyless", KeylessSearchService.backends.first().name)
+    }
+
+    @Test
+    fun generalQueryRanksFirecrawlKeylessAheadOfOtherWebHits() = runBlocking {
+        val result = searchKeyless(
+            query = "kotlin coroutines",
+            resultSize = 5,
+            httpGet = { "" },
+            httpPostJson = { url, body ->
+                assertTrue(url.contains("api.firecrawl.dev/v2/search"))
+                assertTrue(body.contains("\"query\""))
+                assertFalse(body.contains("Authorization"))
+                KeylessHttpResponse(
+                    200,
+                    """{"success":true,"data":{"web":[{"url":"https://kotlinlang.org/docs/coroutines-overview.html","title":"Coroutines","description":"Overview"}]}}""",
+                )
+            },
+            bingSearch = {
+                listOf(SearchResultItem("Bing", "https://developer.example/coroutines", "snippet"))
+            },
+        )
+        assertEquals("https://kotlinlang.org/docs/coroutines-overview.html", result.items.first().url)
+        assertTrue(result.usedBackends.first() == "Firecrawl Keyless" || result.usedBackends.contains("Firecrawl Keyless"))
+    }
+
+    @Test
+    fun firecrawlRateLimitFallsThroughToOtherNewsBackends() = runBlocking {
+        var firecrawlCalled = false
+        val result = searchKeyless(
+            query = "what's the news today",
+            resultSize = 5,
+            httpGet = { url ->
+                when {
+                    url.contains("news.google.com/rss") -> """
+                        <rss><channel>
+                          <item>
+                            <title>Election update - Reuters</title>
+                            <link>https://reuters.example/election</link>
+                            <pubDate>Sun, 20 Sep 2026 09:00:00 GMT</pubDate>
+                            <source>Reuters</source>
+                            <description>Counting continues</description>
+                          </item>
+                        </channel></rss>
+                    """.trimIndent()
+                    else -> ""
+                }
+            },
+            httpPostJson = { _, _ ->
+                firecrawlCalled = true
+                KeylessHttpResponse(429, """{"success":false,"error":"rate limited"}""")
+            },
+            bingSearch = { emptyList() },
+        )
+        assertTrue(firecrawlCalled)
+        assertFalse(result.usedBackends.contains("Firecrawl Keyless"))
+        assertTrue(result.items.any { it.url.contains("reuters.example") })
+    }
+
+    @Test
+    fun weatherQueryDoesNotCallFirecrawlKeyless() = runBlocking {
+        var firecrawlCalled = false
+        val result = searchKeyless(
+            query = "weather in Paris",
+            resultSize = 5,
+            httpGet = { url ->
+                when {
+                    url.contains("geocoding-api.open-meteo.com") -> """
+                        {"results":[{"name":"Paris","latitude":48.85,"longitude":2.35,"country":"France"}]}
+                    """.trimIndent()
+                    url.contains("api.open-meteo.com/v1/forecast") -> """
+                        {"current":{"temperature_2m":18.0,"apparent_temperature":17.0,"relative_humidity_2m":60,
+                         "weather_code":1,"wind_speed_10m":10},"daily":{"time":["2026-09-20"],
+                         "temperature_2m_max":[21.0],"temperature_2m_min":[14.0],"precipitation_sum":[0],
+                         "weather_code":[1]}}
+                    """.trimIndent()
+                    else -> ""
+                }
+            },
+            httpPostJson = { _, _ ->
+                firecrawlCalled = true
+                error("Firecrawl should not run for weather")
+            },
+            bingSearch = { emptyList() },
+        )
+        assertFalse(firecrawlCalled)
+        assertTrue(result.usedBackends.contains("Open-Meteo"))
+        assertFalse(result.usedBackends.contains("Firecrawl Keyless"))
+    }
+
+    @Test
+    fun imageQueryUsesFirecrawlKeylessImageResults() = runBlocking {
+        val result = searchKeyless(
+            query = "pictures of saturn",
+            resultSize = 5,
+            httpGet = { "" },
+            httpPostJson = { _, body ->
+                assertTrue(body.contains("\"images\""))
+                KeylessHttpResponse(
+                    200,
+                    """{"success":true,"data":{"images":[{"title":"Saturn","imageUrl":"https://cdn.example/saturn.jpg","url":"https://nasa.example/saturn"}]}}""",
+                )
+            },
+            bingSearch = { emptyList() },
+        )
+        assertEquals("images", result.intent)
+        assertEquals("https://cdn.example/saturn.jpg", result.images.single().url)
+        assertTrue(result.usedBackends.contains("Firecrawl Keyless"))
+    }
+
+    @Test
+    fun scrapePrefersFirecrawlKeylessThenFallsBackToJina() = runBlocking {
+        val firecrawl = scrapeKeyless(
+            url = "https://example.com",
+            httpPostJson = { url, body ->
+                assertTrue(url.contains("api.firecrawl.dev/v2/scrape"))
+                assertTrue(body.contains("https://example.com"))
+                KeylessHttpResponse(
+                    200,
+                    """{"success":true,"data":{"markdown":"# Example Domain\n\nThis domain is for use in documentation examples."}}""",
+                )
+            },
+            httpGet = { error("Jina should not run when Firecrawl succeeds") },
+        )
+        assertTrue(firecrawl.urls.single().content.contains("Example Domain"))
+
+        val jina = scrapeKeyless(
+            url = "https://example.com",
+            httpPostJson = { _, _ -> KeylessHttpResponse(429, "rate limited") },
+            httpGet = { url ->
+                assertTrue(url.contains("r.jina.ai"))
+                "Jina markdown for example.com with enough characters to pass the length check."
+            },
+        )
+        assertTrue(jina.urls.single().content.contains("Jina markdown"))
+    }
 }

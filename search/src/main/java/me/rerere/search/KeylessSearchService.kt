@@ -20,6 +20,11 @@ object KeylessSearchService : SearchService<SearchServiceOptions.KeylessOptions>
     override val name: String = "Keyless"
 
     val backends: List<KeylessBackendInfo> = listOf(
+        KeylessBackendInfo(
+            "Firecrawl Keyless",
+            "Primary web, news, and image search plus markdown scrape — no Firecrawl API key",
+            "Free-tier / rate limits skipped automatically; falls through to other backends",
+        ),
         KeylessBackendInfo("Open-Meteo", "Weather forecasts and structured conditions"),
         KeylessBackendInfo("wttr.in", "Weather fallback, including IP-based location"),
         KeylessBackendInfo("Google News RSS", "Headlines, recent events, and dated snippets"),
@@ -28,7 +33,7 @@ object KeylessSearchService : SearchService<SearchServiceOptions.KeylessOptions>
         KeylessBackendInfo("Bing", "General web fallback"),
         KeylessBackendInfo("Wikimedia Commons", "Stable inline image URLs"),
         KeylessBackendInfo("Wikipedia", "Encyclopedia text and page images — never the sole source for weather or live news"),
-        KeylessBackendInfo("Jina Reader", "Optional full-page scrape without an API key"),
+        KeylessBackendInfo("Jina Reader", "Optional full-page scrape fallback without an API key"),
     )
 
     override val parameters: InputSchema?
@@ -80,7 +85,7 @@ object KeylessSearchService : SearchService<SearchServiceOptions.KeylessOptions>
     ): Result<ScrapedResult> = withContext(searchIoDispatcher) {
         runCatching {
             val url = params["url"]?.jsonPrimitive?.content ?: error("url is required")
-            scrapeWithJinaReader(url, ::keylessHttpGet)
+            scrapeKeyless(url, ::keylessHttpPostJson, ::keylessHttpGet)
         }
     }
 }
@@ -94,6 +99,7 @@ internal suspend fun searchKeyless(
     topic: String? = null,
     acceptLanguage: String = SearchService.acceptLanguage,
     httpGet: suspend (String) -> String = ::keylessHttpGet,
+    httpPostJson: suspend (String, String) -> KeylessHttpResponse = ::keylessHttpPostJson,
     bingSearch: suspend (String) -> List<SearchResultItem> = ::keylessBingSearch,
     backendTimeoutMs: Long = KEYLESS_BACKEND_TIMEOUT_MS,
 ): SearchResult = coroutineScope {
@@ -115,6 +121,14 @@ internal suspend fun searchKeyless(
         fetch?.takeIf { it.isUseful }
     }
 
+    val firecrawlJob = async {
+        if (intent == KeylessIntent.WEATHER) return@async emptyList()
+        listOfNotNull(
+            backend("Firecrawl Keyless") {
+                fetchFirecrawlKeyless(query, intent, resultSize, httpPostJson)
+            },
+        )
+    }
     val weatherJob = async {
         if (intent != KeylessIntent.WEATHER) return@async emptyList()
         val openMeteo = backend("Open-Meteo") { fetchOpenMeteoWeather(query, httpGet) }
@@ -202,7 +216,7 @@ internal suspend fun searchKeyless(
         ).useful()
     }
 
-    val fetches = weatherJob.await() + newsJob.await() + webJob.await() + imageJob.await()
+    val fetches = firecrawlJob.await() + weatherJob.await() + newsJob.await() + webJob.await() + imageJob.await()
     mergeKeylessResults(
         query = query,
         intent = intent,
@@ -307,6 +321,26 @@ private suspend fun keylessHttpGet(url: String): String {
         error("Keyless backend HTTP ${response.statusCode} for $url")
     }
     return response.body.decodeToString()
+}
+
+private suspend fun keylessHttpPostJson(url: String, jsonBody: String): KeylessHttpResponse {
+    val response = SearchService.platformHttpClient.execute(
+        PlatformHttpRequest(
+            method = "POST",
+            url = url,
+            headers = mapOf(
+                "User-Agent" to KEYLESS_APP_USER_AGENT,
+                "Accept" to "application/json",
+                "Content-Type" to "application/json",
+            ),
+            body = jsonBody.encodeToByteArray(),
+            mediaType = "application/json",
+        )
+    )
+    return KeylessHttpResponse(
+        statusCode = response.statusCode,
+        body = response.body.decodeToString(),
+    )
 }
 
 private suspend fun keylessBingSearch(url: String): List<SearchResultItem> {

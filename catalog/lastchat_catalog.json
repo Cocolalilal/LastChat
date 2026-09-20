@@ -9,8 +9,7 @@
         "keyless search",
         "free search"
       ],
-      "description": "Free multi-source router for weather, news, web, and images. No API key.",
-      "icon": "icons/searxng.svg",
+      "description": "Free multi-source router. Firecrawl Keyless for web, news, images, and scrape, plus weather and fallbacks. No API key.",
       "preset": true
     },
     {

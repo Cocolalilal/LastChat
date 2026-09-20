@@ -1,6 +1,11 @@
 package me.rerere.search
 
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.common.http.urlEncode
+import me.rerere.common.platform.PlatformLog
 import me.rerere.search.SearchResult.SearchResultItem
 
 internal suspend fun fetchOpenMeteoWeather(
@@ -161,6 +166,79 @@ internal suspend fun fetchJinaSearch(
         ),
         answer = snippet,
     )
+}
+
+internal suspend fun fetchFirecrawlKeyless(
+    query: String,
+    intent: KeylessIntent,
+    resultSize: Int,
+    httpPostJson: suspend (String, String) -> KeylessHttpResponse,
+): KeylessFetch? {
+    val sources = firecrawlKeylessSources(intent) ?: return null
+    val body = buildJsonObject {
+        put("query", query)
+        put("limit", resultSize.coerceIn(1, 10))
+        put(
+            "sources",
+            buildJsonArray {
+                sources.forEach { add(it) }
+            },
+        )
+    }.toString()
+    val response = httpPostJson(FIRECRAWL_KEYLESS_SEARCH_URL, body)
+    if (isFirecrawlKeylessSkippableStatus(response.statusCode)) {
+        PlatformLog.w(
+            "KeylessSearch",
+            "Firecrawl Keyless search skipped HTTP ${response.statusCode}",
+        )
+        return null
+    }
+    if (response.statusCode !in 200..299) {
+        error("Firecrawl Keyless search HTTP ${response.statusCode}")
+    }
+    return parseFirecrawlKeylessSearch(response.body)
+}
+
+internal suspend fun scrapeWithFirecrawlKeyless(
+    url: String,
+    httpPostJson: suspend (String, String) -> KeylessHttpResponse,
+): ScrapedResult? {
+    require(url.startsWith("http://") || url.startsWith("https://")) { "url must be http(s)" }
+    val body = buildJsonObject {
+        put("url", url)
+        put("onlyMainContent", true)
+        put(
+            "formats",
+            buildJsonArray {
+                add("markdown")
+            },
+        )
+    }.toString()
+    val response = httpPostJson(FIRECRAWL_KEYLESS_SCRAPE_URL, body)
+    if (isFirecrawlKeylessSkippableStatus(response.statusCode)) {
+        PlatformLog.w(
+            "KeylessSearch",
+            "Firecrawl Keyless scrape skipped HTTP ${response.statusCode}",
+        )
+        return null
+    }
+    if (response.statusCode !in 200..299) {
+        error("Firecrawl Keyless scrape HTTP ${response.statusCode}")
+    }
+    return parseFirecrawlKeylessScrape(response.body, url)
+        ?: error("Firecrawl Keyless scrape returned empty markdown")
+}
+
+internal suspend fun scrapeKeyless(
+    url: String,
+    httpPostJson: suspend (String, String) -> KeylessHttpResponse,
+    httpGet: suspend (String) -> String,
+): ScrapedResult {
+    val firecrawl = runCatching { scrapeWithFirecrawlKeyless(url, httpPostJson) }
+        .onFailure { PlatformLog.w("KeylessSearch", "Firecrawl Keyless scrape failed: ${it.message}") }
+        .getOrNull()
+    if (firecrawl != null) return firecrawl
+    return scrapeWithJinaReader(url, httpGet)
 }
 
 internal suspend fun scrapeWithJinaReader(
