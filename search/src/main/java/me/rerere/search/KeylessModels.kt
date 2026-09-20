@@ -6,7 +6,7 @@ import me.rerere.search.SearchResult.SearchResultItem
 data class KeylessBackendInfo(
     val name: String,
     val role: String,
-    val status: String = "No API key · skipped automatically if unreachable",
+    val status: String? = null,
 )
 
 internal data class KeylessHttpResponse(

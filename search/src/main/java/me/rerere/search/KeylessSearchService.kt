@@ -22,18 +22,17 @@ object KeylessSearchService : SearchService<SearchServiceOptions.KeylessOptions>
     val backends: List<KeylessBackendInfo> = listOf(
         KeylessBackendInfo(
             "Firecrawl Keyless",
-            "Primary web, news, and image search plus markdown scrape — no Firecrawl API key",
-            "Free-tier / rate limits skipped automatically; falls through to other backends",
+            "Primary web, news, and image search plus markdown scraping",
         ),
         KeylessBackendInfo("Open-Meteo", "Weather forecasts and structured conditions"),
         KeylessBackendInfo("wttr.in", "Weather fallback, including IP-based location"),
         KeylessBackendInfo("Google News RSS", "Headlines, recent events, and dated snippets"),
-        KeylessBackendInfo("Qwant", "Keyless web, news, and image search"),
+        KeylessBackendInfo("Qwant", "Web, news, and image search"),
         KeylessBackendInfo("DuckDuckGo", "Web, news, instant answers, and images"),
         KeylessBackendInfo("Bing", "General web fallback"),
-        KeylessBackendInfo("Wikimedia Commons", "Stable inline image URLs"),
-        KeylessBackendInfo("Wikipedia", "Encyclopedia text and page images — never the sole source for weather or live news"),
-        KeylessBackendInfo("Jina Reader", "Optional full-page scrape fallback without an API key"),
+        KeylessBackendInfo("Wikimedia Commons", "Inline images"),
+        KeylessBackendInfo("Wikipedia", "Encyclopedia articles and page images"),
+        KeylessBackendInfo("Jina Reader", "Full-page markdown scrape fallback"),
     )
 
     override val parameters: InputSchema?

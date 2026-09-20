@@ -1375,6 +1375,7 @@
   <string name="setting_search_delete_service">您确定要删除此搜索服务吗？</string>
   <string name="setting_search_service_generic">搜索服务</string>
   <string name="setting_search_edit_service">编辑%1$s</string>
+  <string name="setting_search_what_is_keyless">什么是 Keyless？</string>
   <string name="setting_search_bing_no_config">Bing 搜索不需要任何配置。</string>
   <string name="setting_search_unknown_provider">未知</string>
   <string name="setting_search_preset_bing_desc">免费本地 Bing 搜索，无需 API 密钥</string>

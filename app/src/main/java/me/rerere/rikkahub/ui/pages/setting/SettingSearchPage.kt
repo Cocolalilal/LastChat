@@ -233,11 +233,6 @@ private fun KeylessOptionsDescription() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = stringResource(R.string.setting_search_keyless_health),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
             text = stringResource(R.string.setting_search_keyless_backends_label),
             style = MaterialTheme.typography.labelLarge,
         )
@@ -252,30 +247,23 @@ private fun KeylessOptionsDescription() {
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = backend.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Tag(type = TagType.SUCCESS) {
-                            Text("No API key")
-                        }
-                    }
+                    Text(
+                        text = backend.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                     Text(
                         text = backend.role,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        text = backend.status,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    backend.status?.takeIf { it.isNotBlank() }?.let { status ->
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -294,7 +282,7 @@ private fun SearchServiceDescription(service: SearchServiceOptions) {
     }
 
     when (service) {
-        is SearchServiceOptions.KeylessOptions -> Text(stringResource(SearchR.string.keyless_desc))
+        is SearchServiceOptions.KeylessOptions -> {}
         is SearchServiceOptions.BingLocalOptions -> Text(stringResource(SearchR.string.bing_desc))
         is SearchServiceOptions.SearXNGOptions -> {
             Text(stringResource(SearchR.string.searxng_desc_1))
@@ -742,11 +730,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             }
                         }
                         
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        // Service description
-                        ProvideTextStyle(MaterialTheme.typography.labelMedium) {
-                            SearchServiceDescription(currentService)
+                        if (currentService !is SearchServiceOptions.KeylessOptions) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+                                SearchServiceDescription(currentService)
+                            }
                         }
                     }
                 }
@@ -1078,9 +1066,11 @@ private fun SearchServiceEditorSheet(
                         is SearchServiceOptions.NanoGPTOptions -> NanoGPTOptions(currentService as SearchServiceOptions.NanoGPTOptions) { currentService = it }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ProvideTextStyle(MaterialTheme.typography.labelMedium) {
-                        SearchServiceDescription(currentService)
+                    if (currentService !is SearchServiceOptions.KeylessOptions) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+                            SearchServiceDescription(currentService)
+                        }
                     }
                 }
             }
@@ -1330,7 +1320,11 @@ private fun SearchServiceEditHeader(
             contentColor = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = stringResource(R.string.setting_search_edit_service, serviceName),
+            text = if (service is SearchServiceOptions.KeylessOptions) {
+                stringResource(R.string.setting_search_what_is_keyless)
+            } else {
+                stringResource(R.string.setting_search_edit_service, serviceName)
+            },
             style = MaterialTheme.typography.headlineSmall,
         )
     }
