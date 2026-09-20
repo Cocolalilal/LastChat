@@ -329,8 +329,8 @@ floating prompt surface, aspect/count configuration sheet, cancellation,
 - `ChatDatabase`: keep Room on Android, introduce repository interfaces that an iOS SQLite/SQLDelight implementation can satisfy.
 - `PlatformHaptics`: keep `PremiumHaptics` as the Android implementation and add an iOS implementation that maps `Pop`, `Thud`, and `Success` to native feedback generators.
 - `TtsAudioPlayer`: Media3 remains the Android implementation and AVFoundation
-  is the iOS implementation of the shared TTS playback contract. System
-  `TextToSpeech` remains an Android-only provider rather than a cloud parity requirement.
+  is the iOS implementation of the shared TTS playback contract. System TTS now
+  goes through `PlatformSystemTts` (Android `TextToSpeech`, iOS AVSpeech).
 
 Android adapter seeds currently exist in `me.rerere.common.platform.android` for `PlatformHttpClient`, `PlatformFileStore`, and `PlatformMediaEncoder`. The Android HTTP adapter owns OkHttp, SSE bridging, coroutine request awaiting, and HTTP proxy/proxy-auth wiring. Android DI now registers this adapter as a reusable `PlatformHttpClient`; provider code, model-catalog refreshes, shared-webpage fallback scraping, chat remote-image saving, dynamic shortcut remote-avatar loading, assistant widget remote-avatar loading, assistant Material You remote palette extraction, update-check release metadata fetching, automatic icon-cache downloads, LobeHub icon search, settings-side ElevenLabs voice discovery, Bing search, and the app-wide Coil image loader consume DI-owned platform/network adapters instead of constructing or importing their own HTTP runtime. Downloaded model-catalog persistence now uses `PlatformFileStore`, preserving the same app-private path and refresh timestamp behavior while removing direct `File`/`Files` ownership from `ModelCatalogService`. The Android media encoder owns BitmapFactory, file URI decoding, JPEG conversion, and base64 encoding. New shared-candidate code should use the common contracts and receive these Android adapters through DI rather than importing OkHttp, Android graphics APIs, or `java.io.File` directly.
 
@@ -413,19 +413,22 @@ Current iOS app status:
   (PDFKit on iOS, portable DOCX zip+xml elsewhere);
 - WebDAV backup uses a portable PROPFIND/PUT/GET/DELETE client. Local restore
   still imports Android backup archives;
-- A password-gated JSON web API can bind on the configured port (conversations
-  list/detail, bootstrap, settings SSE, send/stop, and file content). When
-  `web-ui/build/client` exists, Gradle copies it into `iosApp/xcode/LastChatIOS/webui`
-  so the React SPA is hosted from the same routes as Android. Without that
-  bundle, iOS serves a password-gated HTML conversation client that uses the
-  same API;
+- A password-gated JSON web API binds on the configured port through
+  `PortableWebApiRouter`. Settings and conversation SSE stay open with
+  heartbeats (15s / 1s, matching Android). SPA mutations include create, edit,
+  fork, regenerate, tool-approval, upload, pin, title, move, skills, settings
+  posts, and file delete. `./gradlew :iosApp:prepareIosWebUi` runs `npm run
+  build` in `web-ui/` and copies `web-ui/build/client` into
+  `iosApp/xcode/LastChatIOS/webui` (gitignored dist). Without that bundle, iOS
+  serves the password-gated HTML fallback that uses the same API;
 - Darwin HTTP now honors per-request `PlatformHttpProxy` via NSURLSession
   proxy dictionaries plus Proxy-Authorization;
-- all eight cloud TTS providers are configurable on iOS with Keychain-only
-  credentials. Android and iOS now share the same chunking, prefetch, retry,
-  queue, pause/resume, seeking, and playback-state controller; Android retains
-  Media3 and iOS supplies AVFoundation through `TtsAudioPlayer`. Assistant
-  messages consume one source-shared play/stop action on both platforms;
+- all eight cloud TTS providers plus system TTS are configurable on iOS with
+  Keychain-only cloud credentials. Android and iOS share the same chunking,
+  prefetch, retry, queue, pause/resume, seeking, and playback-state controller;
+  Android retains Media3 and iOS supplies AVFoundation through `TtsAudioPlayer`.
+  System speech uses `PlatformSystemTts` (AVSpeech on iOS). Assistant messages
+  consume one source-shared play/stop action on both platforms;
 - generation can be cancelled from the composer without retaining a blank
   assistant message, multiple assistant profiles persist with conversation
   ownership, and endpoint/model preferences persist independently per provider;
@@ -443,9 +446,17 @@ Current iOS app status:
   entire Material theme and previews app and code typography. The bundled
   Google Sans Flex family remains the default, matching Android;
 - inline attachment audio now plays in-chat through `PlatformAttachmentAudioPlayer`
-  (AVAudioPlayer). Local LiteRT models, the PRoot Linux workspace,
-  Android widgets/share/system TTS, and Xcode screenshot QA still
-  require platform-specific work before the iOS app is feature-complete.
+  (AVAudioPlayer). Conversation share uses `PlatformShareSheet`
+  (UIActivityViewController). Home-screen widgets share `AssistantWidgetSnapshot`
+  plus a WidgetKit shell under `iosApp/xcode/LastChatWidget/` that reads the
+  JSON snapshot. LiteRT-LM and PRoot are abstracted as `OnDeviceLlmRuntime` /
+  `OnDeviceWorkspaceRuntime`; Android binds those contracts, and iOS keeps the
+  same generation loop (including a `LOCAL` provider type) with honest
+  unavailable shims. The assistant overlay is an in-process Compose sheet that
+  also ingests clipboard share-in through `PortableSharePayload`. A Share
+  Extension Swift shell lives under `iosApp/xcode/LastChatShareExtension/` but
+  is not in the Xcode project yet (unsigned CI). Xcode screenshot QA is still
+  required before 1:1 visual sign-off.
 
 On macOS:
 
