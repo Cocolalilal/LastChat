@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.service.AssistantNotificationListener
 import me.rerere.rikkahub.service.ScheduledMessageWorkSpec
 import me.rerere.rikkahub.service.ScheduledMessageWorker
+import me.rerere.rikkahub.service.workManagerOrNull
 import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import java.time.Instant
@@ -173,7 +174,9 @@ class AndroidLocalToolNotificationPlatform(
                 )
                 .build()
 
-            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+            val workManager = context.workManagerOrNull()
+                ?: return ScheduledLocalToolMessage(status = "error: WorkManager is unavailable")
+            workManager.enqueueUniqueWork(
                 uniqueWorkName,
                 androidx.work.ExistingWorkPolicy.KEEP,
                 workRequest,

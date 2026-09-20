@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import androidx.room.withTransaction
@@ -484,7 +483,7 @@ class MemoryConsolidationWorker(
                 .setInputData(workDataOf(KEY_CONVERSATION_ID to conversation.id.toString()))
                 .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
+            context.workManagerOrNull()?.enqueueUniqueWork(
                 CONVERSATION_WORK_PREFIX + conversation.id,
                 ExistingWorkPolicy.REPLACE,
                 request,
@@ -492,7 +491,7 @@ class MemoryConsolidationWorker(
         }
 
         fun enqueueCatchUp(context: Context) {
-            WorkManager.getInstance(context).enqueueUniqueWork(
+            context.workManagerOrNull()?.enqueueUniqueWork(
                 CATCH_UP_WORK_NAME,
                 ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<MemoryConsolidationWorker>().build(),
