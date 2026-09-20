@@ -2,7 +2,8 @@ import WidgetKit
 import SwiftUI
 
 /// Thin WidgetKit shell over the shared Kotlin `AssistantWidgetSnapshot`.
-/// The iOS app writes JSON + UserDefaults through `IosPlatformWidgetStore`.
+/// Reads App Group UserDefaults plus the container JSON file written by
+/// `IosPlatformWidgetStore`.
 struct LastChatAssistantWidget: Widget {
     let kind: String = "LastChatAssistantWidget"
 
@@ -24,6 +25,9 @@ struct AssistantWidgetEntry: TimelineEntry {
 }
 
 struct AssistantWidgetProvider: TimelineProvider {
+    private let suiteName = "group.lastchat.rikkafork.cocolal"
+    private let snapshotKey = "assistant_widget_snapshot"
+
     func placeholder(in context: Context) -> AssistantWidgetEntry {
         AssistantWidgetEntry(date: Date(), assistantName: "Assistant", conversationTitle: "LastChat")
     }
@@ -38,16 +42,30 @@ struct AssistantWidgetProvider: TimelineProvider {
     }
 
     private func currentEntry() -> AssistantWidgetEntry {
-        let defaults = UserDefaults(suiteName: "group.lastchat.rikkafork.cocolal") ?? .standard
-        if let raw = defaults.string(forKey: "assistant_widget_snapshot"),
-           let data = raw.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let name = stringValue(json["assistantName"]) ?? defaults.string(forKey: "assistant_name") ?? "Assistant"
-            let title = stringValue(json["conversationTitle"]) ?? defaults.string(forKey: "conversation_title") ?? "LastChat"
-            return AssistantWidgetEntry(date: Date(), assistantName: name, conversationTitle: title)
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        if let entry = entry(from: defaults.string(forKey: snapshotKey), defaults: defaults) {
+            return entry
         }
-        let name = defaults.string(forKey: "assistant_name") ?? "Assistant"
-        let title = defaults.string(forKey: "conversation_title") ?? "LastChat"
+        if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suiteName)?
+            .appendingPathComponent("\(snapshotKey).txt"),
+           let raw = try? String(contentsOf: container, encoding: .utf8),
+           let entry = entry(from: raw, defaults: defaults) {
+            return entry
+        }
+        return AssistantWidgetEntry(
+            date: Date(),
+            assistantName: defaults.string(forKey: "assistant_name") ?? "Assistant",
+            conversationTitle: defaults.string(forKey: "conversation_title") ?? "LastChat"
+        )
+    }
+
+    private func entry(from raw: String?, defaults: UserDefaults) -> AssistantWidgetEntry? {
+        guard let raw, let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let name = stringValue(json["assistantName"]) ?? defaults.string(forKey: "assistant_name") ?? "Assistant"
+        let title = stringValue(json["conversationTitle"]) ?? defaults.string(forKey: "conversation_title") ?? "LastChat"
         return AssistantWidgetEntry(date: Date(), assistantName: name, conversationTitle: title)
     }
 

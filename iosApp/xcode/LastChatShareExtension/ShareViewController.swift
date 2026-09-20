@@ -1,10 +1,12 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// Share-in trampoline. Writes shared text into App Group / standard defaults so the
-/// iOS app can ingest it through `PortableSharePayload`. Not added to the Xcode
-/// project yet — CI unsigned `xcodebuild` cannot sign an extension target.
+/// Share-in trampoline. Writes shared text into the App Group suite so the
+/// iOS app can ingest it through `PortableSharePayload`.
 class ShareViewController: UIViewController {
+    private let suiteName = "group.lastchat.rikkafork.cocolal"
+    private let pendingKey = "pending_share_text"
+
     override func viewDidLoad() {
         super.viewDidLoad()
         ingest()
@@ -22,9 +24,16 @@ class ShareViewController: UIViewController {
                 let text = (payload as? String)
                     ?? ((payload as? Data).flatMap { String(data: $0, encoding: .utf8) })
                     ?? ""
-                let defaults = UserDefaults(suiteName: "group.lastchat.rikkafork.cocolal") ?? .standard
-                defaults.set(text, forKey: "pending_share_text")
+                let defaults = UserDefaults(suiteName: self.suiteName) ?? .standard
+                defaults.set(text, forKey: self.pendingKey)
                 defaults.synchronize()
+                if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: self.suiteName) {
+                    try? text.write(
+                        to: container.appendingPathComponent("\(self.pendingKey).txt"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
                 self.finish()
             }
             return

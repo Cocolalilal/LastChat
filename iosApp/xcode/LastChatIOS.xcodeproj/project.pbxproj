@@ -8,17 +8,83 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* LastChatIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* LastChatIOSApp.swift */; };
 		A10000000000000000000002 /* webui in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* webui */; };
+		A10000000000000000000105 /* LastChatAssistantWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000100 /* LastChatAssistantWidget.swift */; };
+		A10000000000000000000106 /* LastChatWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000101 /* LastChatWidgetBundle.swift */; };
+		A10000000000000000000116 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000114 /* WidgetKit.framework */; };
+		A10000000000000000000117 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000115 /* SwiftUI.framework */; };
+		A10000000000000000000204 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000200 /* ShareViewController.swift */; };
+		A10000000000000000000308 /* LastChatWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000104 /* LastChatWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000309 /* LastChatShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* LastChatShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000306 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000110;
+			remoteInfo = LastChatWidget;
+		};
+		A10000000000000000000307 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000208;
+			remoteInfo = LastChatShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A10000000000000000000301 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000308 /* LastChatWidget.appex in Embed Foundation Extensions */,
+				A10000000000000000000309 /* LastChatShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000010 /* LastChatIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LastChatIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* LastChatIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastChatIOSApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000013 /* webui */ = {isa = PBXFileReference; lastKnownFileType = folder; path = webui; sourceTree = "<group>"; };
+		A10000000000000000000014 /* LastChatIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LastChatIOS.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000100 /* LastChatAssistantWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastChatAssistantWidget.swift; sourceTree = "<group>"; };
+		A10000000000000000000101 /* LastChatWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LastChatWidgetBundle.swift; sourceTree = "<group>"; };
+		A10000000000000000000102 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000103 /* LastChatWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LastChatWidget.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000104 /* LastChatWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LastChatWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000114 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		A10000000000000000000115 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		A10000000000000000000200 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		A10000000000000000000201 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000202 /* LastChatShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LastChatShareExtension.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000203 /* LastChatShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LastChatShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000107 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000116 /* WidgetKit.framework in Frameworks */,
+				A10000000000000000000117 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000205 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
@@ -31,6 +97,9 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000031 /* LastChatIOS */,
+				A10000000000000000000400 /* LastChatWidget */,
+				A10000000000000000000401 /* LastChatShareExtension */,
+				A10000000000000000000402 /* Frameworks */,
 				A10000000000000000000032 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -40,6 +109,7 @@
 			children = (
 				A10000000000000000000011 /* LastChatIOSApp.swift */,
 				A10000000000000000000012 /* Info.plist */,
+				A10000000000000000000014 /* LastChatIOS.entitlements */,
 				A10000000000000000000013 /* webui */,
 			);
 			path = LastChatIOS;
@@ -49,8 +119,40 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000010 /* LastChatIOS.app */,
+				A10000000000000000000104 /* LastChatWidget.appex */,
+				A10000000000000000000203 /* LastChatShareExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000400 /* LastChatWidget */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000101 /* LastChatWidgetBundle.swift */,
+				A10000000000000000000100 /* LastChatAssistantWidget.swift */,
+				A10000000000000000000102 /* Info.plist */,
+				A10000000000000000000103 /* LastChatWidget.entitlements */,
+			);
+			path = LastChatWidget;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000401 /* LastChatShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000200 /* ShareViewController.swift */,
+				A10000000000000000000201 /* Info.plist */,
+				A10000000000000000000202 /* LastChatShareExtension.entitlements */,
+			);
+			path = LastChatShareExtension;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000402 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000114 /* WidgetKit.framework */,
+				A10000000000000000000115 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -64,13 +166,47 @@
 				A10000000000000000000051 /* Sources */,
 				A10000000000000000000020 /* Frameworks */,
 				A10000000000000000000052 /* Resources */,
+				A10000000000000000000301 /* Embed Foundation Extensions */,
 			);
 			buildRules = ();
-			dependencies = ();
+			dependencies = (
+				A10000000000000000000304 /* PBXTargetDependency */,
+				A10000000000000000000305 /* PBXTargetDependency */,
+			);
 			name = LastChatIOS;
 			productName = LastChatIOS;
 			productReference = A10000000000000000000010 /* LastChatIOS.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000110 /* LastChatWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000113 /* Build configuration list for PBXNativeTarget "LastChatWidget" */;
+			buildPhases = (
+				A10000000000000000000108 /* Sources */,
+				A10000000000000000000107 /* Frameworks */,
+				A10000000000000000000109 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = LastChatWidget;
+			productName = LastChatWidget;
+			productReference = A10000000000000000000104 /* LastChatWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A10000000000000000000208 /* LastChatShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000211 /* Build configuration list for PBXNativeTarget "LastChatShareExtension" */;
+			buildPhases = (
+				A10000000000000000000206 /* Sources */,
+				A10000000000000000000205 /* Frameworks */,
+				A10000000000000000000207 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = LastChatShareExtension;
+			productName = LastChatShareExtension;
+			productReference = A10000000000000000000203 /* LastChatShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +219,8 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A10000000000000000000040 = { CreatedOnToolsVersion = 16.0; };
+					A10000000000000000000110 = { CreatedOnToolsVersion = 16.0; };
+					A10000000000000000000208 = { CreatedOnToolsVersion = 16.0; };
 				};
 			};
 			buildConfigurationList = A10000000000000000000061 /* Build configuration list for PBXProject "LastChatIOS" */;
@@ -94,12 +232,18 @@
 			productRefGroup = A10000000000000000000032 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (A10000000000000000000040 /* LastChatIOS */);
+			targets = (
+				A10000000000000000000040 /* LastChatIOS */,
+				A10000000000000000000110 /* LastChatWidget */,
+				A10000000000000000000208 /* LastChatShareExtension */,
+			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000052 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002 /* webui in Resources */); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000109 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000207 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -121,7 +265,37 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		A10000000000000000000051 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* LastChatIOSApp.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000108 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000106 /* LastChatWidgetBundle.swift in Sources */,
+				A10000000000000000000105 /* LastChatAssistantWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000206 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000204 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000304 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000110 /* LastChatWidget */;
+			targetProxy = A10000000000000000000306 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000000305 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000208 /* LastChatShareExtension */;
+			targetProxy = A10000000000000000000307 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000070 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos; }; name = Debug; };
@@ -129,6 +303,7 @@
 		A10000000000000000000072 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatIOS/LastChatIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = "";
@@ -152,6 +327,7 @@
 		A10000000000000000000073 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatIOS/LastChatIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = "";
@@ -173,11 +349,105 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000111 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatWidget/LastChatWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LastChatWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				MARKETING_VERSION = 1.4.5;
+				PRODUCT_BUNDLE_IDENTIFIER = lastchat.rikkafork.cocolal.ios.widget;
+				PRODUCT_NAME = LastChatWidget;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000000112 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatWidget/LastChatWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LastChatWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				MARKETING_VERSION = 1.4.5;
+				PRODUCT_BUNDLE_IDENTIFIER = lastchat.rikkafork.cocolal.ios.widget;
+				PRODUCT_NAME = LastChatWidget;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A10000000000000000000209 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatShareExtension/LastChatShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LastChatShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				MARKETING_VERSION = 1.4.5;
+				PRODUCT_BUNDLE_IDENTIFIER = lastchat.rikkafork.cocolal.ios.share;
+				PRODUCT_NAME = LastChatShareExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000000210 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LastChatShareExtension/LastChatShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 34;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LastChatShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				MARKETING_VERSION = 1.4.5;
+				PRODUCT_BUNDLE_IDENTIFIER = lastchat.rikkafork.cocolal.ios.share;
+				PRODUCT_NAME = LastChatShareExtension;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
 		A10000000000000000000041 /* Build configuration list for PBXNativeTarget "LastChatIOS" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000072 /* Debug */, A10000000000000000000073 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		A10000000000000000000061 /* Build configuration list for PBXProject "LastChatIOS" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000070 /* Debug */, A10000000000000000000071 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000113 /* Build configuration list for PBXNativeTarget "LastChatWidget" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000111 /* Debug */, A10000000000000000000112 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000211 /* Build configuration list for PBXNativeTarget "LastChatShareExtension" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000209 /* Debug */, A10000000000000000000210 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = A10000000000000000000060 /* Project object */;

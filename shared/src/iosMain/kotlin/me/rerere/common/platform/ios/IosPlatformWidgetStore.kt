@@ -4,11 +4,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.widget.AssistantWidgetSnapshot
 import me.rerere.rikkahub.data.widget.PlatformWidgetStore
-import platform.Foundation.NSUserDefaults
 
 class IosPlatformWidgetStore : PlatformWidgetStore {
     private val json = Json { encodeDefaults = true }
-    private val defaults: NSUserDefaults = NSUserDefaults.standardUserDefaults
+    private val defaults = IosAppGroupDefaults.userDefaults
 
     override fun publish(snapshot: AssistantWidgetSnapshot) {
         val encoded = json.encodeToString(AssistantWidgetSnapshot.serializer(), snapshot)
@@ -19,6 +18,7 @@ class IosPlatformWidgetStore : PlatformWidgetStore {
         defaults.setObject(snapshot.avatarData, forKey = "avatar_data")
         snapshot.conversationTitle?.let { defaults.setObject(it, forKey = "conversation_title") }
         defaults.synchronize()
+        IosAppGroupDefaults.writeText(AssistantWidgetSnapshot.USER_DEFAULTS_KEY, encoded)
     }
 
     override fun clear() {
@@ -29,7 +29,12 @@ class IosPlatformWidgetStore : PlatformWidgetStore {
             "avatar_type",
             "avatar_data",
             "conversation_title",
-        ).forEach { defaults.removeObjectForKey(it) }
+        ).forEach { key ->
+            defaults.removeObjectForKey(key)
+            IosAppGroupDefaults.remove(key)
+        }
         defaults.synchronize()
     }
+
+    override fun consumePendingShareText(): String? = IosAppGroupDefaults.consumePendingShareText()
 }

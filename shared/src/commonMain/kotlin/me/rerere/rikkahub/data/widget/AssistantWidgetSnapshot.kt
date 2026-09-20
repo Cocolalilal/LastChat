@@ -26,6 +26,8 @@ interface PlatformWidgetStore {
     fun publish(snapshot: AssistantWidgetSnapshot)
 
     fun clear()
+
+    fun consumePendingShareText(): String? = null
 }
 
 class NoOpWidgetStore : PlatformWidgetStore {

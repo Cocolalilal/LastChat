@@ -448,15 +448,19 @@ Current iOS app status:
 - inline attachment audio now plays in-chat through `PlatformAttachmentAudioPlayer`
   (AVAudioPlayer). Conversation share uses `PlatformShareSheet`
   (UIActivityViewController). Home-screen widgets share `AssistantWidgetSnapshot`
-  plus a WidgetKit shell under `iosApp/xcode/LastChatWidget/` that reads the
-  JSON snapshot. LiteRT-LM and PRoot are abstracted as `OnDeviceLlmRuntime` /
-  `OnDeviceWorkspaceRuntime`; Android binds those contracts, and iOS keeps the
-  same generation loop (including a `LOCAL` provider type) with honest
-  unavailable shims. The assistant overlay is an in-process Compose sheet that
-  also ingests clipboard share-in through `PortableSharePayload`. A Share
-  Extension Swift shell lives under `iosApp/xcode/LastChatShareExtension/` but
-  is not in the Xcode project yet (unsigned CI). Xcode screenshot QA is still
-  required before 1:1 visual sign-off.
+  plus Xcode targets `LastChatWidget` and `LastChatShareExtension` in
+  `iosApp/xcode/LastChatIOS.xcodeproj`. All three targets include App Group
+  entitlements for `group.lastchat.rikkafork.cocolal`. Kotlin/Native
+  `IosAppGroupDefaults` uses `NSUserDefaults(suiteName:)` and also writes the
+  App Group container file; WidgetKit and the Share Extension read that suite.
+  LiteRT-LM and PRoot are `OnDeviceLlmRuntime` / `OnDeviceWorkspaceRuntime`
+  implementations. Android `GenerationHandler` and `ProviderManager` talk to
+  `OnDeviceLlmProvider` (not `LiteRtProvider` directly); workspace tools use
+  shared `createPortableWorkspaceTools`. iOS keeps the same generation loop
+  with honest unavailable shims. The assistant overlay is an in-process Compose
+  sheet that also ingests clipboard/App Group share-in through
+  `PortableSharePayload`. Xcode screenshot QA is still required before 1:1
+  visual sign-off. Live LiteRT-LM and PRoot remain Android-only.
 
 On macOS:
 

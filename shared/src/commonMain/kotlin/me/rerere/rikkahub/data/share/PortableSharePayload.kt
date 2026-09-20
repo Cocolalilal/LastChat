@@ -23,6 +23,10 @@ data class PortableSharePayload(
         }
         if (text.isNotBlank()) append(text.trim())
     }.trim()
+
+    companion object {
+        const val PENDING_SHARE_TEXT_KEY = "pending_share_text"
+    }
 }
 
 @Serializable
