@@ -44,7 +44,9 @@ fun createPortableWorkspaceTools(
     approvalOverrides: Map<String, Boolean> = emptyMap(),
     cwd: String? = null,
 ): List<Tool> {
-    fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
+    val needsApproval: (String) -> Boolean = { name ->
+        resolveWorkspaceToolApproval(name, approvalOverrides)
+    }
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
     return listOf(
         createReadFileTool(runtime, needsApproval),

@@ -20,9 +20,10 @@ class OnDeviceRuntimeTest {
             runtime.generateText("id", "hi")
         }
         assertTrue(failure.message.orEmpty().contains("LiteRT-LM"))
-        assertFailsWith<IllegalStateException> {
+        val chatFailure = assertFailsWith<IllegalStateException> {
             runtime.generateChat("id", listOf(OnDeviceChatMessage("user", "hi")))
         }
+        assertTrue(chatFailure.message.orEmpty().contains("LiteRT-LM"))
     }
 
     @Test
@@ -49,7 +50,8 @@ class OnDeviceRuntimeTest {
         assertEquals(0, runtime.listFiles("/").size)
         assertFailsWith<IllegalStateException> { runtime.readFile("/tmp") }
         assertFailsWith<IllegalStateException> { runtime.writeFile("/tmp", "x") }
-        assertFailsWith<IllegalStateException> { runtime.exec("ls") }
+        val execFailure = assertFailsWith<IllegalStateException> { runtime.exec("ls") }
+        assertTrue(execFailure.message.orEmpty().contains("PRoot"))
     }
 
     @Test

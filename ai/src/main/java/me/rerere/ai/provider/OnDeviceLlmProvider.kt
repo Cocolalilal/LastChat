@@ -102,7 +102,7 @@ interface OnDeviceLlmChatEngine {
         params: TextGenerationParams,
     ): MessageChunk
 
-    fun streamAsProvider(
+    suspend fun streamAsProvider(
         providerSetting: ProviderSetting.LiteRtLocal,
         messages: List<UIMessage>,
         params: TextGenerationParams,

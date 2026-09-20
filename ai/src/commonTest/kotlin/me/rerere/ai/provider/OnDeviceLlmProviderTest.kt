@@ -116,7 +116,7 @@ private class BridgedRuntime : RecordingRuntime(), OnDeviceLlmChatEngine {
             .toMessageChunk(params.model.modelId)
     }
 
-    override fun streamAsProvider(
+    override suspend fun streamAsProvider(
         providerSetting: ProviderSetting.LiteRtLocal,
         messages: List<UIMessage>,
         params: TextGenerationParams,

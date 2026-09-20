@@ -59,7 +59,7 @@ class AndroidOnDeviceLlmRuntime(
         params: TextGenerationParams,
     ): MessageChunk = provider.generateText(providerSetting, messages, params)
 
-    override fun streamAsProvider(
+    override suspend fun streamAsProvider(
         providerSetting: ProviderSetting.LiteRtLocal,
         messages: List<UIMessage>,
         params: TextGenerationParams,
@@ -71,7 +71,7 @@ class AndroidOnDeviceLlmRuntime(
         model: Model,
     ): List<List<Float>> = provider.createEmbedding(providerSetting, input, model)
 
-    private fun resolveChatModel(modelId: String): Model {
+    private suspend fun resolveChatModel(modelId: String): Model {
         val installed = store.get(modelId)
             ?: store.current().firstOrNull { !it.isEmbedding }
             ?: error("No on-device LLM is installed")
