@@ -16,17 +16,24 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
 import me.rerere.common.platform.PlatformServerEvent
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 /** Darwin/NSURLSession transport used by shared providers on iOS. */
+@OptIn(ExperimentalAtomicApi::class)
 class IosPlatformHttpClient(
     private val client: HttpClient = defaultClient(),
 ) : PlatformHttpClient {
+    private val proxiedClients = AtomicReference<Map<String, HttpClient>>(emptyMap())
+
     override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse {
-        require(request.proxy == null) { "Per-provider proxies are not yet supported on iOS" }
-        val response = client.request(request.url) { apply(request) }
+        val response = clientFor(request.proxy).request(request.url) { apply(request) }
         return PlatformHttpResponse(
             statusCode = response.status.value,
             headers = response.headers.names().associateWith { response.headers.getAll(it).orEmpty() },
@@ -35,12 +42,8 @@ class IosPlatformHttpClient(
     }
 
     override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = flow {
-        if (request.proxy != null) {
-            emit(PlatformServerEvent.Failure(message = "Per-provider proxies are not yet supported on iOS"))
-            return@flow
-        }
         try {
-            client.prepareRequest(request.url) { apply(request) }.execute { response ->
+            clientFor(request.proxy).prepareRequest(request.url) { apply(request) }.execute { response ->
                 if (response.status.value !in 200..299) {
                     val body = response.body<ByteArray>().decodeToString()
                     emit(
@@ -92,21 +95,65 @@ class IosPlatformHttpClient(
         }
     }
 
+    private fun clientFor(proxy: PlatformHttpProxy?): HttpClient {
+        if (proxy == null) return client
+        val key = "${proxy.host}:${proxy.port}:${proxy.username.orEmpty()}"
+        proxiedClients.load()[key]?.let { return it }
+        val created = defaultClient(proxy)
+        while (true) {
+            val current = proxiedClients.load()
+            current[key]?.let { existing ->
+                created.close()
+                return existing
+            }
+            if (proxiedClients.compareAndSet(current, current + (key to created))) {
+                return created
+            }
+        }
+    }
+
     private fun io.ktor.client.request.HttpRequestBuilder.apply(request: PlatformHttpRequest) {
         method = HttpMethod.parse(request.method)
         request.headers.forEach { (name, value) -> header(name, value) }
+        proxyAuthorization(request.proxy)?.let { header("Proxy-Authorization", it) }
         request.mediaType?.let { contentType(ContentType.parse(it)) }
         request.body?.let(::setBody)
     }
 
     companion object {
-        private fun defaultClient(): HttpClient = HttpClient(Darwin) {
+        private fun defaultClient(proxy: PlatformHttpProxy? = null): HttpClient = HttpClient(Darwin) {
             expectSuccess = false
             install(HttpTimeout) {
                 connectTimeoutMillis = 60_000
                 requestTimeoutMillis = null
                 socketTimeoutMillis = null
             }
+            if (proxy != null) {
+                engine {
+                    configureSession {
+                        connectionProxyDictionary = proxyDictionary(proxy)
+                    }
+                }
+            }
+        }
+
+        private fun proxyDictionary(proxy: PlatformHttpProxy): Map<Any?, *> = buildMap {
+            put("HTTPEnable", 1)
+            put("HTTPProxy", proxy.host)
+            put("HTTPPort", proxy.port)
+            put("HTTPSEnable", 1)
+            put("HTTPSProxy", proxy.host)
+            put("HTTPSPort", proxy.port)
+            proxy.username?.takeIf { it.isNotBlank() }?.let { put("kCFProxyUsernameKey", it) }
+            proxy.password?.takeIf { it.isNotBlank() }?.let { put("kCFProxyPasswordKey", it) }
+        }
+
+        @OptIn(ExperimentalEncodingApi::class)
+        private fun proxyAuthorization(proxy: PlatformHttpProxy?): String? {
+            val username = proxy?.username?.takeIf { it.isNotBlank() } ?: return null
+            val password = proxy.password.orEmpty()
+            val token = Base64.Default.encode("$username:$password".encodeToByteArray())
+            return "Basic $token"
         }
     }
 }
