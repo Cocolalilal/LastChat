@@ -53,4 +53,22 @@ class IosTtsPreferencesTest {
             assertTrue(defaults.voice.isNotBlank())
         }
     }
+
+    @Test
+    fun appearanceTtsFiltersPreparePlaybackTextLikeAndroid() {
+        val appearance = IosAppearancePreferences(
+            ttsTextFilterRules = listOf(
+                me.rerere.rikkahub.utils.TtsTextFilterRule(
+                    id = "skip",
+                    pattern = "||",
+                    mode = me.rerere.rikkahub.utils.TtsFilterMode.SKIP,
+                ),
+            ),
+        )
+        val spoken = me.rerere.rikkahub.utils.prepareTtsPlaybackText(
+            "Say ||quietly|| **hello**",
+            appearance.ttsTextFilterRules,
+        )
+        assertEquals("Say  hello", spoken)
+    }
 }

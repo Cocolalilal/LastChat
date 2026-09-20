@@ -57,5 +57,9 @@ class IosWebDtoTest {
         assertTrue(json.contains("\"sttReplaceModelIcon\":false"))
         assertTrue(json.contains("\"codeBlockAutoWrap\":false"))
         assertTrue(json.contains("\"showContextStacks\":false"))
+        assertTrue(json.contains("\"userNickname\":\"\""))
+        assertTrue(json.contains("\"providerViewMode\":\"LIST\""))
+        assertTrue(json.contains("\"fontSettings\""))
+        assertTrue(json.contains("\"ttsTextFilterRules\""))
     }
 }

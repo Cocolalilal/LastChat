@@ -40,4 +40,18 @@ class IosChatDisplayTest {
         assertTrue(preview.endsWith("…"))
         assertTrue(preview.length <= 21)
     }
+
+    @Test
+    fun assistantUiOverridesHideCharacterNameWhenAvatarHidden() {
+        val global = IosAppearancePreferences(showModelIcon = true, showModelName = true, showUserAvatar = true)
+        val effective = global.withAssistantUi(
+            IosAssistantUiSettings(showAssistantAvatar = false, showUserAvatar = false, fontSizeRatio = 1.25f),
+        )
+        assertEquals(false, effective.showModelIcon)
+        assertEquals(false, effective.showModelName)
+        assertEquals(false, effective.showUserAvatar)
+        assertEquals(1.25f, effective.fontSizeRatio)
+        assertEquals("A", iosAvatarLetter(" ada", "Y"))
+        assertEquals("Y", iosAvatarLetter("  ", "Y"))
+    }
 }

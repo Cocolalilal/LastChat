@@ -263,6 +263,43 @@ class IosMemoryStateTest {
     }
 
     @Test
+    fun appearanceAddsUserAvatarFontsTtsFiltersAndProviderView() {
+        val appearance = IosAppearancePreferences(
+            userNickname = "Ada",
+            userAvatar = IosAvatar.Emoji("🦊"),
+            fontSettings = IosFontSettings(
+                usePhoneSystemFont = true,
+                headerFont = IosFontConfig(weight = 500f, fontSize = 1.1f),
+            ).normalize(),
+            ttsTextFilterRules = listOf(
+                me.rerere.rikkahub.utils.TtsTextFilterRule(
+                    id = "skip",
+                    pattern = "*",
+                    mode = me.rerere.rikkahub.utils.TtsFilterMode.SKIP,
+                ),
+            ),
+            providerViewMode = IosProviderViewMode.GRID,
+        )
+        val roundTrip = Json.decodeFromString<IosAppearancePreferences>(Json.encodeToString(appearance))
+        assertEquals(appearance, roundTrip)
+    }
+
+    @Test
+    fun assistantUiSettingsAndAvatarRoundTrip() {
+        val assistant = IosAssistantPreferences(
+            name = "Nova",
+            avatar = IosAvatar.Image("file://avatar.png"),
+            useAssistantAvatar = true,
+            uiSettings = IosAssistantUiSettings(
+                showTokenUsage = true,
+                showAssistantBubbles = false,
+                newChatHeaderStyle = IosNewChatHeaderStyle.NONE,
+            ),
+        )
+        assertEquals(assistant, Json.decodeFromString<IosAssistantPreferences>(Json.encodeToString(assistant)))
+    }
+
+    @Test
     fun roleplayStylingMatchesStandardAndCustomPairedPatterns() {
         val styled = buildIosRoleplayText(
             text = "*waves* and ||quietly||",

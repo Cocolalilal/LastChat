@@ -8,11 +8,13 @@ import kotlin.test.assertNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import me.rerere.lastchat.ios.IosAvatar
 import me.rerere.lastchat.ios.IosLocalToolOption
 import me.rerere.lastchat.ios.IosMemoryMode
 import me.rerere.lastchat.ios.IosNewChatContentStyle
 import me.rerere.lastchat.ios.IosNewChatHeaderStyle
 import me.rerere.lastchat.ios.IosProviderType
+import me.rerere.lastchat.ios.IosProviderViewMode
 import me.rerere.lastchat.ios.IosSearchProviderType
 import me.rerere.lastchat.ios.IosTtsProviderType
 
@@ -130,6 +132,19 @@ class IosBackupImportTest {
         assertEquals(true, plan.appearance.chatToolbarAtBottom)
         assertEquals(true, plan.appearance.sttReplaceModelIcon)
         assertEquals(true, plan.appearance.reasoningPreviewEnabled)
+        assertEquals("Ada", plan.appearance.userNickname)
+        assertEquals(IosAvatar.Emoji("🦊"), plan.appearance.userAvatar)
+        assertEquals(true, plan.appearance.fontSettings.usePhoneSystemFont)
+        assertEquals(500f, plan.appearance.fontSettings.headerFont.weight)
+        assertEquals(1, plan.appearance.ttsTextFilterRules.size)
+        assertEquals("*", plan.appearance.ttsTextFilterRules.first().pattern)
+        assertEquals(IosProviderViewMode.GRID, plan.appearance.providerViewMode)
+
+        assertEquals(IosAvatar.Emoji("🤖"), nova.avatar)
+        assertEquals(true, nova.useAssistantAvatar)
+        assertEquals(true, nova.uiSettings.showTokenUsage)
+        assertEquals(false, nova.uiSettings.showAssistantBubbles)
+        assertEquals(IosNewChatHeaderStyle.NONE, nova.uiSettings.newChatHeaderStyle)
 
         assertContains(plan.applied.single { "Chat model" in it }, "gpt-4.1-mini")
     }
@@ -201,7 +216,10 @@ private object AndroidFixtures {
               "enableMemory": true, "enableMemorySearchTool": true,
               "embeddingModelId": "$EMBEDDING_MODEL_ID",
               "ragSimilarityThreshold": 0.6, "ragLimit": 7,
-              "localTools": [{"type": "javascript_engine"}, {"type": "tts"}, {"type": "python_engine"}]
+              "localTools": [{"type": "javascript_engine"}, {"type": "tts"}, {"type": "python_engine"}],
+              "avatar": {"type": "Emoji", "content": "🤖"},
+              "useAssistantAvatar": true,
+              "uiSettings": {"showTokenUsage": true, "showAssistantBubbles": false, "newChatHeaderStyle": "NONE"}
             },
             {
               "id": "33333333-3333-3333-3333-333333333334", "name": "Plain", "systemPrompt": "Hi",
@@ -241,6 +259,16 @@ private object AndroidFixtures {
             "enableMessageGenerationHapticEffect": true,
             "chatToolbarAtBottom": true,
             "sttReplaceModelIcon": true,
+            "userNickname": "Ada",
+            "userAvatar": {"type": "Emoji", "content": "🦊"},
+            "fontSettings": {
+              "usePhoneSystemFont": true,
+              "headerFont": {"fontSource": "System", "weight": 500, "fontSize": 1.1, "lineHeight": 1.2, "letterSpacing": 0.01}
+            },
+            "ttsTextFilterRules": [
+              {"id": "skip-star", "pattern": "*", "mode": "SKIP", "enabled": true}
+            ],
+            "providerViewMode": "GRID",
             "reasoningPreviewEnabled": true
           },
           "ttsAutoplayMode": "WHILE_GENERATING"
