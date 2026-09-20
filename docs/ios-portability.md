@@ -405,9 +405,15 @@ Current iOS app status:
   calls and results use the normal message protocol with Android's 256-step
   safety limit rather than a keyword-triggered search mode;
 - Skills, lorebooks, and MCP servers persist on iOS and use shared prompt
-  injection / JSON-RPC engines. `manage_skills` activates turn-scoped skills
-  with Android's available/active/unmatched payload. MCP tools are discovered
-  over PlatformHttpClient and enter the same 256-step tool loop;
+  injection / JSON-RPC engines. iOS settings now create/edit/delete/enable
+  skills and lorebook entries in place (injection position, depth,
+  ALWAYS/KEYWORDS/RAG, keywords) on the shared `PortableSkill` /
+  `PortableLorebook` models. `manage_skills` activates turn-scoped skills
+  with Android's available/active/unmatched payload. MCP add/edit can pick
+  SSE or streamable HTTP; tools are discovered over PlatformHttpClient and
+  enter the same 256-step tool loop. Developer settings show the shared
+  `AILoggingManager` ring (last 10 generation requests) plus
+  `PortableDebugLog`;
 - OpenAI-compatible speech-to-text posts WAV recordings to
   `/audio/transcriptions`. Microphone capture uses AVAudioRecorder; API keys
   stay in Keychain;
@@ -539,11 +545,12 @@ Current iOS app status:
   render via `fontFamilyFromBytes` (Android file-backed Font, iOS Skia
   `Font(identity, data)`). Width/roundness/grade apply with CMP
   `FontVariation` `wdth`/`ROND`/`GRAD` on Google Sans Flex and imported
-  variable fonts. SillyTavern/Chub character cards (JSON V1/V2 and PNG `tEXt`
-  `chara`) import through shared `PortableCharacterCardParser`.   Remaining 1:1
+  variable fonts. SillyTavern/Chub character cards (JSON V1/V2 and PNG
+  `tEXt`/`zTXt`/`iTXt` `chara`) import through shared
+  `PortableCharacterCardParser`; compressed chunks reuse the existing
+  `inflateDeflate` inflater (`raw=false` zlib windowBits 15). Remaining 1:1
   gaps: Simulator/Xcode screenshot QA, live LiteRT-LM / PRoot inference,
-  Android Assist activity chrome, developer AI request-log ring, skills/lorebook
-  in-place editors, PNG `zTXt` character cards (KMP has no Inflater), and
+  Android Assist activity chrome, SKILL.md zip package import/export, and
   pixel-level drawer/settings screenshot sign-off.
   The assistant overlay is an in-process Compose
   sheet plus Siri App Intent `Ask LastChat`, `lastchat://overlay?text=` deep

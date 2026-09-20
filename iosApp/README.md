@@ -104,8 +104,12 @@ imported TTF/OTF via `PortableCustomFontStore`,
 assistant-level DisplaySetting overrides. Dark mode uses the shared
 `withLastChatAmoledSurface` true-black canvas, matching Android's always-on
 OLED behavior without Material You. The chat composer Picker opens the same
-model sheet used in Settings. Assistants can import SillyTavern/Chub JSON or
-PNG character cards through `PortableCharacterCardParser`.
+model sheet used in Settings. Assistants can import SillyTavern/Chub JSON V1/V2 or
+PNG `tEXt`/`zTXt`/`iTXt` character cards through `PortableCharacterCardParser`.
+Skills and lorebooks have in-place create/edit/delete/enable editors (injection
+position, ALWAYS/KEYWORDS/RAG). MCP servers can use SSE or streamable HTTP.
+Developer settings show the shared AI request-log ring (last 10) plus the
+portable debug ring.
 Workspaces lists LiteRT/Sherpa catalogs and can download/delete files through
 `PortableOnDeviceModelManager`; Sherpa `.tar.bz2` archives unpack required
 files through shared `PortableTarBz2`. Inference still reports the shared unavailable
@@ -132,7 +136,7 @@ portable providers, persist the provider/result limit without secrets, and put
 API keys only in Keychain. Enabled search is offered to OpenAI, Google, and
 Claude as the real `search_web` tool; model tool calls and tool results run
 through the normal message loop with the same 256-step ceiling as Android.
-SearXNG's custom URL/basic-auth editor is still pending.
+SearXNG's custom URL and basic-auth fields persist; the password stays in Keychain.
 The TTS destination is functional for OpenAI, Gemini, MiniMax, ElevenLabs,
 Qwen, Fish Audio, Cartesia, and PlayHT. Provider configuration persists without
 credentials, API keys remain in Keychain, and the production assistant-message
