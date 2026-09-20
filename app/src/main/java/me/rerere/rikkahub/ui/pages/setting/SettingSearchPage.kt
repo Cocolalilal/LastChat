@@ -614,7 +614,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     
     // Edit Search Service Bottom Sheet
     editingService?.let { service ->
-        val context = LocalContext.current
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         var currentService by remember(service) { mutableStateOf(service) }
@@ -646,14 +645,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
-                Text(
-                    text = stringResource(
-                        R.string.setting_search_edit_service,
-                        SearchServiceOptions.TYPES[service::class]
-                            ?: context.getString(R.string.setting_search_service_generic)
-                    ),
-                    style = MaterialTheme.typography.headlineSmall
+                SearchServiceEditHeader(
+                    service = currentService,
+                    catalogSnapshot = catalogSnapshot,
                 )
                 
                 // Configuration options based on service type
@@ -999,6 +993,7 @@ internal fun SearchProvidersContent(
     SearchServiceEditorSheet(
         service = editingService,
         settings = settings,
+        catalogSnapshot = catalogSnapshot,
         onDismiss = { editingService = null },
         onSave = { original, updated ->
             val newServices = settings.searchServices.map {
@@ -1014,11 +1009,11 @@ internal fun SearchProvidersContent(
 private fun SearchServiceEditorSheet(
     service: SearchServiceOptions?,
     settings: Settings,
+    catalogSnapshot: ModelCatalogSnapshot?,
     onDismiss: () -> Unit,
     onSave: (SearchServiceOptions, SearchServiceOptions) -> Unit
 ) {
     service ?: return
-    val context = LocalContext.current
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var currentService by remember(service) { mutableStateOf(service) }
@@ -1048,13 +1043,9 @@ private fun SearchServiceEditorSheet(
                 .fillMaxHeight(0.8f),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = stringResource(
-                    R.string.setting_search_edit_service,
-                    SearchServiceOptions.TYPES[service::class]
-                        ?: context.getString(R.string.setting_search_service_generic)
-                ),
-                style = MaterialTheme.typography.headlineSmall
+            SearchServiceEditHeader(
+                service = currentService,
+                catalogSnapshot = catalogSnapshot,
             )
 
             LazyColumn(
@@ -1318,6 +1309,32 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
     }
 }
 
+
+@Composable
+private fun SearchServiceEditHeader(
+    service: SearchServiceOptions,
+    catalogSnapshot: ModelCatalogSnapshot?,
+) {
+    val context = LocalContext.current
+    val serviceName = SearchServiceOptions.TYPES[service::class]
+        ?: context.getString(R.string.setting_search_service_generic)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SearchProviderIcon(
+            name = serviceName,
+            service = service,
+            catalogSnapshot = catalogSnapshot,
+            modifier = Modifier.size(32.dp),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.setting_search_edit_service, serviceName),
+            style = MaterialTheme.typography.headlineSmall,
+        )
+    }
+}
 
 @Composable
 private fun SearchServiceItemContent(
