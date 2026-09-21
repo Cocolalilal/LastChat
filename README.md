@@ -16,7 +16,7 @@ This project aims to provide a privacy-focused and highly personalized AI chat e
 <table align="center" style="border: none;">
   <tr>
     <td align="center" style="border: none; width: 50%;">
-      <img src="docs/1.4.6_chat.jpg" alt="Chat Interface" width="100%" />
+      <img src="docs/1.4.7_chat.jpg" alt="Chat Interface" width="100%" />
     </td>
     <td align="center" style="border: none; width: 50%;">
       <img src="docs/1.4.3_stats.jpg" alt="Home Screen" width="100%" />
