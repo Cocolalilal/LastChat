@@ -395,6 +395,8 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
             apiKey = apiKey,
+            apiKeyPool = this.apiKeyPool,
+            keyPoolConfig = this.keyPoolConfig,
             baseUrl = convertedBaseUrl,
             chatCompletionsPath = if (this is ProviderSetting.OpenAI) this.chatCompletionsPath else ProviderSetting.OpenAI().chatCompletionsPath,
             useResponseApi = if (this is ProviderSetting.OpenAI) this.useResponseApi else false,
@@ -416,6 +418,8 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
             apiKey = apiKey,
+            apiKeyPool = this.apiKeyPool,
+            keyPoolConfig = this.keyPoolConfig,
             baseUrl = convertedBaseUrl,
             vertexAI = if (this is ProviderSetting.Google) this.vertexAI else false,
             privateKey = if (this is ProviderSetting.Google) this.privateKey else ProviderSetting.Google().privateKey,
@@ -435,6 +439,8 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             customIconUri = this.customIconUri,
             builtIn = this.builtIn,
             apiKey = apiKey,
+            apiKeyPool = this.apiKeyPool,
+            keyPoolConfig = this.keyPoolConfig,
             baseUrl = convertedBaseUrl
         )
 
@@ -686,13 +692,10 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     val latestProvider by rememberUpdatedState(provider)
     val toaster = LocalToaster.current
 
-    DebouncedTextField(
-        value = provider.apiKey,
-        onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
-        stateKey = "openai_api_key_${provider.id}",
-        label = stringResource(id = R.string.setting_provider_page_api_key),
-        modifier = Modifier.fillMaxWidth(),
-        isSecure = true
+    ApiKeyPoolButton(
+        provider = provider,
+        onEdit = { onEdit(it as ProviderSetting.OpenAI) },
+        modifier = Modifier.fillMaxWidth()
     )
 
     DebouncedTextField(
@@ -851,13 +854,10 @@ private fun ColumnScope.ProviderConfigureClaude(
 ) {
     val latestProvider by rememberUpdatedState(provider)
 
-    DebouncedTextField(
-        value = provider.apiKey,
-        onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
-        stateKey = "claude_api_key_${provider.id}",
-        label = stringResource(id = R.string.setting_provider_page_api_key),
-        modifier = Modifier.fillMaxWidth(),
-        isSecure = true
+    ApiKeyPoolButton(
+        provider = provider,
+        onEdit = { onEdit(it as ProviderSetting.Claude) },
+        modifier = Modifier.fillMaxWidth()
     )
 
     DebouncedTextField(
@@ -889,13 +889,10 @@ private fun ColumnScope.ProviderConfigureGoogle(
     }
 
     if (!provider.vertexAI) {
-        DebouncedTextField(
-            value = provider.apiKey,
-            onValueChange = { onEdit(provider.copy(apiKey = it.trim())) },
-            stateKey = "google_api_key_${provider.id}",
-            label = stringResource(id = R.string.setting_provider_page_api_key),
-            modifier = Modifier.fillMaxWidth(),
-            isSecure = true
+        ApiKeyPoolButton(
+            provider = provider,
+            onEdit = { onEdit(it as ProviderSetting.Google) },
+            modifier = Modifier.fillMaxWidth()
         )
 
         DebouncedTextField(

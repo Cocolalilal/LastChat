@@ -157,7 +157,10 @@ class WebdavSync(
             }
         }
 
-    suspend fun prepareBackupFile(webDavConfig: WebDavConfig): File = withContext(Dispatchers.IO) {
+    suspend fun prepareBackupFile(
+        webDavConfig: WebDavConfig,
+        selectedKeyIds: Set<kotlin.uuid.Uuid>? = null,
+    ): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val backupFile = File(context.cacheDir, "LastChat_backup_$timestamp.zip")
         if (backupFile.exists()) {
@@ -175,7 +178,10 @@ class WebdavSync(
 
         ZipOutputStream(backupFile.sink().buffer().outputStream()).use { zipOut ->
             val settingsForExport =
-                secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
+                secretKeyManager.populateSecretsForExport(
+                    settings = settingsStore.settingsFlow.value,
+                    selectedKeyIds = selectedKeyIds,
+                )
             addVirtualFileToZip(
                 zipOut = zipOut,
                 name = BackupArchiveFormat.SETTINGS_ENTRY,

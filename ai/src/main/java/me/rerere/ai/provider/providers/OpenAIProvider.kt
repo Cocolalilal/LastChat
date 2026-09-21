@@ -29,7 +29,9 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.ProviderProxy
+import me.rerere.ai.util.KeyOutcome
 import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.PooledKey
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.common.http.getByKey
@@ -58,12 +60,31 @@ class OpenAIProvider(
     private val responseAPI = ResponseAPI(
         httpClient = platformHttpClient,
         mediaEncoder = platformMediaEncoder,
+        keyRoulette = keyRoulette,
     )
 
+    private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
+        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            keyRoulette.next(
+                keys = providerSetting.resolvedApiKeyPool,
+                providerId = providerSetting.id,
+                config = providerSetting.keyPoolConfig,
+            )
+        } else {
+            PooledKey(
+                id = Uuid.NIL,
+                name = "default",
+                value = keyRoulette.next(providerSetting.apiKey),
+                priority = 0,
+                providerId = providerSetting.id,
+                providerName = providerSetting.name
+            )
+        }
+    }
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
         withContext(me.rerere.ai.util.providerIoDispatcher) {
-            val key = keyRoulette.next(providerSetting.apiKey)
+            val key = selectKey(providerSetting).value
             
             // Fetch regular models
             val fetchedRegularModels = fetchModelsFromUrl(
@@ -268,7 +289,7 @@ class OpenAIProvider(
     }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(me.rerere.ai.util.providerIoDispatcher) {
-        val key = keyRoulette.next(providerSetting.apiKey)
+        val key = selectKey(providerSetting).value
         val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
             providerSetting.balanceOption.apiPath
         } else {
@@ -342,7 +363,7 @@ class OpenAIProvider(
             "Expected OpenAI provider setting"
         }
 
-        val key = keyRoulette.next(providerSetting.apiKey)
+        val key = selectKey(providerSetting).value
 
         val requestBody = json.encodeToString(
             buildJsonObject {
@@ -405,7 +426,7 @@ class OpenAIProvider(
         input: List<String>,
         model: Model
     ): List<List<Float>> = withContext(me.rerere.ai.util.providerIoDispatcher) {
-        val key = keyRoulette.next(providerSetting.apiKey)
+        val key = selectKey(providerSetting).value
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", model.modelId)

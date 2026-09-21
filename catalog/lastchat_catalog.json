@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-09-20",
+  "updated_at": "2026-09-21",
   "search_providers": [
     {
       "id": "keyless",
@@ -1406,30 +1406,6 @@
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
-    },
-    {
-      "id": "5d8c3e12-b147-4977-bc5b-426b68da401f",
-      "name": "GitHub Models",
-      "description": "Free tier AI models hosted by GitHub and Azure AI for developers.",
-      "type": "openai",
-      "base_url": "https://models.inference.ai.azure.com",
-      "icon": "icons/github.svg",
-      "preset": true,
-      "signup_url": "https://github.com/marketplace/models",
-      "api_key_url": "https://github.com/settings/tokens",
-      "setup_models": [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "DeepSeek-R1",
-        "Phi-4",
-        "Mistral-large-2411"
-      ],
-      "setup_defaults": {
-        "chat": "gpt-4o",
-        "title": "gpt-4o-mini",
-        "summarizer": "gpt-4o-mini",
-        "ocr": "gpt-4o"
-      }
     },
     {
       "id": "11c4728d-d349-4328-8d07-28d5d4d5e901",
@@ -6643,8 +6619,7 @@
       "canonical_model_id": "gpt-5.6-sol",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
       "input_cost_per_token": 4e-06,
       "output_cost_per_token": 2e-05,
@@ -6681,8 +6656,7 @@
       "canonical_model_id": "gpt-5.6-terra",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
       "input_cost_per_token": 2e-06,
       "output_cost_per_token": 1.2e-05,
@@ -6719,8 +6693,7 @@
       "canonical_model_id": "gpt-5.6-luna",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
       "input_cost_per_token": 2e-07,
       "output_cost_per_token": 1.2e-06,
@@ -6757,8 +6730,7 @@
       "canonical_model_id": "gpt-5",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -6793,8 +6765,7 @@
       "canonical_model_id": "gpt-5-mini",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c"
       ],
       "context_window": 128000,
       "type": "CHAT",
@@ -7491,7 +7462,6 @@
         "448c27de-c5e0-4434-8efa-932d0613dd9b",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f",
         "f8e32910-c114-411a-b302-18cb92193b3b"
       ],
       "type": "CHAT",
@@ -7525,7 +7495,6 @@
         "448c27de-c5e0-4434-8efa-932d0613dd9b",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
         "c0f2a934-d98c-4f7f-ba0a-25be1c2a129d",
-        "5d8c3e12-b147-4977-bc5b-426b68da401f",
         "f8e32910-c114-411a-b302-18cb92193b3b"
       ],
       "type": "CHAT",

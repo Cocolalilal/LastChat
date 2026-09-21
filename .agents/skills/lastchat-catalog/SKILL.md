@@ -366,7 +366,6 @@ Always use these UUIDs in `provider_ids` arrays:
 | `bf741ca1-57d6-4444-93ff-18305c43d9b4` | Together AI |
 | `d5734028-d39b-4d41-9841-fd648d65440e` | OpenRouter |
 | `1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123` | Anthropic Claude |
-| `5d8c3e12-b147-4977-bc5b-426b68da401f` | GitHub Models |
 | `11c4728d-d349-4328-8d07-28d5d4d5e901` | Cloudflare Workers AI |
 | `f8e32910-c114-411a-b302-18cb92193b3b` | Replicate |
 | `fb74da0c-cf14-45ff-98de-1e3df6a94b3c` | Cerebras |

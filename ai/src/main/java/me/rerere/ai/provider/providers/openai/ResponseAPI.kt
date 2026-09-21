@@ -45,6 +45,10 @@ import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
+import me.rerere.ai.util.KeyOutcome
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.PooledKey
+import me.rerere.ai.util.raceSpeculativeFlow
 import me.rerere.common.platform.PlatformMediaEncoder
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
@@ -54,7 +58,27 @@ private const val TAG = "ResponseAPI"
 class ResponseAPI(
     private val httpClient: PlatformHttpClient,
     private val mediaEncoder: PlatformMediaEncoder,
+    private val keyRoulette: KeyRoulette = KeyRoulette.default(),
 ) : OpenAIImpl {
+    private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
+        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            keyRoulette.next(
+                keys = providerSetting.resolvedApiKeyPool,
+                providerId = providerSetting.id,
+                config = providerSetting.keyPoolConfig,
+            )
+        } else {
+            PooledKey(
+                id = Uuid.NIL,
+                name = "default",
+                value = keyRoulette.next(providerSetting.apiKey),
+                priority = 0,
+                providerId = providerSetting.id,
+                providerName = providerSetting.name
+            )
+        }
+    }
+
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -70,13 +94,14 @@ class ResponseAPI(
 
         PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
+        val selectedKey = selectKey(providerSetting)
         val response = httpClient.execute(
             PlatformHttpRequest(
                 method = "POST",
                 url = "${providerSetting.baseUrl}/responses",
                 headers = params.customHeaders.toHeaderMap()
                     .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                    .withAuthAndJson(providerSetting.apiKey),
+                    .withAuthAndJson(selectedKey.value),
                 body = encodedRequestBody.encodeToByteArray(),
                 mediaType = "application/json",
                 proxy = providerSetting.proxy.toPlatformProxy()
@@ -84,8 +109,38 @@ class ResponseAPI(
         )
         val bodyStr = response.body.decodeToString()
         if (response.statusCode !in 200..299) {
+            when (response.statusCode) {
+                401, 403 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.AuthFailure(
+                        statusCode = response.statusCode,
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                402 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.QuotaExhausted(
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                429 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.RateLimited()
+                )
+                in 500..599 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.Error(response.statusCode, temporary = true)
+                )
+            }
             throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
         }
+        keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
 
         PlatformLog.i(TAG, "generateText: $bodyStr")
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
@@ -98,6 +153,32 @@ class ResponseAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
+    ): Flow<MessageChunk> {
+        val pool = providerSetting.resolvedApiKeyPool
+        val config = providerSetting.keyPoolConfig
+        if (config.enableSpeculativeRouting && pool.size >= 2) {
+            val primaryKey = selectKey(providerSetting)
+            val backupKeys = pool.filter { it.id != primaryKey.id }
+            if (backupKeys.isNotEmpty()) {
+                val secondaryKey = keyRoulette.next(backupKeys, providerSetting.id, config)
+                val primaryFlow = streamTextWithKey(providerSetting, messages, params, primaryKey)
+                val secondaryFlow = streamTextWithKey(providerSetting, messages, params, secondaryKey)
+                return raceSpeculativeFlow(
+                    timeoutMs = config.speculativeTimeoutSeconds * 1000L,
+                    primaryFlow = primaryFlow,
+                    speculativeFlow = secondaryFlow,
+                )
+            }
+        }
+        val selectedKey = selectKey(providerSetting)
+        return streamTextWithKey(providerSetting, messages, params, selectedKey)
+    }
+
+    private fun streamTextWithKey(
+        providerSetting: ProviderSetting.OpenAI,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        selectedKey: PooledKey,
     ): Flow<MessageChunk> = callbackFlow {
         val requestBody = buildRequestBody(
             messages = messages,
@@ -111,7 +192,7 @@ class ResponseAPI(
             url = "${providerSetting.baseUrl}/responses",
             headers = params.customHeaders.toHeaderMap()
                 .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                .withAuthAndJson(providerSetting.apiKey),
+                .withAuthAndJson(selectedKey.value),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
             proxy = providerSetting.proxy.toPlatformProxy()
@@ -119,22 +200,61 @@ class ResponseAPI(
 
         PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
+        var hasEmittedChunk = false
         val job = launch {
             httpClient.streamEvents(request).collect { event ->
                 when (event) {
                     is PlatformServerEvent.Open -> Unit
-                    PlatformServerEvent.Closed -> close()
-                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    PlatformServerEvent.Closed -> {
+                        if (hasEmittedChunk) {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
+                        }
+                        close()
+                    }
+                    is PlatformServerEvent.Failure -> {
+                        when (event.statusCode) {
+                            401, 403 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.AuthFailure(
+                                    statusCode = event.statusCode ?: 401,
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            402 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.QuotaExhausted(
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            429 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.RateLimited()
+                            )
+                            in 500..599 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.Error(event.statusCode ?: 500, temporary = true)
+                            )
+                        }
+                        close(parseStreamFailure(event))
+                    }
                     is PlatformServerEvent.Event -> {
                         PlatformLog.d(TAG, "onEvent: ${event.id}/${event.event} ${event.data}")
                         if (event.data.isNotBlank()) {
                             val eventJson = json.parseToJsonElement(event.data).jsonObject
                             val chunk = parseResponseDelta(eventJson)
                             if (chunk != null) {
+                                hasEmittedChunk = true
                                 trySend(chunk)
                             }
                         }
                         if (event.event == "response.completed") {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                             close()
                         }
                     }

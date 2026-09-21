@@ -178,31 +178,110 @@ class ModelInstall(
         private const val PROGRESS_STEP_BYTES = 2L * 1024 * 1024
 
         /**
-         * Parses a HuggingFace `/blob/` or `/resolve/` URL of a `.litertlm` file into an [ImportSpec].
-         * e.g. https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm
+         * Parses a HuggingFace `/blob/`, `/resolve/`, or `/raw/` URL (or shorthand repo/file path)
+         * of a `.litertlm` file into an [ImportSpec].
+         *
+         * Supports:
+         * - Standard HTTPS resolve / blob / raw URLs: https://huggingface.co/owner/repo/resolve/main/model.litertlm
+         * - Short domains: https://hf.co/owner/repo/resolve/main/model.litertlm
+         * - Optional `www.` prefix (www.huggingface.co or www.hf.co)
+         * - Missing scheme (huggingface.co/... or hf.co/...)
+         * - HTTP scheme (upgraded to HTTPS)
+         * - Shorthand repo format: owner/repo/resolve/main/model.litertlm or owner/repo/model.litertlm
+         * - Nested directory paths within repositories: owner/repo/resolve/main/sub/dir/model.litertlm
+         * - Query parameters (?download=true) and fragments (#...)
+         * - Surrounding quotes or angle brackets
+         * - Case-insensitive `.litertlm` extension check
          */
         fun parseImportUrl(raw: String): ImportSpec? {
-            val url = raw.trim()
-            if (!url.startsWith("https://huggingface.co/")) return null
-            val path = url.removePrefix("https://huggingface.co/").substringBefore('?')
+            val trimmed = raw.trim().trim('\"', '\'', '<', '>')
+            if (trimmed.isBlank()) return null
+
+            // Strip query string and fragment
+            val withoutQueryOrFragment = trimmed.substringBefore('?').substringBefore('#')
+
+            // Normalize scheme
+            val withoutScheme = when {
+                withoutQueryOrFragment.startsWith("https://", ignoreCase = true) ->
+                    withoutQueryOrFragment.substring(8)
+                withoutQueryOrFragment.startsWith("http://", ignoreCase = true) ->
+                    withoutQueryOrFragment.substring(7)
+                else -> withoutQueryOrFragment
+            }
+
+            // Check if domain is a known HuggingFace domain
+            val withoutWww = if (withoutScheme.startsWith("www.", ignoreCase = true)) {
+                withoutScheme.substring(4)
+            } else {
+                withoutScheme
+            }
+
+            val path = when {
+                withoutWww.startsWith("huggingface.co/", ignoreCase = true) ->
+                    withoutWww.substring("huggingface.co/".length)
+                withoutWww.startsWith("hf.co/", ignoreCase = true) ->
+                    withoutWww.substring("hf.co/".length)
+                // If it had http(s):// but wasn't a HuggingFace domain, reject it
+                withoutQueryOrFragment.startsWith("https://", ignoreCase = true) ||
+                withoutQueryOrFragment.startsWith("http://", ignoreCase = true) ->
+                    return null
+                // If the first segment looks like an external domain with a dot (e.g. example.com/...), reject it
+                withoutWww.substringBefore('/').contains('.') ->
+                    return null
+                // Otherwise treat as a shorthand repo path (e.g. owner/repo/...)
+                else -> withoutWww
+            }.trim('/')
+
+            if (path.isBlank()) return null
+
             val marker = when {
                 "/resolve/" in path -> "/resolve/"
                 "/blob/" in path -> "/blob/"
-                else -> return null
+                "/raw/" in path -> "/raw/"
+                else -> null
             }
-            val repo = path.substringBefore(marker)
-            val rest = path.substringAfter(marker)
-            val commit = rest.substringBefore('/')
-            val file = rest.substringAfter('/')
-            if (repo.isBlank() || commit.isBlank() || file.isBlank()) return null
-            if (!file.endsWith(".litertlm")) return null
-            val downloadUrl = "https://huggingface.co/$repo/resolve/$commit/$file"
-            val name = file.removeSuffix(".litertlm")
+
+            val repo: String
+            val commit: String
+            val filePath: String
+
+            if (marker != null) {
+                repo = path.substringBefore(marker).trim('/')
+                val rest = path.substringAfter(marker).trim('/')
+                if (repo.isBlank() || rest.isBlank()) return null
+                if (!rest.contains('/')) return null
+                commit = rest.substringBefore('/')
+                filePath = rest.substringAfter('/')
+            } else {
+                // Shorthand format: owner/repo/path/to/file.litertlm or repo/file.litertlm
+                val segments = path.split('/').filter { it.isNotBlank() }
+                if (segments.size < 2) return null
+                if (segments.size == 2) {
+                    repo = segments[0]
+                    commit = "main"
+                    filePath = segments[1]
+                } else {
+                    repo = "${segments[0]}/${segments[1]}"
+                    commit = "main"
+                    filePath = segments.drop(2).joinToString("/")
+                }
+            }
+
+            if (repo.isBlank() || commit.isBlank() || filePath.isBlank()) return null
+
+            val fileName = filePath.substringAfterLast('/')
+            val ext = fileName.substringAfterLast('.', "")
+            if (!ext.equals("litertlm", ignoreCase = true)) return null
+
+            val cleanFileName = fileName.replace("%20", " ")
+            val name = cleanFileName.substringBeforeLast('.')
+            val downloadUrl = "https://huggingface.co/$repo/resolve/$commit/$filePath"
+
             return ImportSpec(
-                id = "$repo/$file",
+                id = "$repo/$filePath",
                 name = name,
                 hfRepo = repo,
-                modelFile = file,
+                modelFile = cleanFileName,
                 commitHash = commit,
                 downloadUrl = downloadUrl,
             )

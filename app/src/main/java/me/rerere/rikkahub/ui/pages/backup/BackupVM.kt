@@ -82,9 +82,10 @@ class BackupVM(
         webdavSync.deleteWebDavBackupFile(settings.value.webDavConfig, item)
     }
 
-    suspend fun exportToFile(): File {
+    suspend fun exportToFile(selectedKeyIds: Set<kotlin.uuid.Uuid>? = null): File {
         return webdavSync.prepareBackupFile(
-            settings.value.webDavConfig.copy(items = WebDavConfig.BackupItem.entries)
+            settings.value.webDavConfig.copy(items = WebDavConfig.BackupItem.entries),
+            selectedKeyIds = selectedKeyIds
         )
     }
 

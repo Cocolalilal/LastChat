@@ -279,6 +279,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             chatCompletionsPath,
             useResponseApi.toString(),
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.Google -> listOf(
@@ -289,6 +290,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             location,
             projectId,
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.Claude -> listOf(
@@ -296,6 +298,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             id.toString(),
             baseUrl,
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.ComfyUI -> listOf(
@@ -315,13 +318,13 @@ private fun ProviderSetting.apiModelCacheKey(): String {
 
 private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
-        is ProviderSetting.OpenAI -> apiKey.isNotBlank() || isLikelyOllama()
+        is ProviderSetting.OpenAI -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
         } else {
-            apiKey.isNotBlank()
+            apiKeyPool.any { it.enabled } || apiKey.isNotBlank()
         }
-        is ProviderSetting.Claude -> apiKey.isNotBlank()
+        is ProviderSetting.Claude -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank()
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
         is ProviderSetting.LiteRtLocal -> false // on-device: no remote model list
     }
@@ -1969,9 +1972,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         item {
                             // Check if provider has an API key
                             val hasApiKey = when (parentProvider) {
-                                is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.OpenAI -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Google -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Claude -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
                                 is ProviderSetting.LiteRtLocal -> true
                             }

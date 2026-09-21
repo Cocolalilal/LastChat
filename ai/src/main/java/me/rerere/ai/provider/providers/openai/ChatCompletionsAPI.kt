@@ -40,7 +40,9 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.KeyOutcome
 import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.PooledKey
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -72,6 +74,25 @@ class ChatCompletionsAPI(
     private val keyRoulette: KeyRoulette,
     private val mediaEncoder: PlatformMediaEncoder,
 ) : OpenAIImpl {
+    private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
+        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            keyRoulette.next(
+                keys = providerSetting.resolvedApiKeyPool,
+                providerId = providerSetting.id,
+                config = providerSetting.keyPoolConfig,
+            )
+        } else {
+            PooledKey(
+                id = Uuid.NIL,
+                name = "default",
+                value = keyRoulette.next(providerSetting.apiKey),
+                priority = 0,
+                providerId = providerSetting.id,
+                providerName = providerSetting.name
+            )
+        }
+    }
+
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -88,21 +109,52 @@ class ChatCompletionsAPI(
 
         PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
+        val selectedKey = selectKey(providerSetting)
         val response = httpClient.execute(
             PlatformHttpRequest(
                 method = "POST",
                 url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
                 headers = params.customHeaders.toHeaderMap()
                     .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                    .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+                    .withAuthAndJson(selectedKey.value),
                 body = encodedRequestBody.encodeToByteArray(),
                 mediaType = "application/json",
                 proxy = providerSetting.proxy.toPlatformProxy()
             )
         )
         if (response.statusCode !in 200..299) {
+            when (response.statusCode) {
+                401, 403 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.AuthFailure(
+                        statusCode = response.statusCode,
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = response.body.decodeToString()
+                    )
+                )
+                402 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.QuotaExhausted(
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = response.body.decodeToString()
+                    )
+                )
+                429 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.RateLimited()
+                )
+                in 500..599 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.Error(response.statusCode, temporary = true)
+                )
+            }
             throw Exception("Failed to get response: ${response.statusCode} ${response.body.decodeToString()}")
         }
+        keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
 
         val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
@@ -138,6 +190,32 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams,
+    ): Flow<MessageChunk> {
+        val pool = providerSetting.resolvedApiKeyPool
+        val config = providerSetting.keyPoolConfig
+        if (config.enableSpeculativeRouting && pool.size >= 2) {
+            val primaryKey = selectKey(providerSetting)
+            val backupKeys = pool.filter { it.id != primaryKey.id }
+            if (backupKeys.isNotEmpty()) {
+                val secondaryKey = keyRoulette.next(backupKeys, providerSetting.id, config)
+                val primaryFlow = streamTextWithKey(providerSetting, messages, params, primaryKey)
+                val secondaryFlow = streamTextWithKey(providerSetting, messages, params, secondaryKey)
+                return me.rerere.ai.util.raceSpeculativeFlow(
+                    timeoutMs = config.speculativeTimeoutSeconds * 1000L,
+                    primaryFlow = primaryFlow,
+                    speculativeFlow = secondaryFlow,
+                )
+            }
+        }
+        val selectedKey = selectKey(providerSetting)
+        return streamTextWithKey(providerSetting, messages, params, selectedKey)
+    }
+
+    private fun streamTextWithKey(
+        providerSetting: ProviderSetting.OpenAI,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        selectedKey: PooledKey,
     ): Flow<MessageChunk> = callbackFlow {
         val requestBody = buildChatCompletionRequest(
             messages = messages,
@@ -151,7 +229,7 @@ class ChatCompletionsAPI(
             url = "${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}",
             headers = params.customHeaders.toHeaderMap()
                 .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                .withAuthAndJson(keyRoulette.next(providerSetting.apiKey)),
+                .withAuthAndJson(selectedKey.value),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
             proxy = providerSetting.proxy.toPlatformProxy()
@@ -159,20 +237,59 @@ class ChatCompletionsAPI(
 
         PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
+        var hasEmittedChunk = false
         val job = launch {
             httpClient.streamEvents(request).collect { event ->
                 when (event) {
                     is PlatformServerEvent.Open -> Unit
-                    PlatformServerEvent.Closed -> close()
-                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    PlatformServerEvent.Closed -> {
+                        if (hasEmittedChunk) {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
+                        }
+                        close()
+                    }
+                    is PlatformServerEvent.Failure -> {
+                        when (event.statusCode) {
+                            401, 403 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.AuthFailure(
+                                    statusCode = event.statusCode ?: 401,
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            402 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.QuotaExhausted(
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            429 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.RateLimited()
+                            )
+                            in 500..599 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.Error(event.statusCode ?: 500, temporary = true)
+                            )
+                        }
+                        close(parseStreamFailure(event))
+                    }
                     is PlatformServerEvent.Event -> {
                         if (event.data == "[DONE]") {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                             close()
                             return@collect
                         }
                         PlatformLog.d(TAG, "onEvent: ${event.data}")
                         try {
                             parseStreamData(event.data).forEach { chunk ->
+                                hasEmittedChunk = true
                                 trySend(chunk)
                             }
                         } catch (e: Throwable) {

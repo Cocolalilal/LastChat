@@ -34,7 +34,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
+import me.rerere.rikkahub.ui.components.ui.ToastAction
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
+import me.rerere.ai.util.KeyRoulette
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -713,6 +716,27 @@ class RouteActivity : ComponentActivity() {
                 LocalTTSState provides tts,
                 LocalSTTState provides stt,
             ) {
+                // Listen for API key authentication / quota errors and notify user
+                LaunchedEffect(Unit) {
+                    KeyRoulette.default().authErrorEvents.collect { event ->
+                        val keyLabel = event.keyName.ifBlank { "API Key" }
+                        toastState.show(
+                            message = this@RouteActivity.getString(R.string.api_key_auth_error_toast, keyLabel),
+                            type = ToastType.Error,
+                            action = ToastAction(
+                                label = this@RouteActivity.getString(R.string.api_key_auth_error_action),
+                                onClick = {
+                                    if (event.providerId != kotlin.uuid.Uuid.NIL) {
+                                        navBackStack.navigate(Screen.SettingProviderDetail(event.providerId.toString()))
+                                    } else {
+                                        navBackStack.navigate(Screen.SettingProvider)
+                                    }
+                                }
+                            )
+                        )
+                    }
+                }
+
                 // Check for backup cleanup results and show toast
                 LaunchedEffect(Unit) {
                     val prefs = this@RouteActivity.getSharedPreferences("backup_cleanup", MODE_PRIVATE)

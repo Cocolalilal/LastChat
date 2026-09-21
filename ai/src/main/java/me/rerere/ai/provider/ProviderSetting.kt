@@ -41,6 +41,15 @@ sealed class ProviderSetting {
 
     abstract val builtIn: Boolean
 
+    open val apiKeyPool: List<ApiKeyEntry>
+        get() = emptyList()
+
+    open val keyPoolConfig: KeyPoolConfig
+        get() = KeyPoolConfig()
+
+    @Transient
+    var resolvedApiKeyPool: List<me.rerere.ai.util.PooledKey> = emptyList()
+
     abstract fun addModel(model: Model): ProviderSetting
     abstract fun editModel(model: Model): ProviderSetting
     abstract fun delModel(model: Model): ProviderSetting
@@ -70,6 +79,8 @@ sealed class ProviderSetting {
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
         var apiKey: String = "",
+        override var apiKeyPool: List<ApiKeyEntry> = emptyList(),
+        override var keyPoolConfig: KeyPoolConfig = KeyPoolConfig(),
         var baseUrl: String = "https://api.openai.com/v1",
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
@@ -139,6 +150,8 @@ sealed class ProviderSetting {
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
         var apiKey: String = "",
+        override var apiKeyPool: List<ApiKeyEntry> = emptyList(),
+        override var keyPoolConfig: KeyPoolConfig = KeyPoolConfig(),
         var baseUrl: String = "https://generativelanguage.googleapis.com/v1beta", // only for google AI
         var vertexAI: Boolean = false,
         var privateKey: String = "", // only for vertex AI
@@ -206,6 +219,8 @@ sealed class ProviderSetting {
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
         var apiKey: String = "",
+        override var apiKeyPool: List<ApiKeyEntry> = emptyList(),
+        override var keyPoolConfig: KeyPoolConfig = KeyPoolConfig(),
         var baseUrl: String = "https://api.anthropic.com/v1",
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
@@ -407,3 +422,24 @@ fun String.withDefaultSafetensorsExtension(): String {
     val extension = trimmed.substringAfterLast('.', missingDelimiterValue = "")
     return if (extension.lowercase() in MODEL_FILENAME_EXTENSIONS) trimmed else "$trimmed.safetensors"
 }
+
+fun ProviderSetting.withApiKeyPool(newPool: List<ApiKeyEntry>): ProviderSetting {
+    return when (this) {
+        is ProviderSetting.OpenAI -> copy(apiKeyPool = newPool)
+        is ProviderSetting.Google -> copy(apiKeyPool = newPool)
+        is ProviderSetting.Claude -> copy(apiKeyPool = newPool)
+        is ProviderSetting.ComfyUI -> this
+        is ProviderSetting.LiteRtLocal -> this
+    }
+}
+
+fun ProviderSetting.withKeyPoolConfig(newConfig: KeyPoolConfig): ProviderSetting {
+    return when (this) {
+        is ProviderSetting.OpenAI -> copy(keyPoolConfig = newConfig)
+        is ProviderSetting.Google -> copy(keyPoolConfig = newConfig)
+        is ProviderSetting.Claude -> copy(keyPoolConfig = newConfig)
+        is ProviderSetting.ComfyUI -> this
+        is ProviderSetting.LiteRtLocal -> this
+    }
+}
+

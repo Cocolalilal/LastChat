@@ -30,13 +30,128 @@ class ModelInstallParseTest {
     }
 
     @Test
-    fun `rejects non-huggingface url`() {
-        assertNull(ModelInstall.parseImportUrl("https://example.com/x/resolve/main/model.litertlm"))
+    fun `parses raw url into resolve url`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://huggingface.co/org/repo/raw/main/model.litertlm"
+        )
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", spec?.downloadUrl)
+        assertEquals("model", spec?.name)
     }
 
     @Test
-    fun `rejects non-litertlm file`() {
+    fun `parses short hf-dot-co domain`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://hf.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm"
+        )
+        assertEquals("litert-community/Gemma3-1B-IT", spec?.hfRepo)
+        assertEquals(
+            "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm",
+            spec?.downloadUrl,
+        )
+    }
+
+    @Test
+    fun `parses url without scheme and with www`() {
+        val spec = ModelInstall.parseImportUrl(
+            "www.huggingface.co/org/repo/resolve/main/model.litertlm"
+        )
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", spec?.downloadUrl)
+    }
+
+    @Test
+    fun `parses http url upgrading to https`() {
+        val spec = ModelInstall.parseImportUrl(
+            "http://hf.co/org/repo/blob/main/model.litertlm"
+        )
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", spec?.downloadUrl)
+    }
+
+    @Test
+    fun `parses url with query parameters and fragments`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://huggingface.co/org/repo/resolve/main/model.litertlm?download=true#description"
+        )
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", spec?.downloadUrl)
+        assertEquals("model.litertlm", spec?.modelFile)
+    }
+
+    @Test
+    fun `parses url wrapped in angle brackets and whitespace`() {
+        val spec = ModelInstall.parseImportUrl(
+            "  <https://huggingface.co/org/repo/resolve/main/model.litertlm>  "
+        )
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", spec?.downloadUrl)
+    }
+
+    @Test
+    fun `parses nested directory path within repo`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://huggingface.co/org/repo/resolve/main/sub/dir/model.litertlm"
+        )
+        assertEquals("org/repo", spec?.hfRepo)
+        assertEquals("main", spec?.commitHash)
+        assertEquals("model.litertlm", spec?.modelFile)
+        assertEquals("model", spec?.name)
+        assertEquals("org/repo/sub/dir/model.litertlm", spec?.id)
+        assertEquals(
+            "https://huggingface.co/org/repo/resolve/main/sub/dir/model.litertlm",
+            spec?.downloadUrl,
+        )
+    }
+
+    @Test
+    fun `parses shorthand repo and file path`() {
+        val specWithResolve = ModelInstall.parseImportUrl("org/repo/resolve/v1.0/model.litertlm")
+        assertEquals("org/repo", specWithResolve?.hfRepo)
+        assertEquals("v1.0", specWithResolve?.commitHash)
+        assertEquals("https://huggingface.co/org/repo/resolve/v1.0/model.litertlm", specWithResolve?.downloadUrl)
+
+        val specDirect = ModelInstall.parseImportUrl("org/repo/model.litertlm")
+        assertEquals("org/repo", specDirect?.hfRepo)
+        assertEquals("main", specDirect?.commitHash)
+        assertEquals("https://huggingface.co/org/repo/resolve/main/model.litertlm", specDirect?.downloadUrl)
+    }
+
+    @Test
+    fun `parses case-insensitive litertlm extension`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://huggingface.co/org/repo/resolve/main/model.LITERTLM"
+        )
+        assertEquals("model", spec?.name)
+        assertEquals("model.LITERTLM", spec?.modelFile)
+    }
+
+    @Test
+    fun `handles url-encoded spaces in file name`() {
+        val spec = ModelInstall.parseImportUrl(
+            "https://huggingface.co/org/repo/resolve/main/my%20model.litertlm"
+        )
+        assertEquals("my model", spec?.name)
+        assertEquals("my model.litertlm", spec?.modelFile)
+        assertEquals("https://huggingface.co/org/repo/resolve/main/my%20model.litertlm", spec?.downloadUrl)
+    }
+
+    @Test
+    fun `rejects non-huggingface url`() {
+        assertNull(ModelInstall.parseImportUrl("https://example.com/x/resolve/main/model.litertlm"))
+        assertNull(ModelInstall.parseImportUrl("example.com/x/resolve/main/model.litertlm"))
+    }
+
+    @Test
+    fun `rejects non-litertlm files including gguf`() {
         assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo/resolve/main/model.task"))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo/resolve/main/model.gguf"))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo/blob/main/model.safetensors"))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo/resolve/main/README.md"))
+    }
+
+    @Test
+    fun `rejects incomplete or empty urls`() {
+        assertNull(ModelInstall.parseImportUrl(""))
+        assertNull(ModelInstall.parseImportUrl("   "))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/"))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo"))
+        assertNull(ModelInstall.parseImportUrl("https://huggingface.co/org/repo/resolve/main"))
     }
 }
 
