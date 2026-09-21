@@ -1041,6 +1041,8 @@ private fun ImportExportPage(
                 }
             },
         )
+    }
+
     if (showExportKeyDialog) {
         ExportKeySelectionDialog(
             providers = settings.providers,

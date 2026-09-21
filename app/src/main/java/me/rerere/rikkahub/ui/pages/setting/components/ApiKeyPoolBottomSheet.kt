@@ -401,6 +401,8 @@ fun ApiKeyPoolBottomSheet(
                 }
             }
         }
+    }
+
     // Pool Settings Dialog
     if (showSettingsDialog) {
         ApiKeyPoolSettingsDialog(

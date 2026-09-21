@@ -577,16 +577,19 @@ class SecretKeyManager(
         selectedKeyIds: Set<Uuid>? = null,
     ): ProviderSetting {
         // Resolve pool keys from SecureStore
-        val resolvedPool = provider.apiKeyPool.map { entry ->
-            val secret = getPoolApiKey(provider.id, entry.id, entry.key)
-            PooledKey(
-                id = entry.id,
-                name = entry.name,
-                value = secret,
-                enabled = entry.enabled,
-                exportable = entry.exportable,
-            )
-        }
+        val resolvedPool = provider.apiKeyPool
+            .filter { it.enabled }
+            .mapIndexed { index, entry ->
+                val secret = getPoolApiKey(provider.id, entry.id, entry.key)
+                PooledKey(
+                    id = entry.id,
+                    name = entry.name,
+                    value = secret,
+                    priority = index,
+                    providerId = provider.id,
+                    providerName = provider.name,
+                )
+            }
 
         // For export: populate entry.key with secret if selected/exportable
         val poolForExport = provider.apiKeyPool.map { entry ->

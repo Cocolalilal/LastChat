@@ -44,6 +44,7 @@ fun ApiKeyPoolButton(
     val haptics = rememberPremiumHaptics()
     var showSheet by remember { mutableStateOf(false) }
 
+    val roulette = KeyRoulette.default()
     val pool = provider.apiKeyPool
     val hasKeys = pool.isNotEmpty()
     val hasAuthError = pool.any { entry -> 
