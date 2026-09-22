@@ -721,9 +721,6 @@
     <string name="api_key_pool_strategy_priority_desc">Always tries the first key in the list, falling back to lower keys only if earlier ones fail.</string>
     <string name="api_key_pool_strategy_round_robin">Round Robin</string>
     <string name="api_key_pool_strategy_round_robin_desc">Rotates across healthy keys on every request to balance usage and avoid rate limits.</string>
-    <string name="api_key_pool_speculative_title">Try backup key on slow response</string>
-    <string name="api_key_pool_speculative_desc">If the active key takes too long to respond, starts another request with a backup key and uses whichever replies first.</string>
-    <string name="api_key_pool_speculative_timeout">Wait before trying backup: %1$d seconds</string>
     <string name="setting_provider_page_api_path">API Path</string>
     <string name="setting_provider_page_balance_api_path">Balance API Path</string>
     <string name="setting_provider_page_balance_info">Get Balance</string>

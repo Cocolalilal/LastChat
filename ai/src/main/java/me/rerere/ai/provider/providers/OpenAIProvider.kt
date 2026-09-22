@@ -1,6 +1,9 @@
 package me.rerere.ai.provider.providers
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
@@ -289,12 +292,55 @@ class OpenAIProvider(
     }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(me.rerere.ai.util.providerIoDispatcher) {
-        val key = selectKey(providerSetting).value
+        val keysToQuery = if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            providerSetting.resolvedApiKeyPool.map { it.value }.filter { it.isNotBlank() }.distinct()
+        } else {
+            val poolKeys = providerSetting.apiKeyPool.filter { it.enabled }.map { it.key }.filter { it.isNotBlank() }
+            if (poolKeys.isNotEmpty()) {
+                poolKeys.distinct()
+            } else {
+                providerSetting.apiKey.split(Regex("[\\s,]+")).filter { it.isNotBlank() }.distinct()
+            }
+        }.ifEmpty {
+            listOf(selectKey(providerSetting).value)
+        }
+
         val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
             providerSetting.balanceOption.apiPath
         } else {
             "${providerSetting.baseUrl}${providerSetting.balanceOption.apiPath}"
         }
+
+        if (keysToQuery.size <= 1) {
+            val key = keysToQuery.first()
+            val raw = querySingleBalance(providerSetting, key, url)
+            return@withContext aggregateBalances(listOf(raw))
+        }
+
+        val results = coroutineScope {
+            keysToQuery.map { key ->
+                async {
+                    runCatching {
+                        querySingleBalance(providerSetting, key, url)
+                    }
+                }
+            }.awaitAll()
+        }
+
+        val successful = results.mapNotNull { it.getOrNull() }
+        if (successful.isEmpty()) {
+            val firstError = results.firstNotNullOfOrNull { it.exceptionOrNull() }
+            throw firstError ?: error("Failed to get balance: all keys failed")
+        }
+
+        aggregateBalances(successful)
+    }
+
+    private suspend fun querySingleBalance(
+        providerSetting: ProviderSetting.OpenAI,
+        key: String,
+        url: String,
+    ): String {
         val response = platformHttpClient.execute(
             PlatformHttpRequest(
                 method = "GET",
@@ -307,16 +353,9 @@ class OpenAIProvider(
         if (response.statusCode !in 200..299) {
             error("Failed to get balance: ${response.statusCode} ${response.body.decodeToString()}")
         }
-
         val bodyStr = response.body.decodeToString()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
-        val digitalValue = value.toFloatOrNull()
-        if(digitalValue != null) {
-            me.rerere.ai.util.formatFixed2(digitalValue)
-        } else {
-            value
-        }
+        return bodyJson.getByKey(providerSetting.balanceOption.resultPath)
     }
 
     override suspend fun streamText(
@@ -570,3 +609,41 @@ private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
         )
     }
 }
+
+internal data class ParsedBalance(
+    val prefix: String,
+    val amount: Double,
+    val suffix: String,
+)
+
+private val BALANCE_REGEX = Regex("""^([^\d.+-]*)([-+]?[\d,]+(?:\.\d+)?)(.*)$""")
+
+internal fun parseBalanceAmount(raw: String): ParsedBalance? {
+    val trimmed = raw.trim()
+    val match = BALANCE_REGEX.matchEntire(trimmed) ?: return null
+    val prefix = match.groupValues[1]
+    val numStr = match.groupValues[2].replace(",", "")
+    val suffix = match.groupValues[3]
+    val amount = numStr.toDoubleOrNull() ?: return null
+    return ParsedBalance(prefix, amount, suffix)
+}
+
+internal fun aggregateBalances(balances: List<String>): String {
+    if (balances.isEmpty()) return ""
+    if (balances.size == 1) {
+        val single = balances.first()
+        val digitalValue = single.toDoubleOrNull()
+        return if (digitalValue != null) me.rerere.ai.util.formatFixed2(digitalValue) else single
+    }
+    val parsed = balances.mapNotNull { parseBalanceAmount(it) }
+    return if (parsed.isNotEmpty()) {
+        val total = parsed.sumOf { it.amount }
+        val prefix = parsed.firstOrNull { it.prefix.isNotBlank() }?.prefix ?: ""
+        val suffix = parsed.firstOrNull { it.suffix.isNotBlank() }?.suffix ?: ""
+        val formattedTotal = me.rerere.ai.util.formatFixed2(total)
+        "$prefix$formattedTotal$suffix"
+    } else {
+        balances.first()
+    }
+}
+

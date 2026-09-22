@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,32 +22,27 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.provider.KeyPoolConfig
 import me.rerere.ai.provider.KeyPoolStrategy
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
-import kotlin.math.roundToInt
-
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import androidx.compose.ui.graphics.Color
 
 @Composable
 fun ApiKeyPoolSettingsDialog(
@@ -63,8 +53,6 @@ fun ApiKeyPoolSettingsDialog(
     val haptics = rememberPremiumHaptics()
     val isDark = LocalDarkMode.current
     var selectedStrategy by remember { mutableStateOf(initialConfig.strategy) }
-    var speculativeEnabled by remember { mutableStateOf(initialConfig.enableSpeculativeRouting) }
-    var speculativeTimeout by remember { mutableFloatStateOf(initialConfig.speculativeTimeoutSeconds.toFloat().coerceIn(2f, 30f)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -130,83 +118,6 @@ fun ApiKeyPoolSettingsDialog(
                         },
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Speculative Hedged Racing Section
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.api_key_pool_speculative_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    text = stringResource(R.string.api_key_pool_speculative_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            HapticSwitch(
-                                checked = speculativeEnabled,
-                                onCheckedChange = {
-                                    haptics.perform(HapticPattern.Pop)
-                                    speculativeEnabled = it
-                                },
-                            )
-                        }
-
-                        AnimatedVisibility(
-                            visible = speculativeEnabled,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically(),
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.api_key_pool_speculative_timeout,
-                                        speculativeTimeout.roundToInt(),
-                                    ),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Slider(
-                                    value = speculativeTimeout,
-                                    onValueChange = {
-                                        speculativeTimeout = it
-                                    },
-                                    valueRange = 2f..30f,
-                                    steps = 27,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                    }
-                }
             }
         },
         confirmButton = {
@@ -216,8 +127,6 @@ fun ApiKeyPoolSettingsDialog(
                     onConfirm(
                         KeyPoolConfig(
                             strategy = selectedStrategy,
-                            enableSpeculativeRouting = speculativeEnabled,
-                            speculativeTimeoutSeconds = speculativeTimeout.roundToInt(),
                         )
                     )
                 },

@@ -51,8 +51,6 @@ enum class KeyPoolStrategy {
 @Serializable
 data class KeyPoolConfig(
     val strategy: KeyPoolStrategy = KeyPoolStrategy.STICKY_UNTIL_FAILURE,
-    val enableSpeculativeRouting: Boolean = false,
-    val speculativeTimeoutSeconds: Int = 10,
 )
 
 

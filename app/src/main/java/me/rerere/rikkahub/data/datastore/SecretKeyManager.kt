@@ -551,7 +551,7 @@ class SecretKeyManager(
         selectedKeyIds: Set<Uuid>? = null,
     ): Settings {
         val providersWithSecrets = settings.providers.map { provider ->
-            populateProviderSecrets(provider, selectedKeyIds)
+            populateProviderSecrets(provider, selectedKeyIds, forExport = (selectedKeyIds != null))
         }
 
         val webDavWithPassword = settings.webDavConfig.copy(
@@ -570,11 +570,15 @@ class SecretKeyManager(
     }
 
     /**
-     * Populate a single provider with its secrets for export.
+     * Populate a single provider with its secrets.
+     * When [forExport] is true, only exportable/selected keys are decrypted into entry.key.
+     * When [forExport] is false, all pool keys are decrypted into entry.key.
+     * In both cases, [resolvedApiKeyPool] is fully populated with all enabled keys.
      */
-    private fun populateProviderSecrets(
+    fun populateProviderSecrets(
         provider: ProviderSetting,
         selectedKeyIds: Set<Uuid>? = null,
+        forExport: Boolean = false,
     ): ProviderSetting {
         // Resolve pool keys from SecureStore
         val resolvedPool = provider.apiKeyPool
@@ -591,10 +595,12 @@ class SecretKeyManager(
                 )
             }
 
-        // For export: populate entry.key with secret if selected/exportable
-        val poolForExport = provider.apiKeyPool.map { entry ->
+        // Populate entry.key
+        val poolWithSecrets = provider.apiKeyPool.map { entry ->
             val secret = getPoolApiKey(provider.id, entry.id, entry.key)
-            val shouldExport = if (selectedKeyIds != null) {
+            val shouldExport = if (!forExport) {
+                true
+            } else if (selectedKeyIds != null) {
                 entry.id in selectedKeyIds
             } else {
                 entry.exportable
@@ -606,7 +612,7 @@ class SecretKeyManager(
             is ProviderSetting.OpenAI -> {
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
-                    apiKeyPool = poolForExport,
+                    apiKeyPool = poolWithSecrets,
                 )
             }
 
@@ -614,14 +620,14 @@ class SecretKeyManager(
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
                     privateKey = getPrivateKey(provider.id, provider.privateKey),
-                    apiKeyPool = poolForExport,
+                    apiKeyPool = poolWithSecrets,
                 )
             }
 
             is ProviderSetting.Claude -> {
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
-                    apiKeyPool = poolForExport,
+                    apiKeyPool = poolWithSecrets,
                 )
             }
 

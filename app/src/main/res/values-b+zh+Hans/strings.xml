@@ -643,9 +643,6 @@
   <string name="api_key_pool_strategy_priority_desc">优先使用列表最上方的密钥，仅在前序密钥失败时才使用备用密钥。</string>
   <string name="api_key_pool_strategy_round_robin">轮流切换</string>
   <string name="api_key_pool_strategy_round_robin_desc">每次请求轮流切换可用密钥，分散调用量并避免达到速率限制。</string>
-  <string name="api_key_pool_speculative_title">响应过慢时尝试备用密钥</string>
-  <string name="api_key_pool_speculative_desc">若当前密钥响应过慢，将同时尝试备用密钥，并采用最先返回的结果。</string>
-  <string name="api_key_pool_speculative_timeout">超时尝试备用密钥：%1$d 秒</string>
   <string name="setting_provider_page_api_path">API 路径</string>
   <string name="setting_provider_page_balance_api_path">余额 API 路径</string>
   <string name="setting_provider_page_balance_info">获取账户余额</string>

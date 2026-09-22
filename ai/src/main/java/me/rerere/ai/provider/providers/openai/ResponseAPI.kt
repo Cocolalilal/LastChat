@@ -48,7 +48,6 @@ import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.ai.util.KeyOutcome
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.PooledKey
-import me.rerere.ai.util.raceSpeculativeFlow
 import me.rerere.common.platform.PlatformMediaEncoder
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
@@ -154,22 +153,6 @@ class ResponseAPI(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<MessageChunk> {
-        val pool = providerSetting.resolvedApiKeyPool
-        val config = providerSetting.keyPoolConfig
-        if (config.enableSpeculativeRouting && pool.size >= 2) {
-            val primaryKey = selectKey(providerSetting)
-            val backupKeys = pool.filter { it.id != primaryKey.id }
-            if (backupKeys.isNotEmpty()) {
-                val secondaryKey = keyRoulette.next(backupKeys, providerSetting.id, config)
-                val primaryFlow = streamTextWithKey(providerSetting, messages, params, primaryKey)
-                val secondaryFlow = streamTextWithKey(providerSetting, messages, params, secondaryKey)
-                return raceSpeculativeFlow(
-                    timeoutMs = config.speculativeTimeoutSeconds * 1000L,
-                    primaryFlow = primaryFlow,
-                    speculativeFlow = secondaryFlow,
-                )
-            }
-        }
         val selectedKey = selectKey(providerSetting)
         return streamTextWithKey(providerSetting, messages, params, selectedKey)
     }

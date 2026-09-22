@@ -180,69 +180,6 @@ class SmartKeyRouletteTest {
     }
 
     @Test
-    fun `speculative race uses primary if responds before timeout`() = runBlocking {
-        val primaryFlow = flow {
-            delay(10)
-            emit("primary-chunk-1")
-            delay(10)
-            emit("primary-chunk-2")
-        }
-        val backupFlow = flow {
-            delay(10)
-            emit("backup-chunk-1")
-        }
-
-        val result = raceSpeculativeFlow(
-            timeoutMs = 100,
-            primaryFlow = primaryFlow,
-            speculativeFlow = backupFlow
-        ).toList()
-
-        assertEquals(listOf("primary-chunk-1", "primary-chunk-2"), result)
-    }
-
-    @Test
-    fun `speculative race uses backup if primary is slower than timeout`() = runBlocking {
-        val primaryFlow = flow {
-            delay(200)
-            emit("primary-slow")
-        }
-        val backupFlow = flow {
-            delay(10)
-            emit("backup-chunk-1")
-            delay(10)
-            emit("backup-chunk-2")
-        }
-
-        val result = raceSpeculativeFlow(
-            timeoutMs = 50,
-            primaryFlow = primaryFlow,
-            speculativeFlow = backupFlow
-        ).toList()
-
-        assertEquals(listOf("backup-chunk-1", "backup-chunk-2"), result)
-    }
-
-    @Test
-    fun `speculative race immediately switches to backup if primary throws early error`() = runBlocking {
-        val primaryFlow = flow<String> {
-            throw RuntimeException("Primary connection failed immediately")
-        }
-        val backupFlow = flow {
-            delay(10)
-            emit("backup-recovery")
-        }
-
-        val result = raceSpeculativeFlow(
-            timeoutMs = 1000,
-            primaryFlow = primaryFlow,
-            speculativeFlow = backupFlow
-        ).toList()
-
-        assertEquals(listOf("backup-recovery"), result)
-    }
-
-    @Test
     fun `legacy comma-separated string routing works with failover`() {
         val roulette = SmartKeyRoulette()
         val key = roulette.next("key1, key2, key3")
