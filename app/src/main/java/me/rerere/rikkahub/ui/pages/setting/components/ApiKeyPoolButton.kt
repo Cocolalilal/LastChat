@@ -40,8 +40,9 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 /**
  * Pill-shaped surface button for managing provider API key pool.
- * Uses surfaceContainerHigh to match list cards, with white icons/text in dark mode,
- * and a right-aligned circle matching the parent surface color displaying the key count.
+ * Uses surfaceContainerHigh in dark mode and surfaceContainerLowest in light mode,
+ * with white icons/text in dark mode, balanced optical spacing, and an optically round
+ * concentric counter circle matching the parent surface color.
  */
 @Composable
 fun ApiKeyPoolButton(
@@ -61,10 +62,15 @@ fun ApiKeyPoolButton(
         h.hasAuthError || h.hasQuotaError 
     }
 
+    val buttonHeight = 52.dp
+    val ballSize = 32.dp
+    val ballPadding = (buttonHeight - ballSize) / 2 // Exactly 10.dp, ensuring even padding on top, bottom, and outer curved edge
+
     val containerColor by animateColorAsState(
         targetValue = when {
             hasAuthError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)
-            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            isDark -> MaterialTheme.colorScheme.surfaceContainerHigh
+            else -> MaterialTheme.colorScheme.surfaceContainerLowest
         },
         label = "ApiKeyPoolButtonColor"
     )
@@ -106,8 +112,9 @@ fun ApiKeyPoolButton(
 
     Surface(
         modifier = modifier
+            .padding(top = 8.dp)
             .fillMaxWidth()
-            .height(52.dp),
+            .height(buttonHeight),
         shape = AppShapes.ButtonPill,
         color = containerColor,
         border = if (hasAuthError) BorderStroke(1.5.dp, MaterialTheme.colorScheme.error) else null,
@@ -119,7 +126,10 @@ fun ApiKeyPoolButton(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(
+                    start = 20.dp,
+                    end = if (hasKeys) ballPadding else 20.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -146,7 +156,7 @@ fun ApiKeyPoolButton(
                 )
             }
 
-            // Right content: Auth error indicator and key count circle
+            // Right content: Auth error indicator and concentric key count circle
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -175,7 +185,7 @@ fun ApiKeyPoolButton(
                     Surface(
                         shape = CircleShape,
                         color = circleColor,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(ballSize),
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
