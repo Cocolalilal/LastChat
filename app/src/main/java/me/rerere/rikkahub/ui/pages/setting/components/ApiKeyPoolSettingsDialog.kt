@@ -51,6 +51,9 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import kotlin.math.roundToInt
 
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import androidx.compose.ui.graphics.Color
+
 @Composable
 fun ApiKeyPoolSettingsDialog(
     initialConfig: KeyPoolConfig,
@@ -58,6 +61,7 @@ fun ApiKeyPoolSettingsDialog(
     onDismiss: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
+    val isDark = LocalDarkMode.current
     var selectedStrategy by remember { mutableStateOf(initialConfig.strategy) }
     var speculativeEnabled by remember { mutableStateOf(initialConfig.enableSpeculativeRouting) }
     var speculativeTimeout by remember { mutableFloatStateOf(initialConfig.speculativeTimeoutSeconds.toFloat().coerceIn(2f, 30f)) }
@@ -69,7 +73,7 @@ fun ApiKeyPoolSettingsDialog(
             Icon(
                 imageVector = Icons.Rounded.Tune,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (isDark) Color.White else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
             )
         },

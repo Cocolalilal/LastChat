@@ -48,6 +48,8 @@ fun ExportKeySelectionDialog(
     providers: List<ProviderSetting>,
     onDismiss: () -> Unit,
     onConfirm: (selectedKeyIds: Set<Uuid>) -> Unit,
+    title: String = stringResource(R.string.backup_export_select_keys_title),
+    description: String = stringResource(R.string.backup_export_select_keys_desc),
 ) {
     val haptics = rememberPremiumHaptics()
 
@@ -65,10 +67,10 @@ fun ExportKeySelectionDialog(
         }
     }
 
-    // Selected state map keyed by entry.id, initialized to entry.exportable
+    // Selected state map keyed by entry.id, initialized to true
     val selectedMap = remember(allKeys) {
         mutableStateMapOf<Uuid, Boolean>().apply {
-            allKeys.forEach { put(it.entry.id, it.entry.exportable) }
+            allKeys.forEach { put(it.entry.id, true) }
         }
     }
 
@@ -86,7 +88,7 @@ fun ExportKeySelectionDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = stringResource(R.string.backup_export_select_keys_title),
+                    text = title,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -98,7 +100,7 @@ fun ExportKeySelectionDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.backup_export_select_keys_desc),
+                    text = description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -184,13 +186,6 @@ fun ExportKeySelectionDialog(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (!item.entry.exportable) {
-                                                Text(
-                                                    text = "Marked private by default",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
                                         }
 
                                         Checkbox(

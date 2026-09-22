@@ -194,6 +194,7 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.pages.backup.ExportKeySelectionDialog
 
 internal fun resolveProviderModel(
     resolver: ModelMetadataResolver,
@@ -474,6 +475,34 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     val shareSheetState = rememberShareSheetState()
                     ShareSheet(shareSheetState)
 
+                    val secretKeyManager = koinInject<me.rerere.rikkahub.data.datastore.SecretKeyManager>()
+                    var showExportKeyDialog by remember { mutableStateOf(false) }
+
+                    if (showExportKeyDialog) {
+                        ExportKeySelectionDialog(
+                            providers = listOf(provider),
+                            title = stringResource(R.string.backup_export_select_keys_title),
+                            description = stringResource(R.string.backup_export_select_keys_desc),
+                            onDismiss = { showExportKeyDialog = false },
+                            onConfirm = { selectedKeyIds ->
+                                showExportKeyDialog = false
+                                val exportedPool = provider.apiKeyPool.map { entry ->
+                                    val secret = if (entry.id in selectedKeyIds) {
+                                        secretKeyManager.getPoolApiKey(provider.id, entry.id, entry.key)
+                                    } else ""
+                                    entry.copy(key = secret)
+                                }
+                                val exportedProvider = when (provider) {
+                                    is ProviderSetting.OpenAI -> provider.copy(apiKeyPool = exportedPool)
+                                    is ProviderSetting.Google -> provider.copy(apiKeyPool = exportedPool)
+                                    is ProviderSetting.Claude -> provider.copy(apiKeyPool = exportedPool)
+                                    else -> provider
+                                }
+                                shareSheetState.show(exportedProvider)
+                            }
+                        )
+                    }
+
                     ConnectionTesterButton(
                         provider = provider,
                         scope = scope
@@ -481,7 +510,11 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 
                     IconButton(
                         onClick = {
-                            shareSheetState.show(provider)
+                            if (provider.apiKeyPool.isNotEmpty()) {
+                                showExportKeyDialog = true
+                            } else {
+                                shareSheetState.show(provider)
+                            }
                         }
                     ) {
                         Icon(Icons.Rounded.Share, null)
