@@ -60,10 +60,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
-import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.ToggleSurface
@@ -145,9 +144,10 @@ fun SearchPickerButton(
                 // Show provider icon only when: search is on, NOT using built-in, and has a provider
                 if (enableSearch && !builtInSearchEnabled && currentService != null) {
                     val searchProviderName = SearchServiceOptions.TYPES[currentService::class] ?: "Search"
-                    AutoAIIconWithUrl(
+                    SearchProviderIcon(
                         name = searchProviderName,
-                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
+                        service = currentService,
+                        catalogSnapshot = catalogSnapshot,
                         color = Color.Transparent
                     )
                 } else {
@@ -490,9 +490,10 @@ private fun SearchProviderItem(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val searchProviderName = SearchServiceOptions.TYPES[service::class] ?: "Search"
-        AutoAIIconWithUrl(
+        SearchProviderIcon(
             name = searchProviderName,
-            customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
+            service = service,
+            catalogSnapshot = catalogSnapshot,
             modifier = Modifier.size(24.dp)
         )
         Text(

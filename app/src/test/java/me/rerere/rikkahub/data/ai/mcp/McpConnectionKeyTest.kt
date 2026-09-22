@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.mcp
 
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpError
+import me.rerere.common.http.normalizeHttpUrl
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -68,5 +69,13 @@ class McpConnectionKeyTest {
             ).isInvalidOAuthToken()
         )
         assertFalse(StreamableHttpError(500, "server error").isInvalidOAuthToken())
+    }
+
+    @Test
+    fun blankAndSchemeLessMcpUrlsAreRejectedBeforeConnect() {
+        assertEquals(null, "".normalizeHttpUrl())
+        assertEquals(null, "   ".normalizeHttpUrl())
+        assertEquals("https://mcp.example.com/mcp", "mcp.example.com/mcp".normalizeHttpUrl())
+        assertEquals("https://example.com/mcp", base.endpointUrl.normalizeHttpUrl())
     }
 }

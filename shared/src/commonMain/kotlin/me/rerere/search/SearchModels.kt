@@ -1,5 +1,7 @@
 package me.rerere.search
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
@@ -9,16 +11,43 @@ data class SearchCommonOptions(
     val resultSize: Int = 5
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class SearchResult(
     val answer: String? = null,
     val items: List<SearchResultItem>,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val images: List<SearchResultImage> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val intent: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val usedBackends: List<String> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val note: String? = null,
 ) {
+    @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     data class SearchResultItem(
         val title: String,
         val url: String,
         val text: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val source: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val publishedAt: String? = null,
+    )
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Serializable
+    data class SearchResultImage(
+        val url: String,
+        val title: String = "",
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val thumbnailUrl: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val sourcePageUrl: String? = null,
+        @SerialName("markdown_image")
+        val markdownImage: String = "",
     )
 }
 

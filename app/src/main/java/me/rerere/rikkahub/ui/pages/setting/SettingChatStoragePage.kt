@@ -90,7 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
+import me.rerere.rikkahub.service.workManagerOrNull
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
@@ -418,7 +418,7 @@ fun SettingChatStoragePage(
                             FilledTonalButton(
                                 onClick = {
                                     haptics.perform(HapticPattern.Thud)
-                                    WorkManager.getInstance(context).enqueue(
+                                    context.workManagerOrNull()?.enqueue(
                                         OneTimeWorkRequestBuilder<ChatStorageMaintenanceWorker>().build()
                                     )
                                     toaster.show(

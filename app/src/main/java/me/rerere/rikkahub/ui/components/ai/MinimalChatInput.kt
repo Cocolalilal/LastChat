@@ -31,7 +31,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Spacer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
+import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
@@ -162,7 +162,6 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
-import me.rerere.rikkahub.data.ai.models.searchProviderIconUri
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -2170,9 +2169,10 @@ private fun MinimalPickerContent(
             icon = {
                 // Only show provider icon when search is actually enabled
                 if (enableSearch && searchProviderName != null) {
-                    AutoAIIconWithUrl(
+                    SearchProviderIcon(
                         name = searchProviderName,
-                        customIconUri = catalogSnapshot?.searchProviderIconUri(searchProviderName),
+                        service = searchService,
+                        catalogSnapshot = catalogSnapshot,
                         modifier = Modifier.size(24.dp)
                     )
                 } else {

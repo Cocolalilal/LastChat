@@ -194,6 +194,7 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.pages.backup.ExportKeySelectionDialog
 
 internal fun resolveProviderModel(
     resolver: ModelMetadataResolver,
@@ -279,6 +280,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             chatCompletionsPath,
             useResponseApi.toString(),
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.Google -> listOf(
@@ -289,6 +291,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             location,
             projectId,
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.Claude -> listOf(
@@ -296,6 +299,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             id.toString(),
             baseUrl,
             apiKey.hashCode().toString(),
+            apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
 
         is ProviderSetting.ComfyUI -> listOf(
@@ -315,13 +319,13 @@ private fun ProviderSetting.apiModelCacheKey(): String {
 
 private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
-        is ProviderSetting.OpenAI -> apiKey.isNotBlank() || isLikelyOllama()
+        is ProviderSetting.OpenAI -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
         } else {
-            apiKey.isNotBlank()
+            apiKeyPool.any { it.enabled } || apiKey.isNotBlank()
         }
-        is ProviderSetting.Claude -> apiKey.isNotBlank()
+        is ProviderSetting.Claude -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank()
         is ProviderSetting.ComfyUI -> workflowJson.isNotBlank()
         is ProviderSetting.LiteRtLocal -> false // on-device: no remote model list
     }
@@ -471,6 +475,34 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     val shareSheetState = rememberShareSheetState()
                     ShareSheet(shareSheetState)
 
+                    val secretKeyManager = koinInject<me.rerere.rikkahub.data.datastore.SecretKeyManager>()
+                    var showExportKeyDialog by remember { mutableStateOf(false) }
+
+                    if (showExportKeyDialog) {
+                        ExportKeySelectionDialog(
+                            providers = listOf(provider),
+                            title = stringResource(R.string.backup_export_select_keys_title),
+                            description = stringResource(R.string.backup_export_select_keys_desc),
+                            onDismiss = { showExportKeyDialog = false },
+                            onConfirm = { selectedKeyIds ->
+                                showExportKeyDialog = false
+                                val exportedPool = provider.apiKeyPool.map { entry ->
+                                    val secret = if (entry.id in selectedKeyIds) {
+                                        secretKeyManager.getPoolApiKey(provider.id, entry.id, entry.key)
+                                    } else ""
+                                    entry.copy(key = secret)
+                                }
+                                val exportedProvider = when (provider) {
+                                    is ProviderSetting.OpenAI -> provider.copy(apiKeyPool = exportedPool)
+                                    is ProviderSetting.Google -> provider.copy(apiKeyPool = exportedPool)
+                                    is ProviderSetting.Claude -> provider.copy(apiKeyPool = exportedPool)
+                                    else -> provider
+                                }
+                                shareSheetState.show(exportedProvider)
+                            }
+                        )
+                    }
+
                     ConnectionTesterButton(
                         provider = provider,
                         scope = scope
@@ -478,7 +510,11 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 
                     IconButton(
                         onClick = {
-                            shareSheetState.show(provider)
+                            if (provider.apiKeyPool.isNotEmpty()) {
+                                showExportKeyDialog = true
+                            } else {
+                                shareSheetState.show(provider)
+                            }
                         }
                     ) {
                         Icon(Icons.Rounded.Share, null)
@@ -1969,9 +2005,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         item {
                             // Check if provider has an API key
                             val hasApiKey = when (parentProvider) {
-                                is ProviderSetting.OpenAI -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
-                                is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.OpenAI -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Google -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
+                                is ProviderSetting.Claude -> parentProvider.apiKeyPool.any { it.enabled } || parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.ComfyUI -> parentProvider.workflowJson.isNotBlank()
                                 is ProviderSetting.LiteRtLocal -> true
                             }

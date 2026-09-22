@@ -51,6 +51,10 @@ import me.rerere.common.platform.PlatformServerEvent
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
+import me.rerere.ai.util.KeyOutcome
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.PooledKey
+
 private const val TAG = "ClaudeProvider"
 private const val ANTHROPIC_VERSION = "2023-06-01"
 
@@ -63,14 +67,35 @@ class ClaudeProvider(
     private val platformHttpClient: PlatformHttpClient,
     private val mediaEncoder: PlatformMediaEncoder,
 ) : Provider<ProviderSetting.Claude> {
+    private val keyRoulette = KeyRoulette.default()
+
+    private fun selectKey(providerSetting: ProviderSetting.Claude): PooledKey {
+        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            keyRoulette.next(
+                keys = providerSetting.resolvedApiKeyPool,
+                providerId = providerSetting.id,
+                config = providerSetting.keyPoolConfig,
+            )
+        } else {
+            PooledKey(
+                id = Uuid.NIL,
+                name = "default",
+                value = keyRoulette.next(providerSetting.apiKey),
+                priority = 0,
+                providerId = providerSetting.id,
+                providerName = providerSetting.name
+            )
+        }
+    }
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(me.rerere.ai.util.providerIoDispatcher) {
+            val key = selectKey(providerSetting).value
             val response = platformHttpClient.execute(
                 PlatformHttpRequest(
                     method = "GET",
                     url = "${providerSetting.baseUrl}/models",
                     headers = mapOf(
-                        "x-api-key" to providerSetting.apiKey,
+                        "x-api-key" to key,
                         "anthropic-version" to ANTHROPIC_VERSION
                     ),
                     proxy = providerSetting.proxy.toPlatformProxy()
@@ -114,13 +139,14 @@ class ClaudeProvider(
 
         PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
+        val selectedKey = selectKey(providerSetting)
         val response = platformHttpClient.execute(
             PlatformHttpRequest(
                 method = "POST",
                 url = "${providerSetting.baseUrl}/messages",
                 headers = params.customHeaders.toHeaderMap()
                     .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                    .withClaudeHeaders(providerSetting.apiKey),
+                    .withClaudeHeaders(selectedKey.value),
                 body = encodedRequestBody.encodeToByteArray(),
                 mediaType = "application/json",
                 proxy = providerSetting.proxy.toPlatformProxy()
@@ -128,8 +154,38 @@ class ClaudeProvider(
         )
         val bodyStr = response.body.decodeToString()
         if (response.statusCode !in 200..299) {
+            when (response.statusCode) {
+                401, 403 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.AuthFailure(
+                        statusCode = response.statusCode,
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                402 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.QuotaExhausted(
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                429 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.RateLimited()
+                )
+                in 500..599 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.Error(response.statusCode, temporary = true)
+                )
+            }
             throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
         }
+        keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
 
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
@@ -166,13 +222,14 @@ class ClaudeProvider(
                 if (key !in setOf("stream", "max_tokens", "temperature", "top_p")) put(key, value)
             }
         }
+        val key = selectKey(providerSetting).value
         val response = platformHttpClient.execute(
             PlatformHttpRequest(
                 method = "POST",
                 url = "${providerSetting.baseUrl}/messages/count_tokens",
                 headers = params.customHeaders.toHeaderMap()
                     .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                    .withClaudeHeaders(providerSetting.apiKey),
+                    .withClaudeHeaders(key),
                 body = json.encodeToString(requestBody).encodeToByteArray(),
                 mediaType = "application/json",
                 proxy = providerSetting.proxy.toPlatformProxy(),
@@ -189,6 +246,16 @@ class ClaudeProvider(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams
+    ): Flow<MessageChunk> {
+        val selectedKey = selectKey(providerSetting)
+        return streamTextWithKey(providerSetting, messages, params, selectedKey)
+    }
+
+    private fun streamTextWithKey(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        selectedKey: PooledKey,
     ): Flow<MessageChunk> = callbackFlow {
         val requestBody = buildMessageRequest(messages, params, stream = true)
         val encodedRequestBody = json.encodeToString(requestBody)
@@ -197,7 +264,7 @@ class ClaudeProvider(
             url = "${providerSetting.baseUrl}/messages",
             headers = params.customHeaders.toHeaderMap()
                 .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                .withClaudeHeaders(providerSetting.apiKey),
+                .withClaudeHeaders(selectedKey.value),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
             proxy = providerSetting.proxy.toPlatformProxy()
@@ -209,16 +276,54 @@ class ClaudeProvider(
             PlatformLog.i(TAG, "streamText: $it")
         }
 
+        var hasEmittedChunk = false
         val job = launch {
             platformHttpClient.streamEvents(request).collect { event ->
                 when (event) {
                     is PlatformServerEvent.Open -> Unit
-                    PlatformServerEvent.Closed -> close()
-                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    PlatformServerEvent.Closed -> {
+                        if (hasEmittedChunk) {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
+                        }
+                        close()
+                    }
+                    is PlatformServerEvent.Failure -> {
+                        when (event.statusCode) {
+                            401, 403 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.AuthFailure(
+                                    statusCode = event.statusCode ?: 401,
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            402 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.QuotaExhausted(
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            429 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.RateLimited()
+                            )
+                            in 500..599 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.Error(event.statusCode ?: 500, temporary = true)
+                            )
+                        }
+                        close(parseStreamFailure(event))
+                    }
                     is PlatformServerEvent.Event -> {
                         PlatformLog.d(TAG, "onEvent: type=${event.event}, data=${event.data}")
                         if (event.event == "message_stop") {
                             PlatformLog.d(TAG, "Stream ended")
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                             close()
                             return@collect
                         }
@@ -228,7 +333,9 @@ class ClaudeProvider(
                             return@collect
                         }
                         runCatching {
-                            trySend(parseStreamChunk(event))
+                            val chunk = parseStreamChunk(event)
+                            hasEmittedChunk = true
+                            trySend(chunk)
                         }.onFailure { error ->
                             close(error)
                         }

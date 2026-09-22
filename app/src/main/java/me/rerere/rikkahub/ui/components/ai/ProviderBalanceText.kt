@@ -1,48 +1,59 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MonetizationOn
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
+import java.util.concurrent.ConcurrentHashMap
 
-// Simple time-evicting cache (2 minutes expiry)
-private data class CacheEntry(val value: String, val timestamp: Long)
-private val cacheLock = Any()
-private val cache = mutableMapOf<String, CacheEntry>()
-private const val CACHE_EXPIRY_MS = 2 * 60 * 1000L // 2 minutes
+/**
+ * Persistent + in-memory cache for provider balance values so the UI displays
+ * the last known credit amount immediately without flickering to "~" while the
+ * background network refresh runs.
+ */
+object ProviderBalanceCache {
+    private val memoryCache = ConcurrentHashMap<String, String>()
+    private const val PREFS_NAME = "provider_balance_cache"
 
-private fun getCached(key: String): String? = synchronized(cacheLock) {
-    val entry = cache[key]
-    if (entry == null) {
-        null
-    } else if (System.currentTimeMillis() - entry.timestamp < CACHE_EXPIRY_MS) {
-        entry.value
-    } else {
-        cache.remove(key)
-        null
+    private fun getPrefs(context: Context): SharedPreferences {
+        return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
-}
 
-private fun putCache(key: String, value: String) = synchronized(cacheLock) {
-    cache[key] = CacheEntry(value, System.currentTimeMillis())
+    fun get(context: Context, key: String): String? {
+        memoryCache[key]?.let { return it }
+        val saved = getPrefs(context).getString(key, null)
+        if (saved != null) {
+            memoryCache[key] = saved
+        }
+        return saved
+    }
+
+    fun put(context: Context, key: String, value: String) {
+        memoryCache[key] = value
+        getPrefs(context).edit().putString(key, value).apply()
+    }
 }
 
 @Composable
@@ -57,26 +68,41 @@ fun ProviderBalanceText(
         return
     }
 
+    val context = LocalContext.current
     val providerManager = koinInject<ProviderManager>()
+    val secretKeyManager = koinInject<SecretKeyManager>()
 
-    val value = produceState(initialValue = "~", key1 = providerSetting.id, key2 = providerSetting.balanceOption) {
-        // Check cache first
-        val cacheKey = "${providerSetting.id},${providerSetting.balanceOption.hashCode()}"
-        val cachedBalance = getCached(cacheKey)
-        if (cachedBalance != null) {
-            value = cachedBalance
-        } else {
-            // Fetch balance from API
-            runCatching {
-                val balance = providerManager.getProviderByType(providerSetting).getBalance(providerSetting)
-                // Cache the result
-                putCache(cacheKey, balance)
-                value = balance
-            }.onFailure {
-                // Handle error
-                val errorMsg = "Error: ${it.message}"
-                // Don't cache error messages
-                value = errorMsg
+    val cacheKey = "balance_${providerSetting.id}_${providerSetting.balanceOption.apiPath}_${providerSetting.balanceOption.resultPath}"
+    val cachedInitial = remember(cacheKey) {
+        ProviderBalanceCache.get(context, cacheKey) ?: "~"
+    }
+
+    val poolHash = remember(providerSetting.apiKeyPool, providerSetting.apiKey) {
+        (providerSetting.apiKeyPool.map { "${it.id}:${it.enabled}:${it.key}" } + providerSetting.apiKey).hashCode()
+    }
+
+    val value = produceState(
+        initialValue = cachedInitial,
+        key1 = providerSetting.id,
+        key2 = providerSetting.balanceOption,
+        key3 = poolHash,
+    ) {
+        // Show cached balance immediately if available
+        val cached = ProviderBalanceCache.get(context, cacheKey)
+        if (cached != null) {
+            value = cached
+        }
+
+        // Fetch fresh balance in background
+        runCatching {
+            val resolvedProvider = secretKeyManager.populateProviderSecrets(providerSetting) as? ProviderSetting.OpenAI ?: providerSetting
+            val balance = providerManager.getProviderByType(resolvedProvider).getBalance(resolvedProvider)
+            ProviderBalanceCache.put(context, cacheKey, balance)
+            value = balance
+        }.onFailure {
+            // Only show error message if there was no prior cached value
+            if (ProviderBalanceCache.get(context, cacheKey) == null) {
+                value = "Error: ${it.message ?: "Failed"}"
             }
         }
     }

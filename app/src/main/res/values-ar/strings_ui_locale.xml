@@ -277,6 +277,7 @@
   <string name="setting_search_delete_service">هل أنت متأكد أنك تريد حذف خدمة البحث هذه؟</string>
   <string name="setting_search_service_generic">خدمة البحث</string>
   <string name="setting_search_edit_service">تحرير %1$s</string>
+  <string name="setting_search_what_is_keyless">ما هو Keyless؟</string>
   <string name="setting_search_bing_no_config">لا يتطلب بحث Bing\' أي تكوين.</string>
   <string name="setting_search_unknown_provider">مجهول</string>
   <string name="setting_search_preset_bing_desc">بحث Bing محلي مجاني، لا حاجة إلى مفتاح API</string>

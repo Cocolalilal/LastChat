@@ -81,3 +81,31 @@ fun String.replaceUrlEncodedPathOrNull(encodedPath: String): String? {
 
     return "${trimmed.substringBefore("://")}://$authority$replacementPath$suffix"
 }
+
+fun String.normalizeHttpUrl(): String? {
+    val trimmed = trim()
+    if (trimmed.isBlank()) return null
+    trimmed.urlPartsOrNull()?.let { return trimmed }
+
+    val withScheme = when {
+        trimmed.contains("://") -> trimmed
+        isLikelyLocalHttpHost(trimmed) -> "http://$trimmed"
+        else -> "https://$trimmed"
+    }
+    return withScheme.takeIf { it.urlPartsOrNull() != null }
+}
+
+fun String.requireHttpUrl(label: String = "URL"): String {
+    return normalizeHttpUrl()
+        ?: throw IllegalArgumentException("$label must be an absolute http or https URL, got: '${trim()}'")
+}
+
+private fun isLikelyLocalHttpHost(value: String): Boolean {
+    val host = value.substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':')
+    return host.equals("localhost", ignoreCase = true) ||
+        host == "127.0.0.1" ||
+        host == "::1" ||
+        host.startsWith("10.") ||
+        host.startsWith("192.168.") ||
+        host.matches(Regex("172\\.(1[6-9]|2[0-9]|3[0-1])\\..+"))
+}

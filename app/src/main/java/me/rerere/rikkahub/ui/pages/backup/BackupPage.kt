@@ -840,9 +840,12 @@ private fun ImportExportPage(
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val settings by vm.settings.collectAsStateWithLifecycle()
     var isExporting by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
+    var showExportKeyDialog by remember { mutableStateOf(false) }
+    var selectedExportKeyIds by remember { mutableStateOf<Set<kotlin.uuid.Uuid>?>(null) }
 
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     
@@ -887,7 +890,7 @@ private fun ImportExportPage(
                 isExporting = true
                 runCatching {
                     // 导出文件
-                    val exportFile = vm.exportToFile()
+                    val exportFile = vm.exportToFile(selectedKeyIds = selectedExportKeyIds)
 
                     // 复制到用户选择的位置
                     withContext(Dispatchers.IO) {
@@ -1040,6 +1043,20 @@ private fun ImportExportPage(
         )
     }
 
+    if (showExportKeyDialog) {
+        ExportKeySelectionDialog(
+            providers = settings.providers,
+            onDismiss = { showExportKeyDialog = false },
+            onConfirm = { selectedIds ->
+                showExportKeyDialog = false
+                selectedExportKeyIds = selectedIds
+                val timestamp = LocalDateTime.now()
+                    .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
+            }
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -1067,9 +1084,16 @@ private fun ImportExportPage(
                     },
                     onClick = {
                         if (!isExporting) {
-                            val timestamp = LocalDateTime.now()
-                                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                            createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
+                            val providers = settings.providers
+                            val hasKeys = providers.any { it.apiKeyPool.isNotEmpty() }
+                            if (hasKeys) {
+                                showExportKeyDialog = true
+                            } else {
+                                selectedExportKeyIds = null
+                                val timestamp = LocalDateTime.now()
+                                    .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                                createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
+                            }
                         }
                     }
                 )

@@ -41,7 +41,15 @@ class WebServerService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_PORT, port)
             }
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                if (isForegroundStartNotAllowed(e)) {
+                    Log.w(TAG, "Skipping web server FGS start from a restricted context", e)
+                    return
+                }
+                throw e
+            }
         }
 
         fun stop(context: android.content.Context) {
@@ -49,6 +57,14 @@ class WebServerService : Service() {
                 action = ACTION_STOP
             }
             context.startService(intent)
+        }
+
+        internal fun isForegroundStartNotAllowed(error: Throwable): Boolean {
+            if (error::class.simpleName == "ForegroundServiceStartNotAllowedException") {
+                return true
+            }
+            return error is IllegalStateException &&
+                error.message?.contains("ForegroundServiceStartNotAllowed", ignoreCase = true) == true
         }
     }
 
@@ -65,7 +81,9 @@ class WebServerService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val port = intent.getIntExtra(EXTRA_PORT, 8080)
-                startForegroundCompat(buildStartingNotification())
+                if (!startForegroundCompat(buildStartingNotification())) {
+                    return START_NOT_STICKY
+                }
                 startObservingState()
                 acquireWifiLock()
                 webServerManager.start(port = port)
@@ -81,7 +99,9 @@ class WebServerService : Service() {
             }
 
             null -> {
-                startForegroundCompat(buildStartingNotification())
+                if (!startForegroundCompat(buildStartingNotification())) {
+                    return START_NOT_STICKY
+                }
                 serviceScope.launch {
                     val settings = settingsStore.settingsFlowRaw.first()
                     if (settings.webServerEnabled) {
@@ -106,16 +126,23 @@ class WebServerService : Service() {
         super.onDestroy()
     }
 
-    private fun startForegroundCompat(notification: android.app.Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    private fun startForegroundCompat(notification: android.app.Notification): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Unable to promote web server to a foreground service", e)
+            stopSelf()
+            false
         }
     }
 

@@ -1,7 +1,8 @@
 package me.rerere.common.platform.android
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
+import me.rerere.common.http.requireHttpUrl
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
@@ -29,32 +30,41 @@ class OkHttpPlatformHttpClient(
         }
     }
 
-    override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> {
-        return request.client().sseFlow(request.toOkHttpRequest()).map { event ->
-            when (event) {
-                is SseEvent.Event -> PlatformServerEvent.Event(
-                    id = event.id,
-                    event = event.type,
-                    data = event.data
-                )
-                is SseEvent.Open -> PlatformServerEvent.Open(
-                    statusCode = event.statusCode,
-                    headers = event.headers
-                )
-                SseEvent.Closed -> PlatformServerEvent.Closed
-                is SseEvent.Failure -> PlatformServerEvent.Failure(
-                    message = event.throwable?.message,
-                    statusCode = event.response?.code,
-                    body = runCatching { event.response?.peekBody(1_000_000L)?.string() }.getOrNull()
-                )
-            }
+    override fun streamEvents(request: PlatformHttpRequest): Flow<PlatformServerEvent> = flow {
+        val okRequest = try {
+            request.toOkHttpRequest()
+        } catch (error: IllegalArgumentException) {
+            emit(PlatformServerEvent.Failure(message = error.message))
+            emit(PlatformServerEvent.Closed)
+            return@flow
+        }
+        request.client().sseFlow(okRequest).collect { event ->
+            emit(
+                when (event) {
+                    is SseEvent.Event -> PlatformServerEvent.Event(
+                        id = event.id,
+                        event = event.type,
+                        data = event.data
+                    )
+                    is SseEvent.Open -> PlatformServerEvent.Open(
+                        statusCode = event.statusCode,
+                        headers = event.headers
+                    )
+                    SseEvent.Closed -> PlatformServerEvent.Closed
+                    is SseEvent.Failure -> PlatformServerEvent.Failure(
+                        message = event.throwable?.message,
+                        statusCode = event.response?.code,
+                        body = runCatching { event.response?.peekBody(1_000_000L)?.string() }.getOrNull()
+                    )
+                }
+            )
         }
     }
 
     private fun PlatformHttpRequest.toOkHttpRequest(): Request {
         val requestBody = body?.toRequestBody(mediaType?.toMediaTypeOrNull())
         return Request.Builder()
-            .url(url)
+            .url(url.requireHttpUrl("Request URL"))
             .apply {
                 headers.forEach { (name, value) -> addHeader(name, value) }
             }

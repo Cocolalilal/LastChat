@@ -43,13 +43,15 @@ import me.rerere.ai.registry.ModelIdNormalizer
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.ai.util.KeyOutcome
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.PooledKey
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
@@ -131,9 +133,28 @@ class GoogleProvider(
         ServiceAccountTokenProvider(platformHttpClient, platformJwtSigner)
     }
 
-    private fun buildUrl(providerSetting: ProviderSetting.Google, path: String): String {
+    private fun selectKey(providerSetting: ProviderSetting.Google): PooledKey {
+        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
+            keyRoulette.next(
+                keys = providerSetting.resolvedApiKeyPool,
+                providerId = providerSetting.id,
+                config = providerSetting.keyPoolConfig,
+            )
+        } else {
+            PooledKey(
+                id = Uuid.NIL,
+                name = "default",
+                value = keyRoulette.next(providerSetting.apiKey),
+                priority = 0,
+                providerId = providerSetting.id,
+                providerName = providerSetting.name
+            )
+        }
+    }
+
+    private fun buildUrl(providerSetting: ProviderSetting.Google, path: String, selectedKey: PooledKey? = null): String {
         return if (!providerSetting.vertexAI) {
-            val key = keyRoulette.next(providerSetting.apiKey)
+            val key = selectedKey?.value ?: selectKey(providerSetting).value
             "${providerSetting.baseUrl}/$path".appendQueryParameter("key", key)
         } else {
             "https://aiplatform.googleapis.com/v1/projects/${providerSetting.projectId}/locations/${providerSetting.location}/$path"
@@ -220,13 +241,15 @@ class GoogleProvider(
     ): MessageChunk = withContext(me.rerere.ai.util.providerIoDispatcher) {
         val requestBody = buildCompletionRequestBody(messages, params)
 
+        val selectedKey = selectKey(providerSetting)
         val url = buildUrl(
             providerSetting = providerSetting,
             path = if (providerSetting.vertexAI) {
                 "publishers/google/models/${params.model.modelId}:generateContent"
             } else {
                 "models/${params.model.modelId}:generateContent"
-            }
+            },
+            selectedKey = selectedKey
         )
 
         val encodedRequestBody = json.encodeToString(requestBody)
@@ -247,8 +270,38 @@ class GoogleProvider(
 
         val bodyStr = response.body.decodeToString()
         if (response.statusCode !in 200..299) {
+            when (response.statusCode) {
+                401, 403 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.AuthFailure(
+                        statusCode = response.statusCode,
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                402 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.QuotaExhausted(
+                        keyName = selectedKey.name,
+                        providerId = providerSetting.id,
+                        providerName = providerSetting.name,
+                        errorMessage = bodyStr
+                    )
+                )
+                429 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.RateLimited()
+                )
+                in 500..599 -> keyRoulette.reportOutcome(
+                    selectedKey.id,
+                    KeyOutcome.Error(response.statusCode, temporary = true)
+                )
+            }
             throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
         }
+        keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
 
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
@@ -314,6 +367,16 @@ class GoogleProvider(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
+    ): Flow<MessageChunk> {
+        val selectedKey = selectKey(providerSetting)
+        return streamTextWithKey(providerSetting, messages, params, selectedKey)
+    }
+
+    private fun streamTextWithKey(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        selectedKey: PooledKey,
     ): Flow<MessageChunk> = callbackFlow {
         val requestBody = buildCompletionRequestBody(messages, params)
 
@@ -323,7 +386,8 @@ class GoogleProvider(
                 "publishers/google/models/${params.model.modelId}:streamGenerateContent"
             } else {
                 "models/${params.model.modelId}:streamGenerateContent"
-            }
+            },
+            selectedKey = selectedKey
         ).appendQueryParameter("alt", "sse")
 
         val encodedRequestBody = json.encodeToString(requestBody)
@@ -342,16 +406,56 @@ class GoogleProvider(
 
         PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
+        var hasEmittedChunk = false
         val job = launch {
             platformHttpClient.streamEvents(request).collect { event ->
                 when (event) {
                     is PlatformServerEvent.Open -> Unit
-                    PlatformServerEvent.Closed -> close()
-                    is PlatformServerEvent.Failure -> close(parseStreamFailure(event))
+                    PlatformServerEvent.Closed -> {
+                        if (hasEmittedChunk) {
+                            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
+                        }
+                        close()
+                    }
+                    is PlatformServerEvent.Failure -> {
+                        when (event.statusCode) {
+                            401, 403 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.AuthFailure(
+                                    statusCode = event.statusCode ?: 401,
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            402 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.QuotaExhausted(
+                                    keyName = selectedKey.name,
+                                    providerId = providerSetting.id,
+                                    providerName = providerSetting.name,
+                                    errorMessage = event.body ?: event.message
+                                )
+                            )
+                            429 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.RateLimited()
+                            )
+                            in 500..599 -> keyRoulette.reportOutcome(
+                                selectedKey.id,
+                                KeyOutcome.Error(event.statusCode ?: 500, temporary = true)
+                            )
+                        }
+                        close(parseStreamFailure(event))
+                    }
                     is PlatformServerEvent.Event -> {
                         PlatformLog.i(TAG, "onEvent: ${event.data}")
                         runCatching {
-                            parseStreamChunk(event.data, params.model.modelId)?.let { trySend(it) }
+                            parseStreamChunk(event.data, params.model.modelId)?.let {
+                                hasEmittedChunk = true
+                                trySend(it)
+                            }
                         }.onFailure { error ->
                             error.printStackTrace()
                             close(error)

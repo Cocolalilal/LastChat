@@ -57,9 +57,12 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.sync.WebDavClientFactory
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.ui.image.AppImageLoaderFactory
+import me.rerere.rikkahub.ui.image.HttpUrlImageInterceptor
+import me.rerere.common.http.normalizeHttpUrl
 import me.rerere.rikkahub.utils.acceptLanguageHeader
 import me.rerere.rikkahub.utils.appLocale
-import androidx.work.WorkManager
+import me.rerere.rikkahub.service.initializeLastChatWorkManager
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -128,7 +131,8 @@ val dataSourceModule = module {
     }
 
     single {
-        WorkManager.getInstance(get())
+        get<android.content.Context>().initializeLastChatWorkManager()
+            ?: error("WorkManager is unavailable on this device")
     }
 
     single {
@@ -316,7 +320,7 @@ val dataSourceModule = module {
                     if (path != null) {
                         append(path.trim('/'))
                     }
-                }.toHttpUrl()
+                }.toCheckedHttpUrl("WebDAV URL")
                 return DavCollection(
                     httpClient = config.createWebDavClient(),
                     location = location,
@@ -326,7 +330,7 @@ val dataSourceModule = module {
             override fun hrefCollection(config: WebDavConfig, href: String): DavCollection {
                 return DavCollection(
                     httpClient = config.createWebDavClient(),
-                    location = href.toHttpUrl(),
+                    location = href.toCheckedHttpUrl("WebDAV href"),
                 )
             }
 
@@ -386,6 +390,7 @@ val dataSourceModule = module {
                         .build()
                 }
                 .components {
+                    add(HttpUrlImageInterceptor())
                     add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
                     add(SvgDecoder.Factory(scaleToDensity = true))
                 }
@@ -494,4 +499,10 @@ private fun HttpRequestBuilder.appendMcpHeaders(
         }
         resolved.forEach { (name, value) -> append(name, value) }
     })
+}
+
+private fun String.toCheckedHttpUrl(label: String): HttpUrl {
+    val normalized = normalizeHttpUrl()
+        ?: throw IllegalArgumentException("$label must be an absolute http or https URL, got: '${trim()}'")
+    return normalized.toHttpUrl()
 }

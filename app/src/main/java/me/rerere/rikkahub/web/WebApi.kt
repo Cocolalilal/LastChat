@@ -1370,7 +1370,7 @@ internal fun resolveAiIconAssetPath(
         "deepseek" in lowerName -> "deepseek.svg"
         "elevenlabs" in lowerName || "eleven labs" in lowerName -> "elevenlabs.svg"
         "exa" in lowerName -> "exa.svg"
-        "firecrawl" in lowerName -> "firecrawl.svg"
+        "firecrawl" in lowerName && "keyless" !in lowerName -> "firecrawl.svg"
         "fireworks" in lowerName -> "fireworks.svg"
         "gemini" in lowerName || "google" in lowerName -> "gemini.svg"
         "github" in lowerName -> "github.svg"
@@ -1392,9 +1392,12 @@ internal fun resolveAiIconAssetPath(
         "searxng" in lowerName || "searx" in lowerName -> "searxng.svg"
         "tavily" in lowerName -> "tavily.svg"
         "zhipu" in lowerName || "glm" in lowerName -> "zhipu.svg"
+        "keyless" in lowerName -> null
         else -> null
     }
     if (explicitMatch != null) return explicitMatch
+
+    if ("keyless" in lowerName) return null
 
     // Generic fallback: try first word of the name as an SVG filename.
     // This handles providers like "NVIDIA NIM" → "nvidia.svg", "Regolo AI" → "regolo.svg"
@@ -1473,7 +1476,7 @@ internal fun getProviderSlugFromName(name: String): String? {
         lowerName.contains("brave") -> "brave"
         lowerName.contains("elevenlabs") || lowerName.contains("eleven labs") -> "elevenlabs"
         lowerName.contains("exa") -> "exa"
-        lowerName.contains("firecrawl") -> "firecrawl"
+        lowerName.contains("firecrawl") && !lowerName.contains("keyless") -> "firecrawl"
         lowerName.contains("github") -> "github"
         lowerName.contains("huggingface") || lowerName.contains("hugging face") -> "huggingface"
         lowerName.contains("jina") -> "jina"

@@ -1192,7 +1192,6 @@ private fun ProviderSetting.catalogProviderTokens(): Set<String> {
             buildSet {
                 if ("api.openai.com" in base) add("openai")
                 if ("openrouter" in base) add("openrouter")
-                if ("github" in base) add("github")
                 if ("ollama" in base) add("ollama")
             }
         }
