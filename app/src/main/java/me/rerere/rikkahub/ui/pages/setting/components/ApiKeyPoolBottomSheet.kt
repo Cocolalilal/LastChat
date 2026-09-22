@@ -282,7 +282,6 @@ fun ApiKeyPoolBottomSheet(
                                     hasAuthError = hasAuthError,
                                     hasQuotaError = hasQuotaError,
                                     maskedKey = maskedKey,
-                                    isDark = isDark,
                                     isDragging = isDragging,
                                     onEdit = { editingEntry = entry },
                                     dragHandle = {
@@ -388,7 +387,6 @@ private fun ApiKeyCard(
     hasAuthError: Boolean,
     hasQuotaError: Boolean,
     maskedKey: String,
-    isDark: Boolean,
     isDragging: Boolean,
     onEdit: () -> Unit,
     dragHandle: @Composable () -> Unit,
@@ -399,10 +397,10 @@ private fun ApiKeyCard(
         onClick = onEdit,
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)
-                isDark -> MaterialTheme.colorScheme.surfaceContainerLow
-                else -> MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = if (hasError) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
             }
         ),
         border = if (hasError) {
