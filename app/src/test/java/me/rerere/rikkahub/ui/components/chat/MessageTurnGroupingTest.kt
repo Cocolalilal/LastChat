@@ -66,4 +66,30 @@ class MessageTurnGroupingTest {
 
         assertEquals(canonicalVersionNode.id, group.nodeWithMostVersions.id)
     }
+
+    @Test
+    fun groupIntoTurnsKeepsSyntheticToolInjectedUserMessagesInsideAssistantTurn() {
+        val groups = listOf(
+            MessageNode.of(UIMessage.user("Show me a chart")),
+            MessageNode.of(UIMessage.assistant("Generating chart...")),
+            MessageNode.of(
+                UIMessage(
+                    role = MessageRole.TOOL,
+                    parts = emptyList(),
+                )
+            ),
+            MessageNode.of(
+                UIMessage(
+                    role = MessageRole.USER,
+                    parts = listOf(me.rerere.ai.ui.UIMessagePart.Image("data:image/png;base64,...")),
+                )
+            ),
+            MessageNode.of(UIMessage.assistant("Here is the completed chart")),
+        ).groupIntoTurns()
+
+        assertEquals(2, groups.size)
+        assertEquals(MessageRole.USER, groups[0].role)
+        assertEquals(MessageRole.ASSISTANT, groups[1].role)
+        assertEquals(4, groups[1].nodes.size)
+    }
 }

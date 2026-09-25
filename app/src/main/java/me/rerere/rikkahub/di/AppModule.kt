@@ -70,7 +70,8 @@ val appModule = module {
             providerManager = get(),
             localTools = get(),
             workspaceRepository = get(),
-            mcpManager = get()
+            mcpManager = get(),
+            platformHttpClient = get(),
         )
     }
 

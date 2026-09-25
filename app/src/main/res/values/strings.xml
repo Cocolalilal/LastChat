@@ -232,6 +232,7 @@
     <string name="chat_message_tool_python_delete_file">Deleting file: %1$s</string>
     <string name="chat_message_tool_python_import">Importing attachment</string>
     <string name="chat_message_tool_workspace_read_file">Reading workspace file: %1$s</string>
+    <string name="chat_message_tool_workspace_view_image">Viewing workspace image: %1$s</string>
     <string name="chat_message_tool_workspace_write_file">Writing workspace file: %1$s</string>
     <string name="chat_message_tool_workspace_edit_file">Editing workspace file: %1$s</string>
     <string name="chat_message_tool_workspace_shell">Running workspace command: %1$s</string>
@@ -272,6 +273,7 @@
     <string name="activity_timeline_tool_read_file">Reading file</string>
     <string name="activity_timeline_tool_delete_file">Deleting file</string>
     <string name="activity_timeline_tool_workspace_read_file">Reading workspace file</string>
+    <string name="activity_timeline_tool_workspace_view_image">Viewing workspace image</string>
     <string name="activity_timeline_tool_workspace_write_file">Writing workspace file</string>
     <string name="activity_timeline_tool_workspace_edit_file">Editing workspace file</string>
     <string name="activity_timeline_tool_workspace_shell">Running workspace command</string>
@@ -1470,6 +1472,7 @@
   <string name="workspace_detail_tool_approval_desc">When enabled, user confirmation is required before AI calls this tool</string>
   <string name="workspace_detail_tool_list_files">List Files</string>
   <string name="workspace_detail_tool_read_file">Read File</string>
+  <string name="workspace_detail_tool_view_image">View Image</string>
   <string name="workspace_detail_tool_write_file">Write File</string>
   <string name="workspace_detail_tool_edit_file">Edit File</string>
   <string name="workspace_detail_tool_delete_file">Delete File</string>

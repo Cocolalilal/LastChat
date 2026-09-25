@@ -256,7 +256,8 @@ fun List<MessageNode>.groupIntoTurns(
     
     forEach { node ->
         val nodeRole = node.currentMessage.role
-        val logicalRole = getGroupingRole(nodeRole)
+        val isSyntheticToolUser = nodeRole == MessageRole.USER && currentGroup.lastOrNull()?.currentMessage?.role == MessageRole.TOOL
+        val logicalRole = if (isSyntheticToolUser) MessageRole.ASSISTANT else getGroupingRole(nodeRole)
         
         // Start a new group if logical role changes
         if (currentGroup.isNotEmpty() && (logicalRole != currentGroupRole || node.forceTurnBreakBefore)) {
@@ -859,6 +860,7 @@ private fun getToolDisplayName(toolName: String): String {
         "workspace_write_file" -> "Writing workspace file"
         "workspace_edit_file" -> "Editing workspace file"
         "workspace_shell" -> "Running workspace command"
+        "workspace_view_image" -> "Viewing workspace image"
         "create_memory" -> "Creating memory"
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"

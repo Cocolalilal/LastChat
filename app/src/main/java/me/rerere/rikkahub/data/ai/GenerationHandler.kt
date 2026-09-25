@@ -35,6 +35,7 @@ import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartPrepareHistory
 import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ModelAbility
@@ -125,6 +126,48 @@ internal fun smartContextSafeCustomBodies(bodies: List<CustomBody>): List<Custom
  * accepts them. Used by the assistant-overlay `look_at_screen` tool.
  */
 internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_image_parts"
+internal const val TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY = "__inject_user_image_prompt"
+
+internal data class InjectedImageGroup(
+    val promptText: String,
+    val images: List<UIMessagePart.Image>,
+)
+
+/**
+ * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] and [TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY]
+ * payloads out of [results], returning the sanitized tool results (keys removed) plus the image groups
+ * to inject as a follow-up USER message. Non-injecting results pass through untouched.
+ */
+internal fun extractInjectedImagePayloads(
+    results: List<UIMessagePart.ToolResult>,
+): Pair<List<UIMessagePart.ToolResult>, List<InjectedImageGroup>> {
+    val groups = mutableListOf<InjectedImageGroup>()
+    val sanitized = results.map { result ->
+        val content = result.content
+        if (content is JsonObject && (content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY) || content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY))) {
+            val urls = (content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf { url -> url.isNotBlank() } }
+                .orEmpty()
+            val customPrompt = content[TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY]?.jsonPrimitive?.contentOrNull
+            val prompt = customPrompt ?: when (result.toolName) {
+                "look_at_screen" -> "Screenshot of the user's screen captured at summon:"
+                "workspace_view_image" -> "Image from workspace:"
+                "search_web" -> "Images fetched from search:"
+                else -> "Visual context from tool execution:"
+            }
+            if (urls.isNotEmpty()) {
+                val groupImages = urls.map { UIMessagePart.Image(url = it) }
+                groups += InjectedImageGroup(promptText = prompt, images = groupImages)
+            }
+            result.copy(
+                content = JsonObject(content - TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY - TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY)
+            )
+        } else {
+            result
+        }
+    }
+    return sanitized to groups
+}
 
 /**
  * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] payloads out of [results], returning
@@ -134,22 +177,8 @@ internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_imag
 internal fun extractInjectedImageParts(
     results: List<UIMessagePart.ToolResult>,
 ): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
-    val images = mutableListOf<UIMessagePart.Image>()
-    val sanitized = results.map { result ->
-        val content = result.content
-        if (content is JsonObject && content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)) {
-            val urls = (content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray)
-                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf { url -> url.isNotBlank() } }
-                .orEmpty()
-            urls.forEach { images += UIMessagePart.Image(url = it) }
-            result.copy(
-                content = JsonObject(content - TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)
-            )
-        } else {
-            result
-        }
-    }
-    return sanitized to images
+    val (sanitized, groups) = extractInjectedImagePayloads(results)
+    return sanitized to groups.flatMap { it.images }
 }
 
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
@@ -753,19 +782,7 @@ class GenerationHandler(
                 messages = messages.markPendingToolCalls(pendingToolCallIds)
                 send(GenerationChunk.Messages(messages))
                 if (results.isNotEmpty()) {
-                    val (sanitized, injectedImages) = extractInjectedImageParts(results)
-                    messages = messages + UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = sanitized
-                    )
-                    if (injectedImages.isNotEmpty()) {
-                        messages = messages + UIMessage(
-                            role = MessageRole.USER,
-                            parts = listOf(
-                                UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                            ) + injectedImages,
-                        )
-                    }
+                    messages = appendToolResultsAndInjectedImages(messages, results, model)
                     send(
                         GenerationChunk.Messages(
                             messages.transforms(
@@ -779,21 +796,7 @@ class GenerationHandler(
                 }
                 break
             }
-            val (sanitizedResults, injectedImages) = extractInjectedImageParts(results)
-            messages = messages + UIMessage(
-                role = MessageRole.TOOL,
-                parts = sanitizedResults
-            )
-            // Re-deliver any tool-provided images (e.g. the overlay screenshot) as a USER
-            // message the provider accepts, instead of stuffing base64 into a tool result.
-            if (injectedImages.isNotEmpty()) {
-                messages = messages + UIMessage(
-                    role = MessageRole.USER,
-                    parts = listOf(
-                        UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                    ) + injectedImages,
-                )
-            }
+            messages = appendToolResultsAndInjectedImages(messages, results, model)
             send(
                 GenerationChunk.Messages(
                     messages.transforms(
@@ -807,6 +810,37 @@ class GenerationHandler(
         }
 
     }.flowOn(Dispatchers.IO)
+
+    private fun appendToolResultsAndInjectedImages(
+        messages: List<UIMessage>,
+        results: List<UIMessagePart.ToolResult>,
+        model: Model,
+    ): List<UIMessage> {
+        val (sanitizedResults, injectedGroups) = extractInjectedImagePayloads(results)
+        var updated = messages + UIMessage(
+            role = MessageRole.TOOL,
+            parts = sanitizedResults
+        )
+        if (model.inputModalities.contains(Modality.IMAGE) && injectedGroups.isNotEmpty()) {
+            val injectedParts = buildList {
+                injectedGroups.forEach { group ->
+                    if (group.images.isNotEmpty()) {
+                        if (group.promptText.isNotBlank()) {
+                            add(UIMessagePart.Text(group.promptText))
+                        }
+                        addAll(group.images)
+                    }
+                }
+            }
+            if (injectedParts.isNotEmpty()) {
+                updated = updated + UIMessage(
+                    role = MessageRole.USER,
+                    parts = injectedParts,
+                )
+            }
+        }
+        return updated
+    }
 
     suspend fun buildMessages(
         assistant: Assistant,
@@ -1154,6 +1188,13 @@ class GenerationHandler(
                 val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
                 
                 if (indicesToPrune.isNotEmpty()) {
+                    val imageIndicesToPrune = indicesToPrune.mapNotNull { idx ->
+                        val nextIdx = idx + 1
+                        val nextMsg = historyLimitedMessages.getOrNull(nextIdx)
+                        if (nextMsg?.role == MessageRole.USER && nextMsg.parts.any { it is UIMessagePart.Image }) {
+                            nextIdx
+                        } else null
+                    }.toSet()
                     historyLimitedMessages.mapIndexed { index, msg ->
                         if (index in indicesToPrune) {
                             // Replace search result content with a minimal placeholder
@@ -1162,6 +1203,12 @@ class GenerationHandler(
                                     part.copy(content = kotlinx.serialization.json.buildJsonObject {
                                         put("note", kotlinx.serialization.json.JsonPrimitive("Earlier search results pruned to save context"))
                                     })
+                                } else part
+                            })
+                        } else if (index in imageIndicesToPrune) {
+                            msg.copy(parts = msg.parts.map { part ->
+                                if (part is UIMessagePart.Image) {
+                                    UIMessagePart.Text("[Earlier search images pruned to save context]")
                                 } else part
                             })
                         } else msg
@@ -1605,7 +1652,8 @@ class GenerationHandler(
                                 )
                             )
                         } else {
-                            add(part)
+                            changed = true
+                            add(UIMessagePart.Text("[Archived image omitted due to message age limit]"))
                         }
                     } else {
                         add(part)

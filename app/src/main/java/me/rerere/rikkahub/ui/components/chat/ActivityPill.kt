@@ -228,7 +228,7 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
     "search_memory" -> ActivityType.MEMORY_RECALL
     "eval_python", "pip_install", "write_sandbox_file", 
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
-    "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_shell" -> ActivityType.WORKSPACE
+    "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_shell", "workspace_view_image" -> ActivityType.WORKSPACE
     "manage_skills" -> ActivityType.SKILL
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
@@ -246,7 +246,8 @@ private val workspaceToolNames = setOf(
     "workspace_read_file",
     "workspace_write_file",
     "workspace_edit_file",
-    "workspace_shell"
+    "workspace_shell",
+    "workspace_view_image",
 )
 
 internal fun resolveActivityToolName(toolName: String, arguments: String): String {

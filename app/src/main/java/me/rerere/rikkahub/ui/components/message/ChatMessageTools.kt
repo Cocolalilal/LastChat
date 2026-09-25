@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -131,6 +132,7 @@ fun ToolCallItem(
                         "list_sandbox_files", "delete_sandbox_file", "import_attachment" -> Icons.Rounded.Terminal
                         "workspace_shell" -> Icons.Rounded.Terminal
                         "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> Icons.Rounded.Description
+                        "workspace_view_image" -> Icons.Rounded.Image
                         in WORKSPACE_TOOLS -> Icons.Rounded.Computer
                         else -> Icons.Rounded.Build
                     },
@@ -183,6 +185,10 @@ fun ToolCallItem(
                         "workspace_shell" -> stringResource(
                             R.string.chat_message_tool_workspace_shell,
                             (arguments as? JsonObject)?.get("command")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        )
+                        "workspace_view_image" -> stringResource(
+                            R.string.chat_message_tool_workspace_view_image,
+                            (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
                         )
                         "import_attachment" -> stringResource(R.string.chat_message_tool_python_import)
                         else -> stringResource(

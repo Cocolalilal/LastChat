@@ -1593,4 +1593,7 @@
   <string name="activity_timeline_memory_source_core">Core memory</string>
   <string name="activity_timeline_memory_source_chat">Past chat</string>
   <string name="activity_timeline_memory_confidence">Confidence %1$s</string>
+  <string name="chat_message_tool_workspace_view_image">查看工作区图片: %1$s</string>
+  <string name="activity_timeline_tool_workspace_view_image">查看工作区图片</string>
+  <string name="workspace_detail_tool_view_image">查看图片</string>
 </resources>

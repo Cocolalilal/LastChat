@@ -235,6 +235,7 @@ internal fun getTimelineIcon(entry: TimelineEntry): ImageVector {
             "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> Icons.Rounded.Terminal
             "workspace_shell" -> Icons.Rounded.Terminal
             "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> Icons.Rounded.Description
+            "workspace_view_image" -> Icons.Rounded.Image
             "manage_skills" -> Icons.Rounded.Category
             else -> if (entry.toolName.startsWith("workspace_")) Icons.Rounded.Computer else Icons.Rounded.Build
         }
@@ -266,6 +267,7 @@ private fun getLocalizedToolLabel(toolName: String, fallback: String): String {
         "workspace_write_file" -> stringResource(R.string.activity_timeline_tool_workspace_write_file)
         "workspace_edit_file" -> stringResource(R.string.activity_timeline_tool_workspace_edit_file)
         "workspace_shell" -> stringResource(R.string.activity_timeline_tool_workspace_shell)
+        "workspace_view_image" -> stringResource(R.string.activity_timeline_tool_workspace_view_image)
         "ask_user" -> stringResource(R.string.activity_timeline_tool_ask_user)
         "manage_skills" -> stringResource(R.string.activity_timeline_tool_manage_skills)
         else -> fallback
