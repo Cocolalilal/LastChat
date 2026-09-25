@@ -540,10 +540,125 @@ sealed class UIMessagePart {
         val toolName: String,
         val content: JsonElement,
         val arguments: JsonElement,
-        override var metadata: JsonObject? = null
+        override var metadata: JsonObject? = null,
+        val inspectedImages: List<ToolResultImage> = emptyList(),
     ) : UIMessagePart() {
         override val priority: Int = 0
     }
+}
+
+@Serializable
+data class ToolResultImage(
+    val url: String = "",
+    val mimeType: String = "image/jpeg",
+    val title: String? = null,
+    val sourceUrl: String? = null,
+    val markdownImage: String? = null,
+    val originTool: String? = null,
+)
+
+fun extractMimeTypeFromDataUrl(url: String, fallback: String = "image/jpeg"): String {
+    val trimmed = url.trim()
+    if (trimmed.startsWith("data:", ignoreCase = true)) {
+        val afterData = trimmed.substring(5)
+        val semiIndex = afterData.indexOf(';')
+        val commaIndex = afterData.indexOf(',')
+        val endIndex = when {
+            semiIndex >= 0 && commaIndex >= 0 -> minOf(semiIndex, commaIndex)
+            semiIndex >= 0 -> semiIndex
+            commaIndex >= 0 -> commaIndex
+            else -> -1
+        }
+        if (endIndex > 0) {
+            val mime = afterData.substring(0, endIndex).trim().lowercase()
+            if (mime.contains('/')) return mime
+        }
+    }
+    return fallback.ifBlank { "image/jpeg" }
+}
+
+fun buildToolImageProvenanceText(
+    result: UIMessagePart.ToolResult,
+    imageIndex: Int,
+    image: ToolResultImage,
+): String {
+    val origin = image.originTool?.takeIf { it.isNotBlank() }
+        ?: result.toolName.ifBlank { "tool" }
+    val callIdPart = result.toolCallId.takeIf { it.isNotBlank() }?.let { " (tool_call_id=$it)" } ?: ""
+    return buildString {
+        append("[Tool Inspected Image #")
+        append(imageIndex)
+        append(" from `")
+        append(origin)
+        append("`")
+        append(callIdPart)
+        append(" — automated tool inspection output, NOT uploaded by the user.")
+        image.title?.takeIf { it.isNotBlank() }?.let {
+            append(" Title: \"")
+            append(it)
+            append("\".")
+        }
+        image.sourceUrl?.takeIf { it.isNotBlank() }?.let {
+            append(" Source/Path: ")
+            append(it)
+            append(".")
+        }
+        image.markdownImage?.takeIf { it.isNotBlank() }?.let {
+            append(" To display this image to the user in your response, embed: ")
+            append(it)
+        }
+        append("]")
+    }
+}
+
+fun List<UIMessage>.stripEphemeralToolImagePayloads(): List<UIMessage> {
+    var changed = false
+    val updated = map { message ->
+        var messageChanged = false
+        val newParts = message.parts.map { part ->
+            if (part is UIMessagePart.ToolResult && part.inspectedImages.any { it.url.isNotBlank() }) {
+                messageChanged = true
+                changed = true
+                part.copy(
+                    inspectedImages = part.inspectedImages.map { img ->
+                        if (img.url.isNotBlank()) img.copy(url = "") else img
+                    }
+                )
+            } else {
+                part
+            }
+        }
+        if (messageChanged) message.copy(parts = newParts) else message
+    }
+    return if (changed) updated else this
+}
+
+fun List<UIMessage>.coalesceConsecutiveToolMessages(): List<UIMessage> {
+    if (size <= 1) return this
+    val result = ArrayList<UIMessage>(size)
+    var i = 0
+    var changed = false
+    while (i < size) {
+        val current = this[i]
+        if (current.role == MessageRole.TOOL) {
+            val toolMessages = mutableListOf<UIMessage>()
+            while (i < size && this[i].role == MessageRole.TOOL) {
+                toolMessages.add(this[i])
+                i++
+            }
+            if (toolMessages.size > 1) {
+                changed = true
+                val mergedParts = toolMessages.flatMap { it.parts }
+                result.add(toolMessages.first().copy(parts = mergedParts))
+            } else {
+                result.add(toolMessages.first())
+            }
+        } else {
+            result.add(current)
+            i++
+        }
+    }
+    return if (changed) result else this
 }
 
 private fun mergeToolName(existing: String, incoming: String): String {

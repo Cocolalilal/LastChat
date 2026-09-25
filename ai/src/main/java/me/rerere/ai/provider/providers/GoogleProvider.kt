@@ -604,9 +604,10 @@ class GoogleProvider(
         })
 
         // Contents (user messages)
+        val isGemini3Model = ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)
         put(
             "contents",
-            buildContents(messages)
+            buildContents(messages, isGemini3 = isGemini3Model)
         )
 
         // Tools
@@ -709,7 +710,7 @@ class GoogleProvider(
                 val functionCall = jsonObject["functionCall"]?.jsonObject
                     ?: error("No functionCall")
                 UIMessagePart.ToolCall(
-                    toolCallId = "",
+                    toolCallId = functionCall["id"]?.jsonPrimitive?.contentOrNull ?: "",
                     toolName = functionCall["name"]?.jsonPrimitive?.contentOrNull ?: "",
                     arguments = json.encodeToString(functionCall["args"] ?: JsonObject(emptyMap())),
                     metadata = buildJsonObject {
@@ -733,89 +734,177 @@ class GoogleProvider(
         }
     }
 
-    private fun buildContents(messages: List<UIMessage>): JsonArray {
+    private fun buildContents(messages: List<UIMessage>, isGemini3: Boolean = false): JsonArray {
         return buildJsonArray {
-            messages
-                .filter { it.role != MessageRole.SYSTEM && it.isValidToUpload() }
-                .forEachIndexed { index, message ->
-                    add(buildJsonObject {
-                        put("role", commonRoleToGoogleRole(message.role))
-                        putJsonArray("parts") {
-                            for (part in message.parts) {
-                                when (part) {
-                                    is UIMessagePart.Text -> {
-                                        add(buildJsonObject {
-                                            put("text", part.text)
-                                        })
-                                    }
-
-                                    is UIMessagePart.Image -> {
-                                        mediaEncoder.encodeImage(part.url, withPrefix = false).onSuccess { base64Data ->
-                                            add(buildJsonObject {
-                                                put("inline_data", buildJsonObject {
-                                                    put("mime_type", "image/png")
-                                                    put("data", base64Data)
-                                                })
-                                            })
-                                        }
-                                    }
-
-                                    is UIMessagePart.Video -> {
-                                        mediaEncoder.encodeVideo(part.url, withPrefix = false).onSuccess { base64Data ->
-                                            add(buildJsonObject {
-                                                put("inline_data", buildJsonObject {
-                                                    put("mime_type", "video/mp4")
-                                                    put("data", base64Data)
-                                                })
-                                            })
-                                        }
-                                    }
-
-                                    is UIMessagePart.Audio -> {
-                                        val mimeType = if (part.url.endsWith(".wav")) "audio/wav" 
-                                            else if (part.url.startsWith("data:audio/wav")) "audio/wav"
-                                            else "audio/mp3"
-                                        mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
-                                            add(buildJsonObject {
-                                                put("inline_data", buildJsonObject {
-                                                    put("mime_type", mimeType)
-                                                    put("data", base64Data)
-                                                })
-                                            })
-                                        }
-                                    }
-
-                                    is UIMessagePart.ToolCall -> {
-                                        add(buildJsonObject {
-                                            put("functionCall", buildJsonObject {
-                                                put("name", part.toolName)
-                                                put("args", json.parseToJsonElement(part.arguments))
-                                            })
-                                            part.metadata?.get("thoughtSignature")?.let {
-                                                put("thoughtSignature", it)
-                                            }
-                                        })
-                                    }
-
-                                    is UIMessagePart.ToolResult -> {
+            val uploadable = messages.filter { it.role != MessageRole.SYSTEM && it.isValidToUpload() }
+            var i = 0
+            while (i < uploadable.size) {
+                val message = uploadable[i]
+                if (message.role == MessageRole.TOOL) {
+                    val toolMessages = mutableListOf<UIMessage>()
+                    while (i < uploadable.size && uploadable[i].role == MessageRole.TOOL) {
+                        toolMessages.add(uploadable[i])
+                        i++
+                    }
+                    val allResults = toolMessages.flatMap { it.getToolResults() }
+                    if (allResults.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            putJsonArray("parts") {
+                                for (part in allResults) {
+                                    val activeImages = part.inspectedImages.filter { it.url.isNotBlank() }
+                                    if (activeImages.isEmpty()) {
                                         add(buildJsonObject {
                                             put("functionResponse", buildJsonObject {
+                                                if (part.toolCallId.isNotBlank()) {
+                                                    put("id", part.toolCallId)
+                                                }
                                                 put("name", part.toolName)
                                                 put("response", buildJsonObject {
                                                     put("result", part.content)
                                                 })
                                             })
                                         })
-                                    }
-
-                                    else -> {
-                                        // Unsupported part type
+                                    } else if (isGemini3) {
+                                        val provenanceArray = buildJsonArray {
+                                            activeImages.forEachIndexed { imgIdx, img ->
+                                                add(JsonPrimitive(me.rerere.ai.ui.buildToolImageProvenanceText(part, imgIdx + 1, img)))
+                                            }
+                                        }
+                                        add(buildJsonObject {
+                                            put("functionResponse", buildJsonObject {
+                                                if (part.toolCallId.isNotBlank()) {
+                                                    put("id", part.toolCallId)
+                                                }
+                                                put("name", part.toolName)
+                                                put("response", buildJsonObject {
+                                                    put("result", part.content)
+                                                    put("inspected_image_provenance", provenanceArray)
+                                                })
+                                                putJsonArray("parts") {
+                                                    activeImages.forEachIndexed { imgIdx, img ->
+                                                        mediaEncoder.encodeImage(img.url, withPrefix = false).onSuccess { base64Data ->
+                                                            val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(img.url, img.mimeType)
+                                                            val displayName = img.title?.takeIf { it.isNotBlank() }
+                                                                ?: img.sourceUrl?.takeIf { it.isNotBlank() }
+                                                                ?: "tool_image_${imgIdx + 1}"
+                                                            add(buildJsonObject {
+                                                                put("inlineData", buildJsonObject {
+                                                                    put("displayName", displayName)
+                                                                    put("mimeType", actualMime)
+                                                                    put("data", base64Data)
+                                                                })
+                                                            })
+                                                        }
+                                                    }
+                                                }
+                                            })
+                                        })
+                                    } else {
+                                        add(buildJsonObject {
+                                            put("functionResponse", buildJsonObject {
+                                                if (part.toolCallId.isNotBlank()) {
+                                                    put("id", part.toolCallId)
+                                                }
+                                                put("name", part.toolName)
+                                                put("response", buildJsonObject {
+                                                    put("result", part.content)
+                                                })
+                                            })
+                                        })
+                                        activeImages.forEachIndexed { imgIdx, img ->
+                                            val provenance = "[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE]\n" +
+                                                me.rerere.ai.ui.buildToolImageProvenanceText(part, imgIdx + 1, img)
+                                            mediaEncoder.encodeImage(img.url, withPrefix = false).onSuccess { base64Data ->
+                                                val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(img.url, img.mimeType)
+                                                add(buildJsonObject {
+                                                    put("text", provenance)
+                                                })
+                                                add(buildJsonObject {
+                                                    put("inline_data", buildJsonObject {
+                                                        put("mime_type", actualMime)
+                                                        put("data", base64Data)
+                                                    })
+                                                })
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    })
+                        })
+                    }
+                    continue
                 }
+
+                add(buildJsonObject {
+                    put("role", commonRoleToGoogleRole(message.role))
+                    putJsonArray("parts") {
+                        for (part in message.parts) {
+                            when (part) {
+                                is UIMessagePart.Text -> {
+                                    add(buildJsonObject {
+                                        put("text", part.text)
+                                    })
+                                }
+
+                                is UIMessagePart.Image -> {
+                                    val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(part.url, "image/png")
+                                    mediaEncoder.encodeImage(part.url, withPrefix = false).onSuccess { base64Data ->
+                                        add(buildJsonObject {
+                                            put("inline_data", buildJsonObject {
+                                                put("mime_type", actualMime)
+                                                put("data", base64Data)
+                                            })
+                                        })
+                                    }
+                                }
+
+                                is UIMessagePart.Video -> {
+                                    mediaEncoder.encodeVideo(part.url, withPrefix = false).onSuccess { base64Data ->
+                                        add(buildJsonObject {
+                                            put("inline_data", buildJsonObject {
+                                                put("mime_type", "video/mp4")
+                                                put("data", base64Data)
+                                            })
+                                        })
+                                    }
+                                }
+
+                                is UIMessagePart.Audio -> {
+                                    val mimeType = if (part.url.endsWith(".wav")) "audio/wav" 
+                                        else if (part.url.startsWith("data:audio/wav")) "audio/wav"
+                                        else "audio/mp3"
+                                    mediaEncoder.encodeAudio(part.url, withPrefix = false).onSuccess { base64Data ->
+                                        add(buildJsonObject {
+                                            put("inline_data", buildJsonObject {
+                                                put("mime_type", mimeType)
+                                                put("data", base64Data)
+                                            })
+                                        })
+                                    }
+                                }
+
+                                is UIMessagePart.ToolCall -> {
+                                    add(buildJsonObject {
+                                        put("functionCall", buildJsonObject {
+                                            put("name", part.toolName)
+                                            put("args", json.parseToJsonElement(part.arguments))
+                                        })
+                                        part.metadata?.get("thoughtSignature")?.let {
+                                            put("thoughtSignature", it)
+                                        }
+                                    })
+                                }
+
+                                else -> {
+                                    // Unsupported part type
+                                }
+                            }
+                        }
+                    }
+                })
+                i++
+            }
         }
     }
 

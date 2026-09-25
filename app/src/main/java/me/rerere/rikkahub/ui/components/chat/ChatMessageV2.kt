@@ -256,8 +256,7 @@ fun List<MessageNode>.groupIntoTurns(
     
     forEach { node ->
         val nodeRole = node.currentMessage.role
-        val isSyntheticToolUser = nodeRole == MessageRole.USER && currentGroup.lastOrNull()?.currentMessage?.role == MessageRole.TOOL
-        val logicalRole = if (isSyntheticToolUser) MessageRole.ASSISTANT else getGroupingRole(nodeRole)
+        val logicalRole = getGroupingRole(nodeRole)
         
         // Start a new group if logical role changes
         if (currentGroup.isNotEmpty() && (logicalRole != currentGroupRole || node.forceTurnBreakBefore)) {

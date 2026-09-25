@@ -68,28 +68,37 @@ class MessageTurnGroupingTest {
     }
 
     @Test
-    fun groupIntoTurnsKeepsSyntheticToolInjectedUserMessagesInsideAssistantTurn() {
+    fun groupIntoTurnsKeepsToolResultsWithInspectedImagesInsideAssistantTurn() {
         val groups = listOf(
             MessageNode.of(UIMessage.user("Show me a chart")),
             MessageNode.of(UIMessage.assistant("Generating chart...")),
             MessageNode.of(
                 UIMessage(
                     role = MessageRole.TOOL,
-                    parts = emptyList(),
-                )
-            ),
-            MessageNode.of(
-                UIMessage(
-                    role = MessageRole.USER,
-                    parts = listOf(me.rerere.ai.ui.UIMessagePart.Image("data:image/png;base64,...")),
+                    parts = listOf(
+                        me.rerere.ai.ui.UIMessagePart.ToolResult(
+                            toolCallId = "c1",
+                            toolName = "workspace_view_image",
+                            content = kotlinx.serialization.json.buildJsonObject { },
+                            arguments = kotlinx.serialization.json.buildJsonObject { },
+                            inspectedImages = listOf(
+                                me.rerere.ai.ui.ToolResultImage(
+                                    url = "",
+                                    title = "chart.png",
+                                )
+                            )
+                        )
+                    ),
                 )
             ),
             MessageNode.of(UIMessage.assistant("Here is the completed chart")),
+            MessageNode.of(UIMessage.user("Thanks, now do another")),
         ).groupIntoTurns()
 
-        assertEquals(2, groups.size)
+        assertEquals(3, groups.size)
         assertEquals(MessageRole.USER, groups[0].role)
         assertEquals(MessageRole.ASSISTANT, groups[1].role)
-        assertEquals(4, groups[1].nodes.size)
+        assertEquals(3, groups[1].nodes.size)
+        assertEquals(MessageRole.USER, groups[2].role)
     }
 }

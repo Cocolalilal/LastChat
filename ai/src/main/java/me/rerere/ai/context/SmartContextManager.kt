@@ -262,6 +262,7 @@ private fun compactLowValuePayloads(
                             },
                             // Arguments are mandatory for agent memory; NEVER wipe them.
                             arguments = part.arguments,
+                            inspectedImages = part.inspectedImages.map { it.copy(url = "") },
                         )
                     } else part
                 }
@@ -277,14 +278,32 @@ private fun limitImages(messages: List<UIMessage>, limit: Int): List<UIMessage> 
     var retained = 0
     return messages.asReversed().map { message ->
         message.copy(parts = message.parts.asReversed().map { part ->
-            if (part is UIMessagePart.Image) {
-                if (retained < limit) {
-                    retained++
-                    part
-                } else {
-                    UIMessagePart.Text("[Earlier image omitted; surrounding text and OCR remain available]")
+            when (part) {
+                is UIMessagePart.Image -> {
+                    if (retained < limit) {
+                        retained++
+                        part
+                    } else {
+                        UIMessagePart.Text("[Earlier image omitted; surrounding text and OCR remain available]")
+                    }
                 }
-            } else part
+                is UIMessagePart.ToolResult -> {
+                    if (part.inspectedImages.any { it.url.isNotBlank() }) {
+                        val updatedImages = part.inspectedImages.asReversed().map { img ->
+                            if (img.url.isNotBlank()) {
+                                if (retained < limit) {
+                                    retained++
+                                    img
+                                } else {
+                                    img.copy(url = "")
+                                }
+                            } else img
+                        }.asReversed()
+                        part.copy(inspectedImages = updatedImages)
+                    } else part
+                }
+                else -> part
+            }
         }.asReversed())
     }.asReversed()
 }

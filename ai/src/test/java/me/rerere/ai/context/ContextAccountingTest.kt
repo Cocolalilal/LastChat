@@ -495,4 +495,79 @@ class ContextAccountingTest {
         assertTrue(retained.isEmpty())
     }
 
+    @Test
+    fun toolResultInspectedImages_countedInPartTokensAndBreakdown() {
+        val model = Model(modelId = "test-model", contextWindowTokens = 32_000)
+        val toolResult = UIMessagePart.ToolResult(
+            toolCallId = "call-1",
+            toolName = "search_web",
+            content = JsonPrimitive("ok"),
+            arguments = JsonPrimitive("{}"),
+            inspectedImages = listOf(
+                me.rerere.ai.ui.ToolResultImage(
+                    url = "data:image/png;base64,abc",
+                    mimeType = "image/png",
+                )
+            ),
+        )
+
+        val tokens = ContextTokenEstimator.partTokens(toolResult, model)
+        // Base tokens for tool + 1,024 for image
+        assertTrue("Tokens ($tokens) must be > 1024", tokens > 1024)
+
+        val message = UIMessage(
+            role = MessageRole.TOOL,
+            parts = listOf(toolResult),
+        )
+        val breakdown = ContextTokenEstimator.breakdown(
+            messages = listOf(message),
+            model = model,
+        )
+        assertEquals(1, breakdown.imageCount)
+        assertEquals(1024, breakdown.mediaTokens)
+    }
+
+    @Test
+    fun limitImagesForModel_prunesOlderInspectedImagesOnToolResult() {
+        val model = Model(modelId = "vision", contextWindowTokens = 8_192, maxImagesInContext = 1)
+        val messages = listOf(
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        toolCallId = "c1",
+                        toolName = "search_web",
+                        content = JsonPrimitive("res1"),
+                        arguments = JsonPrimitive("{}"),
+                        inspectedImages = listOf(
+                            me.rerere.ai.ui.ToolResultImage(url = "data:image/jpeg;base64,img1", title = "old")
+                        )
+                    )
+                )
+            ),
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        toolCallId = "c2",
+                        toolName = "search_web",
+                        content = JsonPrimitive("res2"),
+                        arguments = JsonPrimitive("{}"),
+                        inspectedImages = listOf(
+                            me.rerere.ai.ui.ToolResultImage(url = "data:image/jpeg;base64,img2", title = "new")
+                        )
+                    )
+                )
+            )
+        )
+
+        val limited = messages.limitImagesForModel(model)
+        val t1 = limited[0].parts[0] as UIMessagePart.ToolResult
+        val t2 = limited[1].parts[0] as UIMessagePart.ToolResult
+
+        assertEquals("", t1.inspectedImages[0].url)
+        assertEquals("old", t1.inspectedImages[0].title)
+        assertEquals("data:image/jpeg;base64,img2", t2.inspectedImages[0].url)
+        assertEquals("new", t2.inspectedImages[0].title)
+    }
 }

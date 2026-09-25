@@ -26,6 +26,7 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.coalesceConsecutiveToolMessages
 import me.rerere.common.platform.PlatformLog
 import me.rerere.common.inference.LocalInferenceManager
 import me.rerere.common.inference.LocalInferenceWorkload
@@ -289,8 +290,19 @@ class LiteRtProvider(
                 Message.model(contentsFor(model, message), toolCalls, emptyMap())
             }
             MessageRole.TOOL -> {
-                val responses = message.getToolResults().map { result ->
-                    Content.ToolResponse(result.toolName, result.content.toString())
+                val responses = mutableListOf<Content>()
+                message.getToolResults().forEach { result ->
+                    responses.add(Content.ToolResponse(result.toolName, result.content.toString()))
+                    if (model.supportsImage) {
+                        val activeImages = result.inspectedImages.filter { it.url.isNotBlank() }
+                        activeImages.forEachIndexed { imgIdx, img ->
+                            val provenance = me.rerere.ai.ui.buildToolImageProvenanceText(result, imgIdx + 1, img)
+                            LiteRtMedia.readBytes(context, img.url)?.let { bytes ->
+                                responses.add(Content.Text(provenance))
+                                responses.add(Content.ImageBytes(bytes))
+                            } ?: PlatformLog.w(TAG, "Skipped unreadable tool image ${img.sourceUrl ?: img.title}")
+                        }
+                    }
                 }
                 Message.tool(Contents.of(responses.ifEmpty { listOf(Content.Text("")) }))
             }
@@ -374,13 +386,14 @@ internal fun prepareLiteRtConversationMessages(
     supportsImage: Boolean,
     supportsAudio: Boolean,
 ): PreparedLiteRtMessages {
-    val sendableIndex = messages.indexOfLast { it.role != MessageRole.SYSTEM }
+    val coalescedMessages = messages.coalesceConsecutiveToolMessages()
+    val sendableIndex = coalescedMessages.indexOfLast { it.role != MessageRole.SYSTEM }
     require(sendableIndex >= 0) { "no_message_to_send" }
-    val canCarryHistoricalMedia = messages[sendableIndex].role == MessageRole.USER ||
-        messages[sendableIndex].role == MessageRole.ASSISTANT
+    val canCarryHistoricalMedia = coalescedMessages[sendableIndex].role == MessageRole.USER ||
+        coalescedMessages[sendableIndex].role == MessageRole.ASSISTANT
 
     val historicalMedia = mutableListOf<Pair<MessageRole, UIMessagePart>>()
-    val sanitized = messages.mapIndexed { index, message ->
+    val sanitized = coalescedMessages.mapIndexed { index, message ->
         if (index == sendableIndex) return@mapIndexed message
 
         val parts = buildList {

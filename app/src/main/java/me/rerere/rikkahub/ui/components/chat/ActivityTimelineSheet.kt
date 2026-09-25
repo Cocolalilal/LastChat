@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
@@ -960,6 +961,35 @@ private fun TimelineAccordionEntry(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
+                val inspectedImageCount = (entry as? TimelineEntry.ToolCall)
+                    ?.let { (it.resultJson as? JsonObject)?.get("inspected_images") as? JsonArray }
+                    ?.size ?: 0
+                if (inspectedImageCount > 0) {
+                    Surface(
+                        shape = AppShapes.Chip,
+                        color = accentColor.copy(alpha = 0.14f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Image,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = accentColor,
+                            )
+                            if (inspectedImageCount > 1) {
+                                Text(
+                                    text = inspectedImageCount.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accentColor,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (hasContent) {
                     Icon(
                         imageVector = Icons.Rounded.ExpandMore,
@@ -1488,6 +1518,40 @@ private fun SearchTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
                 }
             }
         }
+        val inspectedImages = (resultObj?.get("inspected_images") as? JsonArray)
+            ?.mapNotNull { item ->
+                val obj = item as? JsonObject ?: return@mapNotNull null
+                val title = obj["title"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+                val sourceUrl = obj["source_url"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+                val label = title ?: sourceUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() } ?: "Image"
+                label to sourceUrl
+            }.orEmpty()
+        if (inspectedImages.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                inspectedImages.forEach { (label, sourceUrl) ->
+                    TimelineTagChip(
+                        text = if (label.length > 28) label.take(26) + "…" else label,
+                        leadingIcon = Icons.Rounded.Image,
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = if (sourceUrl != null) {
+                            Modifier.combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sourceUrl)))
+                                    }
+                                }
+                            )
+                        } else Modifier
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1661,6 +1725,19 @@ private fun WorkspaceTimelineCompactDetails(entry: TimelineEntry.ToolCall) {
                     text = stringResource(R.string.activity_timeline_workspace_truncated),
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            val inspectedImages = ((entry.resultJson as? JsonObject)?.get("inspected_images") as? JsonArray).orEmpty()
+            inspectedImages.forEach { item ->
+                val obj = item as? JsonObject
+                val title = obj?.get("title")?.jsonPrimitiveOrNull?.contentOrNull
+                    ?: obj?.get("source_url")?.jsonPrimitiveOrNull?.contentOrNull?.substringAfterLast('/')
+                    ?: "Image"
+                TimelineTagChip(
+                    text = title,
+                    leadingIcon = Icons.Rounded.Image,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
             }
         }
@@ -2432,18 +2509,32 @@ private fun TimelineTagChip(
     containerColor: Color,
     contentColor: Color,
     modifier: Modifier = Modifier,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     Surface(
         shape = AppShapes.Chip,
         color = containerColor,
         modifier = modifier
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = contentColor,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = contentColor,
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor,
+            )
+        }
     }
 }
 

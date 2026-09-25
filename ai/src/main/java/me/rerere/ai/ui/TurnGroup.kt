@@ -69,7 +69,6 @@ fun List<UIMessage>.toTurnGroups(): List<TurnGroup> {
         val msg = this[index]
         val startsNewGroup = when {
             index == 0 -> false
-            msg.role == MessageRole.USER && this.getOrNull(index - 1)?.role == MessageRole.TOOL -> false
             msg.role == MessageRole.USER -> true
             msg.role == MessageRole.SYSTEM -> true
             // If previous group started with SYSTEM and now dialogue begins (ASSISTANT):

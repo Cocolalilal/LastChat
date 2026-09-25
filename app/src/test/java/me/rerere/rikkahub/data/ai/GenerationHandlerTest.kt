@@ -10,8 +10,10 @@ import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.stripEphemeralToolImagePayloads
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -125,5 +127,97 @@ class GenerationHandlerTest {
 
         assertEquals(1, injectedImages.size)
         assertEquals(testUrl, injectedImages.first().url)
+    }
+
+    @Test
+    fun extractInjectedImagePayloads_structuredMetadataAndVisionGating() {
+        val toolResult = UIMessagePart.ToolResult(
+            toolCallId = "call_search",
+            toolName = "search_web",
+            content = buildJsonObject {
+                put("query", JsonPrimitive("kotlin multiplatform"))
+                put(
+                    TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("data_url", JsonPrimitive("data:image/jpeg;base64,samplebase64"))
+                                put("mime_type", JsonPrimitive("image/jpeg"))
+                                put("title", JsonPrimitive("KMP Diagram"))
+                                put("source_url", JsonPrimitive("https://example.com/kmp.jpg"))
+                                put("markdown_image", JsonPrimitive("![KMP Diagram](https://example.com/kmp.jpg)"))
+                                put("origin_tool", JsonPrimitive("search_web"))
+                            }
+                        )
+                    )
+                )
+            },
+            arguments = buildJsonObject { },
+        )
+
+        // When vision is supported
+        val visionResults = extractInjectedImagePayloads(listOf(toolResult), supportsVision = true)
+        assertEquals(1, visionResults.size)
+        val visionResult = visionResults.first()
+        assertEquals(1, visionResult.inspectedImages.size)
+        val inspectedImage = visionResult.inspectedImages.first()
+        assertEquals("data:image/jpeg;base64,samplebase64", inspectedImage.url)
+        assertEquals("KMP Diagram", inspectedImage.title)
+        assertEquals("https://example.com/kmp.jpg", inspectedImage.sourceUrl)
+        assertEquals("![KMP Diagram](https://example.com/kmp.jpg)", inspectedImage.markdownImage)
+
+        val visionContent = visionResult.content as JsonObject
+        assertFalse(visionContent.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY))
+        val inspectedArray = visionContent["inspected_images"] as? JsonArray
+        assertNotNull(inspectedArray)
+        assertEquals(1, inspectedArray!!.size)
+        val meta = inspectedArray[0] as JsonObject
+        assertEquals("KMP Diagram", (meta["title"] as JsonPrimitive).content)
+
+        // When vision is NOT supported
+        val nonVisionResults = extractInjectedImagePayloads(listOf(toolResult), supportsVision = false)
+        assertEquals(1, nonVisionResults.size)
+        assertTrue(
+            "Non-vision model must not receive inspectedImages payloads",
+            nonVisionResults.first().inspectedImages.isEmpty()
+        )
+    }
+
+    @Test
+    fun stripEphemeralToolImagePayloads_clearsBase64UrlWhilePreservingMetadata() {
+        val messages = listOf(
+            UIMessage(
+                role = MessageRole.TOOL,
+                parts = listOf(
+                    UIMessagePart.ToolResult(
+                        toolCallId = "c1",
+                        toolName = "search_web",
+                        content = buildJsonObject { },
+                        arguments = buildJsonObject { },
+                        inspectedImages = listOf(
+                            me.rerere.ai.ui.ToolResultImage(
+                                url = "data:image/jpeg;base64,ephemeral_bytes",
+                                mimeType = "image/jpeg",
+                                title = "Photo",
+                                sourceUrl = "https://example.com/photo.jpg",
+                                markdownImage = "![Photo](https://example.com/photo.jpg)",
+                                originTool = "search_web",
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val stripped = messages.stripEphemeralToolImagePayloads()
+        val result = stripped[0].parts[0] as UIMessagePart.ToolResult
+        val img = result.inspectedImages[0]
+
+        assertEquals("", img.url)
+        assertEquals("Photo", img.title)
+        assertEquals("https://example.com/photo.jpg", img.sourceUrl)
+        assertEquals("![Photo](https://example.com/photo.jpg)", img.markdownImage)
+        assertEquals("image/jpeg", img.mimeType)
+        assertEquals("search_web", img.originTool)
     }
 }

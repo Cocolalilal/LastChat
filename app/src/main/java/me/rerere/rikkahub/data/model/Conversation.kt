@@ -8,6 +8,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.currentVersionMessages
 import me.rerere.ai.ui.mergeCurrentVersionMessages
+import me.rerere.ai.ui.stripEphemeralToolImagePayloads
 import me.rerere.rikkahub.utils.InstantSerializer
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
 import java.time.Instant
@@ -98,6 +99,20 @@ data class Conversation(
         return this.copy(
             messageNodes = messageNodes.mergeCurrentVersionMessages(messages)
         )
+    }
+
+    fun stripEphemeralToolImagePayloads(): Conversation {
+        var changed = false
+        val newNodes = messageNodes.map { node ->
+            val stripped = node.messages.stripEphemeralToolImagePayloads()
+            if (stripped !== node.messages) {
+                changed = true
+                node.copy(messages = stripped)
+            } else {
+                node
+            }
+        }
+        return if (changed) copy(messageNodes = newNodes) else this
     }
 
     companion object {

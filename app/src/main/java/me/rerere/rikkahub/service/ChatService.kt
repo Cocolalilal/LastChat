@@ -1041,7 +1041,7 @@ class ChatService(
             LogUtil.i(TAG, "persistConversationToRepository: refusing tombstoned ${conversation.id}")
             return false
         }
-        val normalizedConversation = normalizeConversation(conversation)
+        val normalizedConversation = normalizeConversation(conversation).stripEphemeralToolImagePayloads()
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
         val retryDelaysMs = longArrayOf(40L, 120L, 240L)
@@ -1289,24 +1289,14 @@ class ChatService(
                     tools = tools,
                 )
 
-                val (sanitizedResults, injectedGroups) = extractInjectedImagePayloads(listOf(resolution.toolResult))
+                val sanitizedResults = extractInjectedImagePayloads(
+                    listOf(resolution.toolResult),
+                    supportsVision = model.inputModalities.contains(Modality.IMAGE),
+                )
                 val baseToolMessage = UIMessage(
                     role = MessageRole.TOOL,
                     parts = sanitizedResults,
                 )
-                val injectedUserMessage = if (model.inputModalities.contains(Modality.IMAGE) && injectedGroups.isNotEmpty()) {
-                    val parts = buildList {
-                        injectedGroups.forEach { group ->
-                            if (group.images.isNotEmpty()) {
-                                if (group.promptText.isNotBlank()) {
-                                    add(UIMessagePart.Text(group.promptText))
-                                }
-                                addAll(group.images)
-                            }
-                        }
-                    }
-                    if (parts.isNotEmpty()) UIMessage(role = MessageRole.USER, parts = parts) else null
-                } else null
 
                 val updatedConversation = currentConversation
                     .updateToolApprovalState(
@@ -1314,12 +1304,12 @@ class ChatService(
                         approvalState = resolution.approvalState,
                     )
                     .let { conversationWithApproval ->
-                        val newMessages = buildList {
-                            addAll(conversationWithApproval.currentMessages)
-                            add(baseToolMessage)
-                            if (injectedUserMessage != null) {
-                                add(injectedUserMessage)
-                            }
+                        val existing = conversationWithApproval.currentMessages
+                        val lastMsg = existing.lastOrNull()
+                        val newMessages = if (lastMsg?.role == MessageRole.TOOL) {
+                            existing.dropLast(1) + lastMsg.copy(parts = lastMsg.parts + sanitizedResults)
+                        } else {
+                            existing + baseToolMessage
                         }
                         conversationWithApproval.updateCurrentMessages(newMessages)
                     }
@@ -2146,12 +2136,16 @@ class ChatService(
                         }
 
                         val supportsVision = model?.inputModalities?.contains(Modality.IMAGE) == true
-                        val injectedDataUrls = mutableListOf<String>()
-                        val injectedPromptMapping = StringBuilder()
+                        val injectedImageObjects = mutableListOf<JsonObject>()
 
                         if (supportsVision && searchResult.images.isNotEmpty()) {
                             val maxImages = minOf(searchResult.images.size, 4, model?.maxImagesInContext ?: 4)
-                            val candidateImages = searchResult.images.take(maxImages)
+                            val candidateImages = searchResult.images
+                                .filter { img ->
+                                    val lowerUrl = img.url.lowercase()
+                                    !lowerUrl.endsWith(".svg") && !lowerUrl.endsWith(".ico")
+                                }
+                                .take(maxImages)
 
                             coroutineScope {
                                 val downloadJobs = candidateImages.mapIndexed { index, img ->
@@ -2164,25 +2158,43 @@ class ChatService(
                                                         method = "GET",
                                                         headers = mapOf(
                                                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                                                            "Accept" to "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                                                            "Accept" to "image/jpeg,image/png,image/webp;q=0.9",
                                                         ),
                                                     )
                                                 )
                                                 if (response.statusCode in 200..299 && response.body.isNotEmpty()) {
-                                                    val dataUrl = prepareImageForModelInspection(img.url, response.body)
-                                                    Triple(index + 1, img, dataUrl)
+                                                    val contentType = (response.headers.entries
+                                                        .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
+                                                        ?.value?.firstOrNull() ?: "").lowercase()
+                                                    if (contentType.startsWith("text/") || contentType.contains("image/svg")) {
+                                                        null
+                                                    } else {
+                                                        val prepared = me.rerere.rikkahub.data.ai.tools.prepareImageForModelInspection(
+                                                            path = img.url,
+                                                            bytes = response.body,
+                                                            minDimension = 48,
+                                                        )
+                                                        if (prepared != null) {
+                                                            Triple(index + 1, img, prepared)
+                                                        } else null
+                                                    }
                                                 } else null
                                             }
                                         }.getOrNull()
                                     }
                                 }
                                 val downloaded = downloadJobs.awaitAll().filterNotNull()
-                                if (downloaded.isNotEmpty()) {
-                                    injectedPromptMapping.append("The following visual images were retrieved from web search for your inspection. Verify their visual contents before using them:\n")
-                                    downloaded.forEach { (index, img, dataUrl) ->
-                                        injectedDataUrls.add(dataUrl)
-                                        injectedPromptMapping.append("#$index: \"${img.title}\" -> ${img.markdownImage}\n")
-                                    }
+                                downloaded.forEach { (index, img, prepared) ->
+                                    injectedImageObjects.add(
+                                        buildJsonObject {
+                                            put("data_url", JsonPrimitive(prepared.dataUrl))
+                                            put("mime_type", JsonPrimitive(prepared.mimeType))
+                                            put("title", JsonPrimitive(img.title))
+                                            put("source_url", JsonPrimitive(img.url))
+                                            put("markdown_image", JsonPrimitive(img.markdownImage))
+                                            put("origin_tool", JsonPrimitive("search_web"))
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -2203,9 +2215,8 @@ class ChatService(
                                         }
                                     })
                                 }
-                                if (injectedDataUrls.isNotEmpty()) {
-                                    map[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] = JsonArray(injectedDataUrls.map { JsonPrimitive(it) })
-                                    map[TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY] = JsonPrimitive(injectedPromptMapping.toString().trimEnd())
+                                if (injectedImageObjects.isNotEmpty()) {
+                                    map[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] = JsonArray(injectedImageObjects)
                                 }
                                 JsonObject(map)
                             }

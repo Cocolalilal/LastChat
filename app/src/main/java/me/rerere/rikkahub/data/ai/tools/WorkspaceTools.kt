@@ -77,19 +77,33 @@ private fun createReadFileTool(
         if (isImage) {
             if (model?.inputModalities?.contains(Modality.IMAGE) == true) {
                 val bytes = workspaceRepository.readImageBytesInRootfs(workspaceId, path)
-                val dataUrl = prepareImageForModelInspection(path, bytes)
-                buildJsonObject {
-                    put("path", JsonPrimitive(path))
-                    put("sizeBytes", JsonPrimitive(bytes.size))
-                    put("note", JsonPrimitive("Binary image file '$path' detected. Attached below for visual inspection."))
-                    put(
-                        TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
-                        JsonArray(listOf(JsonPrimitive(dataUrl))),
-                    )
-                    put(
-                        TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY,
-                        JsonPrimitive("Image from workspace ($path):"),
-                    )
+                val prepared = prepareImageForModelInspection(path, bytes)
+                if (prepared == null) {
+                    buildJsonObject {
+                        put("path", JsonPrimitive(path))
+                        put("sizeBytes", JsonPrimitive(bytes.size))
+                        put("error", JsonPrimitive("Binary image file '$path' detected, but failed to decode it as a valid raster image for visual inspection."))
+                    }
+                } else {
+                    val imageObj = buildJsonObject {
+                        put("data_url", JsonPrimitive(prepared.dataUrl))
+                        put("mime_type", JsonPrimitive(prepared.mimeType))
+                        put("title", JsonPrimitive(path.substringAfterLast('/')))
+                        put("source_url", JsonPrimitive(path))
+                        put("markdown_image", JsonPrimitive("![${path.substringAfterLast('/')}]($path)"))
+                        put("origin_tool", JsonPrimitive("workspace_read_file"))
+                    }
+                    buildJsonObject {
+                        put("path", JsonPrimitive(path))
+                        put("sizeBytes", JsonPrimitive(bytes.size))
+                        put("width", JsonPrimitive(prepared.width))
+                        put("height", JsonPrimitive(prepared.height))
+                        put("note", JsonPrimitive("Binary image file '$path' (${prepared.width}x${prepared.height}) attached for behind-the-scenes visual inspection."))
+                        put(
+                            TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                            JsonArray(listOf(imageObj)),
+                        )
+                    }
                 }
             } else {
                 buildJsonObject {
@@ -113,7 +127,7 @@ private fun createViewImageTool(
     workspaceRepository: WorkspaceRepository,
 ) = Tool(
     name = "workspace_view_image",
-    description = "Inspect and visually view an image file (PNG, JPG, JPEG, WEBP, GIF, SVG, BMP) from the assistant's bound workspace Rootfs. Available when the active model supports image input. Use this tool to inspect charts, plots, diagrams, screenshots, or photos in the workspace to verify their visual contents before answering or showing them to the user. Paths must be absolute inside Rootfs (e.g. /workspace/chart.png).",
+    description = "Inspect and visually view an image file (PNG, JPG, JPEG, WEBP, GIF, BMP) from the assistant's bound workspace Rootfs. Available when the active model supports image input. Use this tool to inspect charts, plots, diagrams, screenshots, or photos in the workspace to verify their visual contents before answering or showing them to the user. Paths must be absolute inside Rootfs (e.g. /workspace/chart.png).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject { putPathProperty(required = true) },
@@ -124,19 +138,33 @@ private fun createViewImageTool(
     execute = {
         val path = it.jsonObject.absolutePath("path")
         val bytes = workspaceRepository.readImageBytesInRootfs(workspaceId, path)
-        val dataUrl = prepareImageForModelInspection(path, bytes)
-        buildJsonObject {
-            put("path", JsonPrimitive(path))
-            put("sizeBytes", JsonPrimitive(bytes.size))
-            put("note", JsonPrimitive("Image '$path' is attached for visual inspection."))
-            put(
-                TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
-                JsonArray(listOf(JsonPrimitive(dataUrl))),
-            )
-            put(
-                TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY,
-                JsonPrimitive("Image from workspace ($path):"),
-            )
+        val prepared = prepareImageForModelInspection(path, bytes)
+        if (prepared == null) {
+            buildJsonObject {
+                put("path", JsonPrimitive(path))
+                put("sizeBytes", JsonPrimitive(bytes.size))
+                put("error", JsonPrimitive("Failed to decode '$path' as a valid raster image (PNG/JPEG/WEBP/GIF/BMP). Ensure the file is a valid raster image."))
+            }
+        } else {
+            val imageObj = buildJsonObject {
+                put("data_url", JsonPrimitive(prepared.dataUrl))
+                put("mime_type", JsonPrimitive(prepared.mimeType))
+                put("title", JsonPrimitive(path.substringAfterLast('/')))
+                put("source_url", JsonPrimitive(path))
+                put("markdown_image", JsonPrimitive("![${path.substringAfterLast('/')}]($path)"))
+                put("origin_tool", JsonPrimitive("workspace_view_image"))
+            }
+            buildJsonObject {
+                put("path", JsonPrimitive(path))
+                put("sizeBytes", JsonPrimitive(bytes.size))
+                put("width", JsonPrimitive(prepared.width))
+                put("height", JsonPrimitive(prepared.height))
+                put("note", JsonPrimitive("Image '$path' (${prepared.width}x${prepared.height}) attached for behind-the-scenes visual inspection."))
+                put(
+                    TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
+                    JsonArray(listOf(imageObj)),
+                )
+            }
         }
     },
 )
@@ -446,20 +474,56 @@ internal fun guessImageMime(path: String): String {
     }
 }
 
+internal data class PreparedModelImage(
+    val dataUrl: String,
+    val mimeType: String,
+    val width: Int,
+    val height: Int,
+)
+
 internal fun prepareImageForModelInspection(
     path: String,
     bytes: ByteArray,
     maxDimension: Int = 1280,
-): String {
+    minDimension: Int = 1,
+): PreparedModelImage? {
+    if (bytes.size < 12) return null
+    val lowerPath = path.lowercase()
+    if (lowerPath.endsWith(".svg") || lowerPath.endsWith(".ico") || lowerPath.endsWith(".html") || lowerPath.endsWith(".xml")) {
+        return null
+    }
+
+    // Validate image magic bytes to ensure raster image format (PNG, JPEG, WEBP, GIF, BMP)
+    val isPng = bytes.size >= 8 &&
+        bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() && bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()
+    val isJpeg = bytes.size >= 3 &&
+        bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()
+    val isWebp = bytes.size >= 12 &&
+        bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte() && bytes[2] == 'F'.code.toByte() && bytes[3] == 'F'.code.toByte() &&
+        bytes[8] == 'W'.code.toByte() && bytes[9] == 'E'.code.toByte() && bytes[10] == 'B'.code.toByte() && bytes[11] == 'P'.code.toByte()
+    val isGif = bytes.size >= 6 &&
+        bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte() && bytes[2] == 'F'.code.toByte()
+    val isBmp = bytes.size >= 2 &&
+        bytes[0] == 'B'.code.toByte() && bytes[1] == 'M'.code.toByte()
+
+    if (!isPng && !isJpeg && !isWebp && !isGif && !isBmp) {
+        return null
+    }
+
     val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+    try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+    } catch (e: Throwable) {
+        return null
+    }
     val origWidth = boundsOptions.outWidth
     val origHeight = boundsOptions.outHeight
 
     if (origWidth <= 0 || origHeight <= 0) {
-        val mime = guessImageMime(path)
-        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-        return "data:$mime;base64,$base64"
+        return null
+    }
+    if (origWidth < minDimension || origHeight < minDimension) {
+        return null
     }
 
     var sampleSize = 1
@@ -471,12 +535,11 @@ internal fun prepareImageForModelInspection(
         inSampleSize = sampleSize
         inPreferredConfig = Bitmap.Config.ARGB_8888
     }
-    val decodedBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
-        ?: run {
-            val mime = guessImageMime(path)
-            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            return "data:$mime;base64,$base64"
-        }
+    val decodedBitmap = try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+    } catch (e: Throwable) {
+        null
+    } ?: return null
 
     val finalBitmap = try {
         val width = decodedBitmap.width
@@ -493,6 +556,8 @@ internal fun prepareImageForModelInspection(
         decodedBitmap
     }
 
+    val finalWidth = finalBitmap.width
+    val finalHeight = finalBitmap.height
     val hasAlpha = finalBitmap.hasAlpha()
     val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
     val mime = if (hasAlpha) "image/png" else "image/jpeg"
@@ -506,7 +571,13 @@ internal fun prepareImageForModelInspection(
     decodedBitmap.recycle()
 
     val compressedBytes = out.toByteArray()
+    if (compressedBytes.isEmpty()) return null
     val base64 = android.util.Base64.encodeToString(compressedBytes, android.util.Base64.NO_WRAP)
-    return "data:$mime;base64,$base64"
+    return PreparedModelImage(
+        dataUrl = "data:$mime;base64,$base64",
+        mimeType = mime,
+        width = finalWidth,
+        height = finalHeight,
+    )
 }
 
