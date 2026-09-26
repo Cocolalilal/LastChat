@@ -26,7 +26,6 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
-    "workspace_view_image" to false,
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -43,16 +42,12 @@ suspend fun createWorkspaceTools(
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
 
-    val tools = mutableListOf(
+    return listOf(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository, model),
         createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
-    if (model?.inputModalities?.contains(Modality.IMAGE) == true) {
-        tools.add(createViewImageTool(workspaceId, ::needsApproval, workspaceRepository))
-    }
-    return tools
 }
 
 private fun createReadFileTool(
@@ -62,7 +57,7 @@ private fun createReadFileTool(
     model: Model? = null,
 ) = Tool(
     name = "workspace_read_file",
-    description = "Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs. Use /workspace for workspace files or /skills/<skill>/ for a read-only Agent Skill package.",
+    description = "Read or visually inspect a file from the assistant's bound workspace Rootfs. Supports text/code/data files (returns file contents) and raster image files (PNG, JPG, JPEG, WEBP, GIF, BMP — delivers the image for private behind-the-scenes visual inspection when the model supports image input). Paths must be absolute inside Rootfs. Use /workspace for workspace files or /skills/<skill>/ for a read-only Agent Skill package.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject { putPathProperty(required = true) },
@@ -116,54 +111,6 @@ private fun createReadFileTool(
             buildJsonObject {
                 put("path", path)
                 put("text", text)
-            }
-        }
-    },
-)
-
-private fun createViewImageTool(
-    workspaceId: String,
-    needsApproval: (String) -> Boolean,
-    workspaceRepository: WorkspaceRepository,
-) = Tool(
-    name = "workspace_view_image",
-    description = "Inspect and visually view an image file (PNG, JPG, JPEG, WEBP, GIF, BMP) from the assistant's bound workspace Rootfs. Available when the active model supports image input. Use this tool to inspect charts, plots, diagrams, screenshots, or photos in the workspace to verify their visual contents before answering or showing them to the user. Paths must be absolute inside Rootfs (e.g. /workspace/chart.png).",
-    parameters = {
-        InputSchema.Obj(
-            properties = buildJsonObject { putPathProperty(required = true) },
-            required = listOf("path"),
-        )
-    },
-    approvalMode = if (needsApproval("workspace_view_image")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
-    execute = {
-        val path = it.jsonObject.absolutePath("path")
-        val bytes = workspaceRepository.readImageBytesInRootfs(workspaceId, path)
-        val prepared = prepareImageForModelInspection(path, bytes)
-        if (prepared == null) {
-            buildJsonObject {
-                put("path", JsonPrimitive(path))
-                put("sizeBytes", JsonPrimitive(bytes.size))
-                put("error", JsonPrimitive("Failed to decode '$path' as a valid raster image (PNG/JPEG/WEBP/GIF/BMP). Ensure the file is a valid raster image."))
-            }
-        } else {
-            val imageObj = buildJsonObject {
-                put("data_url", JsonPrimitive(prepared.dataUrl))
-                put("mime_type", JsonPrimitive(prepared.mimeType))
-                put("title", JsonPrimitive(path.substringAfterLast('/')))
-                put("source_url", JsonPrimitive(path))
-                put("markdown_image", JsonPrimitive("![${path.substringAfterLast('/')}]($path)"))
-                put("origin_tool", JsonPrimitive("workspace_view_image"))
-            }
-            buildJsonObject {
-                put("path", JsonPrimitive(path))
-                put("sizeBytes", JsonPrimitive(bytes.size))
-                put("width", JsonPrimitive(prepared.width))
-                put("height", JsonPrimitive(prepared.height))
-                put("note", JsonPrimitive("Image '$path' (${prepared.width}x${prepared.height}) attached for behind-the-scenes visual inspection."))
-                put(
-                    TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY,
-                    JsonArray(listOf(imageObj)),
-                )
             }
         }
     },
