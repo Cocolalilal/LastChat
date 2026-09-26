@@ -585,14 +585,19 @@ fun buildToolImageProvenanceText(
     val origin = image.originTool?.takeIf { it.isNotBlank() }
         ?: result.toolName.ifBlank { "tool" }
     val callIdPart = result.toolCallId.takeIf { it.isNotBlank() }?.let { " (tool_call_id=$it)" } ?: ""
+    val embedMarkdown = image.markdownImage?.takeIf { it.isNotBlank() }
+        ?: image.sourceUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            val title = image.title?.takeIf { t -> t.isNotBlank() } ?: "Image"
+            "![$title]($url)"
+        }
     return buildString {
-        append("[Tool Inspected Image #")
+        append("[TOOL VISUAL INSPECTION #")
         append(imageIndex)
         append(" from `")
         append(origin)
         append("`")
         append(callIdPart)
-        append(" — automated tool inspection output, NOT uploaded by the user.")
+        append(" | PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE. NOT UPLOADED BY USER.")
         image.title?.takeIf { it.isNotBlank() }?.let {
             append(" Title: \"")
             append(it)
@@ -603,9 +608,9 @@ fun buildToolImageProvenanceText(
             append(it)
             append(".")
         }
-        image.markdownImage?.takeIf { it.isNotBlank() }?.let {
-            append(" To display this image to the user in your response, embed: ")
-            append(it)
+        if (!embedMarkdown.isNullOrBlank()) {
+            append(" If you want the user to see this image, embed it in your reply using: ")
+            append(embedMarkdown)
         }
         append("]")
     }

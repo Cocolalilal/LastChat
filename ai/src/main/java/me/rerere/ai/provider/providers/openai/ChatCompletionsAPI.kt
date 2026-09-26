@@ -620,8 +620,8 @@ class ChatCompletionsAPI(
                     }
                     if (encodedImages.isNotEmpty()) {
                         val headerText = buildString {
-                            appendLine("[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE]")
-                            appendLine("The following image(s) were returned by tool execution in this turn for your visual inspection. They were NOT uploaded by the user. Use them to inform your answer and only embed markdown images if helpful to the user.")
+                            appendLine("[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT]")
+                            appendLine("The following image(s) were returned by tool execution in this turn for your private visual inspection only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as images the user sent. If the user should see an image, you MUST explicitly embed its markdown syntax (e.g. ![title](url)) in your reply; otherwise the user will see nothing.")
                             provenanceLines.forEach { appendLine(it) }
                         }.trim()
                         add(buildJsonObject {

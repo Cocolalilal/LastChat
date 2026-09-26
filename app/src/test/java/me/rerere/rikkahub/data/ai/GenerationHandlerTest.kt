@@ -10,6 +10,7 @@ import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.buildToolImageProvenanceText
 import me.rerere.ai.ui.stripEphemeralToolImagePayloads
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -173,6 +174,9 @@ class GenerationHandlerTest {
         assertEquals(1, inspectedArray!!.size)
         val meta = inspectedArray[0] as JsonObject
         assertEquals("KMP Diagram", (meta["title"] as JsonPrimitive).content)
+        val notice = visionContent["_notice_to_assistant"] as? JsonPrimitive
+        assertNotNull(notice)
+        assertTrue(notice!!.content.contains("private visual inspection only"))
 
         // When vision is NOT supported
         val nonVisionResults = extractInjectedImagePayloads(listOf(toolResult), supportsVision = false)
@@ -219,5 +223,30 @@ class GenerationHandlerTest {
         assertEquals("![Photo](https://example.com/photo.jpg)", img.markdownImage)
         assertEquals("image/jpeg", img.mimeType)
         assertEquals("search_web", img.originTool)
+    }
+
+    @Test
+    fun buildToolImageProvenanceText_containsPrivateNoticeAndMarkdownEmbed() {
+        val toolResult = UIMessagePart.ToolResult(
+            toolCallId = "call_provenance",
+            toolName = "search_web",
+            content = buildJsonObject { },
+            arguments = buildJsonObject { },
+        )
+        val image = me.rerere.ai.ui.ToolResultImage(
+            url = "data:image/jpeg;base64,data",
+            mimeType = "image/jpeg",
+            title = "Golden Gate Bridge",
+            sourceUrl = "https://example.com/bridge.jpg",
+            markdownImage = "![Golden Gate Bridge](https://example.com/bridge.jpg)",
+            originTool = "search_web",
+        )
+
+        val text = buildToolImageProvenanceText(toolResult, 1, image)
+        assertTrue(text.contains("[TOOL VISUAL INSPECTION #1 from `search_web` (tool_call_id=call_provenance)"))
+        assertTrue(text.contains("PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE. NOT UPLOADED BY USER."))
+        assertTrue(text.contains("Title: \"Golden Gate Bridge\"."))
+        assertTrue(text.contains("Source/Path: https://example.com/bridge.jpg."))
+        assertTrue(text.contains("If you want the user to see this image, embed it in your reply using: ![Golden Gate Bridge](https://example.com/bridge.jpg)"))
     }
 }

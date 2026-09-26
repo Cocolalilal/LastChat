@@ -136,6 +136,8 @@ class ProviderMultimodalToolSerializationTest {
         assertEquals("text", textBlock["type"]?.jsonPrimitive?.content)
         val text = textBlock["text"]?.jsonPrimitive?.content.orEmpty()
         assertTrue("Text must contain automated provenance", text.contains("AUTOMATED TOOL VISUAL OUTPUT"))
+        assertTrue("Text must mention PRIVATE TO ASSISTANT", text.contains("PRIVATE TO ASSISTANT"))
+        assertTrue("Text must warn user cannot see them", text.contains("The user CANNOT see them and did NOT upload them"))
         assertTrue("Text must mention source tool", text.contains("search_web"))
         assertTrue("Text must include markdown syntax", text.contains("![Sample Result]"))
 
@@ -181,13 +183,21 @@ class ProviderMultimodalToolSerializationTest {
         assertEquals("search_web", fnResponse["name"]?.jsonPrimitive?.content)
 
         val responseObj = fnResponse["response"]?.jsonObject ?: error("response object missing")
-        assertNotNull(responseObj["inspected_image_provenance"])
+        val provArray = responseObj["inspected_image_provenance"]?.jsonArray ?: error("inspected_image_provenance missing")
+        assertEquals(1, provArray.size)
+        val provStr = provArray[0].jsonPrimitive.content
+        assertTrue(provStr.contains("PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE. NOT UPLOADED BY USER."))
+        assertTrue(provStr.contains("![Sample Result](https://example.com/sample.png)"))
+        assertEquals(
+            "PRIVATE_TO_ASSISTANT - The user cannot see these images. The user did NOT upload them. You must embed their markdown image syntax in your reply if the user should see them.",
+            responseObj["user_visibility"]?.jsonPrimitive?.content,
+        )
 
         val nestedParts = fnResponse["parts"]?.jsonArray ?: error("Gemini 3 parts array missing in functionResponse")
         assertEquals(1, nestedParts.size)
         val inlineData = nestedParts[0].jsonObject["inlineData"]?.jsonObject ?: error("inlineData missing")
         assertEquals("image/png", inlineData["mimeType"]?.jsonPrimitive?.content)
-        assertEquals("Sample Result", inlineData["displayName"]?.jsonPrimitive?.content)
+        assertEquals("tool_image_1", inlineData["displayName"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -221,8 +231,18 @@ class ProviderMultimodalToolSerializationTest {
         // functionResponse + sibling text + sibling inline_data
         assertEquals(3, parts.size)
 
-        assertNotNull(parts[0].jsonObject["functionResponse"])
-        assertTrue(parts[1].jsonObject["text"]?.jsonPrimitive?.content?.contains("AUTOMATED TOOL") == true)
+        val fnResponse = parts[0].jsonObject["functionResponse"]?.jsonObject ?: error("functionResponse missing")
+        val responseObj = fnResponse["response"]?.jsonObject ?: error("response missing")
+        assertEquals(
+            "PRIVATE_TO_ASSISTANT - The user cannot see these images. The user did NOT upload them. You must embed their markdown image syntax in your reply if the user should see them.",
+            responseObj["user_visibility"]?.jsonPrimitive?.content,
+        )
+
+        val textContent = parts[1].jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(textContent.contains("AUTOMATED TOOL VISUAL OUTPUT"))
+        assertTrue(textContent.contains("PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE"))
+        assertTrue(textContent.contains("The user did NOT upload it and CANNOT see it unless you embed its markdown image syntax in your reply."))
+
         val inlineData = parts[2].jsonObject["inline_data"]?.jsonObject ?: error("inline_data missing")
         assertEquals("image/png", inlineData["mime_type"]?.jsonPrimitive?.content)
     }
@@ -274,7 +294,11 @@ class ProviderMultimodalToolSerializationTest {
         val userParts = userMsg["content"]?.jsonArray ?: error("user parts missing")
         assertEquals(2, userParts.size)
         assertEquals("text", userParts[0].jsonObject["type"]?.jsonPrimitive?.content)
-        assertTrue(userParts[0].jsonObject["text"]?.jsonPrimitive?.content?.contains("AUTOMATED TOOL") == true)
+        val userText = userParts[0].jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(userText.contains("AUTOMATED TOOL VISUAL OUTPUT"))
+        assertTrue(userText.contains("PRIVATE TO ASSISTANT"))
+        assertTrue(userText.contains("The user CANNOT see them and did NOT upload them"))
+        assertTrue(userText.contains("PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE. NOT UPLOADED BY USER."))
 
         val imagePart = userParts[1].jsonObject
         assertEquals("image_url", imagePart["type"]?.jsonPrimitive?.content)
@@ -328,7 +352,11 @@ class ProviderMultimodalToolSerializationTest {
         val contentParts = userItem["content"]?.jsonArray ?: error("content missing")
         assertEquals(2, contentParts.size)
         assertEquals("input_text", contentParts[0].jsonObject["type"]?.jsonPrimitive?.content)
-        assertTrue(contentParts[0].jsonObject["text"]?.jsonPrimitive?.content?.contains("AUTOMATED TOOL") == true)
+        val userText = contentParts[0].jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(userText.contains("AUTOMATED TOOL VISUAL OUTPUT"))
+        assertTrue(userText.contains("PRIVATE TO ASSISTANT"))
+        assertTrue(userText.contains("The user CANNOT see them and did NOT upload them"))
+        assertTrue(userText.contains("PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE. NOT UPLOADED BY USER."))
         assertEquals("input_image", contentParts[1].jsonObject["type"]?.jsonPrimitive?.content)
         assertEquals(samplePngDataUrl, contentParts[1].jsonObject["image_url"]?.jsonPrimitive?.content)
     }

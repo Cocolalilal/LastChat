@@ -462,7 +462,8 @@ class ClaudeProvider(
                                         putJsonArray("content") {
                                             val textHeader = buildString {
                                                 append(baseContent)
-                                                append("\n\n[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE]\n")
+                                                append("\n\n[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT]\n")
+                                                appendLine("The following image(s) were returned by tool execution in this turn for your private visual inspection only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as images the user sent. If the user should see an image, you MUST explicitly embed its markdown syntax (e.g. ![title](url)) in your reply; otherwise the user will see nothing.")
                                                 activeImages.forEachIndexed { imgIdx, img ->
                                                     appendLine(me.rerere.ai.ui.buildToolImageProvenanceText(result, imgIdx + 1, img))
                                                 }

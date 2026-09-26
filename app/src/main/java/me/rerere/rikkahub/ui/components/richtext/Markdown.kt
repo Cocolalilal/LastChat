@@ -841,7 +841,6 @@ fun MarkdownBlock(
                             Modifier
                         }
                     )
-                    .padding(start = 4.dp)
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
@@ -1265,10 +1264,12 @@ private fun MarkdownNode(
 
         // 列表
         MarkdownElementTypes.UNORDERED_LIST -> {
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             UnorderedListNode(
                 node = node,
                 content = content,
-                modifier = modifier.padding(vertical = 4.dp),
+                modifier = modifier.padding(bottom = bottomPadding),
                 onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                 onClickCitation = onClickCitation,
                 level = listLevel
@@ -1276,10 +1277,12 @@ private fun MarkdownNode(
         }
 
         MarkdownElementTypes.ORDERED_LIST -> {
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             OrderedListNode(
                 node = node,
                 content = content,
-                modifier = modifier.padding(vertical = 4.dp),
+                modifier = modifier.padding(bottom = bottomPadding),
                 onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                 onClickCitation = onClickCitation,
                 level = listLevel
@@ -1321,12 +1324,15 @@ private fun MarkdownNode(
                 fontStyle = FontStyle.Italic,
                 color = rpColor ?: Color.Unspecified
             )
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             ProvideTextStyle(textStyle) {
                 val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                 val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
                 CompositionLocalProvider(LocalLayoutDirection provides quoteLayoutDirection) {
                     Column(
-                        modifier = Modifier
+                        modifier = modifier
+                            .padding(bottom = bottomPadding)
                             .drawWithContent {
                                 drawContent()
                                 drawRect(color = bgColor, size = size)
@@ -1438,8 +1444,10 @@ private fun MarkdownNode(
         }
 
         MarkdownTokenTypes.HORIZONTAL_RULE -> {
+            val topPadding = if (node.parent?.children?.firstOrNull { it.type != MarkdownTokenTypes.EOL } == node) 0.dp else 12.dp
+            val bottomPadding = if (node.nextRenderableSibling() != null) 12.dp else 0.dp
             HorizontalDivider(
-                modifier = Modifier.padding(vertical = 16.dp),
+                modifier = modifier.padding(top = topPadding, bottom = bottomPadding),
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                 thickness = 0.5.dp
             )
@@ -1471,8 +1479,15 @@ private fun MarkdownNode(
                 mutableStateOf(resolveImageDisplayInfo(imageContext, imageModel))
             }
 
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.parent?.type == MarkdownElementTypes.MARKDOWN_FILE && node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
+                paragraphSpacing
+            } else {
+                0.dp
+            }
+
             Column(
-                modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally
+                modifier = modifier.padding(bottom = bottomPadding), horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val info = reservedInfo
                 val reservedModifier = if (info != null && info.widthPx > 0 && info.heightPx > 0) {
@@ -1516,10 +1531,12 @@ private fun MarkdownNode(
 
         GFMElementTypes.BLOCK_MATH -> {
             val formula = node.getTextInNode(content)
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             MathBlock(
                 formula, modifier = modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .padding(bottom = bottomPadding)
             )
         }
 
@@ -1539,12 +1556,14 @@ private fun MarkdownNode(
 
         MarkdownElementTypes.CODE_BLOCK -> {
             val code = node.getTextInNode(content)
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 HighlightCodeBlock(
                     code = code,
                     language = "plaintext",
-                    modifier = Modifier
-                        .padding(bottom = 4.dp)
+                    modifier = modifier
+                        .padding(bottom = bottomPadding)
                         .fillMaxWidth(),
                     onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                     completeCodeBlock = true
@@ -1571,22 +1590,24 @@ private fun MarkdownNode(
                 node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(content) ?: "plaintext"
             val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
 
             // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
                         code = code,
-                        modifier = Modifier
-                            .padding(bottom = 4.dp)
+                        modifier = modifier
+                            .padding(bottom = bottomPadding)
                             .fillMaxWidth(),
                     )
                 } else {
                     HighlightCodeBlock(
                         code = code,
                         language = normalizedLanguage,
-                        modifier = Modifier
-                            .padding(bottom = 4.dp)
+                        modifier = modifier
+                            .padding(bottom = bottomPadding)
                             .fillMaxWidth(),
                         onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                         completeCodeBlock = hasEnd
@@ -1625,8 +1646,10 @@ private fun MarkdownNode(
 
         MarkdownElementTypes.HTML_BLOCK -> {
             val text = node.getTextInNode(content)
+            val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             SimpleHtmlBlock(
-                html = text, modifier = modifier
+                html = text, modifier = modifier.padding(bottom = bottomPadding)
             )
         }
 
@@ -1836,15 +1859,27 @@ private fun Paragraph(
     // dumpAst(node, content)
     val paragraphDirection = rememberContentDirection(node.getTextInNode(content))
     if (node.findChildOfTypeRecursive(MarkdownElementTypes.IMAGE, GFMElementTypes.BLOCK_MATH) != null) {
+        val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+        val bottomModifier = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
+            Modifier.padding(bottom = paragraphSpacing)
+        } else {
+            Modifier
+        }
         CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
-            FlowRow(modifier = modifier) {
+            FlowRow(
+                modifier = modifier.then(bottomModifier),
+                verticalArrangement = Arrangement.spacedBy(paragraphSpacing),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 node.children.fastForEach { child ->
-                    MarkdownNode(
-                        node = child,
-                        content = content,
-                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                        onClickCitation = onClickCitation
-                    )
+                    if (child.type != MarkdownTokenTypes.EOL) {
+                        MarkdownNode(
+                            node = child,
+                            content = content,
+                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                            onClickCitation = onClickCitation
+                        )
+                    }
                 }
             }
         }
@@ -1959,12 +1994,14 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
         }
     }
 
+    val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+    val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
     // 渲染表格
     CompositionLocalProvider(LocalLayoutDirection provides tableDirection.toLayoutDirection()) {
         DataTable(
             headers = headers,
             rows = rowComposables,
-            modifier = modifier.padding(vertical = 8.dp),
+            modifier = modifier.padding(bottom = bottomPadding),
             columnMinWidths = List(columnCount) { 80.dp },
             columnMaxWidths = List(columnCount) { 200.dp },
         )

@@ -97,6 +97,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
     if (supportsVision) {
         appendLine("- When you want to see what an image or diagram in the workspace looks like, or before you display an image to the user, call `workspace_view_image` to inspect it visually.")
+        appendLine("- Tool-inspected workspace images are private behind-the-scenes visual inspection data for your eyes only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as \"the images you sent\". If you want the user to see a workspace image or diagram, you MUST explicitly output its markdown image link `![title](url)` in your reply; otherwise the user will see nothing.")
     }
     appendLine("- If you need to inspect the environment, call `workspace_shell`. Do not claim that you checked, installed, read, wrote, or generated anything unless a workspace tool result is present in the conversation.")
     appendLine("- If a workspace tool call is pending user approval, wait for the approval/result instead of guessing the outcome.")

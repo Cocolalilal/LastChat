@@ -2222,7 +2222,6 @@ class ChatService(
                             }
                         results
                     }, systemPrompt = { promptModel, messages ->
-                        if (promptModel.tools.isNotEmpty()) return@Tool ""
                         val hasToolCall =
                             messages.any { it.getToolCalls().any { toolCall -> toolCall.toolName == "search_web" } }
                         val prompt = StringBuilder()
@@ -2238,11 +2237,12 @@ class ChatService(
                     - Today is {{cur_date}}
                     - Trust structured weather `answer` fields over encyclopedia snippets.
                     - For news, prefer items with recent `publishedAt` dates. Do not treat Wikipedia as live news.
-                    - When the result includes an `images` array, put 1–4 relevant `markdown_image` values each on their own line in your reply so they render inline. Use photos, maps, product shots, or diagrams when they help.
+                    - Search results and any retrieved images are private behind-the-scenes data for your eyes only. The user CANNOT see them and did NOT provide or upload them.
+                    - When the result includes an `images` array, if the user asks for images or if an image is useful, put 1–4 relevant `markdown_image` values (e.g. `![title](url)`) each on their own line in your reply so they render inline for the user. If you do not explicitly embed `![title](url)`, the user will see nothing.
                     """.trimIndent()
                         )
                         if (visionSupported) {
-                            prompt.append("\n- When images are retrieved from a search, they are automatically delivered directly into your context for visual inspection so you can see what they look like. Always verify that an image accurately depicts what you intended before recommending or embedding its `markdown_image` link in your response.")
+                            prompt.append("\n- When images are retrieved from a search, they are automatically delivered directly into your context for your private visual inspection so you can verify what they look like before deciding whether to show them. Remember: the user CANNOT see these images and did NOT provide them; you must embed `![title](url)` in your reply if the user should see them.")
                         }
                         if (hasToolCall) {
                             prompt.append(

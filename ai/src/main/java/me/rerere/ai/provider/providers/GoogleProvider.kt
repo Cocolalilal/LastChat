@@ -779,15 +779,14 @@ class GoogleProvider(
                                                 put("name", part.toolName)
                                                 put("response", buildJsonObject {
                                                     put("result", part.content)
+                                                    put("user_visibility", "PRIVATE_TO_ASSISTANT - The user cannot see these images. The user did NOT upload them. You must embed their markdown image syntax in your reply if the user should see them.")
                                                     put("inspected_image_provenance", provenanceArray)
                                                 })
                                                 putJsonArray("parts") {
                                                     activeImages.forEachIndexed { imgIdx, img ->
                                                         mediaEncoder.encodeImage(img.url, withPrefix = false).onSuccess { base64Data ->
                                                             val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(img.url, img.mimeType)
-                                                            val displayName = img.title?.takeIf { it.isNotBlank() }
-                                                                ?: img.sourceUrl?.takeIf { it.isNotBlank() }
-                                                                ?: "tool_image_${imgIdx + 1}"
+                                                            val displayName = "tool_image_${imgIdx + 1}"
                                                             add(buildJsonObject {
                                                                 put("inlineData", buildJsonObject {
                                                                     put("displayName", displayName)
@@ -809,11 +808,15 @@ class GoogleProvider(
                                                 put("name", part.toolName)
                                                 put("response", buildJsonObject {
                                                     put("result", part.content)
+                                                    if (activeImages.isNotEmpty()) {
+                                                        put("user_visibility", "PRIVATE_TO_ASSISTANT - The user cannot see these images. The user did NOT upload them. You must embed their markdown image syntax in your reply if the user should see them.")
+                                                    }
                                                 })
                                             })
                                         })
                                         activeImages.forEachIndexed { imgIdx, img ->
-                                            val provenance = "[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE]\n" +
+                                            val provenance = "[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT — THE USER CANNOT SEE THIS IMAGE]\n" +
+                                                "This image was retrieved by tool execution for your private visual inspection only. The user did NOT upload it and CANNOT see it unless you embed its markdown image syntax in your reply.\n" +
                                                 me.rerere.ai.ui.buildToolImageProvenanceText(part, imgIdx + 1, img)
                                             mediaEncoder.encodeImage(img.url, withPrefix = false).onSuccess { base64Data ->
                                                 val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(img.url, img.mimeType)

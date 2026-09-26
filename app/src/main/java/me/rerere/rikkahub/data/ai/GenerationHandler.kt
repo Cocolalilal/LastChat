@@ -207,6 +207,9 @@ internal fun extractInjectedImagePayloads(
             sanitizedMap.remove(TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY)
             if (inspectedMetadata.isNotEmpty()) {
                 sanitizedMap["inspected_images"] = JsonArray(inspectedMetadata)
+                sanitizedMap["_notice_to_assistant"] = JsonPrimitive(
+                    "These images were fetched by tool execution for your private visual inspection only. The user CANNOT see them. The user DID NOT upload them. If the user should see an image, you MUST output its markdown syntax (e.g. ![title](url)) in your reply."
+                )
             }
             result.copy(
                 content = JsonObject(sanitizedMap),
@@ -1171,6 +1174,22 @@ class GenerationHandler(
         if (toolSystemPromptText.isNotBlank()) {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(toolSystemPromptText)
+        }
+
+        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
+        val hasVisualToolResults = messages.any { msg ->
+            msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
+        }
+        if (model.inputModalities.contains(Modality.IMAGE) && (effectiveTools.any { it.name in visualToolNames } || hasVisualToolResults)) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ## Tool Visual Inspection & User Privacy Guidelines
+                - Tool-inspected images (from web search, workspace files, screenshots, etc.) are private behind-the-scenes visual inspection data delivered for your eyes only. The user CANNOT see them.
+                - The user DID NOT upload, provide, or see these tool images. Do NOT refer to them as "the images you sent", "the images you uploaded", or "the images you provided".
+                - If the user asks for images, or if an image from search or workspace is useful or relevant to show, you MUST explicitly output the markdown image link `![title](url)` in your final response to the user. Otherwise, the user will see nothing.
+                """.trimIndent()
+            )
         }
         val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
             ContextTokenEstimator.toolDefinitionText(tool)
