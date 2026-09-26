@@ -76,7 +76,10 @@ fun GroupedMessageBubble(
         }
     }
     val bubbleContent: @Composable () -> Unit = {
-        Column(modifier = Modifier.padding(12.dp), content = content)
+        // Roomier sides than before: horizontal inset matches the airier top/bottom
+        // rhythm (bubble padding + paragraph spacing), so text, images, code blocks
+        // and tables all sit evenly inside the bubble.
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), content = content)
     }
     if (onClick != null) {
         Surface(

@@ -101,12 +101,24 @@ android {
         }
     }
 
+    // Low-RAM escape hatch: packaging 3 ABI splits + a universal APK (each
+    // ~150-250 MB with the bundled web UI) inside one Gradle daemon OOMs on
+    // 8 GB dev machines (see :app:packageStableRelease IncrementalSplitterRunnable).
+    //   -Plastchat.abi.splits=false -> single APK (all ABIs), least memory
+    // NOTE: there is intentionally no universal-only opt-out: with splits enabled
+    // but isUniversalApk=false, AGP rejects the ndk.abiFilters + splits combination
+    // ("Conflicting configuration ... cannot be present when splits abi filters
+    // are set"). CI defaults (splits + universal APK) are unchanged.
+    val disableAbiSplits = providers.gradleProperty("lastchat.abi.splits")
+        .map { it.equals("false", ignoreCase = true) }
+        .orElse(false)
+
     splits {
         abi {
             // AppBundle tasks usually contain "bundle" in their name
             //noinspection WrongGradleMethod
             val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
-            isEnable = !isBuildingBundle
+            isEnable = !isBuildingBundle && !disableAbiSplits.get()
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
