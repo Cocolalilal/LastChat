@@ -1497,8 +1497,13 @@ private fun MarkdownNode(
                         .fillMaxWidth()
                         .aspectRatio(info.aspectRatio)
                 } else {
+                    // Intrinsic size unknown (typical for remote URLs): still take the full
+                    // row width so consecutive images stack vertically — and following text
+                    // drops below the image — with the regular paragraph spacing between
+                    // them, instead of squeezing side-by-side with only the small
+                    // horizontal gap. The real aspect box is applied onSizeResolved below.
                     Modifier
-                        .widthIn(min = 120.dp)
+                        .fillMaxWidth()
                         .heightIn(min = 120.dp)
                 }
                 // 这里可以使用Coil等图片加载库加载图片

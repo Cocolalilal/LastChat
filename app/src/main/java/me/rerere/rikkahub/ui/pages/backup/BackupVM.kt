@@ -16,6 +16,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager
+import me.rerere.rikkahub.data.sync.BackupContentOption
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.importer.ChatboxImporter
 import me.rerere.rikkahub.data.sync.importer.CherryStudioProviderImporter
@@ -30,6 +32,7 @@ class BackupVM(
     private val webdavSync: WebdavSync,
     private val modelMetadataResolver: ModelMetadataResolver,
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
+    private val environmentManager: WorkspaceEnvironmentManager,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -75,22 +78,30 @@ class BackupVM(
     }
 
     suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {
-        return webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
+        val result = webdavSync.restoreFromWebDav(webDavConfig = settings.value.webDavConfig, item = item)
+        environmentManager.autoRestoreWorkspaces(result.workspacesMetadata)
+        return result
     }
 
     suspend fun deleteWebDavBackupFile(item: WebDavBackupItem) {
         webdavSync.deleteWebDavBackupFile(settings.value.webDavConfig, item)
     }
 
-    suspend fun exportToFile(selectedKeyIds: Set<kotlin.uuid.Uuid>? = null): File {
+    suspend fun exportToFile(
+        selectedContent: Set<BackupContentOption>? = null,
+        selectedKeyIds: Set<kotlin.uuid.Uuid>? = null,
+    ): File {
         return webdavSync.prepareBackupFile(
             settings.value.webDavConfig.copy(items = WebDavConfig.BackupItem.entries),
-            selectedKeyIds = selectedKeyIds
+            selectedContent = selectedContent,
+            selectedKeyIds = selectedKeyIds,
         )
     }
 
     suspend fun restoreFromLocalFile(file: File): WebdavSync.RestoreResult {
-        return webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+        val result = webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+        environmentManager.autoRestoreWorkspaces(result.workspacesMetadata)
+        return result
     }
 
     suspend fun getAssistantsSnapshot(): List<Assistant> {

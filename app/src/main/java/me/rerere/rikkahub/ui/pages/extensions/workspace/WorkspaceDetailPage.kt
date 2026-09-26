@@ -58,6 +58,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.service.workspace.WorkspaceRuntimeSupport
+import me.rerere.rikkahub.service.workspace.defaultRootfsUrl
+import me.rerere.rikkahub.service.workspace.workspaceRuntimeSupport
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -216,6 +219,7 @@ fun WorkspaceDetailPage(id: String) {
                         pythonInstalling = pythonInstalling,
                         pythonInstalled = pythonInstalled,
                         onInstallPython = { showPythonInstallDialog = true },
+                        onCancelEnvironment = vm::cancelEnvironmentTask,
                         onRename = vm::rename,
                         onToolApprovalChange = vm::setToolApproval,
                         runtimeSupport = runtimeSupport,
@@ -479,6 +483,7 @@ private fun WorkspaceBasicPage(
     pythonInstalling: Boolean,
     pythonInstalled: Boolean,
     onInstallPython: () -> Unit,
+    onCancelEnvironment: () -> Unit,
     onRename: (String) -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
     runtimeSupport: WorkspaceRuntimeSupport,
@@ -591,6 +596,12 @@ private fun WorkspaceBasicPage(
 
                     installProgress?.let { progress ->
                         RootfsProgress(progress)
+                        TextButton(
+                            onClick = onCancelEnvironment,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.common_cancel))
+                        }
                     }
 
                     // Python install button — separate from rootfs install
@@ -618,6 +629,12 @@ private fun WorkspaceBasicPage(
                         LinearProgressIndicator(
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        TextButton(
+                            onClick = onCancelEnvironment,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.common_cancel))
+                        }
                     }
                 }
             }
@@ -1120,54 +1137,4 @@ internal fun String.toShellStatusLabel(): String = when (this) {
     WorkspaceShellStatus.READY.name -> stringResource(R.string.workspace_detail_shell_ready)
     WorkspaceShellStatus.BROKEN.name -> stringResource(R.string.workspace_detail_shell_broken)
     else -> lowercase()
-}
-
-private data class WorkspaceRuntimeSupport(
-    val supported: Boolean,
-    val abi: String?,
-    val message: String,
-)
-
-private fun workspaceRuntimeSupport(nativeLibraryDir: String): WorkspaceRuntimeSupport {
-    val nativePath = nativeLibraryDir.lowercase()
-    val abi = when {
-        "x86_64" in nativePath -> "x86_64"
-        "arm64" in nativePath || "aarch64" in nativePath -> "arm64-v8a"
-        "armeabi" in nativePath || "/arm" in nativePath || "\\arm" in nativePath -> "armeabi-v7a"
-        else -> Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
-            ?: Build.SUPPORTED_ABIS.firstOrNull()
-    }
-    return when (abi) {
-        "arm64-v8a", "x86_64", "armeabi-v7a", "armeabi" -> WorkspaceRuntimeSupport(
-            supported = true,
-            abi = abi,
-            message = "",
-        )
-        else -> WorkspaceRuntimeSupport(
-            supported = false,
-            abi = abi,
-            message = "Linux workspaces are not available for this device ABI: ${abi ?: "unknown"}.",
-        )
-    }
-}
-
-private fun defaultRootfsUrl(nativeLibraryDir: String): String {
-    val nativePath = nativeLibraryDir.lowercase()
-    val abi = when {
-        "x86_64" in nativePath -> "x86_64"
-        "arm64" in nativePath || "aarch64" in nativePath -> "arm64-v8a"
-        "armeabi" in nativePath || "/arm" in nativePath || "\\arm" in nativePath -> "armeabi-v7a"
-        else -> Build.SUPPORTED_64_BIT_ABIS.firstOrNull()
-            ?: Build.SUPPORTED_ABIS.firstOrNull()
-            ?: "arm64-v8a"
-    }
-    if (abi == "armeabi-v7a" || abi == "armeabi") {
-        return "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armv7/alpine-minirootfs-3.19.9-armv7.tar.gz"
-    }
-    val arch = when (abi) {
-        "x86_64" -> "amd64"
-        "arm64-v8a" -> "arm64"
-        else -> "arm64"
-    }
-    return "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-$arch.tar.gz"
 }

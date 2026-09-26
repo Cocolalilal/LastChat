@@ -84,6 +84,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.sync.BackupContentOption
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -844,7 +845,8 @@ private fun ImportExportPage(
     var isExporting by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
-    var showExportKeyDialog by remember { mutableStateOf(false) }
+    var showExportContentDialog by remember { mutableStateOf(false) }
+    var selectedExportContent by remember { mutableStateOf<Set<BackupContentOption>?>(null) }
     var selectedExportKeyIds by remember { mutableStateOf<Set<kotlin.uuid.Uuid>?>(null) }
 
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
@@ -890,7 +892,10 @@ private fun ImportExportPage(
                 isExporting = true
                 runCatching {
                     // 导出文件
-                    val exportFile = vm.exportToFile(selectedKeyIds = selectedExportKeyIds)
+                    val exportFile = vm.exportToFile(
+                        selectedContent = selectedExportContent,
+                        selectedKeyIds = selectedExportKeyIds,
+                    )
 
                     // 复制到用户选择的位置
                     withContext(Dispatchers.IO) {
@@ -1043,13 +1048,14 @@ private fun ImportExportPage(
         )
     }
 
-    if (showExportKeyDialog) {
-        ExportKeySelectionDialog(
+    if (showExportContentDialog) {
+        ExportContentSelectionDialog(
             providers = settings.providers,
-            onDismiss = { showExportKeyDialog = false },
-            onConfirm = { selectedIds ->
-                showExportKeyDialog = false
-                selectedExportKeyIds = selectedIds
+            onDismiss = { showExportContentDialog = false },
+            onConfirm = { selectedContent, selectedKeys ->
+                showExportContentDialog = false
+                selectedExportContent = selectedContent
+                selectedExportKeyIds = selectedKeys
                 val timestamp = LocalDateTime.now()
                     .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
                 createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
@@ -1084,16 +1090,7 @@ private fun ImportExportPage(
                     },
                     onClick = {
                         if (!isExporting) {
-                            val providers = settings.providers
-                            val hasKeys = providers.any { it.apiKeyPool.isNotEmpty() }
-                            if (hasKeys) {
-                                showExportKeyDialog = true
-                            } else {
-                                selectedExportKeyIds = null
-                                val timestamp = LocalDateTime.now()
-                                    .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                                createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
-                            }
+                            showExportContentDialog = true
                         }
                     }
                 )
@@ -1257,8 +1254,7 @@ private fun BackupDialog(
                 Text(stringResource(R.string.backup_page_restart_desc))
                 
                 result?.let {
-                    if (it.sanitization.skippedRows > 0 || it.settingsCleanup.totalIssuesFixed > 0 || it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
-                        Card(
+                    if (it.sanitization.skippedRows > 0 || it.settingsCleanup.totalIssuesFixed > 0 || it.settingsCleanup.unsupportedZipEntriesBytes > 0) {                        Card(
                             colors = androidx.compose.material3.CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
                                 contentColor = MaterialTheme.colorScheme.onErrorContainer
@@ -1293,6 +1289,32 @@ private fun BackupDialog(
                                         )
                                     )
                                 }
+                            }
+                        }
+                    }
+                    val envTargets = it.workspacesMetadata.filter { meta -> meta.hasRootfs }
+                    if (envTargets.isNotEmpty()) {
+                        Card(
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.backup_restore_workspaces_env_title),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.backup_restore_workspaces_env_desc,
+                                        envTargets.size
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         }
                     }

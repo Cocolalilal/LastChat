@@ -40,6 +40,30 @@ object DatabaseSanitizer {
         "memory_projection",
     )
 
+    val CHAT_TABLES = setOf(
+        "ConversationEntity",
+        "MemoryEntity",
+        "GenMediaEntity",
+        "ChatEpisodeEntity",
+        "embedding_cache",
+        "daily_activity",
+        "usage_stats",
+        "chat_attachment",
+        "conversation_attachment_ref",
+        "memory_claim",
+        "memory_claim_fts",
+        "memory_episode_v3",
+        "memory_episode_v3_fts",
+        "memory_source_v3",
+        "memory_source_v3_fts",
+        "memory_ingest_state",
+        "memory_projection",
+    )
+
+    val WORKSPACE_TABLES = setOf(
+        "workspaces",
+    )
+
     data class SanitizationResult(
         val totalRows: Int = 0,
         val skippedRows: Int = 0,
@@ -60,8 +84,12 @@ object DatabaseSanitizer {
      * Sanitizes the given source database file by copying valid data to a new database.
      * Returns the path to the sanitized database file.
      */
-    fun sanitize(context: Context, sourceDbFile: File): Pair<File, SanitizationResult> {
-        val targetDbName = "rikka_hub_sanitized"
+    fun sanitize(
+        context: Context,
+        sourceDbFile: File,
+        targetDbName: String = "rikka_hub_sanitized",
+        allowedTables: Set<String>? = null,
+    ): Pair<File, SanitizationResult> {
         val targetDbFile = context.getDatabasePath(targetDbName)
         
         // Ensure clean state for target
@@ -92,7 +120,13 @@ object DatabaseSanitizer {
             )
             sourceDb = db
 
-            for (table in PORTABLE_TABLES) {
+            val tablesToCopy = if (allowedTables != null) {
+                PORTABLE_TABLES.filter { it in allowedTables }
+            } else {
+                PORTABLE_TABLES
+            }
+
+            for (table in tablesToCopy) {
                 // Check if table exists in source
                 try {
                     val cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table))
@@ -186,5 +220,24 @@ object DatabaseSanitizer {
             skippedBytes = skippedBytes,
             details = if (skipped > 0) "Skipped $skipped rows in $tableName" else ""
         )
+    }
+
+    /**
+     * Creates a temporary sanitized copy of the live database containing only the specified tables.
+     */
+    fun createFilteredExportDatabase(
+        context: Context,
+        allowedTables: Set<String>,
+    ): File {
+        val liveDb = context.getDatabasePath(BackupArchiveFormat.DB_ENTRY)
+        if (!liveDb.exists()) return liveDb
+        val tempExportName = "export_db_${System.currentTimeMillis()}"
+        val (file, _) = sanitize(
+            context = context,
+            sourceDbFile = liveDb,
+            targetDbName = tempExportName,
+            allowedTables = allowedTables,
+        )
+        return file
     }
 }

@@ -127,6 +127,7 @@ val viewModelModule = module {
         me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM(
             id = params[0],
             repository = get(),
+            environmentManager = get(),
         )
     }
 }

@@ -201,6 +201,11 @@
             android:resource="@xml/lastchat_recognition_service" />
     </service>
 
+    <service
+        android:name=".service.workspace.WorkspaceEnvironmentService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+
     <!-- Floating assistant overlay launched by the assist gesture -->
     <activity
         android:name=".ui.activity.AssistantOverlayActivity"
