@@ -577,10 +577,13 @@ internal fun ActivityTimelinePanel(
                     items = entries,
                     key = { index, entry -> "${entry.id}:$index" }
                 ) { index, entry ->
+                    // Optically nested inside the outer panel (InputField = 24dp) with
+                    // 4dp list padding: outer-facing corners step down to 20dp (24 - 4),
+                    // sibling-facing joints stay small at 6dp across the 3dp gaps.
                     val shape = when {
-                        entries.size == 1 -> RoundedCornerShape(16.dp)
-                        index == 0 -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
-                        index == entries.lastIndex -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+                        entries.size == 1 -> RoundedCornerShape(20.dp)
+                        index == 0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+                        index == entries.lastIndex -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
                         else -> RoundedCornerShape(6.dp)
                     }
                     TimelineEntryItem(
@@ -1256,7 +1259,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
 
         if (!summary.isNullOrBlank()) {
             Surface(
-                shape = AppShapes.CardSmall,
+                shape = AppShapes.CardSmallInner8,
                 color = MaterialTheme.colorScheme.secondaryContainer,
             ) {
                 Text(
@@ -1285,7 +1288,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
                     val matchedText = obj["matched_text"]?.jsonPrimitiveOrNull?.contentOrNull
 
                     Surface(
-                        shape = AppShapes.CardSmall,
+                        shape = AppShapes.CardSmallInner8,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                         Column(
@@ -1823,7 +1826,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!answer.isNullOrBlank()) {
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.tertiaryContainer
         ) {
             Text(
@@ -1850,7 +1853,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
                 val host = url?.let { Uri.parse(it).host }
 
                 Surface(
-                    shape = AppShapes.CardSmall,
+                    shape = AppShapes.CardSmallInner8,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Column(
@@ -1907,7 +1910,7 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!content.isNullOrBlank()) {
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -1999,7 +2002,7 @@ private fun AskUserQuestionTimelineCard(
         question.options.none { option -> option.label == answerValue })
 
     Surface(
-        shape = AppShapes.CardSmall,
+        shape = AppShapes.CardSmallInner8,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -2024,7 +2027,9 @@ private fun AskUserQuestionTimelineCard(
                     question.options.forEach { option ->
                         val isSelected = selectedOption == option.label
                         Surface(
-                            shape = AppShapes.CardSmall,
+                            // Nested inside the 8dp question card with 10dp padding:
+                            // step down to 6dp so corners read as optically nested.
+                            shape = RoundedCornerShape(6.dp),
                             color = if (isSelected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                             } else {
@@ -2127,7 +2132,7 @@ private fun PythonTimelineDetails(entry: TimelineEntry.ToolCall) {
         !summary.stderr.isNullOrBlank()
 
     Surface(
-        shape = AppShapes.CardSmall,
+        shape = AppShapes.CardSmallInner8,
         color = if (!summary.error.isNullOrBlank()) {
             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
         } else {
@@ -2398,7 +2403,7 @@ private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.tertiaryContainer
         ) {
             Text(
@@ -2417,7 +2422,7 @@ private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2452,7 +2457,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2471,7 +2476,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmall,
+            shape = AppShapes.CardSmallInner8,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2496,7 +2501,7 @@ private fun TimelineDetailBlock(
         color = MaterialTheme.colorScheme.secondary
     )
     Surface(
-        shape = AppShapes.CardSmall,
+        shape = AppShapes.CardSmallInner8,
         color = containerColor,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -2722,7 +2727,7 @@ private fun MemoryContentBlock(
         color = MaterialTheme.colorScheme.secondary
     )
     Surface(
-        shape = AppShapes.CardSmall,
+        shape = AppShapes.CardSmallInner8,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
