@@ -512,6 +512,7 @@ internal fun ActivityTimelinePanel(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier
             .fillMaxWidth()
+            .clip(AppShapes.InputField)
             .testTag("activity_timeline_panel")
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -557,6 +558,7 @@ internal fun ActivityTimelinePanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = TIMELINE_MAX_HEIGHT_DP.dp)
+                    .clip(AppShapes.InputField)
                     .fadeEdges(
                         topProgress = topFadeProgress,
                         bottomProgress = bottomFadeProgress,
@@ -922,6 +924,7 @@ private fun TimelineAccordionEntry(
         },
         modifier = modifier
             .fillMaxWidth()
+            .clip(shape)
             .animateContentSize(
                 animationSpec = tween(
                     durationMillis = TIMELINE_PANEL_ANIMATION_MS,

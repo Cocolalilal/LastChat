@@ -511,7 +511,10 @@ private fun AnimatedSinglePill(
         SinglePillContentState.Compact(state)
     }
     val surfaceExpanded = requestedContentState !is SinglePillContentState.Compact
-    val expandedRadius = 20.dp
+    val isExpandedTimeline = requestedContentState is SinglePillContentState.ExpandedTimeline
+    // Match the inner ActivityTimelinePanel shape (InputField = 24dp) when the timeline
+    // is expanded, otherwise the outer pill background peeks out around the inner corners.
+    val expandedRadius = if (isExpandedTimeline) 24.dp else 20.dp
 
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
@@ -545,7 +548,10 @@ private fun AnimatedSinglePill(
     
     val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
     val pillColor by animateColorAsState(
-        targetValue = if (isMultipleMinimized) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+        // When the timeline is expanded the inner ActivityTimelinePanel provides its own
+        // surfaceContainerLow background. Keep the outer transparent so a second,
+        // mismatched background can't peek out around the inner rounded corners.
+        targetValue = if (isMultipleMinimized || isExpandedTimeline) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
         animationSpec = tween(150),
         label = "pill_color"
     )
@@ -582,6 +588,7 @@ private fun AnimatedSinglePill(
                     Modifier.height(PILL_HEIGHT)
                 }
             )
+            .clip(pillShape)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         shape = pillShape,
         color = pillColor,
