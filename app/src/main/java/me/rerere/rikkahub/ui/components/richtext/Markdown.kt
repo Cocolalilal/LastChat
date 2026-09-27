@@ -462,6 +462,15 @@ val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
 val LocalMarkdownWorkspaceId = compositionLocalOf<String?> { null }
 
 /**
+ * Optical edge compensation for opaque full-bleed blocks (images, code blocks, tables)
+ * nested inside message bubbles. GroupedMessageBubble pads its content 16.dp horizontally
+ * but only 12.dp vertically, so a leading/trailing box would sit 4.dp closer to the bubble
+ * edge top/bottom than to the sides. Boxes absorb that difference themselves so every
+ * nested element keeps an even optical inset on all sides.
+ */
+private val BubbleEdgeCompensation = 4.dp
+
+/**
  * Safely get color from RP style rule for a given pattern.
  * Returns null if pattern not found, not enabled, or color parsing fails.
  */
@@ -1480,14 +1489,12 @@ private fun MarkdownNode(
             }
 
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.parent?.type == MarkdownElementTypes.MARKDOWN_FILE && node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
-                paragraphSpacing
-            } else {
-                0.dp
-            }
+            // Block-level images only: an inline image inside a paragraph must not gain gaps.
+            val isBlockImage = node.parent?.type == MarkdownElementTypes.MARKDOWN_FILE
 
             Column(
-                modifier = modifier.padding(bottom = bottomPadding), horizontalAlignment = Alignment.CenterHorizontally
+                modifier = modifier.mediaEdgePadding(node, paragraphSpacing, blockLevel = isBlockImage),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val info = reservedInfo
                 val reservedModifier = if (info != null && info.widthPx > 0 && info.heightPx > 0) {
@@ -1562,13 +1569,12 @@ private fun MarkdownNode(
         MarkdownElementTypes.CODE_BLOCK -> {
             val code = node.getTextInNode(content)
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 HighlightCodeBlock(
                     code = code,
                     language = "plaintext",
                     modifier = modifier
-                        .padding(bottom = bottomPadding)
+                        .mediaEdgePadding(node, paragraphSpacing)
                         .fillMaxWidth(),
                     onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                     completeCodeBlock = true
@@ -1596,7 +1602,6 @@ private fun MarkdownNode(
             val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
 
             // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -1604,7 +1609,7 @@ private fun MarkdownNode(
                     Mermaid(
                         code = code,
                         modifier = modifier
-                            .padding(bottom = bottomPadding)
+                            .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),
                     )
                 } else {
@@ -1612,7 +1617,7 @@ private fun MarkdownNode(
                         code = code,
                         language = normalizedLanguage,
                         modifier = modifier
-                            .padding(bottom = bottomPadding)
+                            .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),
                         onExpandedStreamingContentChanged = onExpandedStreamingCodeBlockChanged,
                         completeCodeBlock = hasEnd
@@ -1865,14 +1870,13 @@ private fun Paragraph(
     val paragraphDirection = rememberContentDirection(node.getTextInNode(content))
     if (node.findChildOfTypeRecursive(MarkdownElementTypes.IMAGE, GFMElementTypes.BLOCK_MATH) != null) {
         val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-        val bottomModifier = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
-            Modifier.padding(bottom = paragraphSpacing)
-        } else {
-            Modifier
-        }
+        // This row usually holds an opaque image: absorb the bubble edge difference here
+        // (see BubbleEdgeCompensation) so a leading/trailing image keeps an even optical
+        // inset. The IMAGE branch itself stays untouched to avoid double compensation.
+        val edgeModifier = Modifier.mediaEdgePadding(node, paragraphSpacing)
         CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
             FlowRow(
-                modifier = modifier.then(bottomModifier),
+                modifier = modifier.then(edgeModifier),
                 verticalArrangement = Arrangement.spacedBy(paragraphSpacing),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -2000,13 +2004,12 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
     }
 
     val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-    val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
     // 渲染表格
     CompositionLocalProvider(LocalLayoutDirection provides tableDirection.toLayoutDirection()) {
         DataTable(
             headers = headers,
             rows = rowComposables,
-            modifier = modifier.padding(bottom = bottomPadding),
+            modifier = modifier.mediaEdgePadding(node, paragraphSpacing),
             columnMinWidths = List(columnCount) { 80.dp },
             columnMaxWidths = List(columnCount) { 200.dp },
         )
@@ -2448,6 +2451,33 @@ private fun ASTNode.nextRenderableSibling(): ASTNode? {
     return siblings
         .drop(currentIndex + 1)
         .firstOrNull { it.type != MarkdownTokenTypes.EOL }
+}
+
+private fun ASTNode.previousRenderableSibling(): ASTNode? {
+    val siblings = this.parent?.children ?: return null
+    val currentIndex = siblings.indexOf(this).takeIf { it >= 0 } ?: return null
+    return siblings
+        .take(currentIndex)
+        .lastOrNull { it.type != MarkdownTokenTypes.EOL }
+}
+
+/**
+ * Outer gaps for an opaque full-bleed block so it stays optically centered inside
+ * rounded containers: regular [paragraphSpacing] toward a following sibling, plus
+ * [BubbleEdgeCompensation] at a leading/trailing edge. Inline content
+ * ([blockLevel] = false, e.g. an image inside a paragraph) is left untouched.
+ */
+private fun Modifier.mediaEdgePadding(
+    node: ASTNode,
+    paragraphSpacing: Dp,
+    blockLevel: Boolean = true,
+): Modifier {
+    if (!blockLevel) return this
+    val next = node.nextRenderableSibling()
+    val top = if (node.previousRenderableSibling() == null) BubbleEdgeCompensation else 0.dp
+    val bottom = (if (next != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp) +
+        if (next == null) BubbleEdgeCompensation else 0.dp
+    return this.padding(top = top, bottom = bottom)
 }
 
 private fun ASTNode.findChildOfTypeRecursive(vararg types: IElementType): ASTNode? {
