@@ -541,7 +541,7 @@ class ChatVM(
         }
     }
 
-    suspend fun forkMessage(message: UIMessage): Conversation {
+    suspend fun forkMessage(message: UIMessage): Conversation? {
         return chatService.forkConversationAtMessage(_conversationId, message.id)
     }
 

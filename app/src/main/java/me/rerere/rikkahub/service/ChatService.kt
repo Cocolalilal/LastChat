@@ -1165,16 +1165,15 @@ class ChatService(
     suspend fun forkConversationAtMessage(
         conversationId: Uuid,
         messageId: Uuid,
-    ): Conversation {
-        val currentConversation = ensureConversationLoaded(conversationId)
-            ?: return Conversation.ofId(Uuid.random())
+    ): Conversation? {
+        val currentConversation = ensureConversationLoaded(conversationId) ?: return null
         val forkConversation = withContext(Dispatchers.IO) {
             buildForkConversationSnapshot(
                 conversation = currentConversation,
                 messageId = messageId,
                 copyAttachmentUrl = ::copyAttachmentUrl,
             )
-        } ?: return Conversation.ofId(Uuid.random())
+        } ?: return null
         saveConversation(forkConversation.id, forkConversation)
         return forkConversation
     }

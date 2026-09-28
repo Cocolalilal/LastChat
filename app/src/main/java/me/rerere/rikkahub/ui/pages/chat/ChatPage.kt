@@ -1569,7 +1569,9 @@ private fun ChatPageContent(
                                     onForkMessage = {
                                         scope.launch {
                                             val forkConversation = vm.forkMessage(it)
-                                            navigateToChatPage(navController, forkConversation.id)
+                                            if (forkConversation != null) {
+                                                navigateToChatPage(navController, forkConversation.id)
+                                            }
                                         }
                                     },
                                 )

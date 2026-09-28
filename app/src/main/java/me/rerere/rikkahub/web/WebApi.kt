@@ -547,6 +547,10 @@ private fun Route.webRoutes(
             val messageId = request.messageId.toUuid("message id")
 
             val fork = chatService.forkConversationAtMessage(conversationId, messageId)
+            if (fork == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "fork_failed"))
+                return@post
+            }
             call.respond(
                 HttpStatusCode.Created,
                 ForkConversationResponse(conversationId = fork.id.toString()),

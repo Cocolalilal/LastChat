@@ -145,7 +145,9 @@ fun Context.exportImage(
             val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
             uri?.let {
                 outputStream = contentResolver.openOutputStream(it)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream!!)
+                val stream = outputStream
+                    ?: throw IllegalStateException("Failed to open MediaStore output stream")
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             }
         } else {
             // Android 9及以下直接写入文件
@@ -200,7 +202,9 @@ fun Context.exportImageFile(
             val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
             uri?.let {
                 outputStream = contentResolver.openOutputStream(it)
-                file.inputStream().copyTo(outputStream!!)
+                val stream = outputStream
+                    ?: throw IllegalStateException("Failed to open MediaStore output stream")
+                file.inputStream().use { input -> input.copyTo(stream) }
             }
         } else {
             // Android 9及以下直接写入文件
@@ -325,7 +329,7 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 val dstUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 if (dstUri != null) {
                     outputStream = contentResolver.openOutputStream(dstUri)
-                    inputStream.copyTo(outputStream!!)
+                    outputStream?.let { inputStream.copyTo(it) } ?: throw IllegalStateException("Failed to open output stream")
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             this@saveToDownloads,
@@ -346,7 +350,7 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val destFile = File(downloadsDir, fileName)
                 outputStream = destFile.sink().buffer().outputStream()
-                inputStream.copyTo(outputStream!!)
+                outputStream?.let { inputStream.copyTo(it) } ?: throw IllegalStateException("Failed to open output stream")
                 
                 // Notify media scanner
                 @Suppress("DEPRECATION")

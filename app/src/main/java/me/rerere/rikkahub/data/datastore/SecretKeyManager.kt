@@ -269,6 +269,15 @@ class SecretKeyManager(
             .filterNot(newProviderIds::contains)
             .forEach(::removeProviderSecrets)
 
+        // Same for TTS providers: deleting a provider must wipe SecureStore keys
+        // or re-adding the same preset silently restores the old API key.
+        val newTtsProviderIds = newSettings.ttsProviders.asSequence().map { it.id }.toHashSet()
+        oldSettings.ttsProviders
+            .asSequence()
+            .map { it.id }
+            .filterNot(newTtsProviderIds::contains)
+            .forEach(::removeTtsProviderSecrets)
+
         // Handle provider secrets (API keys and private keys)
         for (newProvider in newSettings.providers) {
             val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue
