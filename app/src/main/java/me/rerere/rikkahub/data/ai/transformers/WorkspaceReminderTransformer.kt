@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -24,6 +25,7 @@ class WorkspaceReminderTransformer(
     ): List<UIMessage> {
         val id = ctx.assistant.workspaceId?.toString() ?: return messages
         val workspace = workspaceRepository.getById(id) ?: return messages
+        val supportsVision = ctx.model.inputModalities.contains(Modality.IMAGE)
         // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         val prompt = when {
             !ctx.model.abilities.contains(ModelAbility.TOOL) -> buildWorkspaceUnavailablePrompt(
@@ -34,7 +36,7 @@ class WorkspaceReminderTransformer(
                 workspace = workspace,
                 reason = "The workspace rootfs is not ready. The user must install or repair the rootfs before shell and file tools can run."
             )
-            else -> buildWorkspacePrompt(workspace, cwd)
+            else -> buildWorkspacePrompt(workspace, cwd, supportsVision)
         }
 
         // 追加到第一条 system 消息; 若不存在则插入一条
@@ -81,15 +83,23 @@ class WorkspaceReminderTransformer(
     }
 }
 
-private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
+private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null, supportsVision: Boolean = false): String = buildString {
     appendLine("<workspace>")
     appendLine("You have access to a persistent Linux workspace named \"${workspace.name}\", running in a sandboxed proot rootfs environment.")
     appendLine("- The workspace files area is mounted at `/workspace`. Use it as your working directory; files written there persist across turns of this conversation.")
     appendLine("- All paths passed to workspace tools must be absolute and inside the Rootfs (for example `/workspace/notes.md`).")
     appendLine("- Available tools:")
-    appendLine("  - `workspace_read_file`: read file contents.")
+    if (supportsVision) {
+        appendLine("  - `workspace_read_file`: read file contents (text/code/data files) or visually inspect image files (PNG, JPG, WEBP, GIF, BMP).")
+    } else {
+        appendLine("  - `workspace_read_file`: read file contents.")
+    }
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
+    if (supportsVision) {
+        appendLine("- When you want to see what an image or diagram in the workspace looks like, or before you display an image to the user, call `workspace_read_file` with the image path to inspect it visually.")
+        appendLine("- Tool-inspected workspace images are private behind-the-scenes visual inspection data for your eyes only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as \"the images you sent\". If you want the user to see a workspace image or diagram, you MUST explicitly output its markdown image link `![title](url)` in your reply; otherwise the user will see nothing.")
+    }
     appendLine("- If you need to inspect the environment, call `workspace_shell`. Do not claim that you checked, installed, read, wrote, or generated anything unless a workspace tool result is present in the conversation.")
     appendLine("- If a workspace tool call is pending user approval, wait for the approval/result instead of guessing the outcome.")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")

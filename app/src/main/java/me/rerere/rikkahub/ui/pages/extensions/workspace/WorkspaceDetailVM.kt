@@ -17,12 +17,15 @@ import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceCommandResult
+import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager
+import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentTask
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.workspace.WorkspaceShellStatus
 
 class WorkspaceDetailVM(
     private val id: String,
     private val repository: WorkspaceRepository,
+    private val environmentManager: WorkspaceEnvironmentManager,
 ) : ViewModel() {
     private val _state = MutableStateFlow(WorkspaceDetailState())
     val state = _state.asStateFlow()
@@ -48,6 +51,44 @@ class WorkspaceDetailVM(
     init {
         loadWorkspace()
         refresh()
+        observeEnvironmentTasks()
+    }
+
+    private fun observeEnvironmentTasks() {
+        viewModelScope.launch {
+            environmentManager.tasks.collect { tasks ->
+                val task = tasks[id]
+                when (task) {
+                    is WorkspaceEnvironmentTask.InstallingRootfs -> {
+                        _installProgress.value = task.progress
+                        _pythonInstalling.value = false
+                    }
+                    is WorkspaceEnvironmentTask.InstallingPython -> {
+                        _installProgress.value = null
+                        _pythonInstalling.value = true
+                    }
+                    is WorkspaceEnvironmentTask.Completed -> {
+                        _installProgress.value = null
+                        _pythonInstalling.value = false
+                        loadWorkspace()
+                        refresh()
+                    }
+                    is WorkspaceEnvironmentTask.Failed -> {
+                        _installProgress.value = null
+                        _pythonInstalling.value = false
+                        _installError.value = task.error
+                        loadWorkspace()
+                    }
+                    null -> {
+                        if (!environmentManager.isBusy(id)) {
+                            if (_installProgress.value != null && state.value.workspace?.shellStatus == WorkspaceShellStatus.READY.name) {
+                                _installProgress.value = null
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun selectArea(area: WorkspaceStorageArea) {
@@ -196,51 +237,38 @@ class WorkspaceDetailVM(
     }
 
     fun installRootfs(url: String) {
-        viewModelScope.launch {
-            _installError.value = null
-            val workspace = state.value.workspace ?: return@launch
-            _installProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
-            _pythonInstalled.value = false
-            try {
-                repository.installRootfs(workspace.id, url) { progress ->
-                    _installProgress.value = progress
-                }
-                loadWorkspace()
-                refresh()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (error: Throwable) {
-                _installError.value = error.message ?: "Rootfs 安装失败"
-            } finally {
-                _installProgress.value = null
-            }
-        }
+        val workspace = state.value.workspace ?: return
+        _installError.value = null
+        _pythonInstalled.value = false
+        environmentManager.installRootfs(
+            workspaceId = workspace.id,
+            workspaceName = workspace.name,
+            url = url,
+            installPythonAfter = false,
+        )
     }
 
     fun dismissInstallError() {
         _installError.value = null
-    }
-
-    fun installPython() {
-        viewModelScope.launch {
-            _pythonInstallError.value = null
-            val workspace = state.value.workspace ?: return@launch
-            _pythonInstalling.value = true
-            try {
-                repository.installPython(workspace.id)
-                _pythonInstalled.value = true
-            } catch (e: CancellationException) {
-                throw e
-            } catch (error: Throwable) {
-                _pythonInstallError.value = error.message ?: "Python installation failed"
-            } finally {
-                _pythonInstalling.value = false
-            }
-        }
+        environmentManager.clearTask(id)
+    }    fun installPython() {
+        val workspace = state.value.workspace ?: return
+        _pythonInstallError.value = null
+        environmentManager.installPython(
+            workspaceId = workspace.id,
+            workspaceName = workspace.name,
+        )
     }
 
     fun dismissPythonInstallError() {
         _pythonInstallError.value = null
+        environmentManager.clearTask(id)
+    }
+
+    fun cancelEnvironmentTask() {
+        environmentManager.cancel(id)
+        _installProgress.value = null
+        _pythonInstalling.value = false
     }
 
     fun executeTerminalCommand(command: String) {

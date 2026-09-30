@@ -190,11 +190,15 @@ object ContextTokenEstimator {
             textTokens(part.arguments, model),
             12,
         )
-        is UIMessagePart.ToolResult -> saturatedTokenSum(
-            textTokens(part.toolName, model),
-            textTokens(part.content.toString(), model),
-            12,
-        )
+        is UIMessagePart.ToolResult -> {
+            val activeImages = part.inspectedImages.count { it.url.isNotBlank() }
+            saturatedTokenSum(
+                textTokens(part.toolName, model),
+                textTokens(part.content.toString(), model),
+                activeImages * 1_024,
+                12,
+            )
+        }
         is UIMessagePart.Image -> 1_024
         is UIMessagePart.Video -> 4_096
         is UIMessagePart.Audio -> 2_000
@@ -278,8 +282,21 @@ object ContextTokenEstimator {
                 }
                 is UIMessagePart.Video, is UIMessagePart.Audio, is UIMessagePart.Document ->
                     media = saturatedTokenSum(media, partTokens(part, model))
-                is UIMessagePart.ToolCall, is UIMessagePart.ToolResult ->
+                is UIMessagePart.ToolCall ->
                     toolCalls = saturatedTokenSum(toolCalls, partTokens(part, model))
+                is UIMessagePart.ToolResult -> {
+                    val activeImages = part.inspectedImages.count { it.url.isNotBlank() }
+                    val textOnlyToolTokens = saturatedTokenSum(
+                        textTokens(part.toolName, model),
+                        textTokens(part.content.toString(), model),
+                        12,
+                    )
+                    toolCalls = saturatedTokenSum(toolCalls, textOnlyToolTokens)
+                    if (activeImages > 0) {
+                        media = saturatedTokenSum(media, activeImages * 1_024)
+                        images = (images.toLong() + activeImages.toLong()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    }
+                }
                 else -> messageText = saturatedTokenSum(messageText, partTokens(part, model))
             }
         }
@@ -458,14 +475,32 @@ fun List<UIMessage>.limitImagesForModel(model: Model): List<UIMessage> {
     var retained = 0
     return asReversed().map { message ->
         message.copy(parts = message.parts.asReversed().map { part ->
-            if (part is UIMessagePart.Image) {
-                if (retained < limit) {
-                    retained++
-                    part
-                } else {
-                    UIMessagePart.Text("[Earlier image omitted to respect this model's image context limit]")
+            when (part) {
+                is UIMessagePart.Image -> {
+                    if (retained < limit) {
+                        retained++
+                        part
+                    } else {
+                        UIMessagePart.Text("[Earlier image omitted to respect this model's image context limit]")
+                    }
                 }
-            } else part
+                is UIMessagePart.ToolResult -> {
+                    if (part.inspectedImages.any { it.url.isNotBlank() }) {
+                        val updatedImages = part.inspectedImages.asReversed().map { img ->
+                            if (img.url.isNotBlank()) {
+                                if (retained < limit) {
+                                    retained++
+                                    img
+                                } else {
+                                    img.copy(url = "")
+                                }
+                            } else img
+                        }.asReversed()
+                        part.copy(inspectedImages = updatedImages)
+                    } else part
+                }
+                else -> part
+            }
         }.asReversed())
     }.asReversed()
 }
@@ -491,6 +526,7 @@ fun List<UIMessage>.compactToTokenBudget(model: Model, budget: Int): List<UIMess
                 is UIMessagePart.ToolResult -> part.copy(
                     content = createSemanticToolReceipt(part),
                     arguments = part.arguments,
+                    inspectedImages = part.inspectedImages.map { it.copy(url = "") },
                 )
                 else -> part
             }

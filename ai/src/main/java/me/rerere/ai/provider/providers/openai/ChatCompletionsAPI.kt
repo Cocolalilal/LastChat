@@ -33,6 +33,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.OpenAICompatibilityMode
 import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
@@ -75,22 +76,7 @@ class ChatCompletionsAPI(
     private val mediaEncoder: PlatformMediaEncoder,
 ) : OpenAIImpl {
     private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
 
     override suspend fun generateText(
@@ -569,30 +555,85 @@ class ChatCompletionsAPI(
         val shouldReplayDeepSeekReasoning = providerSetting.shouldReplayReasoningContent(host, modelId)
         val uploadableMessages = messages.filter { it.isValidToUpload() }
         val cacheBreakpointIndices = uploadableMessages.cacheBreakpointIndices(promptCachePolicy)
-        uploadableMessages
-            .forEachIndexed { index, message ->
-                if (message.role == MessageRole.TOOL) {
-                    val toolResults = message.getToolResults()
-                    toolResults.forEachIndexed { resultIndex, result ->
-                        add(buildJsonObject {
-                            put("role", "tool")
-                            put("name", result.toolName)
-                            put("tool_call_id", result.toolCallId)
-                            // Zhipu AI requires content to be a JSON object, not a string
-                            if (host == "open.bigmodel.cn") {
-                                put("content", result.content)
-                            } else {
-                                put("content", json.encodeToString(result.content))
+        var index = 0
+        while (index < uploadableMessages.size) {
+            val message = uploadableMessages[index]
+            if (message.role == MessageRole.TOOL) {
+                val toolMessages = mutableListOf<UIMessage>()
+                val messageIndices = mutableListOf<Int>()
+                while (index < uploadableMessages.size && uploadableMessages[index].role == MessageRole.TOOL) {
+                    toolMessages.add(uploadableMessages[index])
+                    messageIndices.add(index)
+                    index++
+                }
+                val allToolResults = toolMessages.flatMap { it.getToolResults() }
+                val hasAnyActiveImages = allToolResults.any { r -> r.inspectedImages.any { it.url.isNotBlank() } }
+                val shouldCacheMessage = messageIndices.any { it in cacheBreakpointIndices }
+                allToolResults.forEachIndexed { resultIndex, result ->
+                    add(buildJsonObject {
+                        put("role", "tool")
+                        put("name", result.toolName)
+                        put("tool_call_id", result.toolCallId)
+                        val contentText = if (result.content is JsonPrimitive && result.content.isString) {
+                            result.content.content
+                        } else {
+                            json.encodeToString(result.content)
+                        }
+                        if (host == "open.bigmodel.cn") {
+                            put("content", result.content)
+                        } else {
+                            put("content", contentText)
+                        }
+
+                        if (shouldCacheMessage && !hasAnyActiveImages && resultIndex == allToolResults.lastIndex) {
+                            put("cache_control", buildPromptCacheControl())
+                        }
+                    })
+                }
+                if (hasAnyActiveImages) {
+                    val provenanceLines = mutableListOf<String>()
+                    val encodedImages = mutableListOf<String>()
+                    allToolResults.forEach { result ->
+                        val activeImages = result.inspectedImages.filter { it.url.isNotBlank() }
+                        activeImages.forEachIndexed { imgIdx, img ->
+                            mediaEncoder.encodeImage(img.url).onSuccess { base64Url ->
+                                provenanceLines.add(me.rerere.ai.ui.buildToolImageProvenanceText(result, imgIdx + 1, img))
+                                encodedImages.add(base64Url)
+                            }.onFailure {
+                                PlatformLog.w(TAG, "encode tool image failed: ${img.sourceUrl ?: img.title}")
                             }
-                            
-                            val shouldCacheMessage = index in cacheBreakpointIndices
-                            if (shouldCacheMessage && resultIndex == toolResults.lastIndex) {
-                                put("cache_control", buildPromptCacheControl())
+                        }
+                    }
+                    if (encodedImages.isNotEmpty()) {
+                        val headerText = buildString {
+                            appendLine("[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT]")
+                            appendLine("The following image(s) were returned by tool execution in this turn for your private visual inspection only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as images the user sent. If the user should see an image, you MUST explicitly embed its markdown syntax (e.g. ![title](url)) in your reply; otherwise the user will see nothing.")
+                            provenanceLines.forEach { appendLine(it) }
+                        }.trim()
+                        add(buildJsonObject {
+                            put("role", "user")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", headerText)
+                                    if (shouldCacheMessage) {
+                                        put("cache_control", buildPromptCacheControl())
+                                    }
+                                })
+                                encodedImages.forEach { dataUrl ->
+                                    add(buildJsonObject {
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", dataUrl)
+                                        })
+                                    })
+                                }
                             }
                         })
                     }
-                    return@forEachIndexed
                 }
+                continue
+            }
                 add(buildJsonObject {
                     // role
                     put("role", JsonPrimitive(message.role.name.lowercase()))
@@ -715,6 +756,7 @@ class ChatCompletionsAPI(
                             })
                         }
                 })
+                index++
             }
     }
 

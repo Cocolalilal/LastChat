@@ -88,16 +88,21 @@ fun Context.copyMessageToClipboard(message: UIMessage) {
 
 @OptIn(ExperimentalEncodingApi::class)
 suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO) {
+    val activity = getActivity()
+    if (activity == null) {
+        Log.e(TAG, "saveMessageImage: no Activity attached; cannot save to gallery")
+        return@withContext
+    }
     when {
         image.startsWith("data:image") -> {
             val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
             val bitmap = decodeBitmapWithBounds(byteArray, 2048, 2048)
-            bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
+            bitmap?.let { exportImage(activity, it) }
         }
 
         image.startsWith("file:") -> {
             val file = image.toUri().toFile()
-            exportImageFile(this@saveMessageImage.getActivity()!!, file)
+            exportImageFile(activity, file)
         }
 
         image.startsWith("content:") -> {
@@ -151,7 +156,7 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
 
                 if (response.statusCode == 200) {
                     val bitmap = decodeBitmapWithBounds(response.body, 2048, 2048)
-                    bitmap?.let { exportImage(this@saveMessageImage.getActivity()!!, it) }
+                    bitmap?.let { exportImage(activity, it) }
                 } else {
                     Log.e(
                         TAG,

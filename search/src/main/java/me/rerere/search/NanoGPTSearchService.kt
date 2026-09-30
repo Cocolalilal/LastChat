@@ -179,6 +179,16 @@ object NanoGPTSearchService : SearchService<SearchServiceOptions.NanoGPTOptions>
                                             url = item.url,
                                             text = item.content ?: ""
                                         )
+                                    },
+                                images = parsed.data
+                                    .filter { it.type == "image" }
+                                    .map { item ->
+                                        val imgUrl = item.imageUrl?.takeIf { it.isNotBlank() } ?: item.url
+                                        SearchResult.SearchResultImage(
+                                            url = imgUrl,
+                                            title = item.title,
+                                            markdownImage = "![${item.title}]($imgUrl)"
+                                        )
                                     }
                             )
                         )

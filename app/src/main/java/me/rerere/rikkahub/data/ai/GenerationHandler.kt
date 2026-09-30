@@ -35,6 +35,7 @@ import me.rerere.ai.context.smartFitContext
 import me.rerere.ai.context.smartPrepareHistory
 import me.rerere.ai.context.effectiveHistoryForContext
 import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.provider.ModelAbility
@@ -51,6 +52,7 @@ import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
+import me.rerere.ai.ui.stripEphemeralToolImagePayloads
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
@@ -61,6 +63,7 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transformInput
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -125,29 +128,107 @@ internal fun smartContextSafeCustomBodies(bodies: List<CustomBody>): List<Custom
  * accepts them. Used by the assistant-overlay `look_at_screen` tool.
  */
 internal const val TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY = "__inject_user_image_parts"
+internal const val TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY = "__inject_user_image_prompt"
 
 /**
- * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] payloads out of [results], returning
- * the sanitized tool results (key removed) plus the image parts to inject as a follow-up
- * USER message. Non-injecting results pass through untouched.
+ * Pull any [TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] and [TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY]
+ * payloads out of [results], returning the sanitized tool results with `inspected_images` metadata
+ * in `content` and structured [me.rerere.ai.ui.ToolResultImage] attached directly to `ToolResult.inspectedImages`
+ * when [supportsVision] is true.
  */
-internal fun extractInjectedImageParts(
+internal fun extractInjectedImagePayloads(
     results: List<UIMessagePart.ToolResult>,
-): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
-    val images = mutableListOf<UIMessagePart.Image>()
-    val sanitized = results.map { result ->
+    supportsVision: Boolean = true,
+): List<UIMessagePart.ToolResult> {
+    return results.map { result ->
         val content = result.content
-        if (content is JsonObject && content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)) {
-            val urls = (content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray)
-                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.takeIf { url -> url.isNotBlank() } }
-                .orEmpty()
-            urls.forEach { images += UIMessagePart.Image(url = it) }
+        if (content is JsonObject && (content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY) || content.containsKey(TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY))) {
+            val rawArray = content[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] as? JsonArray
+            val toolResultImages = mutableListOf<me.rerere.ai.ui.ToolResultImage>()
+            val inspectedMetadata = mutableListOf<JsonObject>()
+
+            rawArray?.forEachIndexed { index, element ->
+                when (element) {
+                    is JsonObject -> {
+                        val dataUrl = element["data_url"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val mimeType = element["mime_type"]?.jsonPrimitive?.contentOrNull
+                            ?: me.rerere.ai.ui.extractMimeTypeFromDataUrl(dataUrl, "image/jpeg")
+                        val title = element["title"]?.jsonPrimitive?.contentOrNull
+                        val sourceUrl = element["source_url"]?.jsonPrimitive?.contentOrNull
+                        val markdownImage = element["markdown_image"]?.jsonPrimitive?.contentOrNull
+                        val originTool = element["origin_tool"]?.jsonPrimitive?.contentOrNull ?: result.toolName
+                        if (dataUrl.isNotBlank()) {
+                            toolResultImages.add(
+                                me.rerere.ai.ui.ToolResultImage(
+                                    url = dataUrl,
+                                    mimeType = mimeType,
+                                    title = title,
+                                    sourceUrl = sourceUrl,
+                                    markdownImage = markdownImage,
+                                    originTool = originTool,
+                                )
+                            )
+                        }
+                        inspectedMetadata.add(
+                            buildJsonObject {
+                                put("index", JsonPrimitive(index + 1))
+                                title?.let { put("title", JsonPrimitive(it)) }
+                                sourceUrl?.let { put("source_url", JsonPrimitive(it)) }
+                                markdownImage?.let { put("markdown_image", JsonPrimitive(it)) }
+                                originTool?.let { put("origin_tool", JsonPrimitive(it)) }
+                            }
+                        )
+                    }
+                    is JsonPrimitive -> {
+                        val dataUrl = element.contentOrNull.orEmpty()
+                        if (dataUrl.isNotBlank()) {
+                            val mimeType = me.rerere.ai.ui.extractMimeTypeFromDataUrl(dataUrl, "image/jpeg")
+                            val originTool = result.toolName.ifBlank { "look_at_screen" }
+                            toolResultImages.add(
+                                me.rerere.ai.ui.ToolResultImage(
+                                    url = dataUrl,
+                                    mimeType = mimeType,
+                                    originTool = originTool,
+                                )
+                            )
+                            inspectedMetadata.add(
+                                buildJsonObject {
+                                    put("index", JsonPrimitive(index + 1))
+                                    put("origin_tool", JsonPrimitive(originTool))
+                                }
+                            )
+                        }
+                    }
+                    else -> {}
+                }
+            }
+
+            val sanitizedMap = content.toMutableMap()
+            sanitizedMap.remove(TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)
+            sanitizedMap.remove(TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY)
+            if (inspectedMetadata.isNotEmpty()) {
+                sanitizedMap["inspected_images"] = JsonArray(inspectedMetadata)
+                sanitizedMap["_notice_to_assistant"] = JsonPrimitive(
+                    "These images were fetched by tool execution for your private visual inspection only. The user CANNOT see them. The user DID NOT upload them. If the user should see an image, you MUST output its markdown syntax (e.g. ![title](url)) in your reply."
+                )
+            }
             result.copy(
-                content = JsonObject(content - TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY)
+                content = JsonObject(sanitizedMap),
+                inspectedImages = if (supportsVision) toolResultImages else emptyList(),
             )
         } else {
             result
         }
+    }
+}
+
+internal fun extractInjectedImageParts(
+    results: List<UIMessagePart.ToolResult>,
+    supportsVision: Boolean = true,
+): Pair<List<UIMessagePart.ToolResult>, List<UIMessagePart.Image>> {
+    val sanitized = extractInjectedImagePayloads(results, supportsVision = supportsVision)
+    val images = sanitized.flatMap { result ->
+        result.inspectedImages.filter { it.url.isNotBlank() }.map { UIMessagePart.Image(url = it.url) }
     }
     return sanitized to images
 }
@@ -559,6 +640,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
+    private val secretKeyManager: SecretKeyManager,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
@@ -588,7 +670,9 @@ class GenerationHandler(
             runCatching { SkillExportImport.ensureManagedSkillPackage(context, skill) }
                 .onFailure { Log.w(TAG, "Could not sync skill package ${skill.name}", it) }
         }
-        val provider = model.findProvider(settings.providers) ?: error("Provider not found")
+        val provider = secretKeyManager.populateProviderSecrets(
+            model.findProvider(settings.providers) ?: error("Provider not found")
+        )
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
@@ -707,6 +791,11 @@ class GenerationHandler(
 
             val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
+                val stripped = messages.stripEphemeralToolImagePayloads()
+                if (stripped !== messages) {
+                    messages = stripped
+                    send(GenerationChunk.Messages(messages))
+                }
                 // no tool calls, break
                 break
             }
@@ -753,19 +842,7 @@ class GenerationHandler(
                 messages = messages.markPendingToolCalls(pendingToolCallIds)
                 send(GenerationChunk.Messages(messages))
                 if (results.isNotEmpty()) {
-                    val (sanitized, injectedImages) = extractInjectedImageParts(results)
-                    messages = messages + UIMessage(
-                        role = MessageRole.TOOL,
-                        parts = sanitized
-                    )
-                    if (injectedImages.isNotEmpty()) {
-                        messages = messages + UIMessage(
-                            role = MessageRole.USER,
-                            parts = listOf(
-                                UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                            ) + injectedImages,
-                        )
-                    }
+                    messages = appendToolResultsAndInjectedImages(messages, results, model)
                     send(
                         GenerationChunk.Messages(
                             messages.transforms(
@@ -779,21 +856,7 @@ class GenerationHandler(
                 }
                 break
             }
-            val (sanitizedResults, injectedImages) = extractInjectedImageParts(results)
-            messages = messages + UIMessage(
-                role = MessageRole.TOOL,
-                parts = sanitizedResults
-            )
-            // Re-deliver any tool-provided images (e.g. the overlay screenshot) as a USER
-            // message the provider accepts, instead of stuffing base64 into a tool result.
-            if (injectedImages.isNotEmpty()) {
-                messages = messages + UIMessage(
-                    role = MessageRole.USER,
-                    parts = listOf(
-                        UIMessagePart.Text("Screenshot of the user's screen captured at summon:"),
-                    ) + injectedImages,
-                )
-            }
+            messages = appendToolResultsAndInjectedImages(messages, results, model)
             send(
                 GenerationChunk.Messages(
                     messages.transforms(
@@ -805,8 +868,25 @@ class GenerationHandler(
                 )
             )
         }
-
+        val stripped = messages.stripEphemeralToolImagePayloads()
+        if (stripped !== messages) {
+            messages = stripped
+            send(GenerationChunk.Messages(messages))
+        }
     }.flowOn(Dispatchers.IO)
+
+    private fun appendToolResultsAndInjectedImages(
+        messages: List<UIMessage>,
+        results: List<UIMessagePart.ToolResult>,
+        model: Model,
+    ): List<UIMessage> {
+        val supportsVision = model.inputModalities.contains(Modality.IMAGE)
+        val sanitizedResults = extractInjectedImagePayloads(results, supportsVision = supportsVision)
+        return messages + UIMessage(
+            role = MessageRole.TOOL,
+            parts = sanitizedResults
+        )
+    }
 
     suspend fun buildMessages(
         assistant: Assistant,
@@ -1099,6 +1179,22 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
+
+        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
+        val hasVisualToolResults = messages.any { msg ->
+            msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
+        }
+        if (model.inputModalities.contains(Modality.IMAGE) && (effectiveTools.any { it.name in visualToolNames } || hasVisualToolResults)) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ## Tool Visual Inspection & User Privacy Guidelines
+                - Tool-inspected images (from web search, workspace files, screenshots, etc.) are private behind-the-scenes visual inspection data delivered for your eyes only. The user CANNOT see them.
+                - The user DID NOT upload, provide, or see these tool images. Do NOT refer to them as "the images you sent", "the images you uploaded", or "the images you provided".
+                - If the user asks for images, or if an image from search or workspace is useful or relevant to show, you MUST explicitly output the markdown image link `![title](url)` in your final response to the user. Otherwise, the user will see nothing.
+                """.trimIndent()
+            )
+        }
         val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
             ContextTokenEstimator.toolDefinitionText(tool)
         }
@@ -1156,12 +1252,15 @@ class GenerationHandler(
                 if (indicesToPrune.isNotEmpty()) {
                     historyLimitedMessages.mapIndexed { index, msg ->
                         if (index in indicesToPrune) {
-                            // Replace search result content with a minimal placeholder
+                            // Replace search result content with a minimal placeholder and clear any active inspectedImages
                             msg.copy(parts = msg.parts.map { part ->
                                 if (part is UIMessagePart.ToolResult && part.toolName == "search_web") {
-                                    part.copy(content = kotlinx.serialization.json.buildJsonObject {
-                                        put("note", kotlinx.serialization.json.JsonPrimitive("Earlier search results pruned to save context"))
-                                    })
+                                    part.copy(
+                                        content = kotlinx.serialization.json.buildJsonObject {
+                                            put("note", kotlinx.serialization.json.JsonPrimitive("Earlier search results pruned to save context"))
+                                        },
+                                        inspectedImages = part.inspectedImages.map { it.copy(url = "") },
+                                    )
                                 } else part
                             })
                         } else msg
@@ -1589,26 +1688,32 @@ class GenerationHandler(
             var changed = false
             val updatedParts = buildList {
                 message.parts.forEach { part ->
-                    if (part is UIMessagePart.Image) {
-                        val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
-                            part = part,
-                            ensureAvailable = true,
-                        )
-                        if (!ocrText.isNullOrBlank()) {
-                            changed = true
-                            add(
-                                UIMessagePart.Text(
-                                    """
-                                    [Archived image OCR]
-                                    $ocrText
-                                    """.trimIndent()
-                                )
+                    when {
+                        part is UIMessagePart.Image -> {
+                            val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
+                                part = part,
+                                ensureAvailable = true,
                             )
-                        } else {
-                            add(part)
+                            if (!ocrText.isNullOrBlank()) {
+                                changed = true
+                                add(
+                                    UIMessagePart.Text(
+                                        """
+                                        [Archived image OCR]
+                                        $ocrText
+                                        """.trimIndent()
+                                    )
+                                )
+                            } else {
+                                changed = true
+                                add(UIMessagePart.Text("[Archived image omitted due to message age limit]"))
+                            }
                         }
-                    } else {
-                        add(part)
+                        part is UIMessagePart.ToolResult && part.inspectedImages.any { it.url.isNotBlank() } -> {
+                            changed = true
+                            add(part.copy(inspectedImages = part.inspectedImages.map { it.copy(url = "") }))
+                        }
+                        else -> add(part)
                     }
                 }
             }
@@ -1630,19 +1735,39 @@ class GenerationHandler(
         var retainedImages = 0
         return messages.asReversed().map { message ->
             val reversedParts = message.parts.asReversed().map { part ->
-                if (part !is UIMessagePart.Image) return@map part
-                if (retainedImages < imageLimit) {
-                    retainedImages++
-                    return@map part
-                }
-                val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
-                    part = part,
-                    ensureAvailable = true,
-                )
-                if (ocrText.isNullOrBlank()) {
-                    part
-                } else {
-                    UIMessagePart.Text("[Earlier image OCR]\n$ocrText")
+                when (part) {
+                    is UIMessagePart.ToolResult -> {
+                        if (part.inspectedImages.any { it.url.isNotBlank() }) {
+                            val updatedImages = part.inspectedImages.asReversed().map { img ->
+                                if (img.url.isNotBlank()) {
+                                    if (retainedImages < imageLimit) {
+                                        retainedImages++
+                                        img
+                                    } else {
+                                        img.copy(url = "")
+                                    }
+                                } else img
+                            }.asReversed()
+                            part.copy(inspectedImages = updatedImages)
+                        } else part
+                    }
+                    is UIMessagePart.Image -> {
+                        if (retainedImages < imageLimit) {
+                            retainedImages++
+                            part
+                        } else {
+                            val ocrText = chatAttachmentRepository.resolveAttachmentOcrText(
+                                part = part,
+                                ensureAvailable = true,
+                            )
+                            if (ocrText.isNullOrBlank()) {
+                                part
+                            } else {
+                                UIMessagePart.Text("[Earlier image OCR]\n$ocrText")
+                            }
+                        }
+                    }
+                    else -> part
                 }
             }.asReversed()
             message.copy(parts = reversedParts)
@@ -2135,8 +2260,10 @@ class GenerationHandler(
         val modelId = modelIdOverride ?: settings.translateModeId
         val model = settings.providers.findModelById(modelId)
             ?: error("Translation model not found")
-        val provider = model.findProvider(settings.providers)
-            ?: error("Translation provider not found")
+        val provider = secretKeyManager.populateProviderSecrets(
+            model.findProvider(settings.providers)
+                ?: error("Translation provider not found")
+        )
 
         val providerHandler = providerManager.getProviderByType(provider)
 

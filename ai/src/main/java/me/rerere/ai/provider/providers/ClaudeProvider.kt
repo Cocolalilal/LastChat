@@ -32,6 +32,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
@@ -70,22 +71,7 @@ class ClaudeProvider(
     private val keyRoulette = KeyRoulette.default()
 
     private fun selectKey(providerSetting: ProviderSetting.Claude): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(me.rerere.ai.util.providerIoDispatcher) {
@@ -430,28 +416,78 @@ class ClaudeProvider(
     }
 
     private fun buildMessages(messages: List<UIMessage>, cacheMessageIds: Set<Uuid>) = buildJsonArray {
-        messages
-            .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
-            .forEach { message ->
-                if (message.role == MessageRole.TOOL) {
-                    val toolResults = message.getToolResults()
-                    toolResults.forEachIndexed { index, result ->
-                        add(buildJsonObject {
-                            put("role", "user")
-                            putJsonArray("content") {
+        val uploadable = messages.filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
+        var i = 0
+        while (i < uploadable.size) {
+            val message = uploadable[i]
+            if (message.role == MessageRole.TOOL) {
+                val toolMessages = mutableListOf<UIMessage>()
+                while (i < uploadable.size && uploadable[i].role == MessageRole.TOOL) {
+                    toolMessages.add(uploadable[i])
+                    i++
+                }
+                val allToolResults = toolMessages.flatMap { it.getToolResults() }
+                if (allToolResults.isNotEmpty()) {
+                    val hasAnyCacheBreakpoint = toolMessages.any { it.id in cacheMessageIds }
+                    add(buildJsonObject {
+                        put("role", "user")
+                        putJsonArray("content") {
+                            allToolResults.forEachIndexed { index, result ->
+                                val activeImages = result.inspectedImages.filter { it.url.isNotBlank() }
+                                val baseContent = if (result.content is JsonPrimitive && result.content.isString) {
+                                    result.content.content
+                                } else {
+                                    json.encodeToString(result.content)
+                                }
                                 add(buildJsonObject {
                                     put("type", "tool_result")
                                     put("tool_use_id", result.toolCallId)
-                                    put("content", json.encodeToString(result.content))
-                                    if (message.id in cacheMessageIds && index == toolResults.lastIndex) {
+                                    if (activeImages.isEmpty()) {
+                                        put("content", baseContent)
+                                    } else {
+                                        putJsonArray("content") {
+                                            val textHeader = buildString {
+                                                append(baseContent)
+                                                append("\n\n[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT]\n")
+                                                appendLine("The following image(s) were returned by tool execution in this turn for your private visual inspection only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as images the user sent. If the user should see an image, you MUST explicitly embed its markdown syntax (e.g. ![title](url)) in your reply; otherwise the user will see nothing.")
+                                                activeImages.forEachIndexed { imgIdx, img ->
+                                                    appendLine(me.rerere.ai.ui.buildToolImageProvenanceText(result, imgIdx + 1, img))
+                                                }
+                                            }.trim()
+                                            add(buildJsonObject {
+                                                put("type", "text")
+                                                put("text", textHeader)
+                                            })
+                                            activeImages.forEach { img ->
+                                                mediaEncoder.encodeImage(img.url).onSuccess { base64Data ->
+                                                    val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(
+                                                        base64Data,
+                                                        me.rerere.ai.ui.extractMimeTypeFromDataUrl(img.url, img.mimeType)
+                                                    )
+                                                    add(buildJsonObject {
+                                                        put("type", "image")
+                                                        put("source", buildJsonObject {
+                                                            put("type", "base64")
+                                                            put("media_type", actualMime)
+                                                            put("data", base64Data.substringAfter(","))
+                                                        })
+                                                    })
+                                                }.onFailure {
+                                                    PlatformLog.w(TAG, "encode tool image failed: ${img.sourceUrl ?: img.title}")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (hasAnyCacheBreakpoint && index == allToolResults.lastIndex) {
                                         put("cache_control", buildPromptCacheControl())
                                     }
                                 })
                             }
-                        })
-                    }
-                    return@forEach
+                        }
+                    })
                 }
+                continue
+            }
 
                 add(buildJsonObject {
                     // role
@@ -481,13 +517,17 @@ class ClaudeProvider(
                                 is UIMessagePart.Image -> {
                                     add(buildJsonObject {
                                         mediaEncoder.encodeImage(part.url).onSuccess { base64Data ->
+                                            val actualMime = me.rerere.ai.ui.extractMimeTypeFromDataUrl(
+                                                base64Data,
+                                                me.rerere.ai.ui.extractMimeTypeFromDataUrl(part.url, "image/jpeg")
+                                            )
                                             put("type", "image")
                                             put("source", buildJsonObject {
                                                 put("type", "base64")
                                                 put(
                                                     "media_type",
-                                                    "image/jpeg"
-                                                ) // 默认为 jpeg，可能需要根据实际情况调整
+                                                    actualMime
+                                                )
                                                 put(
                                                     "data",
                                                     base64Data.substringAfter(",")
@@ -532,6 +572,7 @@ class ClaudeProvider(
                         }
                     }
                 })
+                i++
             }
     }
 

@@ -28,8 +28,10 @@ class AndroidPlatformMediaEncoder : PlatformMediaEncoder {
                 if (withPrefix) "data:${file.guessMimeType().getOrThrow()};base64,$encoded" else encoded
             }
 
-            url.startsWith("data:") -> url
-            url.startsWith("http:") -> url
+            url.startsWith("data:") -> {
+                if (withPrefix) url else url.substringAfter("base64,")
+            }
+            url.startsWith("http:") || url.startsWith("https:") -> url
             else -> throw IllegalArgumentException("Unsupported URL format: $url")
         }
     }

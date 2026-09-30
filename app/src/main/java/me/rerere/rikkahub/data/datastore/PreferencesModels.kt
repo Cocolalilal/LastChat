@@ -5,6 +5,7 @@ import kotlinx.serialization.Transient
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.withInheritedCredentials
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -689,7 +690,9 @@ fun Model.findProvider(
     val provider = findModelProviderFromList(providers) ?: return null
     val providerOverwrite = providerOverwrite
     if (checkOverwrite && providerOverwrite != null) {
-        return providerOverwrite.copyProvider(proxy = provider.proxy, models = emptyList())
+        return providerOverwrite
+            .copyProvider(proxy = provider.proxy, models = emptyList())
+            .withInheritedCredentials(provider)
     }
     return provider
 }

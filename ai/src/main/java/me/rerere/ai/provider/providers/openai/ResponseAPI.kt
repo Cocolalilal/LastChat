@@ -29,6 +29,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
@@ -60,22 +61,7 @@ class ResponseAPI(
     private val keyRoulette: KeyRoulette = KeyRoulette.default(),
 ) : OpenAIImpl {
     private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
 
     override suspend fun generateText(
@@ -338,52 +324,98 @@ class ResponseAPI(
     }
 
     private fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
-        messages
-            .filter {
-                it.isValidToUpload() && it.role != MessageRole.SYSTEM
-            }
-            .forEachIndexed { _, message ->
-                if (message.role == MessageRole.TOOL) {
-                    message.getToolResults().forEach { result ->
-                        add(buildJsonObject {
-                            put("type", "function_call_output")
-                            put("call_id", result.toolCallId)
-                            put("output", json.encodeToString(result.content))
-                        })
-                    }
-                    return@forEachIndexed
+        val uploadable = messages.filter {
+            it.isValidToUpload() && it.role != MessageRole.SYSTEM
+        }
+        var i = 0
+        while (i < uploadable.size) {
+            val message = uploadable[i]
+            if (message.role == MessageRole.TOOL) {
+                val toolMessages = mutableListOf<UIMessage>()
+                while (i < uploadable.size && uploadable[i].role == MessageRole.TOOL) {
+                    toolMessages.add(uploadable[i])
+                    i++
                 }
-
-                val contentParts = buildResponseContent(message)
-                add(buildJsonObject {
-                    put("role", JsonPrimitive(message.role.name.lowercase()))
-
-                    if (message.parts.isOnlyTextPart()) {
-                        put(
-                            "content",
-                            message.parts.filterIsInstance<UIMessagePart.Text>().first().text
-                        )
-                    } else if (contentParts.isNotEmpty()) {
-                        put("content", contentParts)
+                val allToolResults = toolMessages.flatMap { it.getToolResults() }
+                allToolResults.forEach { result ->
+                    val outputStr = if (result.content is JsonPrimitive && result.content.isString) {
+                        result.content.content
                     } else {
-                        logWarning(
-                            "buildMessages: falling back to empty content for role=${message.role} parts=${message.parts}"
-                        )
-                        put("content", "")
+                        json.encodeToString(result.content)
                     }
-                })
-
-                message.getToolCalls()
-                    .takeIf { it.isNotEmpty() }
-                    ?.forEach { toolCall ->
-                        add(buildJsonObject {
-                            put("type", "function_call")
-                            put("call_id", toolCall.toolCallId)
-                            put("name", toolCall.toolName)
-                            put("arguments", toolCall.arguments)
-                        })
+                    add(buildJsonObject {
+                        put("type", "function_call_output")
+                        put("call_id", result.toolCallId)
+                        put("output", outputStr)
+                    })
+                }
+                val provenanceLines = mutableListOf<String>()
+                val encodedImages = mutableListOf<String>()
+                allToolResults.forEach { result ->
+                    val activeImages = result.inspectedImages.filter { it.url.isNotBlank() }
+                    activeImages.forEachIndexed { imgIdx, img ->
+                        mediaEncoder.encodeImage(img.url).onSuccess { base64Url ->
+                            provenanceLines.add(me.rerere.ai.ui.buildToolImageProvenanceText(result, imgIdx + 1, img))
+                            encodedImages.add(base64Url)
+                        }
                     }
+                }
+                if (encodedImages.isNotEmpty()) {
+                    val headerText = buildString {
+                        appendLine("[AUTOMATED TOOL VISUAL OUTPUT — NOT A USER MESSAGE | PRIVATE TO ASSISTANT]")
+                        appendLine("The following image(s) were returned by tool execution in this turn for your private visual inspection only. The user CANNOT see them and did NOT upload them. Do NOT refer to them as images the user sent. If the user should see an image, you MUST explicitly embed its markdown syntax (e.g. ![title](url)) in your reply; otherwise the user will see nothing.")
+                        provenanceLines.forEach { appendLine(it) }
+                    }.trim()
+                    add(buildJsonObject {
+                        put("role", "user")
+                        putJsonArray("content") {
+                            add(buildJsonObject {
+                                put("type", "input_text")
+                                put("text", headerText)
+                            })
+                            encodedImages.forEach { dataUrl ->
+                                add(buildJsonObject {
+                                    put("type", "input_image")
+                                    put("image_url", dataUrl)
+                                })
+                            }
+                        }
+                    })
+                }
+                continue
             }
+
+            val contentParts = buildResponseContent(message)
+            add(buildJsonObject {
+                put("role", JsonPrimitive(message.role.name.lowercase()))
+
+                if (message.parts.isOnlyTextPart()) {
+                    put(
+                        "content",
+                        message.parts.filterIsInstance<UIMessagePart.Text>().first().text
+                    )
+                } else if (contentParts.isNotEmpty()) {
+                    put("content", contentParts)
+                } else {
+                    logWarning(
+                        "buildMessages: falling back to empty content for role=${message.role} parts=${message.parts}"
+                    )
+                    put("content", "")
+                }
+            })
+
+            message.getToolCalls()
+                .takeIf { it.isNotEmpty() }
+                ?.forEach { toolCall ->
+                    add(buildJsonObject {
+                        put("type", "function_call")
+                        put("call_id", toolCall.toolCallId)
+                        put("name", toolCall.toolName)
+                        put("arguments", toolCall.arguments)
+                    })
+                }
+            i++
+        }
     }
 
     private fun buildResponseContent(message: UIMessage): JsonArray = buildJsonArray {

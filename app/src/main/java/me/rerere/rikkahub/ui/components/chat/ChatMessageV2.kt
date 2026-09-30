@@ -859,6 +859,7 @@ private fun getToolDisplayName(toolName: String): String {
         "workspace_write_file" -> "Writing workspace file"
         "workspace_edit_file" -> "Editing workspace file"
         "workspace_shell" -> "Running workspace command"
+        "workspace_view_image" -> "Viewing workspace image"
         "create_memory" -> "Creating memory"
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"

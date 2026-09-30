@@ -17,7 +17,8 @@ internal val WORKSPACE_TOOLS = setOf(
     "workspace_read_file",
     "workspace_write_file",
     "workspace_edit_file",
-    "workspace_shell"
+    "workspace_shell",
+    "workspace_view_image"
 )
 
 internal data class PythonToolSummary(

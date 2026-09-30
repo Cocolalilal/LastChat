@@ -3,6 +3,22 @@ package me.rerere.rikkahub.data.sync
 import kotlinx.serialization.Serializable
 import java.io.File
 
+import me.rerere.rikkahub.R
+
+enum class BackupContentOption(
+    val titleRes: Int,
+    val descRes: Int,
+) {
+    CHARACTERS(R.string.backup_content_characters, R.string.backup_content_characters_desc),
+    CHATS(R.string.backup_content_chats, R.string.backup_content_chats_desc),
+    PROVIDERS(R.string.backup_content_providers, R.string.backup_content_providers_desc),
+    API_KEYS(R.string.backup_content_api_keys, R.string.backup_content_api_keys_desc),
+    WORKSPACES(R.string.backup_content_workspaces, R.string.backup_content_workspaces_desc),
+    SKILLS(R.string.backup_content_skills, R.string.backup_content_skills_desc),
+    LOREBOOKS(R.string.backup_content_lorebooks, R.string.backup_content_lorebooks_desc),
+    SETTINGS(R.string.backup_content_settings, R.string.backup_content_settings_desc),
+}
+
 internal object BackupArchiveFormat {
     const val CURRENT_FORMAT_VERSION = 2
     const val SETTINGS_ENTRY = "settings.json"
@@ -23,6 +39,12 @@ internal object BackupArchiveFormat {
      */
     val WORKSPACE_EXCLUDED_SUBDIRS = setOf("linux", "tmp")
 
+    /**
+     * Transient compiler and package-manager cache subdirectories that are not user data
+     * and should not bloat workspace backups.
+     */
+    val WORKSPACE_CACHE_DIRS = setOf("__pycache__", ".pytest_cache", ".mypy_cache", ".cache")
+
     val MANAGED_FILE_DIRS = listOf(
         "upload",
         "avatars",
@@ -36,7 +58,6 @@ internal object BackupArchiveFormat {
         "skills",
         "tool_outputs",
         WORKSPACES_DIR,
-        "model_catalog",
     )
 
     val PORTABLE_SHARED_PREF_STORES = listOf(
@@ -68,12 +89,36 @@ internal object BackupArchiveFormat {
     /**
      * For the [WORKSPACES_DIR] archive tree, decides whether a path relative to the workspaces
      * root (e.g. `<workspaceId>/linux/...`) should be excluded from the backup.
+     * Only the `<workspaceId>/files/...` tree is included, while compiler/runtime caches
+     * like `__pycache__` and `.cache` are skipped to ensure compact, lossless user exports.
      */
-    fun isExcludedWorkspacePath(relativePath: String): Boolean {
+    fun isExcludedWorkspacePath(relativePath: String, isDirectory: Boolean = false): Boolean {
         val parts = relativePath.split('/')
-        return parts.size >= 2 && parts[1] in WORKSPACE_EXCLUDED_SUBDIRS
+        // Any path directly under a workspace root must be in "files"
+        // E.g. <workspaceId>/linux or <workspaceId>/tmp is excluded.
+        if (parts.size >= 2 && parts[1] != "files") {
+            return true
+        }
+        val fileName = parts.last()
+        if (fileName in WORKSPACE_CACHE_DIRS) {
+            return true
+        }
+        if (!isDirectory && (fileName.endsWith(".pyc") || fileName.endsWith(".pyo"))) {
+            return true
+        }
+        return false
     }
 }
+
+@Serializable
+data class WorkspaceExportMetadata(
+    val id: String,
+    val name: String,
+    val root: String,
+    val hasRootfs: Boolean,
+    val hasPython: Boolean,
+    val rootfsUrl: String? = null,
+)
 
 @Serializable
 data class BackupManifest(
@@ -82,6 +127,8 @@ data class BackupManifest(
     val includesFiles: Boolean = false,
     val managedFileDirs: List<String> = emptyList(),
     val sharedPrefsStores: List<String> = emptyList(),
+    val selectedContent: List<String> = emptyList(),
+    val workspacesMetadata: List<WorkspaceExportMetadata> = emptyList(),
 )
 
 internal data class DirectoryArchiveEntry(

@@ -72,6 +72,20 @@ import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
+import me.rerere.common.platform.PlatformHttpClient
+import me.rerere.common.platform.PlatformHttpRequest
+import me.rerere.rikkahub.data.ai.TOOL_RESULT_INJECT_USER_IMAGE_PROMPT_KEY
+import me.rerere.rikkahub.data.ai.extractInjectedImagePayloads
+import me.rerere.rikkahub.data.ai.tools.prepareImageForModelInspection
+import me.rerere.search.KeylessSearchService
+import me.rerere.search.SearchCommonOptions
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
@@ -643,6 +657,7 @@ class ChatService(
     private val localTools: LocalTools,
     private val workspaceRepository: WorkspaceRepository,
     val mcpManager: McpManager,
+    private val platformHttpClient: PlatformHttpClient,
 ) {
     // 存储每个对话的状态
     private val conversationsLock = Any()
@@ -1026,7 +1041,7 @@ class ChatService(
             LogUtil.i(TAG, "persistConversationToRepository: refusing tombstoned ${conversation.id}")
             return false
         }
-        val normalizedConversation = normalizeConversation(conversation)
+        val normalizedConversation = normalizeConversation(conversation).stripEphemeralToolImagePayloads()
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
         val retryDelaysMs = longArrayOf(40L, 120L, 240L)
@@ -1150,16 +1165,15 @@ class ChatService(
     suspend fun forkConversationAtMessage(
         conversationId: Uuid,
         messageId: Uuid,
-    ): Conversation {
-        val currentConversation = ensureConversationLoaded(conversationId)
-            ?: return Conversation.ofId(Uuid.random())
+    ): Conversation? {
+        val currentConversation = ensureConversationLoaded(conversationId) ?: return null
         val forkConversation = withContext(Dispatchers.IO) {
             buildForkConversationSnapshot(
                 conversation = currentConversation,
                 messageId = messageId,
                 copyAttachmentUrl = ::copyAttachmentUrl,
             )
-        } ?: return Conversation.ofId(Uuid.random())
+        } ?: return null
         saveConversation(forkConversation.id, forkConversation)
         return forkConversation
     }
@@ -1274,18 +1288,29 @@ class ChatService(
                     tools = tools,
                 )
 
+                val sanitizedResults = extractInjectedImagePayloads(
+                    listOf(resolution.toolResult),
+                    supportsVision = model.inputModalities.contains(Modality.IMAGE),
+                )
+                val baseToolMessage = UIMessage(
+                    role = MessageRole.TOOL,
+                    parts = sanitizedResults,
+                )
+
                 val updatedConversation = currentConversation
                     .updateToolApprovalState(
                         toolCallId = toolCallId,
                         approvalState = resolution.approvalState,
                     )
                     .let { conversationWithApproval ->
-                        conversationWithApproval.updateCurrentMessages(
-                            conversationWithApproval.currentMessages + UIMessage(
-                            role = MessageRole.TOOL,
-                            parts = listOf(resolution.toolResult),
-                        )
-                        )
+                        val existing = conversationWithApproval.currentMessages
+                        val lastMsg = existing.lastOrNull()
+                        val newMessages = if (lastMsg?.role == MessageRole.TOOL) {
+                            existing.dropLast(1) + lastMsg.copy(parts = lastMsg.parts + sanitizedResults)
+                        } else {
+                            existing + baseToolMessage
+                        }
+                        conversationWithApproval.updateCurrentMessages(newMessages)
                     }
 
                 saveConversation(conversationId, updatedConversation)
@@ -1900,7 +1925,7 @@ class ChatService(
             when (val searchMode = assistant.searchMode) {
                 is AssistantSearchMode.Provider -> {
                     if (!useBuiltInSearch) {
-                        addAll(createSearchTool(settings, searchMode.index))
+                        addAll(createSearchTool(settings, searchMode.index, model = model))
                     }
                 }
 
@@ -1927,6 +1952,7 @@ class ChatService(
                     createWorkspaceTools(
                         workspaceId = workspaceId,
                         workspaceRepository = workspaceRepository,
+                        model = model,
                     )
                 )
             }
@@ -2036,7 +2062,7 @@ class ChatService(
         return parseJsonElementWithRecovery(arguments, JsonInstantPretty) ?: JsonPrimitive(arguments)
     }
 
-    private fun createSearchTool(settings: Settings, providerIndex: Int? = null): Set<Tool> {
+    private fun createSearchTool(settings: Settings, providerIndex: Int? = null, model: Model? = null): Set<Tool> {
         // Use the provided providerIndex (from assistant's searchMode) or fall back to global selection
         val effectiveIndex = providerIndex ?: settings.searchServiceSelected
         return buildSet {
@@ -2049,20 +2075,131 @@ class ChatService(
                             index = effectiveIndex,
                             defaultValue = { SearchServiceOptions.DEFAULT })
                         val service = SearchService.getService(options)
-                        service.parameters
+                        val baseSchema = service.parameters
+                        if (baseSchema is InputSchema.Obj) {
+                            val currentProps = (baseSchema.properties as? JsonObject)?.toMutableMap() ?: mutableMapOf()
+                            if (model?.inputModalities?.contains(Modality.IMAGE) == true) {
+                                if (!currentProps.containsKey("include_images")) {
+                                    currentProps["include_images"] = buildJsonObject {
+                                        put("type", "boolean")
+                                        put("description", "Whether to fetch and visually inspect relevant images for the search query.")
+                                    }
+                                }
+                                if (!currentProps.containsKey("topic")) {
+                                    currentProps["topic"] = buildJsonObject {
+                                        put("type", "string")
+                                        put("description", "Optional intent hint: weather, news, sports, images, or general.")
+                                    }
+                                }
+                            }
+                            InputSchema.Obj(
+                                properties = JsonObject(currentProps),
+                                required = baseSchema.required,
+                            )
+                        } else {
+                            baseSchema
+                        }
                     },
                     execute = {
                         val options = settings.searchServices.getOrElse(
                             index = effectiveIndex,
                             defaultValue = { SearchServiceOptions.DEFAULT })
                         val service = SearchService.getService(options)
-                        val result = service.search(
-                            params = it.jsonObject,
+                        val params = it.jsonObject
+                        val query = params["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val topic = params["topic"]?.jsonPrimitive?.contentOrNull
+                        val includeImages = params["include_images"]?.jsonPrimitive?.booleanOrNull ?: false
+
+                        var searchResult = service.search(
+                            params = params,
                             commonOptions = settings.searchCommonOptions,
                             serviceOptions = options,
-                        )
+                        ).getOrThrow()
+
+                        if (searchResult.images.isEmpty() && (topic == "images" || includeImages)) {
+                            try {
+                                val keylessFallback = KeylessSearchService.search(
+                                    params = buildJsonObject {
+                                        put("query", query)
+                                        put("topic", "images")
+                                    },
+                                    commonOptions = settings.searchCommonOptions.copy(resultSize = 4),
+                                    serviceOptions = SearchServiceOptions.KeylessOptions(),
+                                ).getOrNull()
+                                if (keylessFallback != null && keylessFallback.images.isNotEmpty()) {
+                                    searchResult = searchResult.copy(images = keylessFallback.images)
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Keyless image search fallback failed", e)
+                            }
+                        }
+
+                        val supportsVision = model?.inputModalities?.contains(Modality.IMAGE) == true
+                        val injectedImageObjects = mutableListOf<JsonObject>()
+
+                        if (supportsVision && searchResult.images.isNotEmpty()) {
+                            val maxImages = minOf(searchResult.images.size, 4, model?.maxImagesInContext ?: 4)
+                            val candidateImages = searchResult.images
+                                .filter { img ->
+                                    val lowerUrl = img.url.lowercase()
+                                    !lowerUrl.endsWith(".svg") && !lowerUrl.endsWith(".ico")
+                                }
+                                .take(maxImages)
+
+                            coroutineScope {
+                                val downloadJobs = candidateImages.mapIndexed { index, img ->
+                                    async(Dispatchers.IO) {
+                                        runCatching {
+                                            withTimeoutOrNull(6_000L) {
+                                                val response = platformHttpClient.execute(
+                                                    PlatformHttpRequest(
+                                                        url = img.url,
+                                                        method = "GET",
+                                                        headers = mapOf(
+                                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                                                            "Accept" to "image/jpeg,image/png,image/webp;q=0.9",
+                                                        ),
+                                                    )
+                                                )
+                                                if (response.statusCode in 200..299 && response.body.isNotEmpty()) {
+                                                    val contentType = (response.headers.entries
+                                                        .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
+                                                        ?.value?.firstOrNull() ?: "").lowercase()
+                                                    if (contentType.startsWith("text/") || contentType.contains("image/svg")) {
+                                                        null
+                                                    } else {
+                                                        val prepared = me.rerere.rikkahub.data.ai.tools.prepareImageForModelInspection(
+                                                            path = img.url,
+                                                            bytes = response.body,
+                                                            minDimension = 48,
+                                                        )
+                                                        if (prepared != null) {
+                                                            Triple(index + 1, img, prepared)
+                                                        } else null
+                                                    }
+                                                } else null
+                                            }
+                                        }.getOrNull()
+                                    }
+                                }
+                                val downloaded = downloadJobs.awaitAll().filterNotNull()
+                                downloaded.forEach { (index, img, prepared) ->
+                                    injectedImageObjects.add(
+                                        buildJsonObject {
+                                            put("data_url", JsonPrimitive(prepared.dataUrl))
+                                            put("mime_type", JsonPrimitive(prepared.mimeType))
+                                            put("title", JsonPrimitive(img.title))
+                                            put("source_url", JsonPrimitive(img.url))
+                                            put("markdown_image", JsonPrimitive(img.markdownImage))
+                                            put("origin_tool", JsonPrimitive("search_web"))
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
                         val results =
-                            JsonInstantPretty.encodeToJsonElement(result.getOrThrow()).jsonObject.let { json ->
+                            JsonInstantPretty.encodeToJsonElement(searchResult).jsonObject.let { json ->
                                 val map = json.toMutableMap()
                                 val items = map["items"]
                                 if (items is JsonArray) {
@@ -2077,14 +2214,17 @@ class ChatService(
                                         }
                                     })
                                 }
+                                if (injectedImageObjects.isNotEmpty()) {
+                                    map[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] = JsonArray(injectedImageObjects)
+                                }
                                 JsonObject(map)
                             }
                         results
-                    }, systemPrompt = { model, messages ->
-                        if (model.tools.isNotEmpty()) return@Tool ""
+                    }, systemPrompt = { promptModel, messages ->
                         val hasToolCall =
                             messages.any { it.getToolCalls().any { toolCall -> toolCall.toolName == "search_web" } }
                         val prompt = StringBuilder()
+                        val visionSupported = promptModel.inputModalities.contains(Modality.IMAGE)
                         prompt.append(
                             """
                     ## tool: search_web
@@ -2096,9 +2236,13 @@ class ChatService(
                     - Today is {{cur_date}}
                     - Trust structured weather `answer` fields over encyclopedia snippets.
                     - For news, prefer items with recent `publishedAt` dates. Do not treat Wikipedia as live news.
-                    - When the result includes an `images` array, put 1–4 relevant `markdown_image` values each on their own line in your reply so they render inline. Use photos, maps, product shots, or diagrams when they help.
+                    - Search results and any retrieved images are private behind-the-scenes data for your eyes only. The user CANNOT see them and did NOT provide or upload them.
+                    - When the result includes an `images` array, if the user asks for images or if an image is useful, put 1–4 relevant `markdown_image` values (e.g. `![title](url)`) each on their own line in your reply so they render inline for the user. If you do not explicitly embed `![title](url)`, the user will see nothing.
                     """.trimIndent()
                         )
+                        if (visionSupported) {
+                            prompt.append("\n- When images are retrieved from a search, they are automatically delivered directly into your context for your private visual inspection so you can verify what they look like before deciding whether to show them. Remember: the user CANNOT see these images and did NOT provide them; you must embed `![title](url)` in your reply if the user should see them.")
+                        }
                         if (hasToolCall) {
                             prompt.append(
                                 """

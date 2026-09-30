@@ -1189,4 +1189,7 @@
   <string name="activity_timeline_memory_confidence">Confidence %1$s</string>
   <string name="setting_display_page_enable_blur_effect_desc">Give floating pills and chat controls a soft glass blur</string>
   <string name="setting_display_page_enable_blur_effect_title">Blurred UI Elements</string>
+  <string name="chat_message_tool_workspace_view_image">عرض صورة مساحة العمل</string>
+  <string name="activity_timeline_tool_workspace_view_image">عرض الصورة</string>
+  <string name="workspace_detail_tool_view_image">عرض الصورة: فحص بصري لصور مساحة العمل (عندما يدعم النموذج إدخال الصور)</string>
 </resources>

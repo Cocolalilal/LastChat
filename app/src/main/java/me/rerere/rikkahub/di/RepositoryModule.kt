@@ -88,4 +88,11 @@ val repositoryModule = module {
             rootfsInstaller = get(),
         )
     }
+
+    single {
+        me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager(
+            context = get(),
+            workspaceRepository = get(),
+        )
+    }
 }

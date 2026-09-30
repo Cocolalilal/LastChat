@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -62,17 +63,17 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             val topic = params["topic"]?.jsonPrimitive?.contentOrNull ?: "general"
-
-            // Validate topic
-            if (topic !in listOf("general", "news", "finance")) {
-                error("topic must be one of `general`, `news`, `finance`")
-            }
+            val effectiveTopic = if (topic in listOf("general", "news", "finance")) topic else "general"
+            val includeImages = params["include_images"]?.jsonPrimitive?.booleanOrNull == true || topic == "images"
 
             val body = buildJsonObject {
                 put("query", query)
                 put("max_results", commonOptions.resultSize)
                 put("search_depth", serviceOptions.depth.ifEmpty { "advanced" })
-                put("topic", topic)
+                put("topic", effectiveTopic)
+                if (includeImages) {
+                    put("include_images", true)
+                }
             }
 
             val response = platformHttpClient.execute(
@@ -93,6 +94,12 @@ object TavilySearchService : SearchService<SearchServiceOptions.TavilyOptions> {
                                 title = it.title,
                                 url = it.url,
                                 text = it.content
+                            )
+                        },
+                        images = response.images.map {
+                            SearchResult.SearchResultImage(
+                                url = it,
+                                markdownImage = "![]($it)"
                             )
                         }
                     ))

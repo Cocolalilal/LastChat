@@ -1832,6 +1832,7 @@ private fun PendingToolApproval.displayName(): String = when (toolName) {
     "workspace_read_file" -> stringResource(R.string.activity_timeline_tool_workspace_read_file)
     "workspace_write_file" -> stringResource(R.string.activity_timeline_tool_workspace_write_file)
     "workspace_edit_file" -> stringResource(R.string.activity_timeline_tool_workspace_edit_file)
+    "workspace_view_image" -> stringResource(R.string.activity_timeline_tool_workspace_view_image)
     else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
 }
 
@@ -1839,7 +1840,7 @@ private fun PendingToolApproval.summary(): String {
     val args = runCatching { JsonInstantPretty.parseToJsonElement(arguments).jsonObject }.getOrNull()
     val key = when (toolName) {
         "workspace_shell" -> "command"
-        "workspace_read_file", "workspace_write_file", "workspace_edit_file" -> "path"
+        "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_view_image" -> "path"
         else -> null
     }
     return key?.let { args?.get(it)?.jsonPrimitiveOrNull?.contentOrNull }

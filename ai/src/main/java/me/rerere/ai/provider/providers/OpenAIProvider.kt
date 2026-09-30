@@ -21,6 +21,8 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.buildEffectiveApiKeyPool
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
@@ -67,22 +69,7 @@ class OpenAIProvider(
     )
 
     private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
@@ -292,18 +279,16 @@ class OpenAIProvider(
     }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(me.rerere.ai.util.providerIoDispatcher) {
-        val keysToQuery = if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            providerSetting.resolvedApiKeyPool.map { it.value }.filter { it.isNotBlank() }.distinct()
-        } else {
-            val poolKeys = providerSetting.apiKeyPool.filter { it.enabled }.map { it.key }.filter { it.isNotBlank() }
-            if (poolKeys.isNotEmpty()) {
-                poolKeys.distinct()
-            } else {
+        val keysToQuery = providerSetting.buildEffectiveApiKeyPool()
+            .map { it.value }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .ifEmpty {
                 providerSetting.apiKey.split(Regex("[\\s,]+")).filter { it.isNotBlank() }.distinct()
             }
-        }.ifEmpty {
-            listOf(selectKey(providerSetting).value)
-        }
+            .ifEmpty {
+                listOf(selectKey(providerSetting).value)
+            }
 
         val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
             providerSetting.balanceOption.apiPath

@@ -269,6 +269,15 @@ class SecretKeyManager(
             .filterNot(newProviderIds::contains)
             .forEach(::removeProviderSecrets)
 
+        // Same for TTS providers: deleting a provider must wipe SecureStore keys
+        // or re-adding the same preset silently restores the old API key.
+        val newTtsProviderIds = newSettings.ttsProviders.asSequence().map { it.id }.toHashSet()
+        oldSettings.ttsProviders
+            .asSequence()
+            .map { it.id }
+            .filterNot(newTtsProviderIds::contains)
+            .forEach(::removeTtsProviderSecrets)
+
         // Handle provider secrets (API keys and private keys)
         for (newProvider in newSettings.providers) {
             val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue
@@ -613,6 +622,7 @@ class SecretKeyManager(
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
                     apiKeyPool = poolWithSecrets,
+                    models = provider.models.map { hydrateModelProviderOverwrite(it) },
                 )
             }
 
@@ -621,6 +631,7 @@ class SecretKeyManager(
                     apiKey = getApiKey(provider.id, provider.apiKey),
                     privateKey = getPrivateKey(provider.id, provider.privateKey),
                     apiKeyPool = poolWithSecrets,
+                    models = provider.models.map { hydrateModelProviderOverwrite(it) },
                 )
             }
 
@@ -628,15 +639,30 @@ class SecretKeyManager(
                 provider.copy(
                     apiKey = getApiKey(provider.id, provider.apiKey),
                     apiKeyPool = poolWithSecrets,
+                    models = provider.models.map { hydrateModelProviderOverwrite(it) },
                 )
             }
 
-            is ProviderSetting.ComfyUI -> provider
-            is ProviderSetting.LiteRtLocal -> provider // on-device, no secrets
+            is ProviderSetting.ComfyUI -> provider.copy(
+                models = provider.models.map { hydrateModelProviderOverwrite(it) },
+            )
+            is ProviderSetting.LiteRtLocal -> provider.copy(
+                models = provider.models.map { hydrateModelProviderOverwrite(it) },
+            )
         }
 
         updated.resolvedApiKeyPool = resolvedPool
         return updated
+    }
+
+    /**
+     * Hydrate nested [me.rerere.ai.provider.Model.providerOverwrite] secrets.
+     * Overwrites are stored on models and were previously skipped by populate,
+     * so chat with an overwrite sent empty credentials after key-pool migration.
+     */
+    private fun hydrateModelProviderOverwrite(model: me.rerere.ai.provider.Model): me.rerere.ai.provider.Model {
+        val overwrite = model.providerOverwrite ?: return model
+        return model.copy(providerOverwrite = populateProviderSecrets(overwrite))
     }
 
     private fun populateTtsProviderSecrets(provider: TTSProviderSetting): TTSProviderSetting {

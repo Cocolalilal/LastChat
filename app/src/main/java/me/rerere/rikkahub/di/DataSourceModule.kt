@@ -248,7 +248,8 @@ val dataSourceModule = module {
             conversationRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
-            memorySearchService = get()
+            memorySearchService = get(),
+            secretKeyManager = get(),
         )
     }
 

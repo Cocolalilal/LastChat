@@ -71,6 +71,7 @@ private const val MEMORY_MAINTENANCE_WORK_NAME = "memory_consolidation_automatic
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID = "local_model_download"
+const val WORKSPACE_ENVIRONMENT_NOTIFICATION_CHANNEL_ID = "workspace_environment"
 
 class LastChatApp : Application(), SingletonImageLoader.Factory {
     companion object {
@@ -284,10 +285,19 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             .setName(getString(R.string.notification_channel_local_model_downloads))
             .setVibrationEnabled(false)
             .build()
+        val workspaceEnvironmentChannel = NotificationChannelCompat
+            .Builder(
+                WORKSPACE_ENVIRONMENT_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName(getString(R.string.notification_channel_workspace_environment))
+            .setVibrationEnabled(false)
+            .build()
         notificationManager.createNotificationChannel(chatCompletedChannel)
         notificationManager.createNotificationChannel(webServerChannel)
         notificationManager.createNotificationChannel(spontaneousChannel)
         notificationManager.createNotificationChannel(localModelDownloadChannel)
+        notificationManager.createNotificationChannel(workspaceEnvironmentChannel)
     }
 
     override fun onTerminate() {
