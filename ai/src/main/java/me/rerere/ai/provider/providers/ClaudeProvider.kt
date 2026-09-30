@@ -32,6 +32,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ImageGenerationResult
 import me.rerere.ai.ui.MessageChunk
@@ -70,22 +71,7 @@ class ClaudeProvider(
     private val keyRoulette = KeyRoulette.default()
 
     private fun selectKey(providerSetting: ProviderSetting.Claude): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(me.rerere.ai.util.providerIoDispatcher) {

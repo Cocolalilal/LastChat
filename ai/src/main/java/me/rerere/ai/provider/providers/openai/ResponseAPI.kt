@@ -29,6 +29,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderProxy
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
@@ -60,22 +61,7 @@ class ResponseAPI(
     private val keyRoulette: KeyRoulette = KeyRoulette.default(),
 ) : OpenAIImpl {
     private fun selectKey(providerSetting: ProviderSetting.OpenAI): PooledKey {
-        return if (providerSetting.resolvedApiKeyPool.isNotEmpty()) {
-            keyRoulette.next(
-                keys = providerSetting.resolvedApiKeyPool,
-                providerId = providerSetting.id,
-                config = providerSetting.keyPoolConfig,
-            )
-        } else {
-            PooledKey(
-                id = Uuid.NIL,
-                name = "default",
-                value = keyRoulette.next(providerSetting.apiKey),
-                priority = 0,
-                providerId = providerSetting.id,
-                providerName = providerSetting.name
-            )
-        }
+        return keyRoulette.selectProviderKey(providerSetting)
     }
 
     override suspend fun generateText(

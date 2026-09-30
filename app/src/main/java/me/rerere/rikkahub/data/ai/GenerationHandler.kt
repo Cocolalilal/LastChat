@@ -63,6 +63,7 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transformInput
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -639,6 +640,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
     private val memorySearchService: MemorySearchService,
+    private val secretKeyManager: SecretKeyManager,
     private val runtimeInfo: GenerationRuntimeInfo = AndroidGenerationRuntimeInfo(),
 ) {
     fun generateText(
@@ -668,7 +670,9 @@ class GenerationHandler(
             runCatching { SkillExportImport.ensureManagedSkillPackage(context, skill) }
                 .onFailure { Log.w(TAG, "Could not sync skill package ${skill.name}", it) }
         }
-        val provider = model.findProvider(settings.providers) ?: error("Provider not found")
+        val provider = secretKeyManager.populateProviderSecrets(
+            model.findProvider(settings.providers) ?: error("Provider not found")
+        )
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
@@ -2256,8 +2260,10 @@ class GenerationHandler(
         val modelId = modelIdOverride ?: settings.translateModeId
         val model = settings.providers.findModelById(modelId)
             ?: error("Translation model not found")
-        val provider = model.findProvider(settings.providers)
-            ?: error("Translation provider not found")
+        val provider = secretKeyManager.populateProviderSecrets(
+            model.findProvider(settings.providers)
+                ?: error("Translation provider not found")
+        )
 
         val providerHandler = providerManager.getProviderByType(provider)
 
