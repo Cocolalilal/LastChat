@@ -72,6 +72,58 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GoogleProvider"
 
+/**
+ * Build Gemini thinkingConfig. Returns null when the field must be omitted.
+ *
+ * Google rejects `{ "includeThoughts": true }` unless thinking is actually
+ * enabled via thinkingBudget / thinkingLevel. Assistant AUTO (-1/null) used to
+ * send includeThoughts alone → HTTP 400 on streamGenerateContent
+ * ("include_thoughts is only enabled when thinking is enabled").
+ */
+internal fun buildGoogleThinkingConfig(
+    modelId: String,
+    abilities: Collection<ModelAbility>,
+    thinkingBudget: Int?,
+): JsonObject? {
+    if (ModelAbility.REASONING !in abilities) return null
+
+    val isGeminiPro = modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
+    val isGemini3 = ModelRegistry.GEMINI_3_SERIES.match(modelId = modelId)
+
+    if (isGemini3) {
+        return buildJsonObject {
+            put("includeThoughts", true)
+            when (val level = ReasoningLevel.fromBudgetTokens(thinkingBudget)) {
+                ReasoningLevel.AUTO -> {}
+                ReasoningLevel.OFF -> put("thinkingLevel", "minimal")
+                ReasoningLevel.LOW -> put("thinkingLevel", "low")
+                ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
+                ReasoningLevel.HIGH, ReasoningLevel.MAX -> put("thinkingLevel", "high")
+            }
+        }
+    }
+
+    return when (thinkingBudget) {
+        0 -> {
+            if (isGeminiPro) {
+                // Gemini 2.5 Pro cannot disable thinking; keep summaries on.
+                buildJsonObject { put("includeThoughts", true) }
+            } else {
+                null // omit thinkingConfig entirely when thinking is off
+            }
+        }
+        null, -1 -> buildJsonObject {
+            // Explicit dynamic budget so includeThoughts is valid for Flash-Lite etc.
+            put("includeThoughts", true)
+            put("thinkingBudget", -1)
+        }
+        else -> buildJsonObject {
+            put("includeThoughts", true)
+            put("thinkingBudget", thinkingBudget)
+        }
+    }
+}
+
 internal fun buildGoogleToolsPayload(params: TextGenerationParams): JsonArray? {
     if (params.tools.isEmpty() && params.builtInTools.isEmpty()) {
         return null
@@ -500,28 +552,25 @@ class GoogleProvider(
     }
 
     private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
+        val statusSuffix = event.statusCode?.let { " #$it" }.orEmpty()
         val fallback = Exception(
-            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}"
+            "Stream failed$statusSuffix: ${event.message?.takeIf { it.isNotBlank() } ?: "(no details)"}"
         )
-        val bodyRaw = event.body
+        val bodyRaw = event.body?.trim().orEmpty()
+        if (bodyRaw.isEmpty()) return fallback
         return try {
-            if (!bodyRaw.isNullOrBlank()) {
-                val bodyElement = json.parseToJsonElement(bodyRaw)
-                println(bodyElement)
-                if (bodyElement is JsonObject) {
-                    Exception(
-                        bodyElement["error"]?.jsonObjectOrNull?.get("message")?.jsonPrimitive?.contentOrNull
-                            ?: "unknown"
-                    )
-                } else {
-                    fallback
-                }
+            val bodyElement = json.parseToJsonElement(bodyRaw)
+            println(bodyElement)
+            if (bodyElement is JsonObject) {
+                val apiMessage = bodyElement["error"]?.jsonObjectOrNull?.get("message")?.jsonPrimitive?.contentOrNull
+                Exception(
+                    "Stream failed$statusSuffix: ${apiMessage?.takeIf { it.isNotBlank() } ?: bodyRaw.take(500)}"
+                )
             } else {
-                fallback
+                Exception("Stream failed$statusSuffix: ${bodyRaw.take(500)}")
             }
-        } catch (e: Throwable) {
-            e.printStackTrace()
-            e
+        } catch (_: Throwable) {
+            Exception("Stream failed$statusSuffix: ${bodyRaw.take(500)}")
         }
     }
 
@@ -556,36 +605,12 @@ class GoogleProvider(
                     add(JsonPrimitive("IMAGE"))
                 })
             }
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
-                put("thinkingConfig", buildJsonObject {
-                    put("includeThoughts", true)
-
-                    val isGeminiPro =
-                        params.model.modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
-                    val isGemini3 = ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId)
-
-                    if (isGemini3) {
-                        when (val level = ReasoningLevel.fromBudgetTokens(params.thinkingBudget)) {
-                            ReasoningLevel.AUTO -> {}
-                            ReasoningLevel.OFF -> put("thinkingLevel", "minimal")
-                            ReasoningLevel.LOW -> put("thinkingLevel", "low")
-                            ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
-                            ReasoningLevel.HIGH, ReasoningLevel.MAX -> put("thinkingLevel", "high")
-                        }
-                    } else when (params.thinkingBudget) {
-                        null, -1 -> {} // 如果是自动，不设置thinkingBudget参数
-
-                        0 -> {
-                            // disable thinking if not gemini pro
-                            if (!isGeminiPro) {
-                                put("thinkingBudget", 0)
-                                put("includeThoughts", false)
-                            }
-                        }
-
-                        else -> put("thinkingBudget", params.thinkingBudget)
-                    }
-                })
+            buildGoogleThinkingConfig(
+                modelId = params.model.modelId,
+                abilities = params.model.abilities,
+                thinkingBudget = params.thinkingBudget,
+            )?.let { thinkingConfig ->
+                put("thinkingConfig", thinkingConfig)
             }
         })
 
