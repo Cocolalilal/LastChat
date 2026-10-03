@@ -512,9 +512,10 @@ private fun AnimatedSinglePill(
     }
     val surfaceExpanded = requestedContentState !is SinglePillContentState.Compact
     val isExpandedTimeline = requestedContentState is SinglePillContentState.ExpandedTimeline
-    // Match the inner ActivityTimelinePanel shape (InputField = 24dp) when the timeline
-    // is expanded, otherwise the outer pill background peeks out around the inner corners.
-    val expandedRadius = if (isExpandedTimeline) 24.dp else 20.dp
+    // Every expanded activity surface matches the multi-step ActivityTimelinePanel:
+    // InputField (24dp). Reasoning-only used to stay at the compact 20dp pill radius,
+    // which left a different corner when that card was expanded.
+    val expandedRadius = 24.dp
 
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
@@ -548,10 +549,15 @@ private fun AnimatedSinglePill(
     
     val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
     val pillColor by animateColorAsState(
-        // When the timeline is expanded the inner ActivityTimelinePanel provides its own
-        // surfaceContainerLow background. Keep the outer transparent so a second,
-        // mismatched background can't peek out around the inner rounded corners.
-        targetValue = if (isMultipleMinimized || isExpandedTimeline) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+        // Multi-step timeline: the inner ActivityTimelinePanel paints surfaceContainerLow
+        // itself, so the outer pill stays transparent and cannot peek past those corners.
+        // Reasoning-only expanded states have no inner panel, so they use that same
+        // surfaceContainerLow here instead of the compact pill's surfaceContainerHigh.
+        targetValue = when {
+            isMultipleMinimized || isExpandedTimeline -> Color.Transparent
+            surfaceExpanded -> MaterialTheme.colorScheme.surfaceContainerLow
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        },
         animationSpec = tween(150),
         label = "pill_color"
     )
