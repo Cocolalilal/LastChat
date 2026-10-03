@@ -4,10 +4,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.ui.core.generated.resources.Res
@@ -69,13 +71,27 @@ object AppSurface {
 
 /** Shared, platform-independent LastChat shape tokens. Android remains the visual reference. */
 object AppShapes {
+    /** Outer corner of chat bubbles and expanded activity timelines. */
+    val MessageBubbleRadius = 24.dp
+
+    /** Shared tuck between stacked bubbles, stacked compact pills, and a pill meeting a bubble. */
+    val MessageBubbleJoint = 6.dp
+
+    /**
+     * [GroupedMessageBubble] content padding. Horizontal is the larger inset, so nested
+     * shapes step down by this much. Full-bleed blocks add the 4dp difference on the
+     * vertical edges so their optical inset matches.
+     */
+    val MessageBubblePaddingHorizontal = 16.dp
+    val MessageBubblePaddingVertical = 12.dp
+
     val CardLarge = RoundedCornerShape(28.dp)
-    val CardMedium = RoundedCornerShape(24.dp)
+    val CardMedium = RoundedCornerShape(MessageBubbleRadius)
     val CardSmall = RoundedCornerShape(16.dp)
     val ButtonPill = RoundedCornerShape(50)
     val ButtonRounded = RoundedCornerShape(20.dp)
     val ButtonSquared = RoundedCornerShape(12.dp)
-    val InputField = RoundedCornerShape(24.dp)
+    val InputField = CardMedium
     val SearchField = ButtonPill
     val Chip = RoundedCornerShape(12.dp)
     val Tag = RoundedCornerShape(50)
@@ -92,7 +108,16 @@ object AppShapes {
     val CardLargeInner8 = RoundedCornerShape(20.dp)
     val CardMediumInner12 = RoundedCornerShape(12.dp)
     val CardSmallInner8 = RoundedCornerShape(8.dp)
-    val MessageBubbleInner = RoundedCornerShape(8.dp)
+    /** 24dp bubble minus the 16dp content inset. */
+    val MessageBubbleInner = concentricShape(MessageBubbleRadius, MessageBubblePaddingHorizontal)
+
+    /** Inner corner of a shape inset from [outer] by [inset] and an optional stroke. Never negative. */
+    fun concentric(outer: Dp, inset: Dp, stroke: Dp = 0.dp): Dp =
+        (outer - inset - stroke).coerceAtLeast(0.dp)
+
+    fun concentricShape(outer: Dp, inset: Dp, stroke: Dp = 0.dp): RoundedCornerShape =
+        RoundedCornerShape(concentric(outer, inset, stroke))
+
     val MessageOutgoing = RoundedCornerShape(
         topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp,
     )
@@ -152,3 +177,20 @@ private fun style(
     lineHeight = lineHeight.sp,
     letterSpacing = letterSpacing.sp,
 )
+
+/**
+ * Parent corner and the padding between it and a nested shape.
+ * [inset] of 0 means the caller is not inside a bubble or timeline card.
+ * When horizontal and vertical padding differ, pass the larger one so the
+ * nested radius is not rounder than either axis allows.
+ */
+data class OpticalFrame(
+    val outer: Dp,
+    val inset: Dp,
+) {
+    val nested: Boolean get() = inset > 0.dp
+    val inner: Dp get() = AppShapes.concentric(outer, inset)
+    val innerShape: RoundedCornerShape get() = AppShapes.concentricShape(outer, inset)
+}
+
+val LocalOpticalFrame = staticCompositionLocalOf { OpticalFrame(0.dp, 0.dp) }

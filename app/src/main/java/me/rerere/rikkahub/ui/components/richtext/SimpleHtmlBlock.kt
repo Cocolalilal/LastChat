@@ -45,6 +45,7 @@ import me.rerere.common.html.SimpleHtmlElement
 import me.rerere.common.html.SimpleHtmlNode
 import me.rerere.common.html.SimpleHtmlText
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.resolveBidiDirection
@@ -372,6 +373,8 @@ private fun RenderImage(
 ) {
     val src = imgElement.attr("src")
     val alt = imgElement.attr("alt")
+    val frame = LocalOpticalFrame.current
+    val imageShape = if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
     if (src.isNotEmpty()) {
         Box(
             modifier = Modifier
@@ -385,7 +388,7 @@ private fun RenderImage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(imageShape),
                 contentScale = ContentScale.Fit,
             )
         }

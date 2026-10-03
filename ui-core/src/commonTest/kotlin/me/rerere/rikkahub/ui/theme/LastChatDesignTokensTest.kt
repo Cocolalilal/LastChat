@@ -90,6 +90,25 @@ class LastChatDesignTokensTest {
     }
 
     @Test
+    fun nestedCornersStayConcentric() {
+        assertEquals(24.dp, AppShapes.MessageBubbleRadius)
+        assertEquals(6.dp, AppShapes.MessageBubbleJoint)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.CardMedium)
+        assertEquals(AppShapes.CardMedium, AppShapes.InputField)
+        assertEquals(8.dp, AppShapes.concentric(AppShapes.MessageBubbleRadius, AppShapes.MessageBubblePaddingHorizontal))
+        assertEquals(AppShapes.MessageBubbleInner, AppShapes.concentricShape(24.dp, 16.dp))
+        // Accordion row is the 24dp panel minus 4dp list padding.
+        assertEquals(20.dp, AppShapes.concentric(24.dp, 4.dp))
+        // Detail cards: 20dp row minus 14dp content padding.
+        assertEquals(6.dp, AppShapes.concentric(20.dp, 14.dp))
+        // Ask-user options: that card minus its 10dp padding, clamped.
+        assertEquals(0.dp, AppShapes.concentric(6.dp, 10.dp))
+        assertEquals(0.dp, AppShapes.concentric(8.dp, 10.dp, stroke = 1.dp))
+        // Live timeline content: 24dp panel minus the larger of 14dp and 12dp.
+        assertEquals(10.dp, AppShapes.concentric(24.dp, 14.dp))
+    }
+
+    @Test
     fun groupedBubblePositionsAreStable() {
         assertEquals(BubblePosition.SINGLE, getBubblePosition(0, 1))
         assertEquals(BubblePosition.FIRST, getBubblePosition(0, 3))

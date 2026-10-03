@@ -7,10 +7,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
+import me.rerere.rikkahub.ui.theme.OpticalFrame
 
 enum class BubblePosition { SINGLE, FIRST, MIDDLE, LAST }
 
@@ -24,8 +27,8 @@ fun GroupedMessageBubble(
     modifier: Modifier = Modifier,
     containerColor: Color? = null,
     contentColor: Color? = null,
-    largeRadius: Dp = 20.dp,
-    smallRadius: Dp = 6.dp,
+    largeRadius: Dp = AppShapes.MessageBubbleRadius,
+    smallRadius: Dp = AppShapes.MessageBubbleJoint,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -76,10 +79,22 @@ fun GroupedMessageBubble(
         }
     }
     val bubbleContent: @Composable () -> Unit = {
-        // Roomier sides than before: horizontal inset matches the airier top/bottom
-        // rhythm (bubble padding + paragraph spacing), so text, images, code blocks
-        // and tables all sit evenly inside the bubble.
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), content = content)
+        // Horizontal padding is the larger inset. Nested cards read it from
+        // LocalOpticalFrame and step their corners down by that amount.
+        // Full-bleed blocks add the vertical shortfall themselves.
+        val horizontal = AppShapes.MessageBubblePaddingHorizontal
+        val vertical = AppShapes.MessageBubblePaddingVertical
+        CompositionLocalProvider(
+            LocalOpticalFrame provides OpticalFrame(
+                outer = largeRadius,
+                inset = maxOf(horizontal, vertical),
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),
+                content = content,
+            )
+        }
     }
     if (onClick != null) {
         Surface(

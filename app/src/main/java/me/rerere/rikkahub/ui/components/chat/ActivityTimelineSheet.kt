@@ -64,6 +64,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -113,6 +115,8 @@ import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
+import me.rerere.rikkahub.ui.theme.OpticalFrame
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -124,6 +128,25 @@ private const val TIMELINE_PANEL_ANIMATION_MS = 220
 private const val TIMELINE_MAX_HEIGHT_DP = 360
 private const val TIMELINE_GESTURE_IDLE_TIMEOUT_MS = 120L
 private const val TIMELINE_FOLLOW_BOTTOM_KEY = "timeline_follow_bottom"
+
+/** Accordion rows sit inside the 24dp panel with this list padding, so their outer face is 20dp. */
+private val TimelineAccordionInset = 4.dp
+private val TimelineAccordionRowRadius =
+    AppShapes.concentric(AppShapes.MessageBubbleRadius, TimelineAccordionInset)
+private val TimelineAccordionDetailInset = 14.dp
+private val TimelineLiveInsetHorizontal = 14.dp
+private val TimelineLiveInsetVertical = 12.dp
+/** Extra side indent on live entries after the first. Added on top of the list padding. */
+private val TimelineLiveFollowUpIndent = 8.dp
+private val TimelineAskUserCardPadding = 10.dp
+
+private val LocalTimelineDetailRadius = compositionLocalOf {
+    AppShapes.concentric(AppShapes.MessageBubbleRadius, TimelineLiveInsetHorizontal)
+}
+
+@Composable
+private fun timelineDetailShape(): RoundedCornerShape =
+    RoundedCornerShape(LocalTimelineDetailRadius.current)
 
 internal enum class TimelineScrollHandoffMode {
     LockedToPanel,
@@ -568,9 +591,12 @@ internal fun ActivityTimelinePanel(
                     .nestedScroll(timelineScrollLock),
                 verticalArrangement = Arrangement.spacedBy(if (useAccordionLayout) 3.dp else 8.dp),
                 contentPadding = if (useAccordionLayout) {
-                    androidx.compose.foundation.layout.PaddingValues(4.dp)
+                    androidx.compose.foundation.layout.PaddingValues(TimelineAccordionInset)
                 } else {
-                    androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                    androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = TimelineLiveInsetHorizontal,
+                        vertical = TimelineLiveInsetVertical,
+                    )
                 }
             ) {
                 itemsIndexed(
@@ -579,12 +605,14 @@ internal fun ActivityTimelinePanel(
                 ) { index, entry ->
                     // Optically nested inside the outer panel (InputField = 24dp) with
                     // 4dp list padding: outer-facing corners step down to 20dp (24 - 4),
-                    // sibling-facing joints stay small at 6dp across the 3dp gaps.
+                    // sibling-facing joints stay at the shared 6dp tuck across the 3dp gaps.
+                    val rowOuter = TimelineAccordionRowRadius
+                    val joint = AppShapes.MessageBubbleJoint
                     val shape = when {
-                        entries.size == 1 -> RoundedCornerShape(20.dp)
-                        index == 0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
-                        index == entries.lastIndex -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
-                        else -> RoundedCornerShape(6.dp)
+                        entries.size == 1 -> RoundedCornerShape(rowOuter)
+                        index == 0 -> RoundedCornerShape(topStart = rowOuter, topEnd = rowOuter, bottomStart = joint, bottomEnd = joint)
+                        index == entries.lastIndex -> RoundedCornerShape(topStart = joint, topEnd = joint, bottomStart = rowOuter, bottomEnd = rowOuter)
+                        else -> RoundedCornerShape(joint)
                     }
                     TimelineEntryItem(
                         entry = entry,
@@ -853,10 +881,28 @@ private fun TimelineEntryItem(
         }
 
         if (hasContent) {
+            val horizontalInset = TimelineLiveInsetHorizontal +
+                if (isSingleEntry) 0.dp else TimelineLiveFollowUpIndent
+            val detailRadius = AppShapes.concentric(
+                AppShapes.MessageBubbleRadius,
+                maxOf(horizontalInset, TimelineLiveInsetVertical),
+            )
+            val mediaInset = maxOf(
+                horizontalInset,
+                TimelineLiveInsetVertical +
+                    (AppShapes.MessageBubblePaddingHorizontal - AppShapes.MessageBubblePaddingVertical),
+            )
+            CompositionLocalProvider(
+                LocalTimelineDetailRadius provides detailRadius,
+                LocalOpticalFrame provides OpticalFrame(
+                    outer = AppShapes.MessageBubbleRadius,
+                    inset = mediaInset,
+                ),
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = if (isSingleEntry) 0.dp else 8.dp),
+                    .padding(horizontal = if (isSingleEntry) 0.dp else TimelineLiveFollowUpIndent),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TimelineExpandedContent(
@@ -875,6 +921,7 @@ private fun TimelineEntryItem(
                         .height(1.dp)
                         .bringIntoViewRequester(viewRequester)
                 )
+            }
             }
         }
     }
@@ -1012,10 +1059,30 @@ private fun TimelineAccordionEntry(
             }
 
             if (expanded && hasContent) {
+                val detailRadius = AppShapes.concentric(
+                    TimelineAccordionRowRadius,
+                    TimelineAccordionDetailInset,
+                )
+                val mediaInset = maxOf(
+                    TimelineAccordionDetailInset,
+                    TimelineAccordionDetailInset +
+                        (AppShapes.MessageBubblePaddingHorizontal - AppShapes.MessageBubblePaddingVertical),
+                )
+                CompositionLocalProvider(
+                    LocalTimelineDetailRadius provides detailRadius,
+                    LocalOpticalFrame provides OpticalFrame(
+                        outer = TimelineAccordionRowRadius,
+                        inset = mediaInset,
+                    ),
+                ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                        .padding(
+                            start = TimelineAccordionDetailInset,
+                            end = TimelineAccordionDetailInset,
+                            bottom = TimelineAccordionDetailInset,
+                        ),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     TimelineExpandedContent(
@@ -1028,6 +1095,7 @@ private fun TimelineAccordionEntry(
                         canRestore = canRestore,
                         followLiveContent = false,
                     )
+                }
                 }
             }
         }
@@ -1259,7 +1327,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
 
         if (!summary.isNullOrBlank()) {
             Surface(
-                shape = AppShapes.CardSmallInner8,
+                shape = timelineDetailShape(),
                 color = MaterialTheme.colorScheme.secondaryContainer,
             ) {
                 Text(
@@ -1288,7 +1356,7 @@ private fun MemoryRecallTimelineDetails(entry: TimelineEntry.ToolCall) {
                     val matchedText = obj["matched_text"]?.jsonPrimitiveOrNull?.contentOrNull
 
                     Surface(
-                        shape = AppShapes.CardSmallInner8,
+                        shape = timelineDetailShape(),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                         Column(
@@ -1826,7 +1894,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!answer.isNullOrBlank()) {
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.tertiaryContainer
         ) {
             Text(
@@ -1853,7 +1921,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
                 val host = url?.let { Uri.parse(it).host }
 
                 Surface(
-                    shape = AppShapes.CardSmallInner8,
+                    shape = timelineDetailShape(),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Column(
@@ -1910,7 +1978,7 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!content.isNullOrBlank()) {
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2001,13 +2069,20 @@ private fun AskUserQuestionTimelineCard(
     val showCustomAnswer = answerValue != null && (answer.source != "option" ||
         question.options.none { option -> option.label == answerValue })
 
+    val cardRadius = LocalTimelineDetailRadius.current
     Surface(
-        shape = AppShapes.CardSmallInner8,
+        shape = RoundedCornerShape(cardRadius),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
+        CompositionLocalProvider(
+            LocalTimelineDetailRadius provides AppShapes.concentric(
+                cardRadius,
+                TimelineAskUserCardPadding,
+            )
+        ) {
         Column(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(TimelineAskUserCardPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -2027,9 +2102,10 @@ private fun AskUserQuestionTimelineCard(
                     question.options.forEach { option ->
                         val isSelected = selectedOption == option.label
                         Surface(
-                            // Nested inside the 8dp question card with 10dp padding:
-                            // step down to 6dp so corners read as optically nested.
-                            shape = RoundedCornerShape(6.dp),
+                            // Card radius minus the 10dp padding. Clamps to 0 when the
+                            // card is already tighter than its padding. The 1dp border
+                            // is drawn inside this shape, so it is not part of the gap.
+                            shape = timelineDetailShape(),
                             color = if (isSelected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                             } else {
@@ -2096,6 +2172,7 @@ private fun AskUserQuestionTimelineCard(
                 )
             }
         }
+        }
     }
 }
 
@@ -2132,7 +2209,7 @@ private fun PythonTimelineDetails(entry: TimelineEntry.ToolCall) {
         !summary.stderr.isNullOrBlank()
 
     Surface(
-        shape = AppShapes.CardSmallInner8,
+        shape = timelineDetailShape(),
         color = if (!summary.error.isNullOrBlank()) {
             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
         } else {
@@ -2403,7 +2480,7 @@ private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.tertiaryContainer
         ) {
             Text(
@@ -2422,7 +2499,7 @@ private fun SkillManagementTimelineDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2457,7 +2534,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2476,7 +2553,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
             color = MaterialTheme.colorScheme.secondary
         )
         Surface(
-            shape = AppShapes.CardSmallInner8,
+            shape = timelineDetailShape(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -2501,7 +2578,7 @@ private fun TimelineDetailBlock(
         color = MaterialTheme.colorScheme.secondary
     )
     Surface(
-        shape = AppShapes.CardSmallInner8,
+        shape = timelineDetailShape(),
         color = containerColor,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -2727,7 +2804,7 @@ private fun MemoryContentBlock(
         color = MaterialTheme.colorScheme.secondary
     )
     Surface(
-        shape = AppShapes.CardSmallInner8,
+        shape = timelineDetailShape(),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {

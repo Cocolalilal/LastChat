@@ -73,6 +73,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.exportImage
@@ -214,9 +215,11 @@ fun Mermaid(
     }
 
 
+    val frame = LocalOpticalFrame.current
+    val blockShape = if (frame.nested) frame.innerShape else AppShapes.InputField
     Surface(
         modifier = modifier,
-        shape = AppShapes.InputField,
+        shape = blockShape,
         color = shellColor,
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),

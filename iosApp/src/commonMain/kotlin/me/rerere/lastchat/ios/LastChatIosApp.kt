@@ -173,6 +173,7 @@ import me.rerere.rikkahub.ui.components.chat.LastChatComposerCapsule
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAttachmentRow
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAudioIcon
 import me.rerere.rikkahub.ui.components.chat.LastChatDocumentAttachmentTile
+import me.rerere.rikkahub.ui.components.chat.LastChatMessageAttachmentShape
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerImageAttachment
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerMediaAttachment
 import me.rerere.rikkahub.ui.components.chat.LastChatMessageAttachmentRow
@@ -958,7 +959,7 @@ private fun MessageBubble(
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .clip(MaterialTheme.shapes.medium)
+                                .clip(LastChatMessageAttachmentShape)
                                 .size(72.dp)
                                 .clickable {
                                     platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -967,6 +968,7 @@ private fun MessageBubble(
                         )
                         is UIMessagePart.Video -> LastChatDocumentAttachmentTile(
                             fileName = "Video",
+                            shape = LastChatMessageAttachmentShape,
                             modifier = Modifier.size(72.dp),
                             onClick = {
                                 platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -975,6 +977,7 @@ private fun MessageBubble(
                         )
                         is UIMessagePart.Audio -> LastChatDocumentAttachmentTile(
                             fileName = "Audio",
+                            shape = LastChatMessageAttachmentShape,
                             modifier = Modifier.size(72.dp),
                             onClick = {
                                 platformHaptics.perform(PlatformHapticPattern.Pop)
@@ -983,6 +986,7 @@ private fun MessageBubble(
                         )
                         is UIMessagePart.Document -> LastChatDocumentAttachmentTile(
                             fileName = part.fileName,
+                            shape = LastChatMessageAttachmentShape,
                             modifier = Modifier.size(72.dp),
                             onClick = {
                                 platformHaptics.perform(PlatformHapticPattern.Pop)

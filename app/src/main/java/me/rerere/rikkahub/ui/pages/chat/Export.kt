@@ -96,6 +96,7 @@ import me.rerere.rikkahub.ui.components.chat.ActivityPillRow
 import me.rerere.rikkahub.ui.components.chat.ActivityState
 import me.rerere.rikkahub.ui.components.chat.BubbleRole
 import me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble
+import me.rerere.rikkahub.ui.components.chat.LastChatMessageAttachmentShape
 import me.rerere.rikkahub.ui.components.chat.MemoryOperation
 import me.rerere.rikkahub.ui.components.chat.TimelineEntry
 import me.rerere.rikkahub.ui.components.chat.buildTimelineEntries
@@ -888,7 +889,7 @@ private fun ExportedChatTurn(
                 contentDescription = stringResource(R.string.a11y_image),
                 modifier = Modifier
                     .sizeIn(maxHeight = 300.dp)
-                    .clip(AppShapes.MessageBubbleInner),
+                    .clip(LastChatMessageAttachmentShape),
             )
         }
 

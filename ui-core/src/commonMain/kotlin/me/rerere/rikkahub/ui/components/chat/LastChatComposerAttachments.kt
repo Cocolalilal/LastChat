@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 /** Exact 84 dp production attachment strip, including animated scroll-edge masks. */
 @Composable
@@ -252,6 +254,7 @@ fun LastChatDocumentAttachmentTile(
     onRemove: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    shape: Shape = AttachmentShape,
 ) {
     val extension = fileName.substringAfterLast('.', "").uppercase()
         .takeIf { it.isNotBlank() } ?: "FILE"
@@ -262,7 +265,7 @@ fun LastChatDocumentAttachmentTile(
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            shape = AttachmentShape,
+            shape = shape,
             tonalElevation = 4.dp,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
@@ -339,6 +342,9 @@ private fun LastChatComposerInsetRemoveButton(
 }
 
 private val AttachmentShape = RoundedCornerShape(12.dp)
+
+/** Sent-message photo and file tiles. Same outer radius as the chat bubble. Composer tiles stay at 12dp. */
+val LastChatMessageAttachmentShape = AppShapes.CardMedium
 
 private fun attachmentIcon(name: String, path: String): ImageVector = ImageVector.Builder(
     name = name,

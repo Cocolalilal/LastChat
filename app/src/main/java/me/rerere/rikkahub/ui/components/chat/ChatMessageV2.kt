@@ -652,7 +652,7 @@ private fun AttachmentRow(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .clip(MaterialTheme.shapes.medium)
+                            .clip(LastChatMessageAttachmentShape)
                             .size(72.dp)
                             .then(archivedModifier)
                     )
@@ -660,6 +660,7 @@ private fun AttachmentRow(
 
                 is RenderableAttachment.File -> {
                     LastChatDocumentAttachmentTile(
+                        shape = LastChatMessageAttachmentShape,
                         fileName = if (attachment.archived && attachment.url.isBlank()) {
                             "${attachment.fileName} (archived)"
                         } else {
@@ -682,6 +683,7 @@ private fun AttachmentRow(
 
                 is RenderableAttachment.Placeholder -> {
                     LastChatDocumentAttachmentTile(
+                        shape = LastChatMessageAttachmentShape,
                         fileName = attachment.fileName,
                         modifier = Modifier
                             .size(72.dp)

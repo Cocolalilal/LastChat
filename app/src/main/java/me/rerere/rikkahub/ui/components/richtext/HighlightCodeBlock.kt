@@ -95,6 +95,7 @@ import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.theme.AtomOneDarkPalette
 import me.rerere.rikkahub.ui.theme.AtomOneLightPalette
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -309,9 +310,12 @@ fun HighlightCodeBlock(
         }
     }
 
+    val frame = LocalOpticalFrame.current
+    // The 1dp border is drawn inside the shape, so it is not extra inset from the bubble.
+    val blockShape = if (frame.nested) frame.innerShape else AppShapes.InputField
     Surface(
         modifier = modifier,
-        shape = AppShapes.InputField,
+        shape = blockShape,
         color = shellColor,
         contentColor = colorScheme.onSurface,
         border = BorderStroke(1.dp, outlineColor),

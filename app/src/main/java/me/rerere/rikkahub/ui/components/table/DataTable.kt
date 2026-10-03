@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import kotlin.math.max
 
 /**
@@ -48,11 +49,16 @@ fun DataTable(
 ) {
     val hScroll = rememberScrollState()
     val surfaceContainer = MaterialTheme.colorScheme.surfaceContainer
+    val frame = LocalOpticalFrame.current
+    // Standalone tables keep the 12dp small shape. Inside a bubble the 1dp
+    // border is drawn on this shape, not as extra gap, so the radius is just
+    // the optical inner corner.
+    val tableShape = if (frame.nested) frame.innerShape else MaterialTheme.shapes.small
 
     Box(
         modifier = modifier
-            .clip(MaterialTheme.shapes.small)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), MaterialTheme.shapes.small)
+            .clip(tableShape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), tableShape)
             .horizontalScroll(hScroll)
     ) {
         SubcomposeLayout { constraints ->

@@ -56,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +86,9 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.updatePreviewAutoFollowPaused
 import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.shimmer
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
+import me.rerere.rikkahub.ui.theme.OpticalFrame
 sealed interface ActivityState {
     /** Waiting for first token - shows typing dots */
     data object Waiting : ActivityState
@@ -298,9 +302,9 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
     return items
 }
 
-// Corner radius constants
+// Compact pills stay capsule-like (36dp tall). The tuck matches the bubble joint.
 private val LARGE_RADIUS = 20.dp
-private val SMALL_RADIUS = 6.dp
+private val SMALL_RADIUS = AppShapes.MessageBubbleJoint
 private val PILL_HEIGHT = 36.dp
 private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
 private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
@@ -515,7 +519,7 @@ private fun AnimatedSinglePill(
     // Every expanded activity surface matches the multi-step ActivityTimelinePanel:
     // InputField (24dp). Reasoning-only used to stay at the compact 20dp pill radius,
     // which left a different corner when that card was expanded.
-    val expandedRadius = 24.dp
+    val expandedRadius = AppShapes.MessageBubbleRadius
 
     // Animate corner radii for smooth transitions
     val topStartRadius by animateDpAsState(
@@ -911,8 +915,17 @@ private fun ReasoningPreviewCard(
         ?: stringResource(R.string.activity_timeline_reasoning)
     val previewText = state.reasoningText.takeIf { it.isNotBlank() } ?: displayTitle
 
+    val horizontal = 14.dp
+    val vertical = 12.dp
+    val mediaCompensation = AppShapes.MessageBubblePaddingHorizontal - AppShapes.MessageBubblePaddingVertical
+    CompositionLocalProvider(
+        LocalOpticalFrame provides OpticalFrame(
+            outer = AppShapes.MessageBubbleRadius,
+            inset = maxOf(horizontal, vertical + mediaCompensation),
+        )
+    ) {
     Column(
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
@@ -1005,6 +1018,7 @@ private fun ReasoningPreviewCard(
                 if (isLive) streamingLayoutTick++
             }
         )
+    }
     }
 }
 

@@ -94,6 +94,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
@@ -468,7 +470,8 @@ val LocalMarkdownWorkspaceId = compositionLocalOf<String?> { null }
  * edge top/bottom than to the sides. Boxes absorb that difference themselves so every
  * nested element keeps an even optical inset on all sides.
  */
-private val BubbleEdgeCompensation = 4.dp
+private val BubbleEdgeCompensation =
+    AppShapes.MessageBubblePaddingHorizontal - AppShapes.MessageBubblePaddingVertical
 
 /**
  * Safely get color from RP style rule for a given pattern.
@@ -1339,9 +1342,11 @@ private fun MarkdownNode(
                 val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                 val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
                 CompositionLocalProvider(LocalLayoutDirection provides quoteLayoutDirection) {
+                    val frame = LocalOpticalFrame.current
                     Column(
                         modifier = modifier
                             .padding(bottom = bottomPadding)
+                            .then(if (frame.nested) Modifier.clip(frame.innerShape) else Modifier)
                             .drawWithContent {
                                 drawContent()
                                 drawRect(color = bgColor, size = size)
@@ -1514,11 +1519,13 @@ private fun MarkdownNode(
                         .heightIn(min = 120.dp)
                 }
                 // 这里可以使用Coil等图片加载库加载图片
+                val frame = LocalOpticalFrame.current
+                val imageShape = if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
                 ZoomableAsyncImage(
                     model = imageModel,
                     contentDescription = altText,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(imageShape)
                         .then(reservedModifier),
                     onSizeResolved = { resolved ->
                         if (reservedInfo == null) {
