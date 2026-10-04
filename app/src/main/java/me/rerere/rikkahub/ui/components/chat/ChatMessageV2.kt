@@ -1780,13 +1780,19 @@ private fun AssistantBubbleStack(
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .then(
-                                LocalMessageBubbleShape.current?.let { shape ->
-                                    Modifier.border(
-                                        width = AppSurface.ImageRimWidth,
-                                        color = AppSurface.imageContrastRim(),
-                                        shape = shape,
-                                    )
-                                } ?: Modifier
+                                run {
+                                    val shape = LocalMessageBubbleShape.current
+                                    val bubbleColor = LocalMessageBubbleColor.current
+                                    if (shape != null && bubbleColor != null) {
+                                        Modifier.border(
+                                            width = AppSurface.ImageRimWidth,
+                                            color = bubbleColor,
+                                            shape = shape,
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                }
                             )
                             .fillMaxWidth()
                             .heightIn(max = 320.dp)

@@ -28,6 +28,12 @@ enum class BubbleRole { USER, ASSISTANT, ACTIVITY }
  */
 val LocalMessageBubbleShape = staticCompositionLocalOf<Shape?> { null }
 
+/**
+ * Fill of a rich block that is the message bubble. Image rims use this so the
+ * edge reads as the bubble itself (assistant or user), not a separate stroke.
+ */
+val LocalMessageBubbleColor = staticCompositionLocalOf<Color?> { null }
+
 /** The production LastChat grouped-message container, shared by Android and iOS. */
 @Composable
 fun GroupedMessageBubble(
@@ -96,12 +102,14 @@ fun GroupedMessageBubble(
         val horizontal = contentPaddingHorizontal
         val vertical = contentPaddingVertical
         val flush = horizontal == 0.dp && vertical == 0.dp
+        val bubbleColor = containerColor ?: defaultContainerColor
         CompositionLocalProvider(
             LocalOpticalFrame provides OpticalFrame(
                 outer = largeRadius,
                 inset = if (flush) 0.dp else maxOf(horizontal, vertical),
             ),
             LocalMessageBubbleShape provides if (flush) shape else null,
+            LocalMessageBubbleColor provides if (flush) bubbleColor else null,
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),

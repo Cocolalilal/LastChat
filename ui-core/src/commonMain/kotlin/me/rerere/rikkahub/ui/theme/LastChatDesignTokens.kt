@@ -50,11 +50,12 @@ object AppSurface {
     const val GlassAlphaLight = 0.28f
     const val SoftEdgeAlpha = 0.6f
     val SoftEdgeWidth = 1.dp
-    /** Light rim on a photo bubble. Fixed white, not a blur sample, so black stays visible on black. */
-    const val ImageRimAlpha = 0.28f
-    val ImageRimWidth = 1.dp
-
-    fun imageContrastRim(): Color = Color.White.copy(alpha = ImageRimAlpha)
+    /**
+     * Stroke on a photo that is itself the message bubble. Color comes from
+     * [me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleColor] so the rim
+     * is the bubble fill. Thicker than a 1dp hairline, still a rim rather than a mat.
+     */
+    val ImageRimWidth = 2.dp
     val TonalElevation = 0.dp
 
     fun fill(colorScheme: ColorScheme): Color = colorScheme.surfaceContainer

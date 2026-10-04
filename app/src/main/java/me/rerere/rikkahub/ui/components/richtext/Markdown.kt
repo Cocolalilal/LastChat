@@ -1586,6 +1586,7 @@ private fun MarkdownNode(
             ) {
                 val frame = LocalOpticalFrame.current
                 val bubbleShape = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current
+                val bubbleColor = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleColor.current
                 val imageShape = bubbleShape ?: if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
                 val info = reservedInfo
                 val reservedModifier = if (bubbleShape != null) {
@@ -1616,10 +1617,10 @@ private fun MarkdownNode(
                     contentDescription = altText,
                     modifier = Modifier
                         .then(
-                            if (bubbleShape != null) {
+                            if (bubbleShape != null && bubbleColor != null) {
                                 Modifier.border(
                                     width = AppSurface.ImageRimWidth,
-                                    color = AppSurface.imageContrastRim(),
+                                    color = bubbleColor,
                                     shape = imageShape,
                                 )
                             } else {

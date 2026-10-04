@@ -86,16 +86,9 @@ class LastChatDesignTokensTest {
     }
 
     @Test
-    fun imageRimIsASubtleLightStrokeOnBlack() {
-        val rim = AppSurface.imageContrastRim()
-        assertEquals(1f, rim.red)
-        assertEquals(1f, rim.green)
-        assertEquals(1f, rim.blue)
-        assertTrue(kotlin.math.abs(rim.alpha - AppSurface.ImageRimAlpha) < 0.01f)
-        assertEquals(1.dp, AppSurface.ImageRimWidth)
-        val onBlack = srcOver(rim, Color.Black)
-        assertTrue(onBlack.red > 0.2f)
-        assertTrue(onBlack.red < 0.4f)
+    fun imageRimIsThickerThanAHairline() {
+        assertEquals(2.dp, AppSurface.ImageRimWidth)
+        assertTrue(AppSurface.ImageRimWidth > 1.dp)
     }
 
     @Test
