@@ -5,14 +5,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -20,9 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,7 +37,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -65,22 +61,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp as graphicsLerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp as dpLerp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.R
@@ -308,21 +309,17 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = AppShapes.MessageBubbleJoint
 private val PILL_HEIGHT = 36.dp
-// Starts at rest (no kick) and never overshoots. Same spring for size, corners, and color.
+// One critically damped clock. Size, corners, color, and the crossfade all read it,
+// so a tap mid-flight reverses from the live value instead of restarting a second spring.
 private const val PILL_MORPH_STIFFNESS = 240f
 private val PILL_MORPH_SPEC = spring<IntSize>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PILL_MORPH_STIFFNESS,
 )
-private val PILL_CORNER_SPEC = spring<Dp>(
+private val PILL_PROGRESS_SPEC = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PILL_MORPH_STIFFNESS,
 )
-private val PILL_COLOR_SPEC = spring<Color>(
-    dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = PILL_MORPH_STIFFNESS,
-)
-private val PILL_FADE_EASING = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
 /**
  * Position of a pill in a row of pills.
@@ -530,62 +527,73 @@ private fun AnimatedSinglePill(
         SinglePillContentState.Compact(state)
     }
     val surfaceExpanded = requestedContentState !is SinglePillContentState.Compact
-    val isExpandedTimeline = requestedContentState is SinglePillContentState.ExpandedTimeline
+    // Keep the open panel composed through a collapse so the spring can measure it
+    // on the way back. Drop it only after progress has settled on compact.
+    var retainedExpanded by remember { mutableStateOf<SinglePillContentState?>(null) }
+    SideEffect {
+        if (requestedContentState !is SinglePillContentState.Compact &&
+            retainedExpanded != requestedContentState
+        ) {
+            retainedExpanded = requestedContentState
+        }
+    }
+    val visibleExpanded = if (requestedContentState !is SinglePillContentState.Compact) {
+        requestedContentState
+    } else {
+        retainedExpanded
+    }
+
+    val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
+    val progress = remember { Animatable(if (surfaceExpanded) 1f else 0f) }
+    LaunchedEffect(surfaceExpanded, chatAnimationsEnabled) {
+        val target = if (surfaceExpanded) 1f else 0f
+        if (!chatAnimationsEnabled) {
+            progress.snapTo(target)
+        } else {
+            // Always retarget. A cancelled flight leaves targetValue stale, and skipping
+            // animateTo there would freeze the pill between sizes.
+            progress.animateTo(target, PILL_PROGRESS_SPEC)
+        }
+        if (!surfaceExpanded && progress.value == 0f) {
+            retainedExpanded = null
+        }
+    }
+    val morph = progress.value.coerceIn(0f, 1f)
+    val morphRunning = progress.isRunning
+    val fullyCollapsed = !surfaceExpanded && !morphRunning && morph == 0f
+
     // Every expanded activity surface matches the multi-step ActivityTimelinePanel:
     // InputField (24dp). Reasoning-only used to stay at the compact 20dp pill radius,
     // which left a different corner when that card was expanded.
     val expandedRadius = AppShapes.MessageBubbleRadius
+    val collapsedBottom = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS
+    val topStartRadius = dpLerp(LARGE_RADIUS, expandedRadius, morph)
+    val topEndRadius = topStartRadius
+    val bottomStartRadius = dpLerp(collapsedBottom, expandedRadius, morph)
+    val bottomEndRadius = bottomStartRadius
 
-    // Animate corner radii for smooth transitions
-    val topStartRadius by animateDpAsState(
-        targetValue = if (surfaceExpanded) expandedRadius else LARGE_RADIUS,
-        animationSpec = PILL_CORNER_SPEC,
-        label = "corner_top_start"
-    )
-    val topEndRadius by animateDpAsState(
-        targetValue = if (surfaceExpanded) expandedRadius else LARGE_RADIUS,
-        animationSpec = PILL_CORNER_SPEC,
-        label = "corner_top_end"
-    )
-    val bottomStartRadius by animateDpAsState(
-        targetValue = when {
-            surfaceExpanded -> expandedRadius
-            connectsToBubbleBelow -> SMALL_RADIUS
-            else -> LARGE_RADIUS
-        },
-        animationSpec = PILL_CORNER_SPEC,
-        label = "corner_bottom_start"
-    )
-    val bottomEndRadius by animateDpAsState(
-        targetValue = when {
-            surfaceExpanded -> expandedRadius
-            connectsToBubbleBelow -> SMALL_RADIUS
-            else -> LARGE_RADIUS
-        },
-        animationSpec = PILL_CORNER_SPEC,
-        label = "corner_bottom_end"
-    )
-    
-    val isMultipleMinimized = !surfaceExpanded && state is ActivityState.CompletedMultiple
-    val pillColor by animateColorAsState(
-        // Multi-step timeline: the inner ActivityTimelinePanel paints surfaceContainerLow
-        // itself, so the outer pill stays transparent and cannot peek past those corners.
-        // Reasoning-only expanded states have no inner panel, so they use that same
-        // surfaceContainerLow here instead of the compact pill's surfaceContainerHigh.
-        targetValue = when {
-            isMultipleMinimized || isExpandedTimeline -> Color.Transparent
-            surfaceExpanded -> MaterialTheme.colorScheme.surfaceContainerLow
-            else -> MaterialTheme.colorScheme.surfaceContainerHigh
-        },
-        animationSpec = PILL_COLOR_SPEC,
-        label = "pill_color"
-    )
+    val expandedIsTimeline = visibleExpanded is SinglePillContentState.ExpandedTimeline
+    val collapsedColor = if (state is ActivityState.CompletedMultiple) {
+        Color.Transparent
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    // Multi-step timeline: the inner ActivityTimelinePanel paints surfaceContainerLow
+    // itself, so the outer pill stays transparent and cannot peek past those corners.
+    // Reasoning-only expanded states have no inner panel, so they use that same
+    // surfaceContainerLow here instead of the compact pill's surfaceContainerHigh.
+    val expandedColor = if (expandedIsTimeline) {
+        Color.Transparent
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val pillColor = graphicsLerp(collapsedColor, expandedColor, morph)
     val pillShape = RoundedCornerShape(
-            topStart = topStartRadius,
-            topEnd = topEndRadius,
-            bottomStart = bottomStartRadius,
-            bottomEnd = bottomEndRadius
-        )
+        topStart = topStartRadius,
+        topEnd = topEndRadius,
+        bottomStart = bottomStartRadius,
+        bottomEnd = bottomEndRadius
+    )
     val testTag = when (state) {
         is ActivityState.Ocr -> ActivityType.OCR
         is ActivityState.Reasoning -> ActivityType.REASONING
@@ -594,37 +602,24 @@ private fun AnimatedSinglePill(
         else -> null
     }?.toTestTag()
 
-    val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
-    val morphKey = when (requestedContentState) {
-        is SinglePillContentState.ExpandedReasoning -> "reasoning"
-        is SinglePillContentState.ExpandedTimeline -> "timeline"
-        is SinglePillContentState.Compact -> "compact"
-    }
-    // True on the same frame the content changes, so the size spring is the only motion.
-    var settledMorphKey by remember { mutableStateOf(morphKey) }
-    val morphing = chatAnimationsEnabled && settledMorphKey != morphKey
-    LaunchedEffect(morphKey) {
-        if (settledMorphKey != morphKey) {
-            delay(640)
-            settledMorphKey = morphKey
-        }
-    }
-
     Surface(
         modifier = Modifier
+            .clip(pillShape)
             .then(
-                if (chatAnimationsEnabled && !morphing) {
+                // Streaming growth only after the open/close spring has finished,
+                // so it cannot fight the morph or leave a stale width behind.
+                if (chatAnimationsEnabled && surfaceExpanded && !morphRunning) {
                     Modifier.animateContentSize(
                         animationSpec = PILL_MORPH_SPEC,
                         alignment = Alignment.TopStart
                     )
-                } else Modifier
+                } else {
+                    Modifier
+                }
             )
-            .defaultMinSize(minHeight = PILL_HEIGHT)
             .then(
-                if (surfaceExpanded) Modifier.widthIn(max = maxBubbleWidth) else Modifier
+                if (fullyCollapsed) Modifier.defaultMinSize(minHeight = PILL_HEIGHT) else Modifier
             )
-            .clip(pillShape)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         shape = pillShape,
         color = pillColor,
@@ -640,61 +635,55 @@ private fun AnimatedSinglePill(
             onClick(clickType)
         }
     ) {
-        AnimatedContent(
-            targetState = requestedContentState,
-            transitionSpec = {
-                // Clip reveals the new panel as the bounds grow. Fade eases in from rest
-                // so the old pill doesn't get replaced on the first frame.
-                (
-                    fadeIn(animationSpec = tween(durationMillis = 420, delayMillis = 70, easing = PILL_FADE_EASING))
-                        togetherWith fadeOut(animationSpec = tween(durationMillis = 260, easing = PILL_FADE_EASING))
-                ).using(SizeTransform(clip = true) { _, _ -> PILL_MORPH_SPEC })
-            },
-            contentAlignment = Alignment.TopStart,
-            contentKey = { 
-                when (it) {
-                    is SinglePillContentState.ExpandedReasoning -> "reasoning"
-                    is SinglePillContentState.ExpandedTimeline -> "timeline"
-                    is SinglePillContentState.Compact -> "compact"
-                }
-            },
-            label = "pill_morph_content"
-        ) { targetContentState ->
-            when (targetContentState) {
-                is SinglePillContentState.ExpandedTimeline -> {
-                    ActivityTimelinePanel(
-                        entries = targetContentState.entries,
-                        initialOpenRequest = targetContentState.initialRequest,
-                        assistantId = targetContentState.assistantId,
-                        scrollHandoffMode = targetContentState.scrollHandoffMode,
-                        isLive = targetContentState.isLive,
-                        onTimelineClick = onTimelineDismiss,
-                        animateSize = false,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                is SinglePillContentState.ExpandedReasoning -> {
-                    val activeReasoningState = targetContentState.state.let { targetState ->
-                        val parentState = state as? ActivityState.Reasoning
-                        if (parentState != null &&
-                            parentState.startTimeMs == targetState.startTimeMs &&
-                            parentState.reasoningText.length > targetState.reasoningText.length
-                        ) {
-                            parentState
-                        } else {
-                            targetState
-                        }
+        PillMorphLayout(
+            progress = morph,
+            maxExpandedWidth = maxBubbleWidth,
+        ) {
+            if (visibleExpanded != null && !fullyCollapsed) {
+            PillMorphLayer(id = "expanded") {
+                when (val targetContentState = visibleExpanded) {
+                    is SinglePillContentState.ExpandedTimeline -> {
+                        ActivityTimelinePanel(
+                            entries = targetContentState.entries,
+                            initialOpenRequest = targetContentState.initialRequest,
+                            assistantId = targetContentState.assistantId,
+                            scrollHandoffMode = targetContentState.scrollHandoffMode,
+                            isLive = targetContentState.isLive,
+                            onTimelineClick = onTimelineDismiss,
+                            animateSize = false,
+                            pillAnchored = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                    ReasoningPreviewCard(
-                        state = activeReasoningState,
-                        active = surfaceExpanded,
-                        isLive = targetContentState.isLive,
-                        durationMs = targetContentState.durationMs,
-                        onHeaderClick = if (timelineOpen) onTimelineDismiss else null
-                    )
+                    is SinglePillContentState.ExpandedReasoning -> {
+                        val activeReasoningState = targetContentState.state.let { targetState ->
+                            val parentState = state as? ActivityState.Reasoning
+                            if (parentState != null &&
+                                parentState.startTimeMs == targetState.startTimeMs &&
+                                parentState.reasoningText.length > targetState.reasoningText.length
+                            ) {
+                                parentState
+                            } else {
+                                targetState
+                            }
+                        }
+                        ReasoningPreviewCard(
+                            state = activeReasoningState,
+                            active = surfaceExpanded,
+                            isLive = targetContentState.isLive,
+                            durationMs = targetContentState.durationMs,
+                            onHeaderClick = if (timelineOpen) onTimelineDismiss else null
+                        )
+                    }
+                    else -> Unit
                 }
-                is SinglePillContentState.Compact -> {
-                    val compactState = if (!surfaceExpanded && !isExpandedReasoning) state else targetContentState.state
+            }
+            }
+            PillMorphLayer(
+                id = "compact",
+                modifier = Modifier.defaultMinSize(minHeight = PILL_HEIGHT),
+            ) {
+                    val compactState = if (!surfaceExpanded && !isExpandedReasoning) state else (requestedContentState as? SinglePillContentState.Compact)?.state ?: state
                     
                     AnimatedContent(
                         targetState = compactState,
@@ -789,7 +778,9 @@ private fun AnimatedSinglePill(
                             }
                         } else {
                             Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .height(PILL_HEIGHT)
+                                    .padding(horizontal = 14.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -854,7 +845,64 @@ private fun AnimatedSinglePill(
                             }
                         }
                     }
-                }
+                    }
+            }
+        }
+    }
+
+
+@Composable
+private fun PillMorphLayer(
+    id: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier.layoutId(id)) { content() }
+}
+
+@Composable
+private fun PillMorphLayout(
+    progress: Float,
+    maxExpandedWidth: Dp,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val compactPlaceable = measurables.first { it.layoutId == "compact" }.measure(loose)
+        val expandedMeasurable = measurables.firstOrNull { it.layoutId == "expanded" }
+        val expandedCap = if (maxExpandedWidth.value.isFinite()) {
+            maxExpandedWidth.roundToPx().coerceAtMost(loose.maxWidth)
+        } else {
+            loose.maxWidth
+        }
+        val expandedPlaceable = expandedMeasurable?.measure(
+            loose.copy(maxWidth = expandedCap.coerceAtLeast(0))
+        )
+        val t = progress.coerceIn(0f, 1f)
+        val width = if (expandedPlaceable == null) {
+            compactPlaceable.width
+        } else {
+            (compactPlaceable.width + (expandedPlaceable.width - compactPlaceable.width) * t).roundToInt()
+        }
+        val height = if (expandedPlaceable == null) {
+            compactPlaceable.height
+        } else {
+            (compactPlaceable.height + (expandedPlaceable.height - compactPlaceable.height) * t).roundToInt()
+        }
+        val layoutWidth = width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val layoutHeight = height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(layoutWidth, layoutHeight) {
+            // The more visible layer is placed last so it keeps the clicks.
+            val expandedOnTop = t >= 0.5f
+            if (expandedPlaceable != null && !expandedOnTop && t > 0f) {
+                expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
+            }
+            if (t < 1f) {
+                compactPlaceable.placeWithLayer(0, 0) { alpha = 1f - t }
+            }
+            if (expandedPlaceable != null && expandedOnTop) {
+                expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
             }
         }
     }
@@ -950,13 +998,12 @@ private fun ReasoningPreviewCard(
             inset = maxOf(horizontal, vertical + mediaCompensation),
         )
     ) {
-    Column(
-        modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(PILL_HEIGHT)
+                .padding(horizontal = horizontal)
                 .then(
                     if (onHeaderClick != null) {
                         Modifier.clickable(
@@ -978,16 +1025,10 @@ private fun ReasoningPreviewCard(
             AnimatedContent(
                 targetState = displayTitle,
                 transitionSpec = {
-                    (fadeIn(tween(220)) + slideInVertically(
-                        animationSpec = tween(220),
-                        initialOffsetY = { it / 2 }
-                    )).togetherWith(
-                        fadeOut(tween(150)) + slideOutVertically(
-                            animationSpec = tween(150),
-                            targetOffsetY = { -it / 2 }
-                        )
-                    )
+                    (fadeIn(tween(180)) togetherWith fadeOut(tween(180)))
+                        .using(SizeTransform(clip = false) { _, _ -> snap() })
                 },
+                contentAlignment = Alignment.CenterStart,
                 label = "reasoning_preview_title",
                 modifier = Modifier.weight(1f)
             ) { title ->
@@ -1028,6 +1069,8 @@ private fun ReasoningPreviewCard(
             content = previewText,
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = horizontal)
+                .padding(bottom = vertical)
                 .fadeEdges(
                     topProgress = topFadeProgress,
                     bottomProgress = bottomFadeProgress,
@@ -1070,21 +1113,15 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    // Crossfade + slide up when the title changes between reasoning sections
+    // Crossfade in place so the label baseline never slides.
     val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
     AnimatedContent(
         targetState = displayTitle,
         transitionSpec = {
-            (fadeIn(tween(220)) + slideInVertically(
-                animationSpec = tween(220),
-                initialOffsetY = { it / 2 }
-            )).togetherWith(
-                fadeOut(tween(150)) + slideOutVertically(
-                    animationSpec = tween(150),
-                    targetOffsetY = { -it / 2 }
-                )
-            )
+            (fadeIn(tween(180)) togetherWith fadeOut(tween(180)))
+                .using(SizeTransform(clip = false) { _, _ -> snap() })
         },
+        contentAlignment = Alignment.CenterStart,
         label = "reasoning_title"
     ) { text ->
         Text(

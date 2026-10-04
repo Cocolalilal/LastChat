@@ -1442,7 +1442,7 @@ private fun AssistantMessageTurn(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (chatAnimationsEnabled && (loading || timelineOpen)) {
+                if (chatAnimationsEnabled && loading) {
                     Modifier.animateContentSize(
                         animationSpec = tween(
                             durationMillis = 220,
