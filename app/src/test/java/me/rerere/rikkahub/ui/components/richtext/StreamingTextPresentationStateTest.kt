@@ -136,35 +136,40 @@ class StreamingTextPresentationStateTest {
     }
 
     @Test
-    fun settleRangesSkipWhitespaceAndTrackWords() {
+    fun settleRangesRippleAcrossTheSlice() {
+        val content = "Hello smooth world"
         val ranges = streamingSettleRangesForReveal(
-            content = "Hello smooth world",
-            revealStart = 5,
-            revealEnd = "Hello smooth world".length,
-            nowMillis = 24L
+            content = content,
+            revealStart = 6,
+            revealEnd = content.length,
+            nowMillis = 400L
         )
 
-        assertEquals(
-            listOf(
-                StreamingSettleRange(startOffset = 6, endOffset = 12, revealedAtMillis = 24L),
-                StreamingSettleRange(startOffset = 13, endOffset = 18, revealedAtMillis = 24L)
-            ),
-            ranges
-        )
+        assertTrue(ranges.size > 2)
+        assertEquals(6, ranges.first().startOffset)
+        assertEquals(content.length, ranges.last().endOffset)
+        assertEquals(400L, ranges.last().revealedAtMillis)
+        assertTrue(ranges.first().revealedAtMillis < ranges.last().revealedAtMillis)
+        assertTrue(ranges.zipWithNext().all { (a, b) -> a.endOffset == b.startOffset })
     }
 
     @Test
-    fun revealedWordGetsAStableSettleRange() {
+    fun revealedWordSettlesAsARippleInsteadOfOneBlock() {
         val state = StreamingTextPresentationState("Hello ", nowMillis = 0L)
 
         state.acceptRawContent("Hello world", nowMillis = 16L)
-        assertTrue(state.step(nowMillis = 130L, elapsedMillis = 114L))
+        var now = 16L
+        while (state.displayContent != "Hello world" && now < 2_000L) {
+            now += 16L
+            state.step(nowMillis = now, elapsedMillis = 16L)
+        }
 
         assertEquals("Hello world", state.displayContent)
-        assertEquals(
-            listOf(StreamingSettleRange(startOffset = 6, endOffset = 11, revealedAtMillis = 130L)),
-            state.settleRanges
-        )
+        val ranges = state.settleRanges
+        assertTrue(ranges.isNotEmpty())
+        assertEquals(6, ranges.first().startOffset)
+        assertEquals(11, ranges.last().endOffset)
+        assertTrue(ranges.zipWithNext().all { (a, b) -> a.revealedAtMillis <= b.revealedAtMillis })
     }
 
     @Test
@@ -175,8 +180,8 @@ class StreamingTextPresentationStateTest {
             blurEnabled = true,
         )
 
-        assertEquals(0.55f, visuals.alpha, 0.001f)
-        assertTrue(visuals.blurRadius > 0f)
+        assertEquals(0.494f, visuals.alpha, 0.02f)
+        assertTrue(visuals.blurRadius > 8f)
     }
 
     @Test
@@ -187,7 +192,7 @@ class StreamingTextPresentationStateTest {
             blurEnabled = false,
         )
 
-        assertEquals(0.55f, visuals.alpha, 0.001f)
+        assertEquals(0.494f, visuals.alpha, 0.02f)
         assertEquals(0f, visuals.blurRadius, 0.001f)
     }
 
@@ -208,9 +213,21 @@ class StreamingTextPresentationStateTest {
         val slow = streamingSettleMillis(20f)
         val fast = streamingSettleMillis(200f)
         val mid = streamingSettleMillis(90f)
-        assertEquals(280L, slow)
-        assertEquals(90L, fast)
+        assertEquals(340L, slow)
+        assertEquals(170L, fast)
         assertTrue(mid in (fast + 1) until slow)
+    }
+
+    @Test
+    fun halfwayThroughTheFadeTheGlyphIsStillBlurred() {
+        val visuals = streamingRevealVisuals(
+            progress = 0.5f,
+            startAlpha = 0f,
+            blurEnabled = true,
+        )
+
+        assertEquals(0.5f, visuals.alpha, 0.02f)
+        assertTrue(visuals.blurRadius >= STREAMING_SETTLE_MAX_BLUR_RADIUS * 0.45f)
     }
 
     @Test

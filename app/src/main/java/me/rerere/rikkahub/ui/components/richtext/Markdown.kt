@@ -63,6 +63,9 @@ import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.graphics.takeOrElse
@@ -117,7 +120,9 @@ import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -1159,18 +1164,18 @@ internal class StreamingTextPresentationState(
             return false
         }
 
-        val backlogMillis = pendingLength * 1000f / smoothedCharsPerSecond.coerceAtLeast(1f)
-        val catchUpMultiplier = when {
-            backlogMillis <= STREAMING_CATCH_UP_AFTER_MILLIS -> 1f
-            else -> (backlogMillis / STREAMING_SMOOTHING_WINDOW_MILLIS).coerceIn(1f, STREAMING_MAX_CATCH_UP_MULTIPLIER)
-        }
-        val baseRevealChars = smoothedCharsPerSecond
-            .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND) * catchUpMultiplier
-
+        // One controller. The reveal rate is the backlog drained over a short
+        // horizon, and at least the measured arrival rate, so a steady stream
+        // stays with the tokens and a burst ripples through instead of cutting
+        // to the finished reply. A pause slows that same rate; it is not a
+        // second mode.
+        val proportionalCharsPerSecond = pendingLength * 1000f / STREAMING_DRAIN_HORIZON_MILLIS
         val stalledMillis = (nowMillis - lastRawUpdateMillis - STREAMING_STALL_GRACE_MILLIS).coerceAtLeast(0L)
         val stallProgress = (stalledMillis / STREAMING_STALL_DECEL_MILLIS.toFloat()).coerceIn(0f, 1f)
         val stallEase = stallProgress * stallProgress * (3f - 2f * stallProgress)
-        val targetRevealChars = baseRevealChars * (1f - (1f - STREAMING_STALL_MIN_MULTIPLIER) * stallEase)
+        val targetRevealChars = max(proportionalCharsPerSecond, smoothedCharsPerSecond)
+            .coerceIn(STREAMING_MIN_CHARS_PER_SECOND, STREAMING_MAX_CHARS_PER_SECOND) *
+            (1f - (1f - STREAMING_STALL_MIN_MULTIPLIER) * stallEase)
         currentRevealCharsPerSecond = approachStreamingRate(
             current = currentRevealCharsPerSecond,
             target = targetRevealChars,
@@ -1182,7 +1187,10 @@ internal class StreamingTextPresentationState(
             }
         ).coerceIn(STREAMING_MIN_CHARS_PER_SECOND * STREAMING_STALL_MIN_MULTIPLIER, STREAMING_MAX_CHARS_PER_SECOND)
 
-        revealCarry += currentRevealCharsPerSecond * elapsedMillis.coerceAtLeast(1L) / 1000f
+        // A late frame must not spend the whole hitch at once. That jump is
+        // the hard cut. The next frames keep draining.
+        val budgetMillis = elapsedMillis.coerceIn(1L, STREAMING_MAX_REVEAL_FRAME_MILLIS)
+        revealCarry += currentRevealCharsPerSecond * budgetMillis / 1000f
         val revealBudget = floor(revealCarry).toInt().coerceAtMost(pendingLength)
         val starved = nowMillis - lastRevealMillis >= STREAMING_STARVED_REVEAL_MILLIS
         if (revealBudget <= 0 && !starved) {
@@ -1276,23 +1284,26 @@ internal fun streamingSettleRangesForReveal(
     if (revealEnd <= revealStart) return emptyList()
     val safeStart = revealStart.coerceIn(0, content.length)
     val safeEnd = revealEnd.coerceIn(safeStart, content.length)
-    val ranges = mutableListOf<StreamingSettleRange>()
+    if (safeEnd <= safeStart) return emptyList()
+    val starts = ArrayList<Int>()
     var index = safeStart
-
     while (index < safeEnd) {
-        while (index < safeEnd && content[index].isWhitespace()) {
-            index++
-        }
-        if (index >= safeEnd) break
-
-        val start = index
-        while (index < safeEnd && !content[index].isWhitespace()) {
-            index++
-        }
-        ranges.add(StreamingSettleRange(start, index, nowMillis))
+        starts.add(index)
+        val highSurrogate = Character.isHighSurrogate(content[index]) && index + 1 < safeEnd
+        index += if (highSurrogate) 2 else 1
     }
-
-    return ranges
+    if (starts.isEmpty()) return emptyList()
+    val last = starts.lastIndex
+    // Earlier code points in this slice are already a little older, so a burst
+    // focuses as a ripple instead of one block. A single token is just itself.
+    return starts.mapIndexed { i, start ->
+        val end = if (i == last) safeEnd else starts[i + 1]
+        StreamingSettleRange(
+            startOffset = start,
+            endOffset = end,
+            revealedAtMillis = nowMillis - (last - i) * STREAMING_RIPPLE_GAP_MILLIS,
+        )
+    }
 }
 
 private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
@@ -1317,32 +1328,32 @@ private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): Lis
 }
 
 private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
-private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
-private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
-private const val STREAMING_SETTLE_MIN_MILLIS = 90L
-private const val STREAMING_SETTLE_MAX_MILLIS = 280L
+private const val STREAMING_DRAIN_HORIZON_MILLIS = 200f
+private const val STREAMING_MAX_REVEAL_FRAME_MILLIS = 20L
+private const val STREAMING_RIPPLE_GAP_MILLIS = 14L
+private const val STREAMING_SETTLE_MIN_MILLIS = 170L
+private const val STREAMING_SETTLE_MAX_MILLIS = 340L
 private const val STREAMING_SETTLE_ALPHA_FAST = 0f
 private const val STREAMING_SETTLE_ALPHA_SLOW = 0f
-private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 5.5f
+internal const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 18f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
 private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
-private const val STREAMING_MIN_CHARS_PER_SECOND = 18f
-private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 44f
-private const val STREAMING_MAX_CHARS_PER_SECOND = 220f
-private const val STREAMING_MAX_CATCH_UP_MULTIPLIER = 3.2f
-private const val STREAMING_RATE_KEEP_WEIGHT = 0.82f
-private const val STREAMING_ACCEL_TIME_CONSTANT_MILLIS = 140L
-private const val STREAMING_DECEL_TIME_CONSTANT_MILLIS = 620L
+private const val STREAMING_MIN_CHARS_PER_SECOND = 8f
+private const val STREAMING_DEFAULT_CHARS_PER_SECOND = 48f
+private const val STREAMING_MAX_CHARS_PER_SECOND = 960f
+private const val STREAMING_RATE_KEEP_WEIGHT = 0.45f
+private const val STREAMING_ACCEL_TIME_CONSTANT_MILLIS = 70L
+private const val STREAMING_DECEL_TIME_CONSTANT_MILLIS = 260L
 private const val STREAMING_STALL_GRACE_MILLIS = 140L
 private const val STREAMING_STALL_DECEL_MILLIS = 900L
 private const val STREAMING_STALL_MIN_MULTIPLIER = 0.18f
 private const val STREAMING_TINY_PENDING_LENGTH = 4
-private const val STREAMING_MAX_SETTLE_RANGES = 28
+private const val STREAMING_MAX_SETTLE_RANGES = 96
 
 /**
  * One settle for every speed. Slow tokens play the full fade and focus.
- * Faster tokens compress that same curve so a burst ripples instead of cutting
+ * Faster tokens compress that same curve, so a burst ripples instead of cutting
  * to the finished reply.
  */
 internal fun streamingSettleMillis(charsPerSecond: Float): Long {
@@ -2575,12 +2586,8 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         if (overlapEnd <= overlapStart) return@fastForEach
 
         val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
-        // Ease-out: the first frame is invisible, then the glyph resolves quickly
-        // so a new token does not pop and does not sit ghosted long enough to feel late.
-        val remain = 1f - progress
-        val easedProgress = 1f - remain * remain * remain
         val visuals = streamingRevealVisuals(
-            progress = easedProgress,
+            progress = progress,
             startAlpha = startAlpha,
             blurEnabled = reveal.blurEnabled,
         )
@@ -2595,9 +2602,12 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         if (styleEnd <= styleStart) return@fastForEach
         // Blur and fade are one motion. While the glyph is still soft, the sharp
         // span stays hidden so a second copy cannot smear already-shown words.
+        // Hide the sharp glyph only while a real blur will be drawn in its place.
+        // The blur redraw cannot see a transparent span, so this stays paired
+        // with the solid layout in the blur pass.
         val renderBlur = reveal.blurEnabled &&
             android.os.Build.VERSION.SDK_INT >= 31 &&
-            visuals.blurRadius > 0.4f &&
+            visuals.blurRadius > 1.4f &&
             visuals.alpha < 0.995f
         if (renderBlur) {
             addStringAnnotation(
@@ -2652,57 +2662,120 @@ private fun Modifier.incomingTokenBlur(
     color: Color,
 ): Modifier {
     val graphicsContext = LocalGraphicsContext.current
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
     val layers = remember {
         List(STREAMING_BLUR_LAYER_COUNT) { graphicsContext.createGraphicsLayer() }
     }
+    var solidCache by remember { mutableStateOf<Pair<AnnotatedString, TextLayoutResult>?>(null) }
     DisposableEffect(graphicsContext, layers) {
         onDispose {
             layers.forEach { graphicsContext.releaseGraphicsLayer(it) }
         }
     }
-    if (layout == null || android.os.Build.VERSION.SDK_INT < 31) return this
-    return this.drawWithContent {
+    val hasBlurMarks = text.getStringAnnotations(STREAMING_BLUR_ANNOTATION, 0, text.length).isNotEmpty()
+    val solidLayout = if (
+        layout != null &&
+        hasBlurMarks &&
+        android.os.Build.VERSION.SDK_INT >= 31 &&
+        layout.size.width > 0 &&
+        layout.size.height > 0
+    ) {
+        val solidText = text.withoutStreamingFadeSpans()
+        val cached = solidCache
+        val input = layout.layoutInput
+        if (
+            cached != null &&
+            cached.first == solidText &&
+            cached.second.layoutInput.constraints == input.constraints &&
+            cached.second.size == layout.size
+        ) {
+            cached.second
+        } else {
+            measurer.measure(
+                text = solidText,
+                style = input.style,
+                overflow = input.overflow,
+                softWrap = input.softWrap,
+                maxLines = input.maxLines,
+                constraints = input.constraints,
+                layoutDirection = input.layoutDirection,
+                density = input.density,
+                fontFamilyResolver = input.fontFamilyResolver,
+            ).also { solidCache = solidText to it }
+        }
+    } else {
+        null
+    }
+    if (layout == null || solidLayout == null || android.os.Build.VERSION.SDK_INT < 31) return this
+    val blurMaxPx = with(density) { 8.dp.toPx() }
+    // Let the halo spill into the bubble padding. Clipping it to the glyph
+    // box is what made the blur invisible.
+    return this.graphicsLayer { clip = false }.drawWithContent {
         drawContent()
         val runs = text.getStringAnnotations(STREAMING_BLUR_ANNOTATION, 0, text.length).mapNotNull { annotation ->
             val parts = annotation.item.split(',')
             if (parts.size != 2) return@mapNotNull null
             val radius = parts[0].toFloatOrNull() ?: return@mapNotNull null
             val alpha = parts[1].toFloatOrNull() ?: return@mapNotNull null
-            if (radius < 0.5f || alpha <= 0.02f) return@mapNotNull null
+            if (radius < 1.2f || alpha <= 0.02f) return@mapNotNull null
             IncomingBlurRun(annotation.start, annotation.end, radius, alpha)
         }
-        if (runs.isEmpty() || layout.size.width <= 0 || layout.size.height <= 0) return@drawWithContent
-        val maxLength = layout.layoutInput.text.length
+        if (runs.isEmpty() || solidLayout.size.width <= 0 || solidLayout.size.height <= 0) return@drawWithContent
+        val maxLength = solidLayout.layoutInput.text.length
         val buckets = runs.groupBy { (it.radius / 5f).toInt().coerceIn(0, STREAMING_BLUR_LAYER_COUNT - 1) }
+        val pad = ceil(blurMaxPx).toInt() + 2
         buckets.entries.forEachIndexed { index, entry ->
             if (index >= layers.size) return@forEachIndexed
             val layer = layers[index]
-            val radius = entry.value.maxOf { it.radius }.coerceAtLeast(0.5f)
-            layer.renderEffect = BlurEffect(radius, radius, TileMode.Decal)
+            val fraction = (entry.value.maxOf { it.radius } / STREAMING_SETTLE_MAX_BLUR_RADIUS).coerceIn(0f, 1f)
+            val radiusPx = (fraction * blurMaxPx).coerceAtLeast(0.8f)
+            layer.alpha = (entry.value.map { it.alpha }.average().toFloat() * color.alpha.coerceIn(0.02f, 1f))
+                .coerceIn(0.02f, 1f)
+            layer.renderEffect = BlurEffect(radiusPx, radiusPx, TileMode.Decal)
+            val glyphClip = Path()
+            entry.value.forEach { run ->
+                val start = run.start.coerceIn(0, maxLength)
+                val end = run.end.coerceIn(start, maxLength)
+                if (end <= start) return@forEach
+                // The range path is the selection box, not a filled marker.
+                // Clipping the solid glyphs to it, then blurring the layer,
+                // is the soft text. Filling the box was the gray block.
+                val piece = solidLayout.getPathForRange(start, end)
+                if (!piece.isEmpty) glyphClip.addPath(piece)
+            }
+            if (glyphClip.isEmpty) return@forEachIndexed
             layer.record(
                 density = this,
                 layoutDirection = layoutDirection,
-                size = IntSize(layout.size.width, layout.size.height),
+                size = IntSize(solidLayout.size.width + pad * 2, solidLayout.size.height + pad * 2),
             ) {
-                entry.value.forEach { run ->
-                    val start = run.start.coerceIn(0, maxLength)
-                    val end = run.end.coerceIn(start, maxLength)
-                    if (end <= start) return@forEach
-                    // The range path is the selection box, not the glyph. Filling it
-                    // is the gray marker. Clip to that box and draw the real text.
-                    val glyphClip = layout.getPathForRange(start, end)
-                    if (glyphClip.isEmpty) return@forEach
+                translate(pad.toFloat(), pad.toFloat()) {
                     clipPath(glyphClip) {
-                        drawText(
-                            textLayoutResult = layout,
-                            color = color.copy(alpha = run.alpha),
-                        )
+                        drawText(textLayoutResult = solidLayout)
                     }
                 }
             }
-            drawLayer(layer)
+            translate(left = -pad.toFloat(), top = -pad.toFloat()) {
+                drawLayer(layer)
+            }
         }
     }
+}
+
+private fun AnnotatedString.withoutStreamingFadeSpans(): AnnotatedString {
+    val kept = spanStyles.filterNot { range -> range.item.isStreamingFadeSpan() }
+    if (kept.size == spanStyles.size) return this
+    return AnnotatedString(
+        text = text,
+        spanStyles = kept,
+        paragraphStyles = paragraphStyles,
+    )
+}
+
+private fun SpanStyle.isStreamingFadeSpan(): Boolean {
+    if (color == Color.Unspecified || color.alpha >= 0.98f) return false
+    return copy(color = Color.Unspecified) == SpanStyle()
 }
 
 private data class IncomingBlurRun(
@@ -2712,20 +2785,24 @@ private data class IncomingBlurRun(
     val alpha: Float,
 )
 
-private const val STREAMING_BLUR_LAYER_COUNT = 3
+private const val STREAMING_BLUR_LAYER_COUNT = 4
 
 internal fun streamingRevealVisuals(
     progress: Float,
     startAlpha: Float,
     blurEnabled: Boolean,
 ): StreamingRevealVisuals {
-    // One eased motion: opacity rises and blur falls together, and both are done at 1.
-    val safeProgress = progress.coerceIn(0f, 1f)
+    // Smoothstep, not an ease-out. Ease-out spent the blur while the glyph was
+    // still invisible, so the fade showed up and the blur never did. Halfway
+    // through, the glyph is half opaque and still half blurred.
+    val t = progress.coerceIn(0f, 1f)
+    val eased = t * t * (3f - 2f * t)
+    val alpha = startAlpha.coerceIn(0f, 1f) +
+        (1f - startAlpha.coerceIn(0f, 1f)) * eased
     return StreamingRevealVisuals(
-        alpha = startAlpha.coerceIn(0f, 1f) +
-            (1f - startAlpha.coerceIn(0f, 1f)) * safeProgress,
+        alpha = alpha,
         blurRadius = if (blurEnabled) {
-            STREAMING_SETTLE_MAX_BLUR_RADIUS * (1f - safeProgress)
+            STREAMING_SETTLE_MAX_BLUR_RADIUS * (1f - eased)
         } else {
             0f
         },
