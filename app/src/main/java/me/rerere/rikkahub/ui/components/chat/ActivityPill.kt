@@ -818,6 +818,8 @@ private fun AnimatedSinglePill(
             PillMorphLayer(
                 id = "compact",
                 modifier = Modifier.defaultMinSize(minHeight = PILL_HEIGHT),
+                // The waiting dots are shorter than the 36dp pill. Top-start left them high.
+                contentAlignment = Alignment.CenterStart,
             ) {
                     val compactState = if (!surfaceExpanded && !isExpandedReasoning) state else (requestedContentState as? SinglePillContentState.Compact)?.state ?: state
                     
@@ -1335,9 +1337,10 @@ private fun VerticalCrossfadeText(
 private fun PillMorphLayer(
     id: String,
     modifier: Modifier = Modifier,
+    contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable () -> Unit,
 ) {
-    Box(modifier.layoutId(id)) { content() }
+    Box(modifier.layoutId(id), contentAlignment = contentAlignment) { content() }
 }
 
 @Composable

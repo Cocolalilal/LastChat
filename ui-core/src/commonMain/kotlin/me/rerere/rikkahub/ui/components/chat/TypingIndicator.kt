@@ -54,7 +54,8 @@ fun TypingIndicator(
         animatables.forEach { animatable ->
             Box(
                 modifier = Modifier
-                    .offset(y = -(bounceHeight * animatable.value))
+                    // Bounce around the row center. A one-way upward offset sat high in the bubble.
+                    .offset(y = bounceHeight * (0.5f - animatable.value))
                     .size(dotSize)
                     .clip(CircleShape)
                     .background(color.copy(alpha = 0.6f + 0.4f * animatable.value)),
