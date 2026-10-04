@@ -5,6 +5,7 @@ import androidx.compose.animation.core.spring
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
@@ -95,6 +96,7 @@ import kotlinx.coroutines.flow.mapLatest
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.AppSurface
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.BidiDirection
@@ -1613,6 +1615,17 @@ private fun MarkdownNode(
                     model = imageModel,
                     contentDescription = altText,
                     modifier = Modifier
+                        .then(
+                            if (bubbleShape != null) {
+                                Modifier.border(
+                                    width = AppSurface.ImageRimWidth,
+                                    color = AppSurface.imageContrastRim(),
+                                    shape = imageShape,
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
                         .clip(imageShape)
                         .then(reservedModifier),
                     onSizeResolved = { resolved ->

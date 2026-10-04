@@ -16,6 +16,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -101,6 +102,7 @@ import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.theme.AppSurface
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -1777,6 +1779,15 @@ private fun AssistantBubbleStack(
                         contentDescription = slot.attachment.label,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
+                            .then(
+                                LocalMessageBubbleShape.current?.let { shape ->
+                                    Modifier.border(
+                                        width = AppSurface.ImageRimWidth,
+                                        color = AppSurface.imageContrastRim(),
+                                        shape = shape,
+                                    )
+                                } ?: Modifier
+                            )
                             .fillMaxWidth()
                             .heightIn(max = 320.dp)
                             .then(archivedModifier),

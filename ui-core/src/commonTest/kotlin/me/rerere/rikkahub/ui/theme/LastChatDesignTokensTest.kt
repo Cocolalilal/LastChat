@@ -86,6 +86,19 @@ class LastChatDesignTokensTest {
     }
 
     @Test
+    fun imageRimIsASubtleLightStrokeOnBlack() {
+        val rim = AppSurface.imageContrastRim()
+        assertEquals(1f, rim.red)
+        assertEquals(1f, rim.green)
+        assertEquals(1f, rim.blue)
+        assertTrue(kotlin.math.abs(rim.alpha - AppSurface.ImageRimAlpha) < 0.01f)
+        assertEquals(1.dp, AppSurface.ImageRimWidth)
+        val onBlack = srcOver(rim, Color.Black)
+        assertTrue(onBlack.red > 0.2f)
+        assertTrue(onBlack.red < 0.4f)
+    }
+
+    @Test
     fun floatingSurfaceUsesGlassAlphaOnlyWhenBlurIsOn() {
         val charcoal = Color(0xFF261D1E)
         val darkGlass = AppSurface.resolve(charcoal = charcoal, blurEnabled = true, dark = true)
