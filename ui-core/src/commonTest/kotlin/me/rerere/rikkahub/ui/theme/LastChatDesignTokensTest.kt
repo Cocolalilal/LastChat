@@ -87,7 +87,7 @@ class LastChatDesignTokensTest {
 
     @Test
     fun imageRimIsThickerThanAHairline() {
-        assertEquals(2.dp, AppSurface.ImageRimWidth)
+        assertEquals(4.dp, AppSurface.ImageRimWidth)
         assertTrue(AppSurface.ImageRimWidth > 1.dp)
     }
 

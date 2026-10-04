@@ -53,9 +53,9 @@ object AppSurface {
     /**
      * Stroke on a photo that is itself the message bubble. Color comes from
      * [me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleColor] so the rim
-     * is the bubble fill. Thicker than a 1dp hairline, still a rim rather than a mat.
+     * is the bubble fill. 4dp so the edge reads clearly, still the bubble rather than a separate frame.
      */
-    val ImageRimWidth = 2.dp
+    val ImageRimWidth = 4.dp
     val TonalElevation = 0.dp
 
     fun fill(colorScheme: ColorScheme): Color = colorScheme.surfaceContainer
