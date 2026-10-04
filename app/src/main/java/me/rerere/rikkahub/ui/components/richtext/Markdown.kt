@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
@@ -201,6 +202,21 @@ internal fun groupMarkdownBubbleRuns(children: List<ASTNode>): List<List<ASTNode
         }
     }
     return runs
+}
+
+/**
+ * Set while a grouped bubble run is drawing. Padding that looks at the AST
+ * sibling must not add a gap when that sibling was moved into the next bubble.
+ */
+private val LocalBubbleRunAnchor = staticCompositionLocalOf<ASTNode?> { null }
+private val LocalBubbleRunFollowed = staticCompositionLocalOf<Boolean?> { null }
+
+@Composable
+private fun ASTNode.hasFollowingContentInBubble(): Boolean {
+    val anchor = LocalBubbleRunAnchor.current
+    val followed = LocalBubbleRunFollowed.current
+    if (anchor != null && followed != null && this === anchor) return followed
+    return nextRenderableSibling() != null
 }
 
 /** How many grouped bubbles [content] becomes. Blank content is zero. */
@@ -916,13 +932,18 @@ fun MarkdownBlock(
                             contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
                             modifier = if (rich) Modifier.fillMaxWidth() else Modifier,
                         ) {
-                            run.forEach { child ->
-                                MarkdownNode(
-                                    node = child,
-                                    content = preprocessed,
-                                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                                    onClickCitation = onClickCitation,
-                                )
+                            run.forEachIndexed { pieceIndex, child ->
+                                CompositionLocalProvider(
+                                    LocalBubbleRunAnchor provides child,
+                                    LocalBubbleRunFollowed provides (pieceIndex < run.lastIndex),
+                                ) {
+                                    MarkdownNode(
+                                        node = child,
+                                        content = preprocessed,
+                                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                        onClickCitation = onClickCitation,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1320,7 +1341,7 @@ private fun MarkdownNode(
         // 列表
         MarkdownElementTypes.UNORDERED_LIST -> {
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             UnorderedListNode(
                 node = node,
                 content = content,
@@ -1333,7 +1354,7 @@ private fun MarkdownNode(
 
         MarkdownElementTypes.ORDERED_LIST -> {
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             OrderedListNode(
                 node = node,
                 content = content,
@@ -1380,7 +1401,7 @@ private fun MarkdownNode(
                 color = rpColor ?: Color.Unspecified
             )
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             ProvideTextStyle(textStyle) {
                 val borderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                 val bgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
@@ -1502,7 +1523,7 @@ private fun MarkdownNode(
 
         MarkdownTokenTypes.HORIZONTAL_RULE -> {
             val topPadding = if (node.parent?.children?.firstOrNull { it.type != MarkdownTokenTypes.EOL } == node) 0.dp else 12.dp
-            val bottomPadding = if (node.nextRenderableSibling() != null) 12.dp else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble()) 12.dp else 0.dp
             HorizontalDivider(
                 modifier = modifier.padding(top = topPadding, bottom = bottomPadding),
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
@@ -1613,7 +1634,7 @@ private fun MarkdownNode(
         GFMElementTypes.BLOCK_MATH -> {
             val formula = node.getTextInNode(content)
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             MathBlock(
                 formula, modifier = modifier
                     .fillMaxWidth()
@@ -1726,7 +1747,7 @@ private fun MarkdownNode(
         MarkdownElementTypes.HTML_BLOCK -> {
             val text = node.getTextInNode(content)
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val bottomPadding = if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
+            val bottomPadding = if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp
             SimpleHtmlBlock(
                 html = text, modifier = modifier.padding(bottom = bottomPadding)
             )
@@ -2004,7 +2025,7 @@ private fun Paragraph(
         RevealText(
             text = annotatedString,
             modifier = modifier.then(
-                if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
+                if (node.hasFollowingContentInBubble() && paragraphSpacing > 0.dp) {
                     Modifier.padding(bottom = paragraphSpacing)
                 } else {
                     Modifier
@@ -2652,8 +2673,11 @@ private fun Modifier.mediaEdgePadding(
     if (me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current != null) return this
     if (!blockLevel) return this
     val next = node.nextRenderableSibling()
+    // Paragraph spacing belongs between blocks that share a bubble. A sibling
+    // that became the next bubble is not a reason to pad the end of this one.
+    val followedInBubble = node.hasFollowingContentInBubble()
     val top = if (node.previousRenderableSibling() == null) BubbleEdgeCompensation else 0.dp
-    val bottom = (if (next != null && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp) +
+    val bottom = (if (followedInBubble && paragraphSpacing > 0.dp) paragraphSpacing else 0.dp) +
         if (next == null) BubbleEdgeCompensation else 0.dp
     return this.padding(top = top, bottom = bottom)
 }
