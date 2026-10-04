@@ -536,6 +536,8 @@ internal fun ActivityTimelinePanel(
     }
 
     val useAccordionLayout = !isLive && entries.size > 1
+    // Embedded in the pill morph, this panel must not run a second size spring.
+    val panelAnimatesSize = animateSize && !pillAnchored
     // The first frame is already the open size. Animating it would stack on the pill morph.
     var rowMorphReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { rowMorphReady = true }
@@ -553,7 +555,7 @@ internal fun ActivityTimelinePanel(
                 onClick = onTimelineClick
             )
             .then(
-                if (animateSize) {
+                if (panelAnimatesSize) {
                     Modifier.animateContentSize(
                         animationSpec = TimelineSizeSpring
                     )
@@ -604,18 +606,7 @@ internal fun ActivityTimelinePanel(
                     .nestedScroll(timelineScrollLock),
                 verticalArrangement = Arrangement.spacedBy(if (useAccordionLayout) 3.dp else 8.dp),
                 contentPadding = if (useAccordionLayout) {
-                    if (pillAnchored) {
-                        androidx.compose.foundation.layout.PaddingValues(bottom = TimelineAccordionInset)
-                    } else {
-                        androidx.compose.foundation.layout.PaddingValues(TimelineAccordionInset)
-                    }
-                } else if (pillAnchored) {
-                    // Top inset is the header row itself, so the icon stays on the pill's baseline.
-                    androidx.compose.foundation.layout.PaddingValues(
-                        start = TimelineLiveInsetHorizontal,
-                        end = TimelineLiveInsetHorizontal,
-                        bottom = TimelineLiveInsetVertical,
-                    )
+                    androidx.compose.foundation.layout.PaddingValues(TimelineAccordionInset)
                 } else {
                     androidx.compose.foundation.layout.PaddingValues(
                         horizontal = TimelineLiveInsetHorizontal,
@@ -643,7 +634,6 @@ internal fun ActivityTimelinePanel(
                         showDivider = index > 0,
                         useAccordionLayout = useAccordionLayout,
                         expanded = expandedEntryId == entry.id,
-                        pillAnchoredHeader = pillAnchored && index == 0,
                         isLocallyDeleted = entry is TimelineEntry.MemoryAction &&
                             entry.memoryId != null &&
                             deletedMemoryIds.contains(entry.memoryId),
@@ -672,7 +662,7 @@ internal fun ActivityTimelinePanel(
                             autoFollowCurrentEntry &&
                             currentEntryId != null &&
                             currentEntryId == entry.id,
-                        animateRowSize = animateSize && rowMorphReady,
+                        animateRowSize = panelAnimatesSize && rowMorphReady,
                         onClickEntry = onTimelineClick,
                         onToggleExpanded = {
                             haptics.perform(HapticPattern.Pop)
@@ -691,12 +681,7 @@ internal fun ActivityTimelinePanel(
                                 toaster.show(message = message, type = ToastType.Success)
                             }
                         },
-                        shape = shape,
-                        modifier = if (pillAnchored && useAccordionLayout && index > 0) {
-                            Modifier.padding(horizontal = TimelineAccordionInset)
-                        } else {
-                            Modifier
-                        },
+                        shape = shape
                     )
                 }
                 if (entries.size > 1) {
@@ -818,8 +803,7 @@ private fun TimelineEntryItem(
     onToggleExpanded: () -> Unit,
     onCopyEntry: () -> Unit,
     shape: Shape = AppShapes.ListItem,
-    modifier: Modifier = Modifier,
-    pillAnchoredHeader: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val hasContent = when (entry) {
         is TimelineEntry.Reasoning -> entry.content.isNotBlank()
@@ -859,7 +843,6 @@ private fun TimelineEntryItem(
             onToggleExpanded = onToggleExpanded,
             onCopyEntry = onCopyEntry,
             shape = shape,
-            pillAnchoredHeader = pillAnchoredHeader,
             modifier = modifier.testTag("timeline_entry_${entry.id}"),
         )
         return
@@ -885,7 +868,6 @@ private fun TimelineEntryItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (pillAnchoredHeader) Modifier.height(36.dp) else Modifier)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -991,7 +973,6 @@ private fun TimelineAccordionEntry(
     onCopyEntry: () -> Unit,
     shape: Shape = AppShapes.ListItem,
     modifier: Modifier = Modifier,
-    pillAnchoredHeader: Boolean = false,
 ) {
     val durationLabel = if (entry is TimelineEntry.Reasoning) {
         formatTimelineDuration(entry.durationMs)?.let { " · $it" }.orEmpty()
@@ -1032,54 +1013,29 @@ private fun TimelineAccordionEntry(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (pillAnchoredHeader) {
-                            Modifier.height(36.dp).padding(horizontal = 14.dp)
-                        } else {
-                            Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
-                        }
-                    ),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(if (pillAnchoredHeader) 8.dp else 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val headerIconTint = getTimelineIconTint(entry, accentColor)
-                if (pillAnchoredHeader) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(headerIconTint.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         imageVector = getTimelineIcon(entry),
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                         tint = headerIconTint,
                     )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(headerIconTint.copy(alpha = 0.14f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = getTimelineIcon(entry),
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = headerIconTint,
-                        )
-                    }
                 }
                 Text(
                     text = getTimelineLabel(entry) + durationLabel,
-                    style = if (pillAnchoredHeader) {
-                        MaterialTheme.typography.labelMedium
-                    } else {
-                        MaterialTheme.typography.labelLarge
-                    },
-                    color = if (pillAnchoredHeader) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = if (pillAnchoredHeader) 1 else Int.MAX_VALUE,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 val inspectedImageCount = (entry as? TimelineEntry.ToolCall)

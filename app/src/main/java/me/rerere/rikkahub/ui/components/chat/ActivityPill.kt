@@ -778,9 +778,7 @@ private fun AnimatedSinglePill(
                             }
                         } else {
                             Row(
-                                modifier = Modifier
-                                    .height(PILL_HEIGHT)
-                                    .padding(horizontal = 14.dp),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -998,12 +996,13 @@ private fun ReasoningPreviewCard(
             inset = maxOf(horizontal, vertical + mediaCompensation),
         )
     ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(PILL_HEIGHT)
-                .padding(horizontal = horizontal)
                 .then(
                     if (onHeaderClick != null) {
                         Modifier.clickable(
@@ -1069,8 +1068,6 @@ private fun ReasoningPreviewCard(
             content = previewText,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = horizontal)
-                .padding(bottom = vertical)
                 .fadeEdges(
                     topProgress = topFadeProgress,
                     bottomProgress = bottomFadeProgress,
