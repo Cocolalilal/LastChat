@@ -85,9 +85,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as dpLerp
+import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.updatePreviewAutoFollowPaused
@@ -330,6 +334,16 @@ private val PILL_PROGRESS_SPEC = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PILL_MORPH_STIFFNESS,
 )
+// Sibling fly-out only. Low stiffness so it feels heavy, damping under 1 so it
+// eases past the rest pose by a few percent and comes back slowly. Not a snap.
+private val PILL_SIBLING_SPEC = spring<Float>(
+    dampingRatio = 0.73f,
+    stiffness = 170f,
+)
+/** Start the fly-out once the card is the leftmost pill, while the shrink spring is still finishing. */
+internal const val MULTI_STEP_FLY_HANDOFF = 0.12f
+/** How far a later sibling trails the one beside the anchor. Collapses at rest. */
+internal const val MULTI_STEP_SIBLING_TRAIL = 0.18f
 
 /** Multi-step only: compact icon/label fade out over the early spring range. */
 internal const val MULTI_STEP_COMPACT_FADE_END = 0.35f
@@ -368,18 +382,35 @@ internal fun multiStepEntryAlpha(progress: Float, index: Int, count: Int): Float
 
 /**
  * How far sibling [index] (0 = the pill immediately right of the anchor) has flown
- * out from behind the leftmost pill. 0 is tucked on top of the anchor, 1 is settled.
- * The same curve runs backward when a tap interrupts the fly-out.
+ * out from behind the leftmost pill. 0 is tucked behind the anchor, 1 is settled.
+ * Above 1 is the soft spring past rest; the same curve runs backward on a reverse.
+ * Later siblings trail, but every one moves on the first frame. There is no dead start.
  */
 internal fun multiStepSiblingFly(reveal: Float, index: Int, siblingCount: Int): Float {
     if (siblingCount <= 0 || index < 0) return 1f
     if (index >= siblingCount) return 0f
-    val t = reveal.coerceIn(0f, 1f)
-    val window = if (siblingCount == 1) 1f else 0.62f
-    val span = 1f - window
-    val start = if (siblingCount == 1) 0f else index * span / (siblingCount - 1)
-    val end = (start + window).coerceAtMost(1f)
-    return activitySmoothstep(start, end, t)
+    if (index == 0 || siblingCount == 1) return reveal
+    val lag = MULTI_STEP_SIBLING_TRAIL * index / (siblingCount - 1)
+    // f(0) = 0, f(1) = 1, and f'(0) = 1 - lag > 0.
+    return reveal * (1f - lag * (1f - reveal))
+}
+
+/**
+ * Shadow while a sibling is still under the leftmost pill. 1 tucked, 0 once it has cleared.
+ * It lifts across the first half of the flight, not across the whole bounce.
+ */
+internal fun multiStepSiblingShade(fly: Float): Float =
+    1f - activitySmoothstep(0.04f, 0.48f, fly.coerceIn(0f, 1f))
+
+/**
+ * Compact-pill alpha while a multi-step panel is opening or reversing without the one-card tuck.
+ * Pills stay readable for as long as they are still out, then yield to the open panel.
+ */
+internal fun multiStepExpandCompactAlpha(progress: Float, siblingReveal: Float): Float {
+    val faded = multiStepCompactAlpha(progress)
+    val stillOut = siblingReveal.coerceIn(0f, 1f)
+    val hold = stillOut * (1f - activitySmoothstep(0.55f, 1f, progress.coerceIn(0f, 1f)))
+    return maxOf(faded, hold)
 }
 
 /**
@@ -639,37 +670,44 @@ private fun AnimatedSinglePill(
             return@LaunchedEffect
         }
         if (open) {
-            // Interrupting a fly-out: siblings go back behind the anchor, then the
-            // card grows from that one pill. Opening from rest (reveal already 1)
-            // skips this and keeps the ripple expand.
-            if (progress.value <= 0.02f && siblingReveal.value < 0.999f) {
-                siblingReveal.animateTo(0f, PILL_PROGRESS_SPEC)
-            }
-            progress.animateTo(1f, PILL_PROGRESS_SPEC)
+            // Reverse of the fly-out, in place: siblings go back behind the leftmost
+            // pill while the panel grows. No tuck-then-wait.
             tuckMinimize = false
+            coroutineScope {
+                launch {
+                    if (siblingReveal.value > 0.001f) {
+                        siblingReveal.animateTo(0f, PILL_SIBLING_SPEC)
+                    }
+                }
+                launch { progress.animateTo(1f, PILL_PROGRESS_SPEC) }
+            }
             return@LaunchedEffect
         }
         if (!wasCompletedInitially && progress.value <= 0.02f && siblingReveal.value < 0.999f) {
-            siblingReveal.animateTo(1f, PILL_PROGRESS_SPEC)
+            tuckMinimize = false
+            siblingReveal.animateTo(1f, PILL_SIBLING_SPEC)
             return@LaunchedEffect
         }
-        if (progress.value >= 0.98f) {
-            // Fully open: shrink the whole card onto the leftmost pill (a complete
-            // pill), then let the other segments fly out from behind it.
-            tuckMinimize = true
-            siblingReveal.snapTo(0f)
-            progress.animateTo(0f, PILL_PROGRESS_SPEC)
-            if (progress.value <= 0.02f) {
-                tuckMinimize = false
-                retainedExpanded = null
-                siblingReveal.animateTo(1f, PILL_PROGRESS_SPEC)
+        // Shrink the open card onto the leftmost pill, and start the other segments
+        // as soon as that pill is the anchor — overlapping the tail, not after a rest.
+        // A tap mid-flight retargets both clocks from their live values.
+        val shrinkAsOneCard = progress.value > MULTI_STEP_FLY_HANDOFF && siblingReveal.value <= 0.05f
+        tuckMinimize = shrinkAsOneCard
+        if (shrinkAsOneCard) siblingReveal.snapTo(0f)
+        coroutineScope {
+            val shrink = launch { progress.animateTo(0f, PILL_PROGRESS_SPEC) }
+            launch {
+                if (shrinkAsOneCard) {
+                    snapshotFlow { progress.value }.first { it <= MULTI_STEP_FLY_HANDOFF }
+                }
+                siblingReveal.animateTo(1f, PILL_SIBLING_SPEC)
             }
-        } else {
-            // Early reverse of an expand. Keep the symmetric ripple; don't retarget
-            // the width onto the first pill or the rows would hard-cut.
-            progress.animateTo(0f, PILL_PROGRESS_SPEC)
+            shrink.join()
         }
-        if (!open && progress.value == 0f) retainedExpanded = null
+        if (progress.value <= 0.02f) {
+            tuckMinimize = false
+            retainedExpanded = null
+        }
     }
     val morph = progress.value.coerceIn(0f, 1f)
     val morphRunning = progress.isRunning
@@ -782,6 +820,7 @@ private fun AnimatedSinglePill(
             multiStepReveal = multiStepReveal,
             collapseAsOneCard = tuckMinimize,
             anchorHeader = anchorHeader,
+            siblingCover = if (multiStepReveal && !tuckMinimize && isMultiPill) siblingReveal.value else -1f,
         ) {
             if (visibleExpanded != null && !fullyCollapsed) {
             PillMorphLayer(id = "expanded") {
@@ -854,19 +893,21 @@ private fun AnimatedSinglePill(
                                         index == items.lastIndex -> PillPosition.LAST
                                         else -> PillPosition.MIDDLE
                                     }
-                                    val fly = if (index == 0 || siblingCount == 0) {
+                                    val rawFly = if (index == 0 || siblingCount == 0) {
                                         1f
                                     } else {
                                         multiStepSiblingFly(reveal, index - 1, siblingCount)
                                     }
                                     // 0 = a complete pill. The anchor flattens as the first
                                     // neighbor comes out; each sibling settles into its own slot.
+                                    // Radii stop at the settled shape so the soft overshoot
+                                    // does not fold the corners back.
                                     val segment = if (siblingCount == 0) {
                                         1f
                                     } else if (index == 0) {
-                                        multiStepSiblingFly(reveal, 0, siblingCount)
+                                        multiStepSiblingFly(reveal, 0, siblingCount).coerceIn(0f, 1f)
                                     } else {
-                                        fly
+                                        rawFly.coerceIn(0f, 1f)
                                     }
                                     if (items.size == 1) {
                                         ExpandedActivityPill(
@@ -882,13 +923,18 @@ private fun AnimatedSinglePill(
                                             position = position,
                                             connectsToBubbleBelow = connectsToBubbleBelow,
                                             cornerSegment = segment,
-                                            modifier = if (index == 0) {
-                                                Modifier
-                                            } else {
-                                                Modifier
-                                                    .padding(start = 2.dp * fly)
-                                                    .siblingFlySlot(fly)
-                                            }
+                                            shade = if (index == 0) 0f else multiStepSiblingShade(rawFly),
+                                            modifier = Modifier
+                                                .zIndex((items.size - index).toFloat())
+                                                .then(
+                                                    if (index == 0) {
+                                                        Modifier
+                                                    } else {
+                                                        Modifier
+                                                            .padding(start = 2.dp * rawFly.coerceIn(0f, 1f))
+                                                            .siblingFlySlot(rawFly)
+                                                    }
+                                                )
                                         )
                                     }
                                 }
@@ -1350,6 +1396,7 @@ private fun PillMorphLayout(
     multiStepReveal: Boolean = false,
     collapseAsOneCard: Boolean = false,
     anchorHeader: Boolean = false,
+    siblingCover: Float = -1f,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -1394,8 +1441,13 @@ private fun PillMorphLayout(
                 }
             } else if (multiStepReveal) {
                 // Panel stays fully opaque; entries ripple in from revealProgress.
-                // Compact icon/label ease out over the early range, then back on close.
-                val compactAlpha = multiStepCompactAlpha(t)
+                // While sibling segments are still out, keep those pills readable so
+                // they can slide back behind the anchor instead of vanishing first.
+                val compactAlpha = if (siblingCover >= 0f) {
+                    multiStepExpandCompactAlpha(t, siblingCover)
+                } else {
+                    multiStepCompactAlpha(t)
+                }
                 if (expandedPlaceable != null && t > 0f) {
                     expandedPlaceable.placeWithLayer(0, 0) { alpha = 1f }
                 }
@@ -1800,14 +1852,16 @@ private fun getCornerRadii(
 /** Reserves a shrinking slot so a sibling can slide out from behind the anchor. */
 private fun Modifier.siblingFlySlot(fly: Float): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    val t = fly.coerceIn(0f, 1f)
-    val shown = (placeable.width * t).roundToInt()
+    // A little past 1 is the soft spring. Negative (tuck overshoot) stays hidden.
+    val travel = fly.coerceIn(0f, 1.12f)
+    val shown = (placeable.width * travel).roundToInt().coerceAtLeast(0)
     layout(shown, placeable.height) {
         placeable.placeWithLayer(
-            x = (-((1f - t) * placeable.width)).roundToInt(),
+            x = (-((1f - travel) * placeable.width)).roundToInt(),
             y = 0,
         ) {
-            alpha = t
+            // Opaque almost immediately. The scrim, not a fade, is the shadow.
+            alpha = activitySmoothstep(0f, 0.06f, travel)
         }
     }
 }
@@ -1824,6 +1878,7 @@ private fun SinglePill(
     testTag: String? = null,
     isLoading: Boolean = false,
     cornerSegment: Float = 1f,
+    shade: Float = 0f,
     content: @Composable () -> Unit
 ) {
     val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -1845,12 +1900,21 @@ private fun SinglePill(
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            content()
+        Box {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                content()
+            }
+            if (shade > 0.004f) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(Color.Black.copy(alpha = 0.52f * shade.coerceIn(0f, 1f)))
+                )
+            }
         }
     }
 }
@@ -2027,6 +2091,7 @@ private fun CompactActivityPill(
     connectsToBubbleBelow: Boolean,
     modifier: Modifier = Modifier,
     cornerSegment: Float = 1f,
+    shade: Float = 0f,
 ) {
     SinglePill(
         onClick = onClick,
@@ -2035,6 +2100,7 @@ private fun CompactActivityPill(
         modifier = modifier,
         testTag = item.type.toTestTag(),
         cornerSegment = cornerSegment,
+        shade = shade,
     ) {
         Icon(
             imageVector = item.type.getIcon(),
