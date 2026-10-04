@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -55,6 +56,12 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.platform.LocalGraphicsContext
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalContext
@@ -1124,33 +1131,18 @@ internal fun chooseStreamingRevealCount(
     budget: Int,
     starved: Boolean
 ): Int {
-    if (pending.isEmpty() || budget <= 0) return 0
+    if (pending.isEmpty()) return 0
+    if (budget <= 0) return if (starved) 1.coerceAtMost(pending.length) else 0
     if (budget >= pending.length) return pending.length
 
-    val cappedBudget = budget.coerceIn(1, pending.length)
-    if (pending[cappedBudget - 1].isWhitespace()) {
-        return cappedBudget
+    // Reveal whatever the smoother has buffered. Holding a whole word and then
+    // dropping it in one step is what made tokens pop.
+    var count = budget.coerceIn(1, pending.length)
+    if (count < pending.length && pending[count - 1].isHighSurrogate()) {
+        count -= 1
     }
-
-    val previousBoundary = pending.streamingBoundaryAtOrBefore(cappedBudget)
-    if (previousBoundary > 0 && previousBoundary >= cappedBudget - STREAMING_BOUNDARY_BACKTRACK) {
-        return previousBoundary
-    }
-
-    val nextBoundary = pending.streamingBoundaryAfter(cappedBudget)
-    if (nextBoundary in 1..(cappedBudget + STREAMING_BOUNDARY_LOOKAHEAD) && nextBoundary <= pending.length) {
-        return nextBoundary
-    }
-
-    val firstWordEnd = pending.indexOfFirst { !it.isStreamingWordCharacter() }.let { if (it == -1) pending.length else it }
-    return when {
-        firstWordEnd <= STREAMING_SHORT_WORD_LENGTH && !starved -> 0
-        firstWordEnd <= STREAMING_MEDIUM_WORD_LENGTH &&
-            cappedBudget >= firstWordEnd - STREAMING_BOUNDARY_LOOKAHEAD -> firstWordEnd
-        firstWordEnd > STREAMING_LONG_WORD_LENGTH -> cappedBudget
-        starved -> cappedBudget
-        else -> 0
-    }
+    if (count <= 0) return 1.coerceAtMost(pending.length)
+    return count
 }
 
 internal fun streamingSettleRangesForReveal(
@@ -1181,26 +1173,6 @@ internal fun streamingSettleRangesForReveal(
     return ranges
 }
 
-private fun String.streamingBoundaryAtOrBefore(limit: Int): Int {
-    val cappedLimit = limit.coerceIn(1, length)
-    for (index in cappedLimit downTo 1) {
-        if (this[index - 1].isStreamingBoundaryCharacter()) {
-            return index
-        }
-    }
-    return 0
-}
-
-private fun String.streamingBoundaryAfter(offset: Int): Int {
-    val start = offset.coerceIn(1, length)
-    for (index in start..length) {
-        if (this[index - 1].isStreamingBoundaryCharacter()) {
-            return index
-        }
-    }
-    return 0
-}
-
 private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
     return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_MAX_MILLIS }
 }
@@ -1222,22 +1194,14 @@ private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): Lis
         }
 }
 
-private fun Char.isStreamingWordCharacter(): Boolean {
-    return isLetterOrDigit() || this == '_' || this == '-' || this == '\''
-}
-
-private fun Char.isStreamingBoundaryCharacter(): Boolean {
-    return isWhitespace() || this in ".,;:!?)]}\"'"
-}
-
 private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
 private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
 private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
-private const val STREAMING_SETTLE_MIN_MILLIS = 180L
-private const val STREAMING_SETTLE_MAX_MILLIS = 360L
-private const val STREAMING_SETTLE_ALPHA_FAST = 0.42f
-private const val STREAMING_SETTLE_ALPHA_SLOW = 0.65f
-private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 5f
+private const val STREAMING_SETTLE_MIN_MILLIS = 160L
+private const val STREAMING_SETTLE_MAX_MILLIS = 240L
+private const val STREAMING_SETTLE_ALPHA_FAST = 0f
+private const val STREAMING_SETTLE_ALPHA_SLOW = 0.06f
+private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 16f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
 private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
@@ -1252,12 +1216,8 @@ private const val STREAMING_STALL_GRACE_MILLIS = 140L
 private const val STREAMING_STALL_DECEL_MILLIS = 900L
 private const val STREAMING_STALL_MIN_MULTIPLIER = 0.18f
 private const val STREAMING_TINY_PENDING_LENGTH = 4
-private const val STREAMING_SHORT_WORD_LENGTH = 7
-private const val STREAMING_MEDIUM_WORD_LENGTH = 10
-private const val STREAMING_LONG_WORD_LENGTH = 12
-private const val STREAMING_BOUNDARY_LOOKAHEAD = 3
-private const val STREAMING_BOUNDARY_BACKTRACK = 2
-private const val STREAMING_MAX_SETTLE_RANGES = 12
+private const val STREAMING_MAX_SETTLE_RANGES = 28
+internal const val STREAMING_BLUR_ANNOTATION = "lastchat-stream-blur"
 
 // for debug
 private fun dumpAst(node: ASTNode, text: String, indent: String = "") {
@@ -1753,7 +1713,7 @@ private fun MarkdownNode(
                 }
             }
             CompositionLocalProvider(LocalLayoutDirection provides direction.toLayoutDirection()) {
-                Text(
+                RevealText(
                     text = revealText,
                     modifier = modifier,
                     style = LocalTextStyle.current.copy(
@@ -2041,7 +2001,7 @@ private fun Paragraph(
     }
     CompositionLocalProvider(LocalLayoutDirection provides paragraphDirection.toLayoutDirection()) {
         val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-        Text(
+        RevealText(
             text = annotatedString,
             modifier = modifier.then(
                 if (node.nextRenderableSibling() != null && paragraphSpacing > 0.dp) {
@@ -2484,8 +2444,10 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         if (overlapEnd <= overlapStart) return@fastForEach
 
         val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
-        // Smooth-step curve: 3t^2 - 2t^3
-        val easedProgress = progress * progress * (3f - 2f * progress)
+        // Ease-out: the first frame is invisible, then the glyph resolves quickly
+        // so a new token does not pop and does not sit ghosted long enough to feel late.
+        val remain = 1f - progress
+        val easedProgress = 1f - remain * remain * remain
         val visuals = streamingRevealVisuals(
             progress = easedProgress,
             startAlpha = startAlpha,
@@ -2497,12 +2459,26 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
         if (rangeEnd <= rangeStart) return@fastForEach
 
+        val styleStart = rangeStart.coerceIn(outputStart, outputEnd)
+        val styleEnd = rangeEnd.coerceIn(outputStart, outputEnd)
+        if (styleEnd <= styleStart) return@fastForEach
+        val renderBlur = reveal.blurEnabled &&
+            android.os.Build.VERSION.SDK_INT >= 31 &&
+            visuals.blurRadius > 0.4f
+        if (renderBlur) {
+            addStringAnnotation(
+                tag = STREAMING_BLUR_ANNOTATION,
+                annotation = "${visuals.blurRadius},${(1f - visuals.alpha).coerceIn(0f, 1f)}",
+                start = styleStart,
+                end = styleEnd,
+            )
+        }
         addStyle(
             style = SpanStyle(
                 color = reveal.color.copy(alpha = visuals.alpha),
-                shadow = if (visuals.blurRadius > 0.01f) {
+                shadow = if (reveal.blurEnabled && !renderBlur && visuals.blurRadius > 0.4f) {
                     Shadow(
-                        color = reveal.color.copy(alpha = visuals.alpha),
+                        color = reveal.color.copy(alpha = (1f - visuals.alpha).coerceIn(0f, 1f)),
                         offset = Offset.Zero,
                         blurRadius = visuals.blurRadius,
                     )
@@ -2510,11 +2486,102 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
                     null
                 },
             ),
-            start = rangeStart.coerceIn(outputStart, outputEnd),
-            end = rangeEnd.coerceIn(outputStart, outputEnd)
+            start = styleStart,
+            end = styleEnd,
         )
     }
 }
+
+
+@Composable
+private fun RevealText(
+    text: AnnotatedString,
+    modifier: Modifier,
+    style: TextStyle,
+    inlineContent: Map<String, InlineTextContent> = emptyMap(),
+    softWrap: Boolean = true,
+    overflow: TextOverflow = TextOverflow.Clip,
+) {
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val reveal = LocalStreamingTextReveal.current
+    val blurModifier = if (reveal?.blurEnabled == true) {
+        Modifier.incomingTokenBlur(text = text, layout = layoutResult, color = reveal.color)
+    } else {
+        Modifier
+    }
+    Text(
+        text = text,
+        modifier = modifier.then(blurModifier),
+        inlineContent = inlineContent,
+        softWrap = softWrap,
+        overflow = overflow,
+        style = style,
+        onTextLayout = { layoutResult = it },
+    )
+}
+
+@Composable
+private fun Modifier.incomingTokenBlur(
+    text: AnnotatedString,
+    layout: TextLayoutResult?,
+    color: Color,
+): Modifier {
+    val graphicsContext = LocalGraphicsContext.current
+    val layers = remember {
+        List(STREAMING_BLUR_LAYER_COUNT) { graphicsContext.createGraphicsLayer() }
+    }
+    DisposableEffect(graphicsContext, layers) {
+        onDispose {
+            layers.forEach { graphicsContext.releaseGraphicsLayer(it) }
+        }
+    }
+    if (layout == null || android.os.Build.VERSION.SDK_INT < 31) return this
+    return this.drawWithContent {
+        drawContent()
+        val runs = text.getStringAnnotations(STREAMING_BLUR_ANNOTATION, 0, text.length).mapNotNull { annotation ->
+            val parts = annotation.item.split(',')
+            if (parts.size != 2) return@mapNotNull null
+            val radius = parts[0].toFloatOrNull() ?: return@mapNotNull null
+            val alpha = parts[1].toFloatOrNull() ?: return@mapNotNull null
+            if (radius < 0.5f || alpha <= 0.02f) return@mapNotNull null
+            IncomingBlurRun(annotation.start, annotation.end, radius, alpha)
+        }
+        if (runs.isEmpty() || layout.size.width <= 0 || layout.size.height <= 0) return@drawWithContent
+        val buckets = runs.groupBy { (it.radius / 5f).toInt().coerceIn(0, STREAMING_BLUR_LAYER_COUNT - 1) }
+        buckets.entries.forEachIndexed { index, entry ->
+            if (index >= layers.size) return@forEachIndexed
+            val layer = layers[index]
+            val radius = entry.value.maxOf { it.radius }.coerceAtLeast(0.5f)
+            layer.renderEffect = BlurEffect(radius, radius, TileMode.Decal)
+            layer.record(
+                density = this,
+                layoutDirection = layoutDirection,
+                size = IntSize(layout.size.width, layout.size.height),
+            ) {
+                val maxLength = layout.layoutInput.text.length
+                entry.value.forEach { run ->
+                    val start = run.start.coerceIn(0, maxLength)
+                    val end = run.end.coerceIn(start, maxLength)
+                    if (end <= start) return@forEach
+                    drawPath(
+                        path = layout.getPathForRange(start, end),
+                        color = color.copy(alpha = run.alpha),
+                    )
+                }
+            }
+            drawLayer(layer)
+        }
+    }
+}
+
+private data class IncomingBlurRun(
+    val start: Int,
+    val end: Int,
+    val radius: Float,
+    val alpha: Float,
+)
+
+private const val STREAMING_BLUR_LAYER_COUNT = 3
 
 internal fun streamingRevealVisuals(
     progress: Float,

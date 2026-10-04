@@ -108,28 +108,23 @@ class StreamingTextPresentationStateTest {
     }
 
     @Test
-    fun semanticChunkingPrefersNearbyWordBoundaries() {
+    fun revealFollowsTheBufferInsteadOfWaitingForAWholeWord() {
         assertEquals(
-            "hello ".length,
+            4,
             chooseStreamingRevealCount(
                 pending = "hello world",
                 budget = 4,
                 starved = false
             )
         )
-    }
-
-    @Test
-    fun normalWordsWaitForWholeWordReveal() {
         assertEquals(
-            0,
+            5,
             chooseStreamingRevealCount(
                 pending = "smoothness",
                 budget = 5,
                 starved = false
             )
         )
-
         assertEquals(
             "smoothness".length,
             chooseStreamingRevealCount(
