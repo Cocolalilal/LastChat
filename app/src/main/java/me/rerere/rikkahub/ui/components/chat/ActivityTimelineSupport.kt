@@ -319,6 +319,17 @@ internal fun getTimelineAccentColor(entry: TimelineEntry): Color {
     }
 }
 
+/** Web search uses the same muted color as its label, not the tool accent. */
+@Composable
+internal fun getTimelineIconTint(entry: TimelineEntry, accentColor: Color): Color {
+    val toolName = (entry as? TimelineEntry.ToolCall)?.toolName
+    return if (toolName == "search_web" || toolName == "scrape_web") {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        accentColor
+    }
+}
+
 internal fun formatTimelineDuration(ms: Long): String? {
     if (ms <= 0) return null
     val seconds = ms / 1000.0

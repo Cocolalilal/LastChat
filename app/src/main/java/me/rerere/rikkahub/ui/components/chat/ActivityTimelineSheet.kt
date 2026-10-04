@@ -862,7 +862,7 @@ private fun TimelineEntryItem(
                     imageVector = getTimelineIcon(entry),
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = accentColor
+                    tint = getTimelineIconTint(entry, accentColor)
                 )
                 Text(
                     text = getTimelineLabel(entry) + durationLabel,
@@ -876,6 +876,7 @@ private fun TimelineEntryItem(
                 label = getTimelineLabel(entry) + durationLabel,
                 icon = getTimelineIcon(entry),
                 color = accentColor,
+                iconTint = getTimelineIconTint(entry, accentColor),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
         }
@@ -994,18 +995,19 @@ private fun TimelineAccordionEntry(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                val headerIconTint = getTimelineIconTint(entry, accentColor)
                 Box(
                     modifier = Modifier
                         .size(30.dp)
                         .clip(CircleShape)
-                        .background(accentColor.copy(alpha = 0.14f)),
+                        .background(headerIconTint.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = getTimelineIcon(entry),
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = accentColor,
+                        tint = headerIconTint,
                     )
                 }
                 Text(
@@ -1248,6 +1250,7 @@ private fun TimelineDivider(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: androidx.compose.ui.graphics.Color,
+    iconTint: androidx.compose.ui.graphics.Color = color,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1269,7 +1272,7 @@ private fun TimelineDivider(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp),
-                tint = color
+                tint = iconTint
             )
             Text(
                 text = label,
