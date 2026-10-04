@@ -97,6 +97,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.DISABLED_MODEL_ID
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
@@ -291,7 +292,7 @@ fun SettingChatStoragePage(
                 ) {
                     val primaryCategories = appStorageSnapshot.categories.filter { it.isPrimaryStorageCategory() }
                     val secondaryCategories = appStorageSnapshot.categories.filterNot { it.isPrimaryStorageCategory() }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CollapseSpacingColumn(spacing = 4.dp) {
                         if (appStorageSnapshot.isScanning && appStorageSnapshot.categories.isEmpty()) {
                             SettingGroupItem(
                                 title = stringResource(R.string.setting_chat_storage_scanning_title),

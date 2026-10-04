@@ -95,6 +95,7 @@ import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.utils.onError
 import me.rerere.rikkahub.utils.onSuccess
@@ -253,9 +254,9 @@ fun AssistantPromptSubPage(
                         MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
-                    Column(
+                    CollapseSpacingColumn(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        spacing = 12.dp,
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
@@ -901,13 +902,13 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             }
         }
     ) {
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            spacing = 16.dp,
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

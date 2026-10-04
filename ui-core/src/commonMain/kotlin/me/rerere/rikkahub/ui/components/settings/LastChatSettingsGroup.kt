@@ -46,9 +46,9 @@ fun LastChatSettingsGroup(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp),
         )
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier.padding(horizontal = horizontalPadding).clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            spacing = 4.dp,
             content = content,
         )
     }

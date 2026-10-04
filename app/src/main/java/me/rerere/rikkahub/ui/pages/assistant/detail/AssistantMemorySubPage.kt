@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.ui.components.ui.SummarizerModelTipBanner
 import androidx.compose.material3.Tab
@@ -241,13 +242,13 @@ fun AssistantMemorySettings(
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
 
-    Column(
+    CollapseSpacingColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        spacing = 16.dp,
     ) {
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
@@ -257,9 +258,9 @@ fun AssistantMemorySettings(
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroupHeader(title = stringResource(R.string.assistant_memory_settings_title))
 
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            spacing = 4.dp,
         ) {
             // Master Toggle - Enable Memory (always visible)
             MemorySettingsItem(
@@ -727,9 +728,9 @@ private fun ConsolidationSettingsCard(
     showSummarizerWarning: Boolean = false,
     onNavigateToSummarizerSettings: () -> Unit = {}
 ) {
-    Column(
+    CollapseSpacingColumn(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        spacing = 4.dp,
     ) {
         ExpandableContent(visible = showSummarizerWarning) {
             SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
@@ -823,9 +824,9 @@ private fun MemoryStatisticsCard(
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            spacing = 12.dp,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -970,7 +971,7 @@ private fun ManageMemoriesSection(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    CollapseSpacingColumn(spacing = 12.dp) {
         // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1314,9 +1315,9 @@ private fun MemoryDebugger(
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            spacing = 12.dp,
         ) {
             Text(
                 text = stringResource(R.string.assistant_memory_test_retrieval_desc),

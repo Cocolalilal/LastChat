@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.FontConfig
 import me.rerere.rikkahub.data.datastore.FontSettings
@@ -327,9 +328,9 @@ private fun FontConfigSection(
             shape = AppShapes.CardLarge,
             onClick = { expanded = !expanded }
         ) {
-            Column(
+            CollapseSpacingColumn(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                spacing = 12.dp,
             ) {
                 // Header row
                 Row(

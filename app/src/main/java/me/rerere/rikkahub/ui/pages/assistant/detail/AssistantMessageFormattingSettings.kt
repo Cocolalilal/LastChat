@@ -41,6 +41,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantRegex
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -161,9 +162,9 @@ private fun RegexEditorCard(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(
+        CollapseSpacingColumn(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            spacing = 8.dp,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

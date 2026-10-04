@@ -30,6 +30,7 @@ import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.isJsonExprValid
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
 import androidx.compose.ui.text.font.FontFamily
@@ -44,8 +45,8 @@ fun SettingProviderBalanceOption(
     onEdit: (BalanceOption) -> Unit,
 ) {
     var expand by remember { mutableStateOf(false) }
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    CollapseSpacingColumn(
+        spacing = 8.dp,
         modifier = modifier
     ) {
         Row(
