@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -95,6 +96,7 @@ import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.richtext.markdownBubbleRunCount
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -1552,49 +1554,15 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            AttachmentRow(
-                attachments = attachments,
-                alignEnd = false,
+            AssistantBubbleStack(
+                group = group,
+                assistant = assistant,
+                loading = loading,
+                maxWidth = maxWidth,
+                onBubbleClick = handleBubbleClick,
+                onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                onCitationClick = onCitationClick,
             )
-            
-            // Message bubbles - full width, standard bubble positions (no connection to pills)
-            allTextBubbles.forEachIndexed { index, (node, part) ->
-                val position = when {
-                    allTextBubbles.size == 1 -> BubblePosition.SINGLE
-                    index == 0 -> BubblePosition.FIRST
-                    index == allTextBubbles.lastIndex -> BubblePosition.LAST
-                    else -> BubblePosition.MIDDLE
-                }
-                
-                GroupedMessageBubble(
-                    position = position,
-                    role = BubbleRole.ASSISTANT,
-                    modifier = Modifier.widthIn(max = maxWidth),
-                    onClick = handleBubbleClick
-                ) {
-                    val userNickname = settings.displaySetting.userNickname
-                    val displayContent = remember(part.text, assistant, userNickname) {
-                        part.text.trimStart()
-                            .replacePersonaPlaceholders(
-                                assistant = assistant,
-                                userNickname = userNickname,
-                            )
-                            .replaceRegexes(
-                                assistant = assistant,
-                                scope = AssistantAffectScope.ASSISTANT,
-                                visual = true,
-                            )
-                    }
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
-                        content = displayContent,
-                        paragraphSpacing = 12.dp,
-                        streamingTextReveal = loading && index == allTextBubbles.lastIndex,
-                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                        onClickCitation = { id -> onCitationClick(id) }
-                    )
-                }
-            }
         } else {
             // No bubbles for characters:
             // [Avatar] [Name] (side by side)
@@ -1713,6 +1681,211 @@ private fun AssistantMessageTurn(
                 onMemoryClick = onMemoryClick,
                 ttsProviderOverride = ttsProviderOverride,
             )
+        }
+    }
+}
+
+private sealed interface AssistantStackSlot {
+    data class Text(val markdown: String, val streaming: Boolean) : AssistantStackSlot
+    data class Picture(val attachment: RenderableAttachment.Image) : AssistantStackSlot
+    data class File(val attachment: RenderableAttachment.File) : AssistantStackSlot
+    data class Missing(val attachment: RenderableAttachment.Placeholder) : AssistantStackSlot
+}
+
+/**
+ * One assistant turn, drawn as a stack of grouped bubbles: prose, then each
+ * attachment, code block, image, or table as its own bubble. The parts stay
+ * one message.
+ */
+@Composable
+private fun AssistantBubbleStack(
+    group: MessageTurnGroup,
+    assistant: me.rerere.rikkahub.data.model.Assistant?,
+    loading: Boolean,
+    maxWidth: androidx.compose.ui.unit.Dp,
+    onBubbleClick: () -> Unit,
+    onExpandedStreamingCodeBlockChanged: (() -> Unit)?,
+    onCitationClick: (String) -> Unit,
+) {
+    val settings = LocalSettings.current
+    val context = LocalContext.current
+    val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
+    val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
+    val userNickname = settings.displaySetting.userNickname
+    val haptics = rememberPremiumHaptics()
+    val slots = remember(
+        group.attachmentsSignature(),
+        group.filteredNodes.map { it.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().joinToString { part -> part.text } },
+        userNickname,
+        assistant,
+        loading,
+        defaultVideoLabel,
+        defaultAudioLabel,
+    ) {
+        buildAssistantStackSlots(
+            context = context,
+            group = group,
+            assistant = assistant,
+            userNickname = userNickname,
+            loading = loading,
+            fallbackVideoLabel = defaultVideoLabel,
+            fallbackAudioLabel = defaultAudioLabel,
+        )
+    }
+    val runCounts = slots.map { slot ->
+        when (slot) {
+            is AssistantStackSlot.Text -> markdownBubbleRunCount(slot.markdown)
+            else -> 1
+        }
+    }
+    val total = runCounts.sum()
+    if (total == 0) return
+    var cursor = 0
+    slots.forEachIndexed { index, slot ->
+        val count = runCounts[index]
+        when (slot) {
+            is AssistantStackSlot.Text -> {
+                MarkdownBlock(
+                    workspaceId = assistant?.workspaceId?.toString(),
+                    content = slot.markdown,
+                    paragraphSpacing = 12.dp,
+                    streamingTextReveal = slot.streaming,
+                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                    onClickCitation = onCitationClick,
+                    splitIntoMessageBubbles = true,
+                    bubbleLeadingCount = cursor,
+                    bubbleTotalCount = total,
+                    onBubbleClick = onBubbleClick,
+                    modifier = Modifier.widthIn(max = maxWidth),
+                )
+            }
+            is AssistantStackSlot.Picture -> {
+                val archivedModifier = if (slot.attachment.archived) {
+                    Modifier.graphicsLayer(alpha = 0.72f)
+                } else {
+                    Modifier
+                }
+                GroupedMessageBubble(
+                    position = getBubblePosition(cursor, total),
+                    role = BubbleRole.ASSISTANT,
+                    contentPaddingHorizontal = 0.dp,
+                    contentPaddingVertical = 0.dp,
+                    modifier = Modifier.widthIn(max = maxWidth),
+                ) {
+                    ZoomableAsyncImage(
+                        model = slot.attachment.url,
+                        contentDescription = slot.attachment.label,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .then(archivedModifier),
+                    )
+                }
+            }
+            is AssistantStackSlot.File -> {
+                GroupedMessageBubble(
+                    position = getBubblePosition(cursor, total),
+                    role = BubbleRole.ASSISTANT,
+                    modifier = Modifier
+                        .widthIn(max = maxWidth)
+                        .graphicsLayer(alpha = if (slot.attachment.archived) 0.72f else 1f),
+                    onClick = {
+                        if (slot.attachment.url.isNotBlank()) {
+                            haptics.perform(HapticPattern.Pop)
+                            context.openAttachmentUri(
+                                uri = slot.attachment.url.toUri(),
+                                mimeType = slot.attachment.mimeType,
+                            )
+                        } else {
+                            onBubbleClick()
+                        }
+                    },
+                ) {
+                    Text(
+                        text = if (slot.attachment.archived && slot.attachment.url.isBlank()) {
+                            "${slot.attachment.fileName} (archived)"
+                        } else {
+                            slot.attachment.fileName
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            is AssistantStackSlot.Missing -> {
+                GroupedMessageBubble(
+                    position = getBubblePosition(cursor, total),
+                    role = BubbleRole.ASSISTANT,
+                    modifier = Modifier
+                        .widthIn(max = maxWidth)
+                        .graphicsLayer(alpha = 0.72f),
+                    onClick = onBubbleClick,
+                ) {
+                    Text(
+                        text = slot.attachment.fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+        cursor += count
+    }
+}
+
+private fun buildAssistantStackSlots(
+    context: Context,
+    group: MessageTurnGroup,
+    assistant: me.rerere.rikkahub.data.model.Assistant?,
+    userNickname: String,
+    loading: Boolean,
+    fallbackVideoLabel: String,
+    fallbackAudioLabel: String,
+): List<AssistantStackSlot> {
+    val textParts = group.filteredNodes.flatMap { node ->
+        node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().filter { it.text.isNotBlank() }
+    }
+    val lastText = textParts.lastOrNull()
+    return buildList {
+        group.filteredNodes.forEach { node ->
+            node.currentMessage.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Text -> {
+                        if (part.text.isBlank()) return@forEach
+                        val markdown = part.text.trimStart()
+                            .replacePersonaPlaceholders(
+                                assistant = assistant,
+                                userNickname = userNickname,
+                            )
+                            .replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.ASSISTANT,
+                                visual = true,
+                            )
+                        if (markdown.isNotBlank()) {
+                            add(
+                                AssistantStackSlot.Text(
+                                    markdown = markdown,
+                                    streaming = loading && part === lastText,
+                                )
+                            )
+                        }
+                    }
+                    else -> {
+                        collectRenderableAttachments(
+                            context = context,
+                            parts = listOf(part),
+                            fallbackVideoLabel = fallbackVideoLabel,
+                            fallbackAudioLabel = fallbackAudioLabel,
+                        ).forEach { attachment ->
+                            when (attachment) {
+                                is RenderableAttachment.Image -> add(AssistantStackSlot.Picture(attachment))
+                                is RenderableAttachment.File -> add(AssistantStackSlot.File(attachment))
+                                is RenderableAttachment.Placeholder -> add(AssistantStackSlot.Missing(attachment))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

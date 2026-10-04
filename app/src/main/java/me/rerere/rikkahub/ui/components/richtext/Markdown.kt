@@ -161,6 +161,46 @@ private fun parseMarkdownCached(content: String): Pair<String, ASTNode> {
     return result
 }
 
+private fun isIgnorableMarkdownNode(node: ASTNode): Boolean =
+    node.type == MarkdownTokenTypes.EOL || node.type == MarkdownTokenTypes.WHITE_SPACE
+
+/** Code, images, tables, and display math that should read as their own message bubble. */
+internal fun isStandaloneRichMarkdownNode(node: ASTNode): Boolean {
+    return when (node.type) {
+        MarkdownElementTypes.CODE_BLOCK,
+        MarkdownElementTypes.CODE_FENCE,
+        GFMElementTypes.TABLE,
+        GFMElementTypes.BLOCK_MATH,
+        MarkdownElementTypes.IMAGE -> true
+        MarkdownElementTypes.PARAGRAPH -> {
+            val meaningful = node.children.filterNot(::isIgnorableMarkdownNode)
+            meaningful.size == 1 && meaningful[0].type == MarkdownElementTypes.IMAGE
+        }
+        else -> false
+    }
+}
+
+/** Consecutive prose stays one bubble. Each rich block is its own bubble, in order. */
+internal fun groupMarkdownBubbleRuns(children: List<ASTNode>): List<List<ASTNode>> {
+    val runs = mutableListOf<MutableList<ASTNode>>()
+    children.forEach { child ->
+        if (isIgnorableMarkdownNode(child)) return@forEach
+        if (isStandaloneRichMarkdownNode(child) || runs.isEmpty() || runs.last().any(::isStandaloneRichMarkdownNode)) {
+            runs.add(mutableListOf(child))
+        } else {
+            runs.last().add(child)
+        }
+    }
+    return runs
+}
+
+/** How many grouped bubbles [content] becomes. Blank content is zero. */
+internal fun markdownBubbleRunCount(content: String): Int {
+    if (content.isBlank()) return 0
+    val (_, ast) = parseMarkdownCached(content)
+    return groupMarkdownBubbleRuns(ast.children).size.coerceAtLeast(1)
+}
+
 /** Intrinsic pixel dimensions of an image, used to reserve its layout box before it decodes. */
 private data class ImageDisplayInfo(val widthPx: Int, val heightPx: Int) {
     val aspectRatio: Float get() = widthPx.toFloat() / heightPx.toFloat()
@@ -721,7 +761,11 @@ fun MarkdownBlock(
     streamingTextReveal: Boolean = false,
     workspaceId: String? = null,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
-    onClickCitation: (String) -> Unit = {}
+    onClickCitation: (String) -> Unit = {},
+    splitIntoMessageBubbles: Boolean = false,
+    bubbleLeadingCount: Int = 0,
+    bubbleTotalCount: Int = 0,
+    onBubbleClick: (() -> Unit)? = null,
 ) {
     // Read rpStyleRules from settings
     val settings = LocalSettings.current
@@ -839,6 +883,42 @@ fun MarkdownBlock(
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
+            val bubbleRuns = if (splitIntoMessageBubbles) {
+                groupMarkdownBubbleRuns(astTree.children)
+            } else {
+                emptyList()
+            }
+            if (splitIntoMessageBubbles && bubbleRuns.isNotEmpty()) {
+                val total = if (bubbleTotalCount > 0) bubbleTotalCount else bubbleRuns.size
+                Column(
+                    modifier = modifier,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    bubbleRuns.forEachIndexed { index, run ->
+                        val rich = run.size == 1 && isStandaloneRichMarkdownNode(run.first())
+                        me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble(
+                            position = me.rerere.rikkahub.ui.components.chat.getBubblePosition(
+                                index = bubbleLeadingCount + index,
+                                total = total,
+                            ),
+                            role = me.rerere.rikkahub.ui.components.chat.BubbleRole.ASSISTANT,
+                            onClick = onBubbleClick,
+                            contentPaddingHorizontal = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
+                            contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
+                            modifier = if (rich) Modifier.fillMaxWidth() else Modifier,
+                        ) {
+                            run.forEach { child ->
+                                MarkdownNode(
+                                    node = child,
+                                    content = preprocessed,
+                                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                    onClickCitation = onClickCitation,
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
             Column(
                 modifier = modifier
                     .then(
@@ -862,6 +942,7 @@ fun MarkdownBlock(
                         onClickCitation = onClickCitation
                     )
                 }
+            }
             }
         }
     }
@@ -1501,8 +1582,18 @@ private fun MarkdownNode(
                 modifier = modifier.mediaEdgePadding(node, paragraphSpacing, blockLevel = isBlockImage),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val frame = LocalOpticalFrame.current
+                val bubbleShape = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current
+                val imageShape = bubbleShape ?: if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
                 val info = reservedInfo
-                val reservedModifier = if (info != null && info.widthPx > 0 && info.heightPx > 0) {
+                val reservedModifier = if (bubbleShape != null) {
+                    // The photo is the bubble, so it takes the bubble width and the grouped radius.
+                    if (info != null && info.widthPx > 0 && info.heightPx > 0) {
+                        Modifier.fillMaxWidth().aspectRatio(info.aspectRatio)
+                    } else {
+                        Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 320.dp)
+                    }
+                } else if (info != null && info.widthPx > 0 && info.heightPx > 0) {
                     val intrinsicWidthDp = with(density) { info.widthPx.toDp() }
                     Modifier
                         .widthIn(min = 120.dp, max = intrinsicWidthDp)
@@ -1518,9 +1609,6 @@ private fun MarkdownNode(
                         .fillMaxWidth()
                         .heightIn(min = 120.dp)
                 }
-                // 这里可以使用Coil等图片加载库加载图片
-                val frame = LocalOpticalFrame.current
-                val imageShape = if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
                 ZoomableAsyncImage(
                     model = imageModel,
                     contentDescription = altText,
@@ -2474,11 +2562,13 @@ private fun ASTNode.previousRenderableSibling(): ASTNode? {
  * [BubbleEdgeCompensation] at a leading/trailing edge. Inline content
  * ([blockLevel] = false, e.g. an image inside a paragraph) is left untouched.
  */
+@Composable
 private fun Modifier.mediaEdgePadding(
     node: ASTNode,
     paragraphSpacing: Dp,
     blockLevel: Boolean = true,
 ): Modifier {
+    if (me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current != null) return this
     if (!blockLevel) return this
     val next = node.nextRenderableSibling()
     val top = if (node.previousRenderableSibling() == null) BubbleEdgeCompensation else 0.dp

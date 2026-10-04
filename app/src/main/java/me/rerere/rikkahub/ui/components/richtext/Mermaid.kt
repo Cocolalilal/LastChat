@@ -216,7 +216,8 @@ fun Mermaid(
 
 
     val frame = LocalOpticalFrame.current
-    val blockShape = if (frame.nested) frame.innerShape else AppShapes.InputField
+    val bubbleShape = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current
+    val blockShape = bubbleShape ?: if (frame.nested) frame.innerShape else AppShapes.InputField
     Surface(
         modifier = modifier,
         shape = blockShape,

@@ -53,7 +53,8 @@ fun DataTable(
     // Standalone tables keep the 12dp small shape. Inside a bubble the 1dp
     // border is drawn on this shape, not as extra gap, so the radius is just
     // the optical inner corner.
-    val tableShape = if (frame.nested) frame.innerShape else MaterialTheme.shapes.small
+    val bubbleShape = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current
+    val tableShape = bubbleShape ?: if (frame.nested) frame.innerShape else MaterialTheme.shapes.small
 
     Box(
         modifier = modifier

@@ -311,8 +311,10 @@ fun HighlightCodeBlock(
     }
 
     val frame = LocalOpticalFrame.current
+    val bubbleShape = me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape.current
     // The 1dp border is drawn inside the shape, so it is not extra inset from the bubble.
-    val blockShape = if (frame.nested) frame.innerShape else AppShapes.InputField
+    // A flush message bubble uses the grouped message radius instead of the nested one.
+    val blockShape = bubbleShape ?: if (frame.nested) frame.innerShape else AppShapes.InputField
     Surface(
         modifier = modifier,
         shape = blockShape,

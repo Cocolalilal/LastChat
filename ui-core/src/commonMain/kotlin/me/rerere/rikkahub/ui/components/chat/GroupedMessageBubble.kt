@@ -8,9 +8,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.theme.OpticalFrame
@@ -18,6 +21,12 @@ import me.rerere.rikkahub.ui.theme.OpticalFrame
 enum class BubblePosition { SINGLE, FIRST, MIDDLE, LAST }
 
 enum class BubbleRole { USER, ASSISTANT, ACTIVITY }
+
+/**
+ * Set on a rich block that *is* the message bubble (no extra inset).
+ * Nested cards inside a padded prose bubble leave this null and keep the optical inner radius.
+ */
+val LocalMessageBubbleShape = staticCompositionLocalOf<Shape?> { null }
 
 /** The production LastChat grouped-message container, shared by Android and iOS. */
 @Composable
@@ -29,6 +38,8 @@ fun GroupedMessageBubble(
     contentColor: Color? = null,
     largeRadius: Dp = AppShapes.MessageBubbleRadius,
     smallRadius: Dp = AppShapes.MessageBubbleJoint,
+    contentPaddingHorizontal: Dp = AppShapes.MessageBubblePaddingHorizontal,
+    contentPaddingVertical: Dp = AppShapes.MessageBubblePaddingVertical,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -82,13 +93,15 @@ fun GroupedMessageBubble(
         // Horizontal padding is the larger inset. Nested cards read it from
         // LocalOpticalFrame and step their corners down by that amount.
         // Full-bleed blocks add the vertical shortfall themselves.
-        val horizontal = AppShapes.MessageBubblePaddingHorizontal
-        val vertical = AppShapes.MessageBubblePaddingVertical
+        val horizontal = contentPaddingHorizontal
+        val vertical = contentPaddingVertical
+        val flush = horizontal == 0.dp && vertical == 0.dp
         CompositionLocalProvider(
             LocalOpticalFrame provides OpticalFrame(
                 outer = largeRadius,
-                inset = maxOf(horizontal, vertical),
-            )
+                inset = if (flush) 0.dp else maxOf(horizontal, vertical),
+            ),
+            LocalMessageBubbleShape provides if (flush) shape else null,
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = horizontal, vertical = vertical),
