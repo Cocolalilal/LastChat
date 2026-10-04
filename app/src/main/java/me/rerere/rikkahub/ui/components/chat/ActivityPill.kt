@@ -13,7 +13,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,6 +31,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -308,12 +308,21 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = AppShapes.MessageBubbleJoint
 private val PILL_HEIGHT = 36.dp
-// Emphasized decelerate: the pill grows into the panel and settles, one clock for size, corners, and color.
-private val PILL_MORPH_EASING = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
-private const val PILL_MORPH_MS = 320
-private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
-private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
-private val PILL_FADE_SPEC = tween<Float>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
+// Starts at rest (no kick) and never overshoots. Same spring for size, corners, and color.
+private const val PILL_MORPH_STIFFNESS = 240f
+private val PILL_MORPH_SPEC = spring<IntSize>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = PILL_MORPH_STIFFNESS,
+)
+private val PILL_CORNER_SPEC = spring<Dp>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = PILL_MORPH_STIFFNESS,
+)
+private val PILL_COLOR_SPEC = spring<Color>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = PILL_MORPH_STIFFNESS,
+)
+private val PILL_FADE_EASING = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
 /**
  * Position of a pill in a row of pills.
@@ -568,7 +577,7 @@ private fun AnimatedSinglePill(
             surfaceExpanded -> MaterialTheme.colorScheme.surfaceContainerLow
             else -> MaterialTheme.colorScheme.surfaceContainerHigh
         },
-        animationSpec = tween(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING),
+        animationSpec = PILL_COLOR_SPEC,
         label = "pill_color"
     )
     val pillShape = RoundedCornerShape(
@@ -586,23 +595,34 @@ private fun AnimatedSinglePill(
     }?.toTestTag()
 
     val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
+    val morphKey = when (requestedContentState) {
+        is SinglePillContentState.ExpandedReasoning -> "reasoning"
+        is SinglePillContentState.ExpandedTimeline -> "timeline"
+        is SinglePillContentState.Compact -> "compact"
+    }
+    // True on the same frame the content changes, so the size spring is the only motion.
+    var settledMorphKey by remember { mutableStateOf(morphKey) }
+    val morphing = chatAnimationsEnabled && settledMorphKey != morphKey
+    LaunchedEffect(morphKey) {
+        if (settledMorphKey != morphKey) {
+            delay(640)
+            settledMorphKey = morphKey
+        }
+    }
 
     Surface(
         modifier = Modifier
             .then(
-                if (chatAnimationsEnabled) {
+                if (chatAnimationsEnabled && !morphing) {
                     Modifier.animateContentSize(
                         animationSpec = PILL_MORPH_SPEC,
                         alignment = Alignment.TopStart
                     )
                 } else Modifier
             )
+            .defaultMinSize(minHeight = PILL_HEIGHT)
             .then(
-                if (surfaceExpanded) {
-                    Modifier.widthIn(max = maxBubbleWidth)
-                } else {
-                    Modifier.height(PILL_HEIGHT)
-                }
+                if (surfaceExpanded) Modifier.widthIn(max = maxBubbleWidth) else Modifier
             )
             .clip(pillShape)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
@@ -623,10 +643,12 @@ private fun AnimatedSinglePill(
         AnimatedContent(
             targetState = requestedContentState,
             transitionSpec = {
-                // The surface owns the size. A second SizeTransform here fights it and steps.
-                // Snap the content bounds and let animateContentSize grow the clipped pill.
-                (fadeIn(animationSpec = PILL_FADE_SPEC) togetherWith fadeOut(animationSpec = tween(180, easing = PILL_MORPH_EASING)))
-                    .using(SizeTransform(clip = true) { _, _ -> snap() })
+                // Clip reveals the new panel as the bounds grow. Fade eases in from rest
+                // so the old pill doesn't get replaced on the first frame.
+                (
+                    fadeIn(animationSpec = tween(durationMillis = 420, delayMillis = 70, easing = PILL_FADE_EASING))
+                        togetherWith fadeOut(animationSpec = tween(durationMillis = 260, easing = PILL_FADE_EASING))
+                ).using(SizeTransform(clip = true) { _, _ -> PILL_MORPH_SPEC })
             },
             contentAlignment = Alignment.TopStart,
             contentKey = { 

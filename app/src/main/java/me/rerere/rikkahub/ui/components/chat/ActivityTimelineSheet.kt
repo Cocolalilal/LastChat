@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -90,6 +91,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.Dispatchers
@@ -124,7 +126,10 @@ import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.utils.writeClipboardText
 import org.koin.compose.koinInject
 
-private const val TIMELINE_PANEL_ANIMATION_MS = 220
+private val TimelineSizeSpring = spring<IntSize>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = 240f,
+)
 private const val TIMELINE_MAX_HEIGHT_DP = 360
 private const val TIMELINE_GESTURE_IDLE_TIMEOUT_MS = 120L
 private const val TIMELINE_FOLLOW_BOTTOM_KEY = "timeline_follow_bottom"
@@ -549,10 +554,7 @@ internal fun ActivityTimelinePanel(
             .then(
                 if (animateSize) {
                     Modifier.animateContentSize(
-                        animationSpec = tween(
-                            durationMillis = TIMELINE_PANEL_ANIMATION_MS,
-                            easing = LinearOutSlowInEasing
-                        )
+                        animationSpec = TimelineSizeSpring
                     )
                 } else {
                     Modifier
@@ -976,7 +978,7 @@ private fun TimelineAccordionEntry(
     }
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 280f),
         label = "timeline_section_chevron",
     )
 
@@ -993,10 +995,7 @@ private fun TimelineAccordionEntry(
             .then(
                 if (animateRowSize) {
                     Modifier.animateContentSize(
-                        animationSpec = tween(
-                            durationMillis = TIMELINE_PANEL_ANIMATION_MS,
-                            easing = LinearOutSlowInEasing,
-                        )
+                        animationSpec = TimelineSizeSpring
                     )
                 } else {
                     Modifier
