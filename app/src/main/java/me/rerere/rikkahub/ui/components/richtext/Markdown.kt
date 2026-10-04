@@ -5,7 +5,6 @@ import androidx.compose.animation.core.spring
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
@@ -57,13 +56,13 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.BlurEffect
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -104,7 +103,7 @@ import kotlinx.coroutines.flow.mapLatest
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.AppSurface
+import me.rerere.rikkahub.ui.components.chat.chatImageOutline
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.BidiDirection
@@ -1297,9 +1296,9 @@ private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
 private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
 private const val STREAMING_SETTLE_MIN_MILLIS = 160L
 private const val STREAMING_SETTLE_MAX_MILLIS = 240L
-private const val STREAMING_SETTLE_ALPHA_FAST = 0f
-private const val STREAMING_SETTLE_ALPHA_SLOW = 0.06f
-private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 16f
+private const val STREAMING_SETTLE_ALPHA_FAST = 0.3f
+private const val STREAMING_SETTLE_ALPHA_SLOW = 0.45f
+private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 5.5f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
 private const val STREAMING_STARVED_REVEAL_MILLIS = 180L
@@ -1676,16 +1675,11 @@ private fun MarkdownNode(
                     modifier = Modifier
                         .then(
                             if (bubbleShape != null && bubbleColor != null) {
-                                Modifier.border(
-                                    width = AppSurface.ImageRimWidth,
-                                    color = bubbleColor,
-                                    shape = imageShape,
-                                )
+                                Modifier.chatImageOutline(imageShape, bubbleColor)
                             } else {
-                                Modifier
+                                Modifier.clip(imageShape)
                             }
                         )
-                        .clip(imageShape)
                         .then(reservedModifier),
                     onSizeResolved = { resolved ->
                         if (reservedInfo == null) {
@@ -2562,29 +2556,23 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         val styleStart = rangeStart.coerceIn(outputStart, outputEnd)
         val styleEnd = rangeEnd.coerceIn(outputStart, outputEnd)
         if (styleEnd <= styleStart) return@fastForEach
+        // Blur and fade are one motion. While the glyph is still soft, the sharp
+        // span stays hidden so a second copy cannot smear already-shown words.
         val renderBlur = reveal.blurEnabled &&
             android.os.Build.VERSION.SDK_INT >= 31 &&
-            visuals.blurRadius > 0.4f
+            visuals.blurRadius > 0.4f &&
+            visuals.alpha < 0.995f
         if (renderBlur) {
             addStringAnnotation(
                 tag = STREAMING_BLUR_ANNOTATION,
-                annotation = "${visuals.blurRadius},${(1f - visuals.alpha).coerceIn(0f, 1f)}",
+                annotation = "${visuals.blurRadius},${visuals.alpha}",
                 start = styleStart,
                 end = styleEnd,
             )
         }
         addStyle(
             style = SpanStyle(
-                color = reveal.color.copy(alpha = visuals.alpha),
-                shadow = if (reveal.blurEnabled && !renderBlur && visuals.blurRadius > 0.4f) {
-                    Shadow(
-                        color = reveal.color.copy(alpha = (1f - visuals.alpha).coerceIn(0f, 1f)),
-                        offset = Offset.Zero,
-                        blurRadius = visuals.blurRadius,
-                    )
-                } else {
-                    null
-                },
+                color = reveal.color.copy(alpha = if (renderBlur) 0f else visuals.alpha),
             ),
             start = styleStart,
             end = styleEnd,
@@ -2669,7 +2657,25 @@ private fun Modifier.incomingTokenBlur(
                     )
                 }
             }
-            drawLayer(layer)
+            val maxLength = layout.layoutInput.text.length
+            val clip = Path()
+            var hasClip = false
+            entry.value.forEach { run ->
+                val start = run.start.coerceIn(0, maxLength)
+                val end = run.end.coerceIn(start, maxLength)
+                if (end <= start) return@forEach
+                // Pad by the blur radius so the falloff stays inside the clip
+                // instead of cutting a hard box, without painting the previous word.
+                val bounds = layout.getPathForRange(start, end).getBounds().inflate(run.radius + 1f)
+                if (bounds.width <= 0f || bounds.height <= 0f) return@forEach
+                clip.addRect(bounds)
+                hasClip = true
+            }
+            if (hasClip) {
+                clipPath(clip) {
+                    drawLayer(layer)
+                }
+            }
         }
     }
 }
@@ -2688,6 +2694,7 @@ internal fun streamingRevealVisuals(
     startAlpha: Float,
     blurEnabled: Boolean,
 ): StreamingRevealVisuals {
+    // One eased motion: opacity rises and blur falls together, and both are done at 1.
     val safeProgress = progress.coerceIn(0f, 1f)
     return StreamingRevealVisuals(
         alpha = startAlpha.coerceIn(0f, 1f) +
