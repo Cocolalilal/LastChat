@@ -7,7 +7,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,8 +17,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -323,7 +320,8 @@ private val COMPACT_HEADER_VERTICAL = 8.dp
 private val HEADER_CONTENT_GAP = 8.dp
 // One critically damped clock. Size, corners, color, and the crossfade all read it,
 // so a tap mid-flight reverses from the live value instead of restarting a second spring.
-private const val PILL_MORPH_STIFFNESS = 240f
+// 320 is a small step up from 240: still no bounce, just a little quicker.
+private const val PILL_MORPH_STIFFNESS = 320f
 private val PILL_MORPH_SPEC = spring<IntSize>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PILL_MORPH_STIFFNESS,
@@ -364,6 +362,22 @@ internal fun multiStepEntryAlpha(progress: Float, index: Int, count: Int): Float
     val window = 1f / (1f + (count - 1) * (1f - MULTI_STEP_ENTRY_OVERLAP))
     val step = window * (1f - MULTI_STEP_ENTRY_OVERLAP)
     val start = index * step
+    val end = (start + window).coerceAtMost(1f)
+    return activitySmoothstep(start, end, t)
+}
+
+/**
+ * How far sibling [index] (0 = the pill immediately right of the anchor) has flown
+ * out from behind the leftmost pill. 0 is tucked on top of the anchor, 1 is settled.
+ * The same curve runs backward when a tap interrupts the fly-out.
+ */
+internal fun multiStepSiblingFly(reveal: Float, index: Int, siblingCount: Int): Float {
+    if (siblingCount <= 0 || index < 0) return 1f
+    if (index >= siblingCount) return 0f
+    val t = reveal.coerceIn(0f, 1f)
+    val window = if (siblingCount == 1) 1f else 0.62f
+    val span = 1f - window
+    val start = if (siblingCount == 1) 0f else index * span / (siblingCount - 1)
     val end = (start + window).coerceAtMost(1f)
     return activitySmoothstep(start, end, t)
 }
@@ -596,18 +610,66 @@ private fun AnimatedSinglePill(
 
     val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
     val progress = remember { Animatable(if (surfaceExpanded) 1f else 0f) }
-    LaunchedEffect(surfaceExpanded, chatAnimationsEnabled) {
-        val target = if (surfaceExpanded) 1f else 0f
+    val multiPillCount = if (state is ActivityState.CompletedMultiple) {
+        buildActivityItemsFromMultiple(state).size
+    } else {
+        0
+    }
+    val isMultiPill = multiPillCount > 1
+    // History opens already settled. A live turn starts tucked so the siblings can
+    // fly out once, the same way a minimize ends.
+    val siblingReveal = remember(key) { Animatable(if (wasCompletedInitially) 1f else 0f) }
+    // Minimize of a multi-step card keeps the timeline in one piece while it shrinks
+    // to the leftmost pill. Expand from rest leaves this false so the ripple stays.
+    var tuckMinimize by remember(key) { mutableStateOf(false) }
+    LaunchedEffect(surfaceExpanded, chatAnimationsEnabled, isMultiPill, wasCompletedInitially) {
+        val open = surfaceExpanded
         if (!chatAnimationsEnabled) {
-            progress.snapTo(target)
-        } else {
+            progress.snapTo(if (open) 1f else 0f)
+            if (isMultiPill) siblingReveal.snapTo(1f)
+            tuckMinimize = false
+            if (!open && progress.value == 0f) retainedExpanded = null
+            return@LaunchedEffect
+        }
+        if (!isMultiPill) {
             // Always retarget. A cancelled flight leaves targetValue stale, and skipping
             // animateTo there would freeze the pill between sizes.
-            progress.animateTo(target, PILL_PROGRESS_SPEC)
+            progress.animateTo(if (open) 1f else 0f, PILL_PROGRESS_SPEC)
+            if (!open && progress.value == 0f) retainedExpanded = null
+            return@LaunchedEffect
         }
-        if (!surfaceExpanded && progress.value == 0f) {
-            retainedExpanded = null
+        if (open) {
+            // Interrupting a fly-out: siblings go back behind the anchor, then the
+            // card grows from that one pill. Opening from rest (reveal already 1)
+            // skips this and keeps the ripple expand.
+            if (progress.value <= 0.02f && siblingReveal.value < 0.999f) {
+                siblingReveal.animateTo(0f, PILL_PROGRESS_SPEC)
+            }
+            progress.animateTo(1f, PILL_PROGRESS_SPEC)
+            tuckMinimize = false
+            return@LaunchedEffect
         }
+        if (!wasCompletedInitially && progress.value <= 0.02f && siblingReveal.value < 0.999f) {
+            siblingReveal.animateTo(1f, PILL_PROGRESS_SPEC)
+            return@LaunchedEffect
+        }
+        if (progress.value >= 0.98f) {
+            // Fully open: shrink the whole card onto the leftmost pill (a complete
+            // pill), then let the other segments fly out from behind it.
+            tuckMinimize = true
+            siblingReveal.snapTo(0f)
+            progress.animateTo(0f, PILL_PROGRESS_SPEC)
+            if (progress.value <= 0.02f) {
+                tuckMinimize = false
+                retainedExpanded = null
+                siblingReveal.animateTo(1f, PILL_PROGRESS_SPEC)
+            }
+        } else {
+            // Early reverse of an expand. Keep the symmetric ripple; don't retarget
+            // the width onto the first pill or the rows would hard-cut.
+            progress.animateTo(0f, PILL_PROGRESS_SPEC)
+        }
+        if (!open && progress.value == 0f) retainedExpanded = null
     }
     val morph = progress.value.coerceIn(0f, 1f)
     val morphRunning = progress.isRunning
@@ -718,6 +780,7 @@ private fun AnimatedSinglePill(
             progress = morph,
             maxExpandedWidth = maxBubbleWidth,
             multiStepReveal = multiStepReveal,
+            collapseAsOneCard = tuckMinimize,
             anchorHeader = anchorHeader,
         ) {
             if (visibleExpanded != null && !fullyCollapsed) {
@@ -733,7 +796,7 @@ private fun AnimatedSinglePill(
                             onTimelineClick = onTimelineDismiss,
                             animateSize = false,
                             pillAnchored = true,
-                            revealProgress = if (multiStepReveal) morph else null,
+                            revealProgress = if (multiStepReveal && !tuckMinimize) morph else null,
                             singleEntryHeaderAlpha = expandedHeaderAlpha,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -777,10 +840,9 @@ private fun AnimatedSinglePill(
                     ) { targetState ->
                         if (targetState is ActivityState.CompletedMultiple) {
                             val items = buildActivityItemsFromMultiple(targetState)
-                            var othersCanAppear by remember(key) { mutableStateOf(wasCompletedInitially) }
-                            
+                            val siblingCount = (items.size - 1).coerceAtLeast(0)
+                            val reveal = if (siblingCount > 0) siblingReveal.value else 1f
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 items.forEachIndexed { index, item ->
@@ -790,62 +852,42 @@ private fun AnimatedSinglePill(
                                         index == items.lastIndex -> PillPosition.LAST
                                         else -> PillPosition.MIDDLE
                                     }
-                                    
-                                    if (index == 0) {
-                                        LaunchedEffect(Unit) {
-                                            if (!wasCompletedInitially) {
-                                                delay(100L)
-                                            }
-                                            othersCanAppear = true
-                                        }
-                                        if (items.size == 1) {
-                                            ExpandedActivityPill(
-                                                item = item,
-                                                onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
-                                            )
-                                        } else {
-                                            CompactActivityPill(
-                                                item = item,
-                                                onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
-                                            )
-                                        }
+                                    val fly = if (index == 0 || siblingCount == 0) {
+                                        1f
                                     } else {
-                                        if (wasCompletedInitially) {
-                                            CompactActivityPill(
-                                                item = item,
-                                                onClick = { onClick(item.type) },
-                                                position = position,
-                                                connectsToBubbleBelow = connectsToBubbleBelow
-                                            )
-                                        } else {
-                                            var visible by remember(key) { mutableStateOf(false) }
-                                            LaunchedEffect(othersCanAppear) {
-                                                if (othersCanAppear && !visible) {
-                                                    delay(index * 50L)
-                                                    visible = true
-                                                }
+                                        multiStepSiblingFly(reveal, index - 1, siblingCount)
+                                    }
+                                    // 0 = a complete pill. The anchor flattens as the first
+                                    // neighbor comes out; each sibling settles into its own slot.
+                                    val segment = if (siblingCount == 0) {
+                                        1f
+                                    } else if (index == 0) {
+                                        multiStepSiblingFly(reveal, 0, siblingCount)
+                                    } else {
+                                        fly
+                                    }
+                                    if (items.size == 1) {
+                                        ExpandedActivityPill(
+                                            item = item,
+                                            onClick = { onClick(item.type) },
+                                            position = position,
+                                            connectsToBubbleBelow = connectsToBubbleBelow
+                                        )
+                                    } else {
+                                        CompactActivityPill(
+                                            item = item,
+                                            onClick = { onClick(item.type) },
+                                            position = position,
+                                            connectsToBubbleBelow = connectsToBubbleBelow,
+                                            cornerSegment = segment,
+                                            modifier = if (index == 0) {
+                                                Modifier
+                                            } else {
+                                                Modifier
+                                                    .padding(start = 2.dp * fly)
+                                                    .siblingFlySlot(fly)
                                             }
-                                            
-                                            AnimatedVisibility(
-                                                visible = visible,
-                                                enter = fadeIn(tween(150)) + slideInHorizontally(
-                                                    initialOffsetX = { -it / 2 },
-                                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
-                                                ),
-                                                exit = fadeOut(tween(100)) + slideOutHorizontally(targetOffsetX = { -it / 2 })
-                                            ) {
-                                                CompactActivityPill(
-                                                    item = item,
-                                                    onClick = { onClick(item.type) },
-                                                    position = position,
-                                                    connectsToBubbleBelow = connectsToBubbleBelow
-                                                )
-                                            }
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -1303,6 +1345,7 @@ private fun PillMorphLayout(
     progress: Float,
     maxExpandedWidth: Dp,
     multiStepReveal: Boolean = false,
+    collapseAsOneCard: Boolean = false,
     anchorHeader: Boolean = false,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
@@ -1335,7 +1378,18 @@ private fun PillMorphLayout(
         val layoutWidth = width.coerceIn(constraints.minWidth, constraints.maxWidth)
         val layoutHeight = height.coerceIn(constraints.minHeight, constraints.maxHeight)
         layout(layoutWidth, layoutHeight) {
-            if (multiStepReveal) {
+            if (multiStepReveal && collapseAsOneCard) {
+                // Shrink the open card as one piece onto the leftmost pill. Rows do not
+                // un-ripple; the whole panel crossfades into that pill at the end.
+                val compactAlpha = multiStepCompactAlpha(t)
+                val panelAlpha = (1f - compactAlpha).coerceIn(0f, 1f)
+                if (expandedPlaceable != null && panelAlpha > 0.001f) {
+                    expandedPlaceable.placeWithLayer(0, 0) { alpha = panelAlpha }
+                }
+                if (compactAlpha > 0.001f) {
+                    compactPlaceable.placeWithLayer(0, 0) { alpha = compactAlpha }
+                }
+            } else if (multiStepReveal) {
                 // Panel stays fully opaque; entries ripple in from revealProgress.
                 // Compact icon/label ease out over the early range, then back on close.
                 val compactAlpha = multiStepCompactAlpha(t)
@@ -1669,38 +1723,89 @@ private fun ExpandedActivityContent(item: ActivityItem) {
 /**
  * Get corner radii based on pill position and whether it connects to bubble below.
  */
-private fun getCornerRadii(
+private data class PillRadii(
+    val topStart: Dp,
+    val topEnd: Dp,
+    val bottomStart: Dp,
+    val bottomEnd: Dp,
+) {
+    fun toShape(): RoundedCornerShape = RoundedCornerShape(
+        topStart = topStart,
+        topEnd = topEnd,
+        bottomStart = bottomStart,
+        bottomEnd = bottomEnd,
+    )
+
+    fun lerpTo(other: PillRadii, fraction: Float): PillRadii {
+        val t = fraction.coerceIn(0f, 1f)
+        return PillRadii(
+            topStart = dpLerp(topStart, other.topStart, t),
+            topEnd = dpLerp(topEnd, other.topEnd, t),
+            bottomStart = dpLerp(bottomStart, other.bottomStart, t),
+            bottomEnd = dpLerp(bottomEnd, other.bottomEnd, t),
+        )
+    }
+}
+
+/**
+ * [segment] 0 draws a complete pill. 1 is the settled [position] in the row.
+ * Corners move with the fly-out instead of swapping when a neighbor appears.
+ */
+private fun pillRadii(
     position: PillPosition,
-    connectsToBubbleBelow: Boolean
-): RoundedCornerShape {
+    connectsToBubbleBelow: Boolean,
+    segment: Float = 1f,
+): PillRadii {
     val bottomLeft = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS
     val bottomRight = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS
-    
-    return when (position) {
-        PillPosition.SINGLE -> RoundedCornerShape(
+    val complete = PillRadii(
+        topStart = LARGE_RADIUS,
+        topEnd = LARGE_RADIUS,
+        bottomStart = bottomLeft,
+        bottomEnd = bottomRight,
+    )
+    val settled = when (position) {
+        PillPosition.SINGLE -> complete
+        PillPosition.FIRST -> PillRadii(
             topStart = LARGE_RADIUS,
-            topEnd = LARGE_RADIUS,
+            topEnd = SMALL_RADIUS,
             bottomStart = bottomLeft,
-            bottomEnd = bottomRight
+            bottomEnd = SMALL_RADIUS,
         )
-        PillPosition.FIRST -> RoundedCornerShape(
-            topStart = LARGE_RADIUS,
-            topEnd = SMALL_RADIUS,
-            bottomStart = bottomLeft,  // Flat to connect to bubble
-            bottomEnd = SMALL_RADIUS
-        )
-        PillPosition.MIDDLE -> RoundedCornerShape(
+        PillPosition.MIDDLE -> PillRadii(
             topStart = SMALL_RADIUS,
             topEnd = SMALL_RADIUS,
             bottomStart = SMALL_RADIUS,
-            bottomEnd = SMALL_RADIUS
+            bottomEnd = SMALL_RADIUS,
         )
-        PillPosition.LAST -> RoundedCornerShape(
+        PillPosition.LAST -> PillRadii(
             topStart = SMALL_RADIUS,
             topEnd = LARGE_RADIUS,
             bottomStart = SMALL_RADIUS,
-            bottomEnd = bottomRight  // Flat to connect to bubble
+            bottomEnd = bottomRight,
         )
+    }
+    return complete.lerpTo(settled, segment)
+}
+
+private fun getCornerRadii(
+    position: PillPosition,
+    connectsToBubbleBelow: Boolean,
+    segment: Float = 1f,
+): RoundedCornerShape = pillRadii(position, connectsToBubbleBelow, segment).toShape()
+
+/** Reserves a shrinking slot so a sibling can slide out from behind the anchor. */
+private fun Modifier.siblingFlySlot(fly: Float): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val t = fly.coerceIn(0f, 1f)
+    val shown = (placeable.width * t).roundToInt()
+    layout(shown, placeable.height) {
+        placeable.placeWithLayer(
+            x = (-((1f - t) * placeable.width)).roundToInt(),
+            y = 0,
+        ) {
+            alpha = t
+        }
     }
 }
 
@@ -1715,10 +1820,11 @@ private fun SinglePill(
     modifier: Modifier = Modifier,
     testTag: String? = null,
     isLoading: Boolean = false,
+    cornerSegment: Float = 1f,
     content: @Composable () -> Unit
 ) {
     val pillColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val pillShape = getCornerRadii(position, connectsToBubbleBelow)
+    val pillShape = getCornerRadii(position, connectsToBubbleBelow, cornerSegment)
 
     val chatAnimationsEnabled = me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled.current
 
@@ -1916,14 +2022,16 @@ private fun CompactActivityPill(
     onClick: () -> Unit,
     position: PillPosition,
     connectsToBubbleBelow: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cornerSegment: Float = 1f,
 ) {
     SinglePill(
         onClick = onClick,
         position = position,
         connectsToBubbleBelow = connectsToBubbleBelow,
         modifier = modifier,
-        testTag = item.type.toTestTag()
+        testTag = item.type.toTestTag(),
+        cornerSegment = cornerSegment,
     ) {
         Icon(
             imageVector = item.type.getIcon(),
