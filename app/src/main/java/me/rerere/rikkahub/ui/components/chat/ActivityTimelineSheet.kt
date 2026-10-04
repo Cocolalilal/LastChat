@@ -139,8 +139,8 @@ private val TimelineAccordionInset = 4.dp
 private val TimelineAccordionRowRadius =
     AppShapes.concentric(AppShapes.MessageBubbleRadius, TimelineAccordionInset)
 private val TimelineAccordionDetailInset = 14.dp
-private val TimelineLiveInsetHorizontal = 14.dp
-private val TimelineLiveInsetVertical = 12.dp
+internal val TimelineLiveInsetHorizontal = 14.dp
+internal val TimelineLiveInsetVertical = 12.dp
 /** Extra side indent on live entries after the first. Added on top of the list padding. */
 private val TimelineLiveFollowUpIndent = 8.dp
 private val TimelineAskUserCardPadding = 10.dp
@@ -154,9 +154,31 @@ private fun timelineDetailShape(): RoundedCornerShape =
     RoundedCornerShape(LocalTimelineDetailRadius.current)
 
 internal enum class TimelineScrollHandoffMode {
+    /** Sheet. Leftover drag stays in the panel. */
     LockedToPanel,
+    /**
+     * Inline chat. Same rule as [LockedToPanel]: a timeline scroll never hands
+     * leftover drag or fling to the parent chat. The name stays so call sites compile.
+     */
     EdgeGatedToParent
 }
+
+/**
+ * Parent nested-scroll connection for a timeline scroller. The child still scrolls.
+ * Anything it does not consume, including the delta past the top or bottom, is
+ * consumed here so the chat list does not move.
+ */
+internal fun timelineLeftoverScrollConnection(): NestedScrollConnection =
+    object : NestedScrollConnection {
+        override fun onPostScroll(
+            consumed: Offset,
+            available: Offset,
+            source: NestedScrollSource,
+        ): Offset = if (available.y == 0f) Offset.Zero else Offset(x = 0f, y = available.y)
+
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+            if (available.y == 0f) Velocity.Zero else Velocity(x = 0f, y = available.y)
+    }
 
 internal enum class TimelineScrollDirection {
     TowardTop,
@@ -222,18 +244,13 @@ internal fun TimelineScrollHandoffState.onTimelineMoved(): TimelineScrollHandoff
 internal fun TimelineScrollHandoffState.onEdgeReached(
     edge: TimelineScrollEdge
 ): Pair<TimelineScrollHandoffState, TimelineScrollHandoffDecision> {
-    val shouldReleaseToParent = armedEdge == edge &&
-        armedSessionId != null &&
-        armedSessionId != activeGestureSessionId
-    return if (shouldReleaseToParent) {
-        copy(lastDirection = edge.direction) to TimelineScrollHandoffDecision.ReleaseToParent
-    } else {
-        copy(
-            armedEdge = edge,
-            armedSessionId = activeGestureSessionId,
-            lastDirection = edge.direction,
-        ) to TimelineScrollHandoffDecision.ConsumeInsidePanel
-    }
+    // Reaching the top or bottom ends the gesture inside the timeline.
+    // A later drag in the same direction must not be released to the chat.
+    return copy(
+        armedEdge = edge,
+        armedSessionId = activeGestureSessionId,
+        lastDirection = edge.direction,
+    ) to TimelineScrollHandoffDecision.ConsumeInsidePanel
 }
 
 internal fun timelineScrollDirectionFor(deltaY: Float): TimelineScrollDirection? {
@@ -323,6 +340,12 @@ internal fun ActivityTimelinePanel(
      * the settled panel fully visible (sheet, single-entry, live).
      */
     revealProgress: Float? = null,
+    /**
+     * Single-entry morph draws one moving header on top of the panel.
+     * 0 hides this row's own icon and label so the two strings cannot stack.
+     * Multi-step ignores it and keeps the ripple.
+     */
+    singleEntryHeaderAlpha: Float = 1f,
 ) {
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
@@ -372,48 +395,30 @@ internal fun ActivityTimelinePanel(
                 if (available.y == 0f) {
                     return Offset.Zero
                 }
-                if (scrollHandoffMode == TimelineScrollHandoffMode.LockedToPanel) {
-                    return Offset(x = 0f, y = available.y)
+                // Track the edge for the gesture session, but always eat the leftover.
+                // Releasing it is what pulled the chat when a timeline hit its end.
+                if (source == NestedScrollSource.UserInput) {
+                    timelineScrollEdgeFor(listState, available.y)?.let { edge ->
+                        val (nextState, _) = handoffState.onEdgeReached(edge)
+                        handoffState = nextState
+                    }
                 }
-                if (source != NestedScrollSource.UserInput) {
-                    return Offset(x = 0f, y = available.y)
-                }
-                val edge = timelineScrollEdgeFor(listState, available.y)
-                    ?: return Offset(x = 0f, y = available.y)
-                val (nextState, decision) = handoffState.onEdgeReached(edge)
-                handoffState = nextState
-                return if (decision == TimelineScrollHandoffDecision.ConsumeInsidePanel) {
-                    Offset(x = 0f, y = available.y)
-                } else {
-                    Offset.Zero
-                }
+                return Offset(x = 0f, y = available.y)
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 if (consumed.y != 0f) {
                     handoffState = handoffState.onTimelineMoved()
                 }
-                val result = when {
-                    available.y == 0f -> Velocity.Zero
-                    scrollHandoffMode == TimelineScrollHandoffMode.LockedToPanel -> Velocity(x = 0f, y = available.y)
-                    else -> {
-                        val edge = timelineScrollEdgeFor(listState, available.y)
-                        if (edge == null) {
-                            Velocity(x = 0f, y = available.y)
-                        } else {
-                            val (nextState, decision) = handoffState.onEdgeReached(edge)
-                            handoffState = nextState
-                            if (decision == TimelineScrollHandoffDecision.ConsumeInsidePanel) {
-                                Velocity(x = 0f, y = available.y)
-                            } else {
-                                Velocity.Zero
-                            }
-                        }
+                if (available.y != 0f) {
+                    timelineScrollEdgeFor(listState, available.y)?.let { edge ->
+                        val (nextState, _) = handoffState.onEdgeReached(edge)
+                        handoffState = nextState
                     }
                 }
                 gestureEndJob?.cancel()
                 handoffState = handoffState.endGesture()
-                return result
+                return if (available.y == 0f) Velocity.Zero else Velocity(x = 0f, y = available.y)
             }
         }
     }
@@ -693,6 +698,7 @@ internal fun ActivityTimelinePanel(
                             }
                         },
                         shape = shape,
+                        headerAlpha = if (useAccordionLayout) 1f else singleEntryHeaderAlpha,
                         modifier = if (entryReveal != null) {
                             Modifier.graphicsLayer {
                                 alpha = entryReveal
@@ -829,6 +835,7 @@ private fun TimelineEntryItem(
     onToggleExpanded: () -> Unit,
     onCopyEntry: () -> Unit,
     shape: Shape = AppShapes.ListItem,
+    headerAlpha: Float = 1f,
     modifier: Modifier = Modifier
 ) {
     val hasContent = when (entry) {
@@ -894,6 +901,7 @@ private fun TimelineEntryItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer { alpha = headerAlpha }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

@@ -21,7 +21,6 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -30,7 +29,7 @@ class ActivityTimelineInlineScrollHandoffTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun firstTopEdgeSwipeStaysInTimelineAndSecondSwipeMovesParentChat() {
+    fun repeatedTopEdgeSwipesStayInTimeline() {
         var outerState: LazyListState? = null
 
         composeRule.setContent {
@@ -56,11 +55,11 @@ class ActivityTimelineInlineScrollHandoffTest {
             swipeDown()
         }
         composeRule.waitForIdle()
-        composeRule.assertOuterPositionChanged(outerState, baseline)
+        composeRule.assertOuterPositionEquals(outerState, baseline)
     }
 
     @Test
-    fun firstBottomEdgeSwipeStaysInTimelineAndSecondSwipeMovesParentChat() {
+    fun repeatedBottomEdgeSwipesStayInTimeline() {
         var outerState: LazyListState? = null
 
         composeRule.setContent {
@@ -86,7 +85,7 @@ class ActivityTimelineInlineScrollHandoffTest {
             swipeUp()
         }
         composeRule.waitForIdle()
-        composeRule.assertOuterPositionChanged(outerState, baseline)
+        composeRule.assertOuterPositionEquals(outerState, baseline)
     }
 
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.finishGestureWindow() {
@@ -114,13 +113,6 @@ class ActivityTimelineInlineScrollHandoffTest {
         assertEquals(expected, actual)
     }
 
-    private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.assertOuterPositionChanged(
-        outerState: LazyListState?,
-        baseline: Pair<Int, Int>
-    ) {
-        val actual = captureOuterPosition(outerState)
-        assertNotEquals(baseline, actual)
-    }
 }
 
 private const val PANEL_ITEM_INDEX = 8

@@ -18,7 +18,7 @@ class ActivityTimelineScrollHandoffTest {
     }
 
     @Test
-    fun secondUpwardGestureAtTopReleasesParentHandoff() {
+    fun secondUpwardGestureAtTopStaysInsidePanel() {
         val armedState = TimelineScrollHandoffState()
             .beginGesture(TimelineScrollDirection.TowardTop)
             .onEdgeReached(TimelineScrollEdge.Top)
@@ -28,7 +28,7 @@ class ActivityTimelineScrollHandoffTest {
 
         val (_, decision) = armedState.onEdgeReached(TimelineScrollEdge.Top)
 
-        assertEquals(TimelineScrollHandoffDecision.ReleaseToParent, decision)
+        assertEquals(TimelineScrollHandoffDecision.ConsumeInsidePanel, decision)
     }
 
     @Test
@@ -44,7 +44,7 @@ class ActivityTimelineScrollHandoffTest {
     }
 
     @Test
-    fun secondDownwardGestureAtBottomReleasesParentHandoff() {
+    fun secondDownwardGestureAtBottomStaysInsidePanel() {
         val armedState = TimelineScrollHandoffState()
             .beginGesture(TimelineScrollDirection.TowardBottom)
             .onEdgeReached(TimelineScrollEdge.Bottom)
@@ -54,7 +54,7 @@ class ActivityTimelineScrollHandoffTest {
 
         val (_, decision) = armedState.onEdgeReached(TimelineScrollEdge.Bottom)
 
-        assertEquals(TimelineScrollHandoffDecision.ReleaseToParent, decision)
+        assertEquals(TimelineScrollHandoffDecision.ConsumeInsidePanel, decision)
     }
 
     @Test
@@ -87,5 +87,23 @@ class ActivityTimelineScrollHandoffTest {
         val (_, decision) = resetState.onEdgeReached(TimelineScrollEdge.Top)
 
         assertEquals(TimelineScrollHandoffDecision.ConsumeInsidePanel, decision)
+    }
+
+    @Test
+    fun headerCrossfadeMeetsAtAnEdgeWithoutSharingPixels() {
+        val mid = headerTextCrossfade(0.5f)
+        assertEquals(0.5f, mid.outgoingAlpha, 0.0001f)
+        assertEquals(0.5f, mid.incomingAlpha, 0.0001f)
+        assertEquals(mid.outgoingShift + 1f, mid.incomingShift, 0.0001f)
+
+        val start = headerTextCrossfade(0f)
+        assertEquals(1f, start.outgoingAlpha, 0.0001f)
+        assertEquals(0f, start.incomingAlpha, 0.0001f)
+        assertEquals(0f, start.outgoingShift, 0.0001f)
+
+        val end = headerTextCrossfade(1f)
+        assertEquals(0f, end.outgoingAlpha, 0.0001f)
+        assertEquals(1f, end.incomingAlpha, 0.0001f)
+        assertEquals(0f, end.incomingShift, 0.0001f)
     }
 }

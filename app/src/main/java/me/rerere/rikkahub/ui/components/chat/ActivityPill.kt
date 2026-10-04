@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,13 +70,18 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as graphicsLerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -310,6 +316,11 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = AppShapes.MessageBubbleJoint
 private val PILL_HEIGHT = 36.dp
+// Compact row padding. The open header uses the timeline's 12dp inset, so the
+// single-entry morph can slide the same icon and label between those two tops.
+private val ACTIVITY_HEADER_HORIZONTAL = 14.dp
+private val COMPACT_HEADER_VERTICAL = 8.dp
+private val HEADER_CONTENT_GAP = 8.dp
 // One critically damped clock. Size, corners, color, and the crossfade all read it,
 // so a tap mid-flight reverses from the live value instead of restarting a second spring.
 private const val PILL_MORPH_STIFFNESS = 240f
@@ -677,10 +688,37 @@ private fun AnimatedSinglePill(
     ) {
         val multiStepReveal =
             (visibleExpanded as? SinglePillContentState.ExpandedTimeline)?.entries?.size?.let { it > 1 } == true
+        val expandedReasoning = visibleExpanded as? SinglePillContentState.ExpandedReasoning
+        val activeReasoningState = expandedReasoning?.state?.let { targetState ->
+            val parentState = state as? ActivityState.Reasoning
+            if (parentState != null &&
+                parentState.startTimeMs == targetState.startTimeMs &&
+                parentState.reasoningText.length > targetState.reasoningText.length
+            ) {
+                parentState
+            } else {
+                targetState
+            }
+        }
+        // Multi-step keeps the ripple. Single-entry pairs the closed and open headers
+        // so one spring can move them instead of crossfading two stacked labels.
+        val headerPair = if (multiStepReveal) {
+            null
+        } else {
+            pillHeaderPair(
+                state = state,
+                expanded = visibleExpanded,
+                reasoningState = activeReasoningState,
+            )
+        }
+        val anchorHeader = headerPair != null
+        val expandedHeaderAlpha = if (anchorHeader && morph < 1f) 0f else 1f
+        Box {
         PillMorphLayout(
             progress = morph,
             maxExpandedWidth = maxBubbleWidth,
             multiStepReveal = multiStepReveal,
+            anchorHeader = anchorHeader,
         ) {
             if (visibleExpanded != null && !fullyCollapsed) {
             PillMorphLayer(id = "expanded") {
@@ -696,26 +734,17 @@ private fun AnimatedSinglePill(
                             animateSize = false,
                             pillAnchored = true,
                             revealProgress = if (multiStepReveal) morph else null,
+                            singleEntryHeaderAlpha = expandedHeaderAlpha,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     is SinglePillContentState.ExpandedReasoning -> {
-                        val activeReasoningState = targetContentState.state.let { targetState ->
-                            val parentState = state as? ActivityState.Reasoning
-                            if (parentState != null &&
-                                parentState.startTimeMs == targetState.startTimeMs &&
-                                parentState.reasoningText.length > targetState.reasoningText.length
-                            ) {
-                                parentState
-                            } else {
-                                targetState
-                            }
-                        }
                         ReasoningPreviewCard(
-                            state = activeReasoningState,
+                            state = activeReasoningState ?: targetContentState.state,
                             active = surfaceExpanded,
                             isLive = targetContentState.isLive,
                             durationMs = targetContentState.durationMs,
+                            headerAlpha = expandedHeaderAlpha,
                             onHeaderClick = if (timelineOpen) onTimelineDismiss else null
                         )
                     }
@@ -822,7 +851,10 @@ private fun AnimatedSinglePill(
                             }
                         } else {
                             Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(
+                                    horizontal = ACTIVITY_HEADER_HORIZONTAL,
+                                    vertical = COMPACT_HEADER_VERTICAL,
+                                ),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -889,9 +921,373 @@ private fun AnimatedSinglePill(
                     }
                     }
             }
+        val ends = headerPair
+        if (ends != null && morph > 0f && morph < 1f) {
+            SingleEntryMorphHeader(
+                progress = morph,
+                closed = ends.first,
+                open = ends.second,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
         }
     }
+}
 
+
+
+private data class PillHeaderModel(
+    val icon: ImageVector,
+    val iconTint: Color,
+    val title: String,
+    val trailing: String?,
+    val shimmer: Boolean,
+)
+
+/**
+ * Vertical swap inside one line. Outgoing leaves upward, incoming arrives from below.
+ * Their ranges meet at an edge ([outgoingShift] + 1 == [incomingShift]) so the glyphs
+ * never occupy the same pixels. [progress] is the pill spring, so a reverse replays this.
+ */
+internal data class HeaderTextCrossfade(
+    val outgoingAlpha: Float,
+    val outgoingShift: Float,
+    val incomingAlpha: Float,
+    val incomingShift: Float,
+)
+
+internal fun headerTextCrossfade(progress: Float): HeaderTextCrossfade {
+    val t = progress.coerceIn(0f, 1f)
+    return HeaderTextCrossfade(
+        outgoingAlpha = 1f - t,
+        outgoingShift = -t,
+        incomingAlpha = t,
+        incomingShift = 1f - t,
+    )
+}
+
+@Composable
+private fun pillHeaderPair(
+    state: ActivityState,
+    expanded: SinglePillContentState?,
+    reasoningState: ActivityState.Reasoning?,
+): Pair<PillHeaderModel, PillHeaderModel>? {
+    if (expanded == null || expanded is SinglePillContentState.Compact) return null
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    val nowMs = System.currentTimeMillis()
+    val open = when (expanded) {
+        is SinglePillContentState.ExpandedReasoning -> {
+            val reasoning = reasoningState ?: expanded.state
+            val title = reasoning.title?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.activity_timeline_reasoning)
+            val elapsed = if (expanded.isLive) {
+                nowMs - reasoning.startTimeMs
+            } else {
+                expanded.durationMs ?: 0L
+            }
+            PillHeaderModel(
+                icon = Icons.Rounded.Lightbulb,
+                iconTint = tint,
+                title = title,
+                trailing = formatDuration(elapsed),
+                shimmer = expanded.isLive,
+            )
+        }
+        is SinglePillContentState.ExpandedTimeline -> {
+            val entry = expanded.entries.singleOrNull() ?: return null
+            val durationLabel = if (entry is TimelineEntry.Reasoning) {
+                formatTimelineDuration(entry.durationMs)?.let { " · $it" }.orEmpty()
+            } else {
+                ""
+            }
+            PillHeaderModel(
+                icon = getTimelineIcon(entry),
+                iconTint = getTimelineIconTint(entry, getTimelineAccentColor(entry)),
+                title = getTimelineLabel(entry) + durationLabel,
+                trailing = null,
+                shimmer = false,
+            )
+        }
+    }
+    val closed = compactPillHeader(state, nowMs, tint) ?: return null
+    return closed to open
+}
+
+@Composable
+private fun compactPillHeader(
+    state: ActivityState,
+    nowMs: Long,
+    tint: Color,
+): PillHeaderModel? {
+    return when (state) {
+        is ActivityState.Reasoning -> PillHeaderModel(
+            icon = Icons.Rounded.Lightbulb,
+            iconTint = tint,
+            title = state.title?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.activity_timeline_reasoning),
+            trailing = formatDuration(nowMs - state.startTimeMs),
+            shimmer = true,
+        )
+        is ActivityState.ToolUse -> PillHeaderModel(
+            icon = categorizeToolName(state.toolName).getIcon(),
+            iconTint = tint,
+            title = state.displayName,
+            trailing = null,
+            shimmer = true,
+        )
+        is ActivityState.Ocr -> PillHeaderModel(
+            icon = Icons.Rounded.Image,
+            iconTint = tint,
+            title = stringResource(R.string.activity_pill_ocr_live),
+            trailing = null,
+            shimmer = true,
+        )
+        is ActivityState.CompletedSingle -> {
+            val item = ActivityItem(
+                type = state.type,
+                durationMs = state.durationMs,
+                count = state.count,
+                displayName = state.displayName,
+            )
+            PillHeaderModel(
+                icon = state.type.getIcon(),
+                iconTint = tint,
+                title = expandedActivityLabel(item),
+                trailing = null,
+                shimmer = false,
+            )
+        }
+        else -> null
+    }
+}
+
+@Composable
+private fun expandedActivityLabel(item: ActivityItem): String {
+    return when (item.type) {
+        ActivityType.REASONING -> {
+            if (item.durationMs != null) {
+                "Reasoned for ${formatDuration(item.durationMs)}"
+            } else {
+                "Reasoned"
+            }
+        }
+        ActivityType.OCR -> {
+            if (item.count > 1) {
+                stringResource(R.string.activity_pill_ocr_done_count, item.count)
+            } else {
+                stringResource(R.string.activity_pill_ocr_done)
+            }
+        }
+        ActivityType.SEARCH -> "Searched the Web"
+        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
+        ActivityType.PYTHON -> "Ran Python"
+        ActivityType.WORKSPACE -> "Used workspace"
+        ActivityType.SKILL -> "Managed skills"
+        ActivityType.MCP -> "MCP"
+        ActivityType.TOOL_OTHER -> "Used tool"
+        ActivityType.LOADING_MODEL -> "Loading model"
+    }
+}
+
+@Composable
+private fun SingleEntryMorphHeader(
+    progress: Float,
+    closed: PillHeaderModel,
+    open: PillHeaderModel,
+    modifier: Modifier = Modifier,
+) {
+    val t = progress.coerceIn(0f, 1f)
+    val top = dpLerp(COMPACT_HEADER_VERTICAL, TimelineLiveInsetVertical, t)
+    val labelStyle = MaterialTheme.typography.labelMedium
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val shimmer = closed.shimmer || open.shimmer
+    Box(modifier) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .offset(y = top)
+                .padding(horizontal = ACTIVITY_HEADER_HORIZONTAL),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MorphHeaderIcon(closed = closed, open = open, progress = t)
+            Spacer(Modifier.width(HEADER_CONTENT_GAP))
+            VerticalCrossfadeText(
+                closed = closed.title,
+                open = open.title,
+                progress = t,
+                style = labelStyle,
+                color = labelColor,
+                shimmer = shimmer,
+                modifier = Modifier.weight(1f),
+            )
+            MorphHeaderTrailing(closed = closed, open = open, progress = t, shimmer = shimmer)
+        }
+    }
+}
+
+@Composable
+private fun MorphHeaderIcon(
+    closed: PillHeaderModel,
+    open: PillHeaderModel,
+    progress: Float,
+) {
+    if (closed.icon == open.icon) {
+        Icon(
+            imageVector = closed.icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = graphicsLerp(closed.iconTint, open.iconTint, progress),
+        )
+    } else {
+        val fade = headerTextCrossfade(progress)
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clipToBounds()
+        ) {
+            Icon(
+                imageVector = closed.icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer {
+                        alpha = fade.outgoingAlpha
+                        translationY = fade.outgoingShift * size.height
+                    },
+                tint = closed.iconTint,
+            )
+            Icon(
+                imageVector = open.icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer {
+                        alpha = fade.incomingAlpha
+                        translationY = fade.incomingShift * size.height
+                    },
+                tint = open.iconTint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MorphHeaderTrailing(
+    closed: PillHeaderModel,
+    open: PillHeaderModel,
+    progress: Float,
+    shimmer: Boolean,
+) {
+    val closedText = closed.trailing
+    val openText = open.trailing
+    if (closedText == null && openText == null) return
+    val presence = when {
+        closedText == null -> progress
+        openText == null -> 1f - progress
+        else -> 1f
+    }
+    if (presence <= 0f) return
+    val style = MaterialTheme.typography.labelSmall
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        modifier = Modifier
+            .clipToBounds()
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val gap = HEADER_CONTENT_GAP.roundToPx()
+                val full = placeable.width + gap
+                val width = (full * presence).roundToInt().coerceAtLeast(0)
+                layout(width, placeable.height) {
+                    placeable.place(width - placeable.width, 0)
+                }
+            }
+            .graphicsLayer {
+                alpha = if (closedText != null && openText != null) 1f else presence
+            }
+    ) {
+        if (closedText != null && openText != null) {
+            VerticalCrossfadeText(
+                closed = closedText,
+                open = openText,
+                progress = progress,
+                style = style,
+                color = color,
+                shimmer = shimmer,
+            )
+        } else {
+            Text(
+                text = openText ?: closedText.orEmpty(),
+                style = style,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.shimmer(shimmer),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VerticalCrossfadeText(
+    closed: String,
+    open: String,
+    progress: Float,
+    style: TextStyle,
+    color: Color,
+    shimmer: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (closed == open) {
+        Text(
+            text = closed,
+            style = style,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier.shimmer(shimmer),
+        )
+        return
+    }
+    val fade = headerTextCrossfade(progress)
+    val lineDp = with(LocalDensity.current) {
+        val line = style.lineHeight
+        if (line.type == androidx.compose.ui.unit.TextUnitType.Sp) line.toDp() else 18.dp
+    }
+    Box(
+        modifier
+            .height(lineDp)
+            .clipToBounds()
+            .shimmer(shimmer)
+    ) {
+        Text(
+            text = closed,
+            style = style,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.graphicsLayer {
+                alpha = fade.outgoingAlpha
+                translationY = fade.outgoingShift * size.height
+            },
+        )
+        Text(
+            text = open,
+            style = style,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.graphicsLayer {
+                alpha = fade.incomingAlpha
+                translationY = fade.incomingShift * size.height
+            },
+        )
+    }
+}
 
 @Composable
 private fun PillMorphLayer(
@@ -907,6 +1303,7 @@ private fun PillMorphLayout(
     progress: Float,
     maxExpandedWidth: Dp,
     multiStepReveal: Boolean = false,
+    anchorHeader: Boolean = false,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -948,8 +1345,18 @@ private fun PillMorphLayout(
                 if (compactAlpha > 0.001f) {
                     compactPlaceable.placeWithLayer(0, 0) { alpha = compactAlpha }
                 }
+            } else if (anchorHeader) {
+                // One moving header is drawn above this layout. Painting the compact
+                // label as well would stack the two strings. The open panel fades in
+                // under that header; its own header stays invisible until the spring lands.
+                if (expandedPlaceable != null && t > 0f) {
+                    expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
+                }
+                if (expandedPlaceable == null || t == 0f) {
+                    compactPlaceable.place(0, 0)
+                }
             } else {
-                // Single-entry / reasoning: one crossfade on the same spring.
+                // Fallback when the two headers cannot be paired: the old crossfade.
                 val expandedOnTop = t >= 0.5f
                 if (expandedPlaceable != null && !expandedOnTop && t > 0f) {
                     expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
@@ -971,8 +1378,10 @@ private fun ReasoningPreviewCard(
     active: Boolean,
     isLive: Boolean = true,
     durationMs: Long? = null,
+    headerAlpha: Float = 1f,
     onHeaderClick: (() -> Unit)? = null
 ) {
+    val previewScrollLock = remember { timelineLeftoverScrollConnection() }
     var elapsedMs by remember { mutableLongStateOf(durationMs ?: 0L) }
     val scrollState = rememberScrollState()
     var previewAutoFollowPaused by remember(state.startTimeMs) { mutableStateOf(false) }
@@ -1046,8 +1455,8 @@ private fun ReasoningPreviewCard(
         ?: stringResource(R.string.activity_timeline_reasoning)
     val previewText = state.reasoningText.takeIf { it.isNotBlank() } ?: displayTitle
 
-    val horizontal = 14.dp
-    val vertical = 12.dp
+    val horizontal = TimelineLiveInsetHorizontal
+    val vertical = TimelineLiveInsetVertical
     val mediaCompensation = AppShapes.MessageBubblePaddingHorizontal - AppShapes.MessageBubblePaddingVertical
     CompositionLocalProvider(
         LocalOpticalFrame provides OpticalFrame(
@@ -1062,6 +1471,7 @@ private fun ReasoningPreviewCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .graphicsLayer { alpha = headerAlpha }
                 .then(
                     if (onHeaderClick != null) {
                         Modifier.clickable(
@@ -1132,6 +1542,7 @@ private fun ReasoningPreviewCard(
                     bottomProgress = bottomFadeProgress,
                     fadeHeight = 64f
                 )
+                .nestedScroll(previewScrollLock)
                 .heightIn(max = if (active && isLive && onHeaderClick == null) 120.dp else 280.dp)
                 .verticalScroll(scrollState),
             style = MaterialTheme.typography.bodySmall.copy(
@@ -1246,30 +1657,7 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    val text = when (item.type) {
-        ActivityType.REASONING -> {
-            if (item.durationMs != null) {
-                "Reasoned for ${formatDuration(item.durationMs)}"
-            } else {
-                "Reasoned"
-            }
-        }
-        ActivityType.OCR -> {
-            if (item.count > 1) {
-                stringResource(R.string.activity_pill_ocr_done_count, item.count)
-            } else {
-                stringResource(R.string.activity_pill_ocr_done)
-            }
-        }
-        ActivityType.SEARCH -> "Searched the Web"
-        ActivityType.MEMORY_RECALL -> stringResource(R.string.activity_pill_memory_recalled)
-        ActivityType.PYTHON -> "Ran Python"
-        ActivityType.WORKSPACE -> "Used workspace"
-        ActivityType.SKILL -> "Managed skills"
-        ActivityType.MCP -> "MCP"
-        ActivityType.TOOL_OTHER -> "Used tool"
-        ActivityType.LOADING_MODEL -> "Loading model"
-    }
+    val text = expandedActivityLabel(item)
 
     Text(
         text = text,
