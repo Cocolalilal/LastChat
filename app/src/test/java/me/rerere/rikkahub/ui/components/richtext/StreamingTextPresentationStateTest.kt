@@ -202,4 +202,32 @@ class StreamingTextPresentationStateTest {
         assertEquals(1f, visuals.alpha, 0.001f)
         assertEquals(0f, visuals.blurRadius, 0.001f)
     }
+
+    @Test
+    fun fastTokensCompressTheSameSettle() {
+        val slow = streamingSettleMillis(20f)
+        val fast = streamingSettleMillis(200f)
+        val mid = streamingSettleMillis(90f)
+        assertEquals(280L, slow)
+        assertEquals(90L, fast)
+        assertTrue(mid in (fast + 1) until slow)
+    }
+
+    @Test
+    fun everySpeedStartsFromTheSameFade() {
+        val slow = streamingRevealVisuals(
+            progress = 0f,
+            startAlpha = 0f,
+            blurEnabled = true,
+        )
+        val fast = streamingRevealVisuals(
+            progress = 0.5f,
+            startAlpha = 0f,
+            blurEnabled = true,
+        )
+        assertEquals(0f, slow.alpha, 0.001f)
+        assertTrue(slow.blurRadius > fast.blurRadius)
+        assertTrue(fast.alpha in 0.4f..0.6f)
+        assertTrue(fast.blurRadius > 0f)
+    }
 }

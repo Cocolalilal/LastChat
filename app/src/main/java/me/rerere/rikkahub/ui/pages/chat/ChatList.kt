@@ -231,6 +231,12 @@ private fun buildChatStreamingFollowSignature(
     return "${conversation.messageNodes.size}:$textLength:$activityLength"
 }
 
+internal fun streamingBottomOverflow(
+    itemOffset: Int,
+    itemSize: Int,
+    viewportEnd: Int,
+): Int = (itemOffset + itemSize - viewportEnd).coerceAtLeast(0)
+
 internal fun isChatListAtStreamingBottom(
     visibleItems: List<LazyListItemInfo>,
     canScrollForward: Boolean,
@@ -348,17 +354,41 @@ private fun SharedTransitionScope.ChatListNormal(
     var hasPendingStreamingSnap by remember { mutableStateOf(false) }
 
     suspend fun snapToStreamingBottom() {
-        val totalCount = state.layoutInfo.totalItemsCount
+        if (!loadingState) return
+        val info = state.layoutInfo
+        val totalCount = info.totalItemsCount
         if (totalCount <= 0) return
         val targetIndex = totalCount - 1
         try {
-            state.scrollToItem(targetIndex)
+            val visible = info.visibleItemsInfo.lastOrNull { it.index == targetIndex }
+            if (visible == null) {
+                state.scrollToItem(targetIndex)
+                if (!loadingState) return
+                val brought = state.layoutInfo.visibleItemsInfo.lastOrNull { it.index == targetIndex }
+                    ?: return
+                val overflow = streamingBottomOverflow(
+                    itemOffset = brought.offset,
+                    itemSize = brought.size,
+                    viewportEnd = state.layoutInfo.viewportEndOffset,
+                )
+                if (overflow > 0) state.scroll { scrollBy(overflow.toFloat()) }
+                return
+            }
+            // scrollToItem(last) pins the top of a tall turn. That is the jump
+            // up at the end of a reply. Only move by what is still below the fold.
+            val overflow = streamingBottomOverflow(
+                itemOffset = visible.offset,
+                itemSize = visible.size,
+                viewportEnd = info.viewportEndOffset,
+            )
+            if (overflow > 0) state.scroll { scrollBy(overflow.toFloat()) }
         } catch (_: Exception) {
             // The lazy list can be between measure passes while a streaming turn morphs.
         }
     }
 
     fun requestSnapToStreamingBottom() {
+        if (!loadingState) return
         if (scrollJob?.isActive == true) {
             hasPendingStreamingSnap = true
             return
@@ -366,9 +396,10 @@ private fun SharedTransitionScope.ChatListNormal(
         scrollJob = scope.launch {
             do {
                 hasPendingStreamingSnap = false
+                if (!loadingState) return@launch
                 snapToStreamingBottom()
                 delay(64)
-            } while (hasPendingStreamingSnap)
+            } while (hasPendingStreamingSnap && loadingState)
         }
     }
 
@@ -472,6 +503,9 @@ private fun SharedTransitionScope.ChatListNormal(
                 forceBottomAttachPending = true
             } else {
                 forceBottomAttachPending = false
+                hasPendingStreamingSnap = false
+                scrollJob?.cancel()
+                scrollJob = null
             }
         }
 

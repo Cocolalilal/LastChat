@@ -63,6 +63,8 @@ import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -99,7 +101,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -919,41 +923,62 @@ fun MarkdownBlock(
 
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
+    val streamingContent by rememberUpdatedState(content)
+    val streamingActive by rememberUpdatedState(streamingTextReveal)
+    val onStreamingLayoutChanged by rememberUpdatedState(onExpandedStreamingCodeBlockChanged)
     LaunchedEffect(content, streamingTextReveal) {
-        if (!streamingTextReveal) {
-            streamingPresentation.snapTo(content)
-            displayContent = streamingPresentation.displayContent
-            settleRanges = emptyList()
-            return@LaunchedEffect
-        }
+        // Finished generations stay on the same clock. Snapping the tail here
+        // dumped the rest of the reply at full opacity and resized the row.
+        if (!streamingTextReveal) return@LaunchedEffect
 
         val now = withFrameMillis { it }
         streamingPresentation.acceptRawContent(content, now)
         displayContent = streamingPresentation.displayContent
         settleRanges = streamingPresentation.settleRanges
         streamingFrameMillis = now
-        onExpandedStreamingCodeBlockChanged?.invoke()
+        onStreamingLayoutChanged?.invoke()
     }
-    LaunchedEffect(streamingTextReveal) {
-        if (!streamingTextReveal) return@LaunchedEffect
-
+    LaunchedEffect(Unit) {
         var previousFrameMillis = withFrameMillis { it }
-        while (true) {
+        while (isActive) {
             val now = withFrameMillis { it }
-            val changed = streamingPresentation.step(
-                nowMillis = now,
-                elapsedMillis = (now - previousFrameMillis).coerceAtLeast(0L)
-            )
+            val elapsed = (now - previousFrameMillis).coerceAtLeast(0L)
             previousFrameMillis = now
+            val raw = streamingContent
+            val streaming = streamingActive
+            if (!streaming) {
+                if (raw != streamingPresentation.rawContent) {
+                    if (!raw.startsWith(streamingPresentation.displayContent)) {
+                        streamingPresentation.snapTo(raw)
+                        displayContent = streamingPresentation.displayContent
+                        settleRanges = emptyList()
+                        streamingFrameMillis = now
+                        continue
+                    }
+                    streamingPresentation.acceptRawContent(raw, now)
+                }
+                val changed = streamingPresentation.step(nowMillis = now, elapsedMillis = elapsed)
+                streamingFrameMillis = now
+                if (changed) displayContent = streamingPresentation.displayContent
+                settleRanges = streamingPresentation.settleRanges
+                val caughtUp = streamingPresentation.displayContent == streamingPresentation.rawContent &&
+                    settleRanges.isEmpty()
+                if (caughtUp) {
+                    snapshotFlow { streamingActive }.first { it }
+                    previousFrameMillis = withFrameMillis { it }
+                }
+                continue
+            }
+            val changed = streamingPresentation.step(nowMillis = now, elapsedMillis = elapsed)
             streamingFrameMillis = now
             if (changed) {
                 displayContent = streamingPresentation.displayContent
-                onExpandedStreamingCodeBlockChanged?.invoke()
+                onStreamingLayoutChanged?.invoke()
             }
             settleRanges = streamingPresentation.settleRanges
         }
     }
-    val streamingReveal = if (streamingTextReveal && settleRanges.isNotEmpty()) {
+    val streamingReveal = if (settleRanges.isNotEmpty()) {
         StreamingTextReveal(
             ranges = settleRanges,
             nowMillis = streamingFrameMillis,
@@ -1294,10 +1319,10 @@ private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): Lis
 private const val STREAMING_INITIAL_BUFFER_MILLIS = 64L
 private const val STREAMING_SMOOTHING_WINDOW_MILLIS = 220f
 private const val STREAMING_CATCH_UP_AFTER_MILLIS = 420f
-private const val STREAMING_SETTLE_MIN_MILLIS = 160L
-private const val STREAMING_SETTLE_MAX_MILLIS = 240L
-private const val STREAMING_SETTLE_ALPHA_FAST = 0.3f
-private const val STREAMING_SETTLE_ALPHA_SLOW = 0.45f
+private const val STREAMING_SETTLE_MIN_MILLIS = 90L
+private const val STREAMING_SETTLE_MAX_MILLIS = 280L
+private const val STREAMING_SETTLE_ALPHA_FAST = 0f
+private const val STREAMING_SETTLE_ALPHA_SLOW = 0f
 private const val STREAMING_SETTLE_MAX_BLUR_RADIUS = 5.5f
 private const val STREAMING_SPEED_SLOW_THRESHOLD = 30f
 private const val STREAMING_SPEED_FAST_THRESHOLD = 150f
@@ -1314,6 +1339,23 @@ private const val STREAMING_STALL_DECEL_MILLIS = 900L
 private const val STREAMING_STALL_MIN_MULTIPLIER = 0.18f
 private const val STREAMING_TINY_PENDING_LENGTH = 4
 private const val STREAMING_MAX_SETTLE_RANGES = 28
+
+/**
+ * One settle for every speed. Slow tokens play the full fade and focus.
+ * Faster tokens compress that same curve so a burst ripples instead of cutting
+ * to the finished reply.
+ */
+internal fun streamingSettleMillis(charsPerSecond: Float): Long {
+    val span = STREAMING_SPEED_FAST_THRESHOLD - STREAMING_SPEED_SLOW_THRESHOLD
+    val speedProgress = if (span <= 0f) {
+        0f
+    } else {
+        ((charsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) / span).coerceIn(0f, 1f)
+    }
+    return (STREAMING_SETTLE_MAX_MILLIS +
+        (STREAMING_SETTLE_MIN_MILLIS - STREAMING_SETTLE_MAX_MILLIS) * speedProgress).toLong()
+}
+
 internal const val STREAMING_BLUR_ANNOTATION = "lastchat-stream-blur"
 
 // for debug
@@ -2517,16 +2559,11 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
     val sourceLength = sourceEnd - sourceStart
     val outputLength = outputEnd - outputStart
     
-    // Compute speed-adaptive constants
-    val speedProgress = ((reveal.smoothedCharsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) / 
+    // Same fade at every speed. A fast burst only shortens it.
+    val settleDurationMillis = streamingSettleMillis(reveal.smoothedCharsPerSecond).toFloat()
+    val speedProgress = ((reveal.smoothedCharsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) /
         (STREAMING_SPEED_FAST_THRESHOLD - STREAMING_SPEED_SLOW_THRESHOLD)).coerceIn(0f, 1f)
-    
-    // Faster speed = longer settle duration (for softer fade during bursts)
-    val settleDurationMillis = STREAMING_SETTLE_MIN_MILLIS + 
-        (STREAMING_SETTLE_MAX_MILLIS - STREAMING_SETTLE_MIN_MILLIS) * speedProgress
-        
-    // Faster speed = lower start alpha (for more visible "wave" effect)
-    val startAlpha = STREAMING_SETTLE_ALPHA_SLOW + 
+    val startAlpha = STREAMING_SETTLE_ALPHA_SLOW +
         (STREAMING_SETTLE_ALPHA_FAST - STREAMING_SETTLE_ALPHA_SLOW) * speedProgress
 
     reveal.ranges.fastForEach { settleRange ->
@@ -2635,6 +2672,7 @@ private fun Modifier.incomingTokenBlur(
             IncomingBlurRun(annotation.start, annotation.end, radius, alpha)
         }
         if (runs.isEmpty() || layout.size.width <= 0 || layout.size.height <= 0) return@drawWithContent
+        val maxLength = layout.layoutInput.text.length
         val buckets = runs.groupBy { (it.radius / 5f).toInt().coerceIn(0, STREAMING_BLUR_LAYER_COUNT - 1) }
         buckets.entries.forEachIndexed { index, entry ->
             if (index >= layers.size) return@forEachIndexed
@@ -2646,41 +2684,23 @@ private fun Modifier.incomingTokenBlur(
                 layoutDirection = layoutDirection,
                 size = IntSize(layout.size.width, layout.size.height),
             ) {
-                val maxLength = layout.layoutInput.text.length
                 entry.value.forEach { run ->
                     val start = run.start.coerceIn(0, maxLength)
                     val end = run.end.coerceIn(start, maxLength)
                     if (end <= start) return@forEach
-                    drawPath(
-                        path = layout.getPathForRange(start, end),
-                        color = color.copy(alpha = run.alpha),
-                    )
+                    // The range path is the selection box, not the glyph. Filling it
+                    // is the gray marker. Clip to that box and draw the real text.
+                    val glyphClip = layout.getPathForRange(start, end)
+                    if (glyphClip.isEmpty) return@forEach
+                    clipPath(glyphClip) {
+                        drawText(
+                            textLayoutResult = layout,
+                            color = color.copy(alpha = run.alpha),
+                        )
+                    }
                 }
             }
-            val maxLength = layout.layoutInput.text.length
-            val clip = Path()
-            var hasClip = false
-            entry.value.forEach { run ->
-                val start = run.start.coerceIn(0, maxLength)
-                val end = run.end.coerceIn(start, maxLength)
-                if (end <= start) return@forEach
-                // Pad by the blur radius so the falloff stays inside the clip
-                // instead of cutting a hard box, without painting the previous word.
-                val bounds = layout.getPathForRange(start, end).getBounds().inflate(run.radius + 1f)
-                if (bounds.width <= 0f || bounds.height <= 0f) return@forEach
-                clip.addRect(bounds)
-                hasClip = true
-            }
-            if (hasClip) {
-                val canvas = drawContext.canvas
-                canvas.save()
-                canvas.clipPath(clip)
-                try {
-                    drawLayer(layer)
-                } finally {
-                    canvas.restore()
-                }
-            }
+            drawLayer(layer)
         }
     }
 }
