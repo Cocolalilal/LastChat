@@ -136,7 +136,7 @@ class StreamingTextPresentationStateTest {
     }
 
     @Test
-    fun settleRangesRippleAcrossTheSlice() {
+    fun settleRangeIsOnePiece() {
         val content = "Hello smooth world"
         val ranges = streamingSettleRangesForReveal(
             content = content,
@@ -145,16 +145,42 @@ class StreamingTextPresentationStateTest {
             nowMillis = 400L
         )
 
-        assertTrue(ranges.size > 2)
+        assertEquals(1, ranges.size)
         assertEquals(6, ranges.first().startOffset)
-        assertEquals(content.length, ranges.last().endOffset)
-        assertEquals(400L, ranges.last().revealedAtMillis)
-        assertTrue(ranges.first().revealedAtMillis < ranges.last().revealedAtMillis)
-        assertTrue(ranges.zipWithNext().all { (a, b) -> a.endOffset == b.startOffset })
+        assertEquals(content.length, ranges.first().endOffset)
+        assertEquals(400L, ranges.first().revealedAtMillis)
     }
 
     @Test
-    fun revealedWordSettlesAsARippleInsteadOfOneBlock() {
+    fun laterCharactersJoinTheOpenRun() {
+        val first = listOf(StreamingSettleRange(startOffset = 0, endOffset = 4, revealedAtMillis = 1_000L))
+        val joined = joinStreamingSettleRun(
+            ranges = first,
+            revealStart = 4,
+            revealEnd = 9,
+            nowMillis = 1_100L,
+            settleMillis = 280L,
+        )
+
+        assertEquals(1, joined.size)
+        assertEquals(0, joined.first().startOffset)
+        assertEquals(9, joined.first().endOffset)
+        assertEquals(1_000L, joined.first().revealedAtMillis)
+
+        val next = joinStreamingSettleRun(
+            ranges = joined,
+            revealStart = 9,
+            revealEnd = 12,
+            nowMillis = 1_400L,
+            settleMillis = 280L,
+        )
+        assertEquals(2, next.size)
+        assertEquals(9, next[1].startOffset)
+        assertEquals(1_400L, next[1].revealedAtMillis)
+    }
+
+    @Test
+    fun revealedWordSettlesAsOnePiece() {
         val state = StreamingTextPresentationState("Hello ", nowMillis = 0L)
 
         state.acceptRawContent("Hello world", nowMillis = 16L)
@@ -166,10 +192,9 @@ class StreamingTextPresentationStateTest {
 
         assertEquals("Hello world", state.displayContent)
         val ranges = state.settleRanges
-        assertTrue(ranges.isNotEmpty())
+        assertEquals(1, ranges.size)
         assertEquals(6, ranges.first().startOffset)
-        assertEquals(11, ranges.last().endOffset)
-        assertTrue(ranges.zipWithNext().all { (a, b) -> a.revealedAtMillis <= b.revealedAtMillis })
+        assertEquals(11, ranges.first().endOffset)
     }
 
     @Test

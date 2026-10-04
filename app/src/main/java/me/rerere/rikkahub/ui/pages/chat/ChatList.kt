@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,7 +73,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -93,8 +93,9 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
@@ -202,40 +203,28 @@ internal fun chatListTurnKey(
     }
 }
 
-private fun buildChatStreamingFollowSignature(
-    conversation: Conversation,
-    loading: Boolean
-): String {
-    if (!loading) return "idle:${conversation.messageNodes.size}"
-    val latestAssistant = conversation.messageNodes
-        .asReversed()
-        .asSequence()
-        .map { it.currentMessage }
-        .firstOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
-    val textLength = latestAssistant
-        ?.parts
-        ?.filterIsInstance<UIMessagePart.Text>()
-        ?.sumOf { it.text.length }
-        ?: 0
-    val activityLength = latestAssistant
-        ?.parts
-        ?.sumOf { part ->
-            when (part) {
-                is UIMessagePart.Text -> part.text.length
-                is UIMessagePart.Reasoning -> part.reasoning.length
-                is UIMessagePart.ToolCall -> part.arguments.length
-                else -> 0
-            }
-        }
-        ?: 0
-    return "${conversation.messageNodes.size}:$textLength:$activityLength"
-}
-
 internal fun streamingBottomOverflow(
     itemOffset: Int,
     itemSize: Int,
     viewportEnd: Int,
 ): Int = (itemOffset + itemSize - viewportEnd).coerceAtLeast(0)
+
+/**
+ * Spend a new line across a few frames. Consuming the whole overflow at once
+ * is the step. This only moves downward, and only the caller that already
+ * decided the user is pinned to the bottom should apply it.
+ */
+internal fun streamingFollowScrollDelta(
+    overflow: Int,
+    frameMillis: Float,
+): Float {
+    if (overflow <= 0) return 0f
+    val fraction = (frameMillis / STREAMING_FOLLOW_FRAME_MILLIS).coerceIn(0.42f, 0.7f)
+    return (overflow * fraction).coerceIn(1f, overflow.toFloat())
+}
+
+private const val STREAMING_FOLLOW_FRAME_MILLIS = 32f
+private const val STREAMING_FOLLOW_GRACE_NANOS = 420_000_000L
 
 internal fun isChatListAtStreamingBottom(
     visibleItems: List<LazyListItemInfo>,
@@ -350,8 +339,8 @@ private fun SharedTransitionScope.ChatListNormal(
     val context = LocalContext.current
     val navController = LocalNavController.current
 
-    var scrollJob: Job? by remember { mutableStateOf(null) }
-    var hasPendingStreamingSnap by remember { mutableStateOf(false) }
+    var streamingFollowActive by remember { mutableStateOf(false) }
+    var streamingFollowGraceUntilNanos by remember { mutableLongStateOf(0L) }
 
     suspend fun snapToStreamingBottom() {
         if (!loadingState) return
@@ -384,22 +373,6 @@ private fun SharedTransitionScope.ChatListNormal(
             if (overflow > 0) state.scroll { scrollBy(overflow.toFloat()) }
         } catch (_: Exception) {
             // The lazy list can be between measure passes while a streaming turn morphs.
-        }
-    }
-
-    fun requestSnapToStreamingBottom() {
-        if (!loadingState) return
-        if (scrollJob?.isActive == true) {
-            hasPendingStreamingSnap = true
-            return
-        }
-        scrollJob = scope.launch {
-            do {
-                hasPendingStreamingSnap = false
-                if (!loadingState) return@launch
-                snapToStreamingBottom()
-                delay(64)
-            } while (hasPendingStreamingSnap && loadingState)
         }
     }
 
@@ -476,11 +449,12 @@ private fun SharedTransitionScope.ChatListNormal(
             snapshotFlow {
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
-                if (isScrolling && loadingState) {
+                if (isScrolling && loadingState && !streamingFollowActive) {
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
                     if (scrolledUp) {
                         followStreamingBottom = false
+                        streamingFollowGraceUntilNanos = 0L
                     }
                     if (
                         isChatListAtStreamingBottom(
@@ -503,9 +477,11 @@ private fun SharedTransitionScope.ChatListNormal(
                 forceBottomAttachPending = true
             } else {
                 forceBottomAttachPending = false
-                hasPendingStreamingSnap = false
-                scrollJob?.cancel()
-                scrollJob = null
+                // The tail can still grow as the last run finishes. Glide with
+                // it. Do not snap, and do not jump when generation ends.
+                if (followStreamingBottom) {
+                    streamingFollowGraceUntilNanos = System.nanoTime() + STREAMING_FOLLOW_GRACE_NANOS
+                }
             }
         }
 
@@ -522,15 +498,51 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
+        // Ease toward the bottom every frame while the user is pinned there.
+        // A size change used to scroll the whole new line in one shot.
         LaunchedEffect(state) {
             snapshotFlow {
-                buildChatStreamingFollowSignature(
-                    conversation = conversationUpdated,
-                    loading = loadingState
-                )
-            }.collect {
-                if (loadingState && followStreamingBottom && !state.isScrollInProgress) {
-                    requestSnapToStreamingBottom()
+                followStreamingBottom &&
+                    !forceBottomAttachPending &&
+                    (loadingState || System.nanoTime() < streamingFollowGraceUntilNanos)
+            }.collect { following ->
+                if (!following) return@collect
+                var lastNanos = withFrameNanos { it }
+                while (
+                    isActive &&
+                    followStreamingBottom &&
+                    !forceBottomAttachPending &&
+                    (loadingState || System.nanoTime() < streamingFollowGraceUntilNanos)
+                ) {
+                    val now = withFrameNanos { it }
+                    val frameMillis = ((now - lastNanos) / 1_000_000f).coerceIn(8f, 34f)
+                    lastNanos = now
+                    if (state.isScrollInProgress && !streamingFollowActive) continue
+                    val info = state.layoutInfo
+                    val total = info.totalItemsCount
+                    if (total <= 0) continue
+                    val visible = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                    streamingFollowActive = true
+                    try {
+                        if (visible == null) {
+                            // The tail is off screen. Bring it in, then ease.
+                            // Never do this to a tall turn that is already visible:
+                            // scrollToItem would pin its top.
+                            state.scrollToItem(total - 1)
+                        } else {
+                            val overflow = streamingBottomOverflow(
+                                itemOffset = visible.offset,
+                                itemSize = visible.size,
+                                viewportEnd = info.viewportEndOffset,
+                            )
+                            val delta = streamingFollowScrollDelta(overflow, frameMillis)
+                            if (delta > 0f) state.scroll { scrollBy(delta) }
+                        }
+                    } catch (_: Exception) {
+                        // The list can be between measure passes while the turn grows.
+                    } finally {
+                        streamingFollowActive = state.isScrollInProgress
+                    }
                 }
             }
         }
@@ -640,14 +652,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 )
             }
         }
-        val onStreamingCodeBlockExpanded = remember {
-            {
-                if (followStreamingBottom && !state.isScrollInProgress) {
-                    requestSnapToStreamingBottom()
-                }
-            }
-        }
-        
         val truncateTargetNodeId = remember(conversation.messageNodes, conversation.truncateIndex) {
             conversation.messageNodes.getOrNull(conversation.truncateIndex - 1)?.id
         }
@@ -743,16 +747,8 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onModeClick = onModeClick,
                                 onMemoryClick = onMemoryClick,
                                 showRegenerate = showRegenerate,
-                                onExpandedStreamingCodeBlockChanged = if (loading && isLastTurn) onStreamingCodeBlockExpanded else null,
-                                modifier = if (loading && isLastTurn) {
-                                    Modifier.onSizeChanged {
-                                        if (followStreamingBottom && !state.isScrollInProgress) {
-                                            requestSnapToStreamingBottom()
-                                        }
-                                    }
-                                } else {
-                                    Modifier
-                                },
+                                onExpandedStreamingCodeBlockChanged = null,
+                                modifier = Modifier,
                             )
                         }
                         // Show truncate indicator if any node in this group is at the truncate point
