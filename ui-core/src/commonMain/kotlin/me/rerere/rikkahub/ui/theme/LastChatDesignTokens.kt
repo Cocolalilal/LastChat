@@ -49,6 +49,11 @@ object AppSurface {
     const val GlassAlphaDark = 0.34f
     const val GlassAlphaLight = 0.28f
     const val SoftEdgeAlpha = 0.6f
+    /**
+     * The lightened floating stroke keeps most of the old black-backdrop outline,
+     * just a little quieter. Blur-off hairlines still use [SoftEdgeAlpha] in full.
+     */
+    const val SoftEdgeQuiet = 0.85f
     val SoftEdgeWidth = 1.dp
     /**
      * Stroke on a photo that is itself the message bubble. Color comes from
@@ -65,8 +70,8 @@ object AppSurface {
 
     /**
      * Stroke painted over the glass. Src-over this color lightens whatever blur is
-     * already under the edge. On a black backdrop it matches [softEdgeColor] composited
-     * on glass-over-black, so the rim does not change in that case.
+     * already under the edge. On a black backdrop it matches a slightly quieter
+     * [softEdgeColor] ([SoftEdgeQuiet] of that outline) composited on glass-over-black.
      *
      * [surface] is the opaque fill (not the glass alpha). [glassAlpha] is the alpha used
      * when blur is on.
@@ -75,7 +80,7 @@ object AppSurface {
         outline: Color,
         surface: Color,
         glassAlpha: Float,
-        edgeAlpha: Float = SoftEdgeAlpha,
+        edgeAlpha: Float = SoftEdgeAlpha * SoftEdgeQuiet,
     ): Color {
         fun glass(channel: Float) = channel * glassAlpha
         fun current(outlineChannel: Float, glassChannel: Float) =

@@ -55,7 +55,7 @@ class LastChatDesignTokensTest {
     }
 
     @Test
-    fun lightenedEdgeMatchesCurrentOutlineOnBlack() {
+    fun lightenedEdgeIsALittleQuieterThanTheOldOutlineOnBlack() {
         val cases = listOf(
             Triple(Color(0xFF261D1E), Color(0xFF524345), AppSurface.GlassAlphaDark),
             Triple(Color(0xFF2A2A2A), Color(0xFF444444), AppSurface.GlassAlphaDark),
@@ -69,11 +69,14 @@ class LastChatDesignTokensTest {
                 blue = surface.blue * glassAlpha,
                 alpha = 1f,
             )
-            val expected = srcOver(outline.copy(alpha = AppSurface.SoftEdgeAlpha), glassOnBlack)
+            val quietAlpha = AppSurface.SoftEdgeAlpha * AppSurface.SoftEdgeQuiet
+            val expected = srcOver(outline.copy(alpha = quietAlpha), glassOnBlack)
             val actual = srcOver(stroke, glassOnBlack)
             assertClose(expected.red, actual.red)
             assertClose(expected.green, actual.green)
             assertClose(expected.blue, actual.blue)
+            val full = srcOver(outline.copy(alpha = AppSurface.SoftEdgeAlpha), glassOnBlack)
+            assertTrue(actual.red + actual.green + actual.blue <= full.red + full.green + full.blue + 0.001f)
             val lightBackdrop = Color(
                 red = surface.red * glassAlpha + (1f - glassAlpha),
                 green = surface.green * glassAlpha + (1f - glassAlpha),
