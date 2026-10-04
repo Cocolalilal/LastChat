@@ -7,6 +7,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -333,6 +334,13 @@ private val PILL_MORPH_SPEC = spring<IntSize>(
 private val PILL_PROGRESS_SPEC = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = PILL_MORPH_STIFFNESS,
+)
+// Single-step close only. The spring never quite reaches rest, then the last
+// sliver — the gap under the open header — hard-cuts when the visibility
+// threshold fires. A tween lands on fully minimized. Multi-step keeps the spring.
+private val SINGLE_STEP_CLOSE_SPEC = tween<Float>(
+    durationMillis = 280,
+    easing = FastOutSlowInEasing,
 )
 // Sibling fly-out only. Low stiffness so it feels heavy, damping under 1 so it
 // eases past the rest pose by a few percent and comes back slowly. Not a snap.
@@ -665,7 +673,7 @@ private fun AnimatedSinglePill(
         if (!isMultiPill) {
             // Always retarget. A cancelled flight leaves targetValue stale, and skipping
             // animateTo there would freeze the pill between sizes.
-            progress.animateTo(if (open) 1f else 0f, PILL_PROGRESS_SPEC)
+            progress.animateTo(if (open) 1f else 0f, if (open) PILL_PROGRESS_SPEC else SINGLE_STEP_CLOSE_SPEC)
             if (!open && progress.value == 0f) retainedExpanded = null
             return@LaunchedEffect
         }
