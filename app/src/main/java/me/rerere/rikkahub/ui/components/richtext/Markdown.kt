@@ -2672,8 +2672,13 @@ private fun Modifier.incomingTokenBlur(
                 hasClip = true
             }
             if (hasClip) {
-                clipPath(clip) {
+                val canvas = drawContext.canvas
+                canvas.save()
+                canvas.clipPath(clip)
+                try {
                     drawLayer(layer)
+                } finally {
+                    canvas.restore()
                 }
             }
         }
