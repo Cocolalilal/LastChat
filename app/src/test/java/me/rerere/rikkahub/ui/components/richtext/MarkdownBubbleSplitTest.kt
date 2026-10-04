@@ -29,4 +29,24 @@ class MarkdownBubbleSplitTest {
     fun blankContentHasNoBubble() {
         assertEquals(0, markdownBubbleRunCount("   "))
     }
+
+    @Test
+    fun inlineImageLeavesTheProseBubble() {
+        assertEquals(
+            3,
+            markdownBubbleRunCount("See this ![shot](https://example.com/a.png) please"),
+        )
+    }
+
+    @Test
+    fun htmlImageBlockLeavesTheProseBubble() {
+        val markdown = """
+            Before
+
+            <img src="https://example.com/a.png" alt="shot">
+
+            After
+        """.trimIndent()
+        assertEquals(3, markdownBubbleRunCount(markdown))
+    }
 }

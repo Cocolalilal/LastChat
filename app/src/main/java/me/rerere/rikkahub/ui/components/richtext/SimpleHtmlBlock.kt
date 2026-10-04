@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,7 +45,10 @@ import androidx.compose.ui.unit.dp
 import me.rerere.common.html.SimpleHtmlElement
 import me.rerere.common.html.SimpleHtmlNode
 import me.rerere.common.html.SimpleHtmlText
+import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleColor
+import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.theme.AppSurface
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
@@ -374,21 +378,34 @@ private fun RenderImage(
     val src = imgElement.attr("src")
     val alt = imgElement.attr("alt")
     val frame = LocalOpticalFrame.current
-    val imageShape = if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
+    val bubbleShape = LocalMessageBubbleShape.current
+    val bubbleColor = LocalMessageBubbleColor.current
+    val imageShape = bubbleShape ?: if (frame.nested) frame.innerShape else RoundedCornerShape(8.dp)
     if (src.isNotEmpty()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .then(if (bubbleShape != null) Modifier else Modifier.padding(vertical = 8.dp)),
             contentAlignment = Alignment.Center
         ) {
             ZoomableAsyncImage(
                 model = src,
                 contentDescription = alt.takeIf { it.isNotEmpty() },
                 modifier = Modifier
+                    .then(
+                        if (bubbleShape != null && bubbleColor != null) {
+                            Modifier.border(
+                                width = AppSurface.ImageRimWidth,
+                                color = bubbleColor,
+                                shape = imageShape,
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clip(imageShape)
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .clip(imageShape),
+                    .heightIn(max = 400.dp),
                 contentScale = ContentScale.Fit,
             )
         }

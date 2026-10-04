@@ -175,13 +175,14 @@ private fun isIgnorableMarkdownNode(node: ASTNode): Boolean =
     node.type == MarkdownTokenTypes.EOL || node.type == MarkdownTokenTypes.WHITE_SPACE
 
 /** Code, images, tables, and display math that should read as their own message bubble. */
-internal fun isStandaloneRichMarkdownNode(node: ASTNode): Boolean {
+internal fun isStandaloneRichMarkdownNode(node: ASTNode, content: String = ""): Boolean {
     return when (node.type) {
         MarkdownElementTypes.CODE_BLOCK,
         MarkdownElementTypes.CODE_FENCE,
         GFMElementTypes.TABLE,
         GFMElementTypes.BLOCK_MATH,
         MarkdownElementTypes.IMAGE -> true
+        MarkdownElementTypes.HTML_BLOCK -> isHtmlImageBlock(node, content)
         MarkdownElementTypes.PARAGRAPH -> {
             val meaningful = node.children.filterNot(::isIgnorableMarkdownNode)
             meaningful.size == 1 && meaningful[0].type == MarkdownElementTypes.IMAGE
@@ -190,15 +191,81 @@ internal fun isStandaloneRichMarkdownNode(node: ASTNode): Boolean {
     }
 }
 
-/** Consecutive prose stays one bubble. Each rich block is its own bubble, in order. */
-internal fun groupMarkdownBubbleRuns(children: List<ASTNode>): List<List<ASTNode>> {
-    val runs = mutableListOf<MutableList<ASTNode>>()
-    children.forEach { child ->
-        if (isIgnorableMarkdownNode(child)) return@forEach
-        if (isStandaloneRichMarkdownNode(child) || runs.isEmpty() || runs.last().any(::isStandaloneRichMarkdownNode)) {
-            runs.add(mutableListOf(child))
+/** One draw unit inside a grouped bubble: a whole block, or a prose slice around an image. */
+internal sealed interface MarkdownBubblePiece {
+    val anchor: ASTNode
+    fun isStandalone(content: String): Boolean
+}
+
+internal data class MarkdownWholePiece(val node: ASTNode) : MarkdownBubblePiece {
+    override val anchor: ASTNode get() = node
+    override fun isStandalone(content: String): Boolean = isStandaloneRichMarkdownNode(node, content)
+}
+
+/** Inline children of one paragraph, kept together so bold and links still flow. */
+internal data class MarkdownInlineSlice(
+    val paragraph: ASTNode,
+    val children: List<ASTNode>,
+) : MarkdownBubblePiece {
+    override val anchor: ASTNode get() = paragraph
+    override fun isStandalone(content: String): Boolean = false
+}
+
+private val HTML_IMAGE_BLOCK = Regex("""(?is)\A\s*(?:<img\b[^>]*>\s*)+\z""")
+
+private fun isHtmlImageBlock(node: ASTNode, content: String): Boolean {
+    if (content.isEmpty()) return false
+    val end = node.endOffset.coerceAtMost(content.length)
+    val start = node.startOffset.coerceIn(0, end)
+    if (start >= end) return false
+    return HTML_IMAGE_BLOCK.matches(content.substring(start, end))
+}
+
+/**
+ * A paragraph that mixes text with an image is not a single rich block, so the
+ * image used to stay in the prose bubble. Break those images out. Image-only
+ * paragraphs stay whole.
+ */
+private fun expandMarkdownBubblePiece(node: ASTNode, content: String): List<MarkdownBubblePiece> {
+    if (node.type != MarkdownElementTypes.PARAGRAPH || isStandaloneRichMarkdownNode(node, content)) {
+        return listOf(MarkdownWholePiece(node))
+    }
+    if (node.children.none { it.type == MarkdownElementTypes.IMAGE }) {
+        return listOf(MarkdownWholePiece(node))
+    }
+    val pieces = mutableListOf<MarkdownBubblePiece>()
+    val buffer = mutableListOf<ASTNode>()
+    fun flush() {
+        val start = buffer.indexOfFirst { !isIgnorableMarkdownNode(it) }
+        if (start >= 0) {
+            val end = buffer.indexOfLast { !isIgnorableMarkdownNode(it) }
+            pieces += MarkdownInlineSlice(node, buffer.subList(start, end + 1).toList())
+        }
+        buffer.clear()
+    }
+    node.children.forEach { child ->
+        if (child.type == MarkdownElementTypes.IMAGE) {
+            flush()
+            pieces += MarkdownWholePiece(child)
         } else {
-            runs.last().add(child)
+            buffer += child
+        }
+    }
+    flush()
+    return pieces
+}
+
+/** Consecutive prose stays one bubble. Each rich block is its own bubble, in order. */
+internal fun groupMarkdownBubbleRuns(children: List<ASTNode>, content: String): List<List<MarkdownBubblePiece>> {
+    val pieces = children.flatMap { child ->
+        if (isIgnorableMarkdownNode(child)) emptyList() else expandMarkdownBubblePiece(child, content)
+    }
+    val runs = mutableListOf<MutableList<MarkdownBubblePiece>>()
+    pieces.forEach { piece ->
+        if (piece.isStandalone(content) || runs.isEmpty() || runs.last().any { it.isStandalone(content) }) {
+            runs.add(mutableListOf(piece))
+        } else {
+            runs.last().add(piece)
         }
     }
     return runs
@@ -222,8 +289,8 @@ private fun ASTNode.hasFollowingContentInBubble(): Boolean {
 /** How many grouped bubbles [content] becomes. Blank content is zero. */
 internal fun markdownBubbleRunCount(content: String): Int {
     if (content.isBlank()) return 0
-    val (_, ast) = parseMarkdownCached(content)
-    return groupMarkdownBubbleRuns(ast.children).size.coerceAtLeast(1)
+    val (preprocessed, ast) = parseMarkdownCached(content)
+    return groupMarkdownBubbleRuns(ast.children, preprocessed).size.coerceAtLeast(1)
 }
 
 /** Intrinsic pixel dimensions of an image, used to reserve its layout box before it decodes. */
@@ -909,7 +976,7 @@ fun MarkdownBlock(
     ) {
         ProvideTextStyle(style) {
             val bubbleRuns = if (splitIntoMessageBubbles) {
-                groupMarkdownBubbleRuns(astTree.children)
+                groupMarkdownBubbleRuns(astTree.children, preprocessed)
             } else {
                 emptyList()
             }
@@ -920,7 +987,7 @@ fun MarkdownBlock(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     bubbleRuns.forEachIndexed { index, run ->
-                        val rich = run.size == 1 && isStandaloneRichMarkdownNode(run.first())
+                        val rich = run.size == 1 && run.first().isStandalone(preprocessed)
                         me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble(
                             position = me.rerere.rikkahub.ui.components.chat.getBubblePosition(
                                 index = bubbleLeadingCount + index,
@@ -932,17 +999,27 @@ fun MarkdownBlock(
                             contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
                             modifier = if (rich) Modifier.fillMaxWidth() else Modifier,
                         ) {
-                            run.forEachIndexed { pieceIndex, child ->
+                            run.forEachIndexed { pieceIndex, piece ->
                                 CompositionLocalProvider(
-                                    LocalBubbleRunAnchor provides child,
+                                    LocalBubbleRunAnchor provides piece.anchor,
                                     LocalBubbleRunFollowed provides (pieceIndex < run.lastIndex),
                                 ) {
-                                    MarkdownNode(
-                                        node = child,
-                                        content = preprocessed,
-                                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                                        onClickCitation = onClickCitation,
-                                    )
+                                    when (piece) {
+                                        is MarkdownWholePiece -> MarkdownNode(
+                                            node = piece.node,
+                                            content = preprocessed,
+                                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                            onClickCitation = onClickCitation,
+                                        )
+                                        is MarkdownInlineSlice -> Paragraph(
+                                            node = piece.paragraph,
+                                            content = preprocessed,
+                                            inlineNodes = piece.children,
+                                            onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                                            onClickCitation = onClickCitation,
+                                            modifier = Modifier,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1952,13 +2029,15 @@ private fun Paragraph(
     node: ASTNode,
     content: String,
     trim: Boolean = false,
+    inlineNodes: List<ASTNode>? = null,
     onExpandedStreamingCodeBlockChanged: (() -> Unit)? = null,
     onClickCitation: (String) -> Unit = {},
     modifier: Modifier,
 ) {
+    val nodes = inlineNodes ?: node.children
     // dumpAst(node, content)
     val paragraphDirection = rememberContentDirection(node.getTextInNode(content))
-    if (node.findChildOfTypeRecursive(MarkdownElementTypes.IMAGE, GFMElementTypes.BLOCK_MATH) != null) {
+    if (nodes.any { it.findChildOfTypeRecursive(MarkdownElementTypes.IMAGE, GFMElementTypes.BLOCK_MATH) != null }) {
         val paragraphSpacing = LocalMarkdownParagraphSpacing.current
         // This row usually holds an opaque image: absorb the bubble edge difference here
         // (see BubbleEdgeCompensation) so a leading/trailing image keeps an even optical
@@ -1970,7 +2049,7 @@ private fun Paragraph(
                 verticalArrangement = Arrangement.spacedBy(paragraphSpacing),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                node.children.fastForEach { child ->
+                nodes.fastForEach { child ->
                     if (child.type != MarkdownTokenTypes.EOL) {
                         MarkdownNode(
                             node = child,
@@ -2000,7 +2079,7 @@ private fun Paragraph(
     val annotatedString = remember(content, rpStyleRules, streamingReveal) {
         buildAnnotatedString {
             val htmlContext = InlineHtmlStyleContext()
-            node.children.fastForEach { child ->
+            nodes.fastForEach { child ->
                 appendMarkdownNodeContent(
                     node = child,
                     content = content,
