@@ -103,10 +103,24 @@ fun lastChatSheetContainerColor(): Color = AppSurface.fill(MaterialTheme.colorSc
 fun lastChatDialogContainerColor(): Color = lastChatFloatingSurfaceColor()
 
 @Composable
-fun lastChatSoftEdgeBorder(): BorderStroke = BorderStroke(
-    AppSurface.SoftEdgeWidth,
-    AppSurface.softEdgeColor(MaterialTheme.colorScheme),
-)
+fun lastChatSoftEdgeBorder(
+    surface: Color = MaterialTheme.colorScheme.surfaceContainer,
+): BorderStroke {
+    val scheme = MaterialTheme.colorScheme
+    val blur = LocalLastChatBlur.current
+    val blurOn = blur.enabled && blur.hazeState != null
+    val color = if (!blurOn) {
+        AppSurface.softEdgeColor(scheme)
+    } else {
+        val glassAlpha = if (LocalDarkMode.current) AppSurface.GlassAlphaDark else AppSurface.GlassAlphaLight
+        AppSurface.softEdgeLightenStroke(
+            outline = scheme.outlineVariant,
+            surface = surface,
+            glassAlpha = glassAlpha,
+        )
+    }
+    return BorderStroke(AppSurface.SoftEdgeWidth, color)
+}
 
 @Composable
 fun lastChatSheetTonalElevation(): Dp = AppSurface.TonalElevation

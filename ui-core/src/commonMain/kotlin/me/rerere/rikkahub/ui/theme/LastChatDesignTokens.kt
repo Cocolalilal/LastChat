@@ -58,6 +58,55 @@ object AppSurface {
         colorScheme.outlineVariant.copy(alpha = SoftEdgeAlpha)
 
     /**
+     * Stroke painted over the glass. Src-over this color lightens whatever blur is
+     * already under the edge. On a black backdrop it matches [softEdgeColor] composited
+     * on glass-over-black, so the rim does not change in that case.
+     *
+     * [surface] is the opaque fill (not the glass alpha). [glassAlpha] is the alpha used
+     * when blur is on.
+     */
+    fun softEdgeLightenStroke(
+        outline: Color,
+        surface: Color,
+        glassAlpha: Float,
+        edgeAlpha: Float = SoftEdgeAlpha,
+    ): Color {
+        fun glass(channel: Float) = channel * glassAlpha
+        fun current(outlineChannel: Float, glassChannel: Float) =
+            outlineChannel * edgeAlpha + glassChannel * (1f - edgeAlpha)
+
+        val glassRed = glass(surface.red)
+        val glassGreen = glass(surface.green)
+        val glassBlue = glass(surface.blue)
+        val currentRed = current(outline.red, glassRed)
+        val currentGreen = current(outline.green, glassGreen)
+        val currentBlue = current(outline.blue, glassBlue)
+
+        fun ratio(currentChannel: Float, glassChannel: Float): Float {
+            val denom = 1f - glassChannel
+            if (denom <= 0.0001f) return 0f
+            return (currentChannel - glassChannel) / denom
+        }
+
+        val alpha = maxOf(
+            ratio(currentRed, glassRed),
+            ratio(currentGreen, glassGreen),
+            ratio(currentBlue, glassBlue),
+        ).coerceIn(0f, 1f)
+        if (alpha <= 0.0001f) return outline.copy(alpha = edgeAlpha)
+
+        fun source(currentChannel: Float, glassChannel: Float): Float =
+            (glassChannel + (currentChannel - glassChannel) / alpha).coerceIn(0f, 1f)
+
+        return Color(
+            red = source(currentRed, glassRed),
+            green = source(currentGreen, glassGreen),
+            blue = source(currentBlue, glassBlue),
+            alpha = alpha,
+        )
+    }
+
+    /**
      * Blur on + haze available → tasteful glass over charcoal.
      * Blur off (or no haze) → opaque charcoal. Never keeps a pre-alpha'd fallback.
      */

@@ -25,7 +25,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -136,6 +135,7 @@ import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.fadeEdges
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
 import me.rerere.rikkahub.ui.modifier.lastChatBlurSource
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.copyMessageToClipboard
@@ -599,7 +599,7 @@ private fun TranscriptPanel(
         color = containerColor,
         contentColor = contentColor,
         shape = panelShape,
-        border = BorderStroke(1.dp, LightHairline()),
+        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier
             .fillMaxWidth()
             .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
@@ -1106,7 +1106,3 @@ private fun glowBlobs(w: Float, h: Float, phase: Float, colors: List<Color>): Li
     )
 }
 
-/** Subtle light hairline outline used across the assistant surfaces. */
-@Composable
-private fun LightHairline(): Color =
-    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)

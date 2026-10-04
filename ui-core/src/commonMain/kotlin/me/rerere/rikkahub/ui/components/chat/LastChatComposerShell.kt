@@ -76,15 +76,16 @@ fun LastChatComposerAddButton(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier.size(AppSize.ChromePill),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    border: BorderStroke = BorderStroke(
+        AppSurface.SoftEdgeWidth,
+        AppSurface.softEdgeColor(MaterialTheme.colorScheme),
+    ),
     content: @Composable () -> Unit,
 ) {
     Surface(
         shape = CircleShape,
         color = containerColor,
-        border = BorderStroke(
-            AppSurface.SoftEdgeWidth,
-            AppSurface.softEdgeColor(MaterialTheme.colorScheme),
-        ),
+        border = border,
         modifier = modifier,
     ) {
         Box(
@@ -103,15 +104,16 @@ fun LastChatComposerAddButton(
 fun RowScope.LastChatComposerCapsule(
     modifier: Modifier = Modifier.weight(1f).heightIn(min = AppSize.ChromePill),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    border: BorderStroke = BorderStroke(
+        AppSurface.SoftEdgeWidth,
+        AppSurface.softEdgeColor(MaterialTheme.colorScheme),
+    ),
     content: @Composable () -> Unit,
 ) {
     Surface(
         shape = LastChatComposerInputShape,
         color = containerColor,
-        border = BorderStroke(
-            AppSurface.SoftEdgeWidth,
-            AppSurface.softEdgeColor(MaterialTheme.colorScheme),
-        ),
+        border = border,
         modifier = modifier.defaultMinSize(minHeight = AppSize.ChromePill),
     ) {
         content()

@@ -2806,7 +2806,7 @@ fun UpdatePill(
         shape = pillShape,
         color = blurredContainerColor(containerColor),
         contentColor = contentColor,
-        border = lastChatSoftEdgeBorder(),
+        border = lastChatSoftEdgeBorder(containerColor),
         modifier = Modifier
             .height(height)
             .lastChatBlurEffect(containerColor, pillShape)

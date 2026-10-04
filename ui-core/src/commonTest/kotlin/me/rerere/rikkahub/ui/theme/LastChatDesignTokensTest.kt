@@ -55,6 +55,37 @@ class LastChatDesignTokensTest {
     }
 
     @Test
+    fun lightenedEdgeMatchesCurrentOutlineOnBlack() {
+        val cases = listOf(
+            Triple(Color(0xFF261D1E), Color(0xFF524345), AppSurface.GlassAlphaDark),
+            Triple(Color(0xFF2A2A2A), Color(0xFF444444), AppSurface.GlassAlphaDark),
+            Triple(Color(0xFFFBEAEB), Color(0xFFD7C1C3), AppSurface.GlassAlphaLight),
+        )
+        cases.forEach { (surface, outline, glassAlpha) ->
+            val stroke = AppSurface.softEdgeLightenStroke(outline, surface, glassAlpha)
+            val glassOnBlack = Color(
+                red = surface.red * glassAlpha,
+                green = surface.green * glassAlpha,
+                blue = surface.blue * glassAlpha,
+                alpha = 1f,
+            )
+            val expected = srcOver(outline.copy(alpha = AppSurface.SoftEdgeAlpha), glassOnBlack)
+            val actual = srcOver(stroke, glassOnBlack)
+            assertClose(expected.red, actual.red)
+            assertClose(expected.green, actual.green)
+            assertClose(expected.blue, actual.blue)
+            val lightBackdrop = Color(
+                red = surface.red * glassAlpha + (1f - glassAlpha),
+                green = surface.green * glassAlpha + (1f - glassAlpha),
+                blue = surface.blue * glassAlpha + (1f - glassAlpha),
+                alpha = 1f,
+            )
+            val lightened = srcOver(stroke, lightBackdrop)
+            assertTrue(lightened.red + lightened.green + lightened.blue >= lightBackdrop.red + lightBackdrop.green + lightBackdrop.blue - 0.02f)
+        }
+    }
+
+    @Test
     fun floatingSurfaceUsesGlassAlphaOnlyWhenBlurIsOn() {
         val charcoal = Color(0xFF261D1E)
         val darkGlass = AppSurface.resolve(charcoal = charcoal, blurEnabled = true, dark = true)
@@ -115,4 +146,15 @@ class LastChatDesignTokensTest {
         assertEquals(BubblePosition.MIDDLE, getBubblePosition(1, 3))
         assertEquals(BubblePosition.LAST, getBubblePosition(2, 3))
     }
+}
+
+private fun srcOver(src: Color, dst: Color): Color {
+    val outA = src.alpha + dst.alpha * (1f - src.alpha)
+    if (outA <= 0f) return Color.Transparent
+    fun channel(s: Float, d: Float) = (s * src.alpha + d * dst.alpha * (1f - src.alpha)) / outA
+    return Color(channel(src.red, dst.red), channel(src.green, dst.green), channel(src.blue, dst.blue), outA)
+}
+
+private fun assertClose(expected: Float, actual: Float) {
+    assertTrue(kotlin.math.abs(expected - actual) < 0.01f, "expected $expected actual $actual")
 }

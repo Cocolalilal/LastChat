@@ -203,6 +203,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.shouldApplyPendingSttTranscript
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswer
 import me.rerere.rikkahub.data.ai.tools.AskUserAnswerPayload
@@ -793,6 +794,7 @@ fun MinimalChatInput(
                             }
                         },
                         containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
+                        border = lastChatSoftEdgeBorder(),
                         modifier = Modifier
                             .size(AppSize.ChromePill)
                             .lastChatBlurEffect(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
@@ -810,6 +812,7 @@ fun MinimalChatInput(
                 val inputShape = LastChatComposerInputShape
                 LastChatComposerCapsule(
                     containerColor = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
+                    border = lastChatSoftEdgeBorder(),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = AppSize.ChromePill)
@@ -2906,7 +2909,7 @@ private fun ChatScrollToBottomButton(
     Surface(
         shape = CircleShape,
         color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(),
         modifier = modifier
             .size(36.dp)
             .graphicsLayer {
@@ -3049,7 +3052,7 @@ private fun ChatSuggestionsRow(
                 Surface(
                     shape = suggestionShape,
                     color = blurredContainerColor(MaterialTheme.colorScheme.surfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    border = lastChatSoftEdgeBorder(),
                     modifier = Modifier
                         .graphicsLayer {
                             scaleX = scale

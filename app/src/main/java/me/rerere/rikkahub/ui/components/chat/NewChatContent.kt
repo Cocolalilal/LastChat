@@ -44,6 +44,7 @@ import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
 import me.rerere.rikkahub.ui.theme.AppShapes
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -233,7 +234,7 @@ private fun TemplateCard(
             .lastChatBlurEffect(cardColor, AppShapes.CardMedium),
         shape = AppShapes.CardMedium,
         colors = CardDefaults.cardColors(containerColor = blurredContainerColor(cardColor)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = lastChatSoftEdgeBorder(cardColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -275,10 +276,10 @@ private fun ActionPill(
     } else {
         MaterialTheme.colorScheme.surface
     }
-    val borderColor = if (hasBackgroundImage) {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    val border = if (hasBackgroundImage) {
+        lastChatSoftEdgeBorder(backgroundColor)
     } else {
-        MaterialTheme.colorScheme.outlineVariant
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     }
 
     val pillShape = RoundedCornerShape(24.dp)
@@ -299,7 +300,7 @@ private fun ActionPill(
             modifier = pillModifier,
             shape = pillShape,
             color = containerColor,
-            border = BorderStroke(1.dp, borderColor)
+            border = border
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
