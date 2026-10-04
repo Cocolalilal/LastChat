@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import me.rerere.rikkahub.data.ai.rag.EmbeddingAvailability
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
@@ -232,27 +234,44 @@ class AssistantDetailVM(
         }
     }
 
+    private val assistantUpdateMutex = Mutex()
+    private val assistantUpdateGeneration = HashMap<Uuid, Int>()
+
     fun update(assistant: Assistant) {
+        // A newer save must win. Prompt edits used to launch overlapping writes that each
+        // read settings first and then replaced the whole assistant, so a slow first-message
+        // save could land after the system prompt and wipe it (or the other way around).
+        val generation = synchronized(assistantUpdateGeneration) {
+            val next = (assistantUpdateGeneration[assistant.id] ?: 0) + 1
+            assistantUpdateGeneration[assistant.id] = next
+            next
+        }
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
-            if (oldAssistant != null) {
-                checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
-                checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
+            assistantUpdateMutex.withLock {
+                val latest = synchronized(assistantUpdateGeneration) {
+                    assistantUpdateGeneration[assistant.id]
+                }
+                if (generation != latest) return@withLock
+                val currentSettings = settingsStore.settingsFlow.value
+                val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
+                if (oldAssistant != null) {
+                    checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
+                    checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
+                }
+                settingsStore.update(
+                    settings = currentSettings.copy(
+                        assistants = currentSettings.assistants.map {
+                            if (it.id == assistant.id) {
+                                assistant
+                            } else {
+                                it
+                            }
+                        })
+                )
+                appStorageRepository.deleteFilesIfUnreferenced(
+                    oldAssistant?.collectRemovedMediaRefs(new = assistant).orEmpty()
+                )
             }
-            settingsStore.update(
-                settings = currentSettings.copy(
-                    assistants = currentSettings.assistants.map {
-                        if (it.id == assistant.id) {
-                            assistant
-                        } else {
-                            it
-                        }
-                    })
-            )
-            appStorageRepository.deleteFilesIfUnreferenced(
-                oldAssistant?.collectRemovedMediaRefs(new = assistant).orEmpty()
-            )
         }
     }
 

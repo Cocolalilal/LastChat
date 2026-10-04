@@ -36,22 +36,23 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -100,7 +101,6 @@ import me.rerere.rikkahub.utils.onSuccess
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
-@OptIn(FlowPreview::class)
 @Composable
 fun AssistantPromptSubPage(
     assistant: Assistant,
@@ -110,10 +110,60 @@ fun AssistantPromptSubPage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val templateTransformer = koinInject<TemplateTransformer>()
-    var isFocused by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
+    val fullScreenOpen = rememberUpdatedState(isFullScreen)
+    val persistedAssistant = rememberUpdatedState(assistant)
+    val currentOnUpdate = rememberUpdatedState(onUpdate)
+    val holder = remember(assistant.id) { PromptDraftHolder(assistant) }
+    var displayed by remember(assistant.id) { mutableStateOf(assistant) }
+    val systemPromptValue = androidx.compose.runtime.key(assistant.id) {
+        rememberTextFieldState(initialText = assistant.systemPrompt)
+    }
 
-    val systemPromptTokenCount by vm.systemPromptTokenCount.collectAsStateWithLifecycle()
+    LaunchedEffect(assistant) {
+        if (!holder.edited || assistant.samePromptDraft(holder.assistant)) {
+            // Nothing local to keep, or our flush just landed. Take the stored copy so a
+            // later flush cannot write an older snapshot of the other fields back.
+            holder.replace(assistant)
+            displayed = assistant
+        } else {
+            val prompt = holder.assistant.systemPrompt
+            val intros = holder.assistant.introTexts()
+            val cycle = holder.assistant.cycleIntrosOnNewChat
+            holder.replace(assistant)
+            holder.applySystemPrompt(prompt)
+            holder.applyIntros(intros)
+            holder.setCycleIntros(cycle)
+            displayed = holder.assistant
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(assistant.id, lifecycleOwner) {
+        fun flush() {
+            holder.flush(
+                systemPrompt = if (fullScreenOpen.value) null else systemPromptValue.text.toString(),
+                persisted = persistedAssistant.value,
+                onUpdate = currentOnUpdate.value,
+            )
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) flush()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            flush()
+        }
+    }
+
+    fun flushDraft() {
+        holder.flush(
+            systemPrompt = if (fullScreenOpen.value) null else systemPromptValue.text.toString(),
+            persisted = persistedAssistant.value,
+            onUpdate = currentOnUpdate.value,
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -129,23 +179,16 @@ fun AssistantPromptSubPage(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-            val intros = remember(assistant.presetMessages, assistant.alternateGreetings) {
-                val list = mutableListOf<String>()
-                assistant.presetMessages.filter { it.role == MessageRole.ASSISTANT }.forEach { list.add(it.toText()) }
-                list.addAll(assistant.alternateGreetings)
-                list
+            val intros = remember(displayed.presetMessages, displayed.alternateGreetings) {
+                displayed.introTexts()
             }
             val updateIntros = { newIntros: List<String> ->
-                if (newIntros.isEmpty()) {
-                    onUpdate(assistant.copy(presetMessages = emptyList(), alternateGreetings = emptyList()))
-                } else {
-                    onUpdate(
-                        assistant.copy(
-                            presetMessages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Text(newIntros.first())))),
-                            alternateGreetings = newIntros.drop(1)
-                        )
-                    )
+                if (!fullScreenOpen.value) {
+                    holder.applySystemPrompt(systemPromptValue.text.toString())
                 }
+                holder.applyIntros(newIntros)
+                displayed = holder.assistant
+                flushDraft()
             }
 
             var introsExpanded by remember { mutableStateOf(intros.isNotEmpty()) }
@@ -292,10 +335,13 @@ fun AssistantPromptSubPage(
                                         if (isEditing) {
                                             FullScreenSystemPromptEditor(
                                                 systemPrompt = intro,
+                                                onDraft = { newText ->
+                                                    holder.replaceIntro(index, newText)
+                                                },
                                                 onUpdate = { newText ->
-                                                    val newList = intros.toMutableList()
-                                                    newList[index] = newText
-                                                    updateIntros(newList)
+                                                    holder.replaceIntro(index, newText)
+                                                    displayed = holder.assistant
+                                                    flushDraft()
                                                 },
                                                 onDone = { isEditing = false }
                                             )
@@ -337,9 +383,12 @@ fun AssistantPromptSubPage(
                                         label = { Text("Cycle through intros on new chats") },
                                         tail = {
                                             HapticSwitch(
-                                                checked = assistant.cycleIntrosOnNewChat,
+                                                checked = displayed.cycleIntrosOnNewChat,
                                                 onCheckedChange = {
-                                                    onUpdate(assistant.copy(cycleIntrosOnNewChat = it))
+                                                    holder.applySystemPrompt(systemPromptValue.text.toString())
+                                                    holder.setCycleIntros(it)
+                                                    displayed = holder.assistant
+                                                    flushDraft()
                                                 }
                                             )
                                         }
@@ -370,18 +419,8 @@ fun AssistantPromptSubPage(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Initialize state with current system prompt. Key on assistant.id to reset when switching assistants.
-                    val systemPromptValue = androidx.compose.runtime.key(assistant.id) {
-                        rememberTextFieldState(
-                            initialText = assistant.systemPrompt,
-                        )
-                    }
-
-                    val hasUnsavedChanges = remember(systemPromptValue.text, assistant.systemPrompt) {
-                        systemPromptValue.text.toString() != assistant.systemPrompt
-                    }
-
-                    // Title with token count
+                    // Title with token count. The count composable is the only thing that
+                    // reads the field each keystroke, so the rest of this page does not recompose.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -391,18 +430,7 @@ fun AssistantPromptSubPage(
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = "$systemPromptTokenCount tokens",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                        if (hasUnsavedChanges) {
-                            Text(
-                                text = "Saving...",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
+                        PromptTokenCount(systemPromptValue, vm::estimateTokens)
                         val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
                         Spacer(Modifier.weight(1f))
                         IconButton(
@@ -416,38 +444,16 @@ fun AssistantPromptSubPage(
                         }
                     }
 
-                    // Sync from external state ONLY when NOT focused
-                    // This prevents overwriting user input during typing
-                    LaunchedEffect(assistant.systemPrompt, isFocused) {
-                        if (!isFocused && systemPromptValue.text.toString() != assistant.systemPrompt) {
-                            systemPromptValue.edit {
-                                replace(0, length, assistant.systemPrompt)
-                            }
-                        }
-                    }
-
-                    // Debounced sync to external state
-                    LaunchedEffect(assistant.id) {
-                        snapshotFlow { systemPromptValue.text }
-                            .drop(1) // Skip initial emission
-                            .debounce(150L) // Debounce to prevent race conditions
-                            .collect {
-                                if (it.toString() != assistant.systemPrompt) {
-                                    onUpdate(
-                                        assistant.copy(
-                                            systemPrompt = it.toString()
-                                        )
-                                    )
-                                }
-                            }
+                    SyncPromptDraft(
+                        state = systemPromptValue,
+                        enabled = !isFullScreen,
+                    ) { text ->
+                        holder.applySystemPrompt(text)
                     }
                     OutlinedTextField(
                         state = systemPromptValue,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .onFocusChanged {
-                                isFocused = it.isFocused
-                            },
+                            .fillMaxWidth(),
                         trailingIcon = null,
                         lineLimits = TextFieldLineLimits.MultiLine(
                             minHeightInLines = 5,
@@ -459,13 +465,18 @@ fun AssistantPromptSubPage(
 
                     if (isFullScreen) {
                         FullScreenSystemPromptEditor(
-                            systemPrompt = assistant.systemPrompt,
+                            systemPrompt = systemPromptValue.text.toString(),
+                            onDraft = { newText ->
+                                holder.applySystemPrompt(newText)
+                            },
                             onUpdate = { newSystemPrompt ->
-                                onUpdate(
-                                    assistant.copy(
-                                        systemPrompt = newSystemPrompt
-                                    )
-                                )
+                                holder.applySystemPrompt(newSystemPrompt)
+                                if (systemPromptValue.text.toString() != newSystemPrompt) {
+                                    systemPromptValue.edit {
+                                        replace(0, length, newSystemPrompt)
+                                    }
+                                }
+                                flushDraft()
                             }
                         ) {
                             isFullScreen = false
@@ -542,53 +553,36 @@ fun AssistantPromptSubPage(
 }
 
 
-@OptIn(FlowPreview::class)
 @Composable
 private fun FullScreenSystemPromptEditor(
     systemPrompt: String,
+    onDraft: (String) -> Unit,
     onUpdate: (String) -> Unit,
     onDone: () -> Unit
 ) {
     // Use TextFieldState for stable, reliable text editing
     // Initialize once with the current value - do NOT re-sync from parent
     val textFieldState = rememberTextFieldState(initialText = systemPrompt)
-    val scope = rememberCoroutineScope()
-    
-    // Track if we've made any changes
-    var hasUnsavedChanges by remember { mutableStateOf(false) }
-    
-    val currentSystemPrompt by androidx.compose.runtime.rememberUpdatedState(systemPrompt)
-    val currentOnUpdate by androidx.compose.runtime.rememberUpdatedState(onUpdate)
+    val currentText = textFieldState.text.toString()
+    val draft = rememberUpdatedState(onDraft)
+    val commit = rememberUpdatedState(onUpdate)
 
-    // Debounced auto-save while typing (500ms debounce)
-    LaunchedEffect(Unit) {
-        snapshotFlow { textFieldState.text.toString() }
-            .drop(1) // Skip initial emission
-            .debounce(500L)
-            .collect { newText ->
-                if (newText != currentSystemPrompt) {
-                    currentOnUpdate(newText)
-                    hasUnsavedChanges = false
-                }
-            }
+    // In-memory only. Writing the datastore here made typing hitch, and the
+    // debounce was cancelled when the dialog or the screen went away.
+    SideEffect {
+        draft.value(currentText)
     }
-    
-    // Track changes for unsaved indicator
-    LaunchedEffect(Unit) {
-        snapshotFlow { textFieldState.text.toString() }
-            .drop(1)
-            .collect {
-                hasUnsavedChanges = it != currentSystemPrompt
-            }
+    DisposableEffect(Unit) {
+        onDispose {
+            draft.value(textFieldState.text.toString())
+        }
     }
 
     BasicAlertDialog(
         onDismissRequest = {
-            // Save on dismiss if there are unsaved changes
-            val currentText = textFieldState.text.toString()
-            if (currentText != systemPrompt) {
-                onUpdate(currentText)
-            }
+            val latest = textFieldState.text.toString()
+            draft.value(latest)
+            commit.value(latest)
             onDone()
         },
         properties = DialogProperties(
@@ -622,18 +616,11 @@ private fun FullScreenSystemPromptEditor(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Auto-save indicator
-                        if (hasUnsavedChanges) {
-                            Text(
-                                text = "Saving...",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
                         TextButton(
                             onClick = {
-                                // Force save and close
-                                onUpdate(textFieldState.text.toString())
+                                val latest = textFieldState.text.toString()
+                                draft.value(latest)
+                                commit.value(latest)
                                 onDone()
                             }
                         ) {
@@ -660,3 +647,105 @@ private fun FullScreenSystemPromptEditor(
     }
 }
 
+@Composable
+private fun PromptTokenCount(
+    state: TextFieldState,
+    estimate: (String) -> Int,
+) {
+    Text(
+        text = "${estimate(state.text.toString())} tokens",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.secondary,
+    )
+}
+
+@Composable
+private fun SyncPromptDraft(
+    state: TextFieldState,
+    enabled: Boolean,
+    onText: (String) -> Unit,
+) {
+    val text = state.text.toString()
+    val current = rememberUpdatedState(onText)
+    SideEffect {
+        if (enabled) current.value(text)
+    }
+}
+
+internal class PromptDraftHolder(initial: Assistant) {
+    var assistant: Assistant = initial
+        private set
+    var edited: Boolean = false
+        private set
+    private var lastFlushed: Assistant? = initial
+
+    fun replace(next: Assistant) {
+        assistant = next
+        edited = false
+        lastFlushed = next
+    }
+
+    fun applySystemPrompt(text: String) {
+        if (assistant.systemPrompt == text) return
+        assistant = assistant.copy(systemPrompt = text)
+        edited = true
+    }
+
+    fun setCycleIntros(enabled: Boolean) {
+        if (assistant.cycleIntrosOnNewChat == enabled) return
+        assistant = assistant.copy(cycleIntrosOnNewChat = enabled)
+        edited = true
+    }
+
+    fun replaceIntro(index: Int, text: String) {
+        val current = assistant.introTexts()
+        if (index !in current.indices || current[index] == text) return
+        val next = current.toMutableList()
+        next[index] = text
+        applyIntros(next)
+    }
+
+    fun applyIntros(intros: List<String>) {
+        if (assistant.introTexts() == intros) return
+        assistant = assistant.withIntros(intros)
+        edited = true
+    }
+
+    fun flush(systemPrompt: String?, persisted: Assistant, onUpdate: (Assistant) -> Unit) {
+        if (systemPrompt != null) applySystemPrompt(systemPrompt)
+        if (!edited) return
+        val next = assistant
+        if (lastFlushed?.samePromptDraft(next) == true) return
+        lastFlushed = next
+        if (next.samePromptDraft(persisted)) return
+        onUpdate(next)
+    }
+}
+
+internal fun Assistant.introTexts(): List<String> {
+    val list = mutableListOf<String>()
+    presetMessages.filter { it.role == MessageRole.ASSISTANT }.forEach { list.add(it.toText()) }
+    list.addAll(alternateGreetings)
+    return list
+}
+
+internal fun Assistant.withIntros(intros: List<String>): Assistant {
+    if (intros.isEmpty()) {
+        return copy(presetMessages = emptyList(), alternateGreetings = emptyList())
+    }
+    return copy(
+        presetMessages = listOf(
+            UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.Text(intros.first()))
+            )
+        ),
+        alternateGreetings = intros.drop(1)
+    )
+}
+
+internal fun Assistant.samePromptDraft(other: Assistant): Boolean {
+    return systemPrompt == other.systemPrompt &&
+        introTexts() == other.introTexts() &&
+        cycleIntrosOnNewChat == other.cycleIntrosOnNewChat
+}
