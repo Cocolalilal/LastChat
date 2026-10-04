@@ -317,6 +317,12 @@ internal fun ActivityTimelinePanel(
     onTimelineClick: () -> Unit = {},
     animateSize: Boolean = true,
     pillAnchored: Boolean = false,
+    /**
+     * When set (multi-step pill morph), each accordion row's alpha/settle is derived
+     * from this single 0..1 progress so reverse stays on the same curve. Null keeps
+     * the settled panel fully visible (sheet, single-entry, live).
+     */
+    revealProgress: Float? = null,
 ) {
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
@@ -614,6 +620,8 @@ internal fun ActivityTimelinePanel(
                     )
                 }
             ) {
+                // Entries + footer share one stagger count so the ripple covers the panel.
+                val revealSlotCount = if (entries.size > 1) entries.size + 1 else entries.size
                 itemsIndexed(
                     items = entries,
                     key = { index, entry -> "${entry.id}:$index" }
@@ -628,6 +636,9 @@ internal fun ActivityTimelinePanel(
                         index == 0 -> RoundedCornerShape(topStart = rowOuter, topEnd = rowOuter, bottomStart = joint, bottomEnd = joint)
                         index == entries.lastIndex -> RoundedCornerShape(topStart = joint, topEnd = joint, bottomStart = rowOuter, bottomEnd = rowOuter)
                         else -> RoundedCornerShape(joint)
+                    }
+                    val entryReveal = revealProgress?.let { progress ->
+                        multiStepEntryAlpha(progress, index, revealSlotCount)
                     }
                     TimelineEntryItem(
                         entry = entry,
@@ -681,15 +692,30 @@ internal fun ActivityTimelinePanel(
                                 toaster.show(message = message, type = ToastType.Success)
                             }
                         },
-                        shape = shape
+                        shape = shape,
+                        modifier = if (entryReveal != null) {
+                            Modifier.graphicsLayer {
+                                alpha = entryReveal
+                                translationY = (1f - entryReveal) * MULTI_STEP_ENTRY_SETTLE.toPx()
+                            }
+                        } else {
+                            Modifier
+                        },
                     )
                 }
                 if (entries.size > 1) {
                     item(key = "footer") {
+                        val footerReveal = revealProgress?.let { progress ->
+                            multiStepEntryAlpha(progress, entries.size, revealSlotCount)
+                        } ?: 1f
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 10.dp)
+                                .graphicsLayer {
+                                    alpha = footerReveal
+                                    translationY = (1f - footerReveal) * MULTI_STEP_ENTRY_SETTLE.toPx()
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(

@@ -321,6 +321,41 @@ private val PILL_PROGRESS_SPEC = spring<Float>(
     stiffness = PILL_MORPH_STIFFNESS,
 )
 
+/** Multi-step only: compact icon/label fade out over the early spring range. */
+internal const val MULTI_STEP_COMPACT_FADE_END = 0.35f
+/** Fraction of each entry window that overlaps the next (ripple, no gap). */
+internal const val MULTI_STEP_ENTRY_OVERLAP = 0.45f
+/** Soft settle while an entry fades in; reverses with the same progress. */
+internal val MULTI_STEP_ENTRY_SETTLE = 6.dp
+
+/** Hermite smoothstep with zero slope at both ends. */
+internal fun activitySmoothstep(edge0: Float, edge1: Float, x: Float): Float {
+    if (edge1 == edge0) return if (x >= edge1) 1f else 0f
+    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
+
+/** Compact icon/label alpha for multi-step open/close. 1 at rest, 0 by fade-end. */
+internal fun multiStepCompactAlpha(progress: Float): Float =
+    1f - activitySmoothstep(0f, MULTI_STEP_COMPACT_FADE_END, progress.coerceIn(0f, 1f))
+
+/**
+ * Per-entry (or footer) reveal alpha for multi-step timelines.
+ * Driven only by [progress] so a mid-flight reverse walks the same curve backward.
+ * Entries use the range after [MULTI_STEP_COMPACT_FADE_END], staggered top→bottom with overlap.
+ */
+internal fun multiStepEntryAlpha(progress: Float, index: Int, count: Int): Float {
+    if (count <= 0 || index < 0 || index >= count) return 0f
+    val t = ((progress.coerceIn(0f, 1f) - MULTI_STEP_COMPACT_FADE_END) /
+        (1f - MULTI_STEP_COMPACT_FADE_END)).coerceIn(0f, 1f)
+    if (count == 1) return activitySmoothstep(0f, 1f, t)
+    val window = 1f / (1f + (count - 1) * (1f - MULTI_STEP_ENTRY_OVERLAP))
+    val step = window * (1f - MULTI_STEP_ENTRY_OVERLAP)
+    val start = index * step
+    val end = (start + window).coerceAtMost(1f)
+    return activitySmoothstep(start, end, t)
+}
+
 /**
  * Position of a pill in a row of pills.
  */
@@ -635,9 +670,12 @@ private fun AnimatedSinglePill(
             onClick(clickType)
         }
     ) {
+        val multiStepReveal =
+            (visibleExpanded as? SinglePillContentState.ExpandedTimeline)?.entries?.size?.let { it > 1 } == true
         PillMorphLayout(
             progress = morph,
             maxExpandedWidth = maxBubbleWidth,
+            multiStepReveal = multiStepReveal,
         ) {
             if (visibleExpanded != null && !fullyCollapsed) {
             PillMorphLayer(id = "expanded") {
@@ -652,6 +690,7 @@ private fun AnimatedSinglePill(
                             onTimelineClick = onTimelineDismiss,
                             animateSize = false,
                             pillAnchored = true,
+                            revealProgress = if (multiStepReveal) morph else null,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -862,6 +901,7 @@ private fun PillMorphLayer(
 private fun PillMorphLayout(
     progress: Float,
     maxExpandedWidth: Dp,
+    multiStepReveal: Boolean = false,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -874,6 +914,8 @@ private fun PillMorphLayout(
         } else {
             loose.maxWidth
         }
+        // Always measure the open panel at its full size; the layout clips to the
+        // lerped height so per-row fades cannot change the morphing bounds.
         val expandedPlaceable = expandedMeasurable?.measure(
             loose.copy(maxWidth = expandedCap.coerceAtLeast(0))
         )
@@ -891,16 +933,28 @@ private fun PillMorphLayout(
         val layoutWidth = width.coerceIn(constraints.minWidth, constraints.maxWidth)
         val layoutHeight = height.coerceIn(constraints.minHeight, constraints.maxHeight)
         layout(layoutWidth, layoutHeight) {
-            // The more visible layer is placed last so it keeps the clicks.
-            val expandedOnTop = t >= 0.5f
-            if (expandedPlaceable != null && !expandedOnTop && t > 0f) {
-                expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
-            }
-            if (t < 1f) {
-                compactPlaceable.placeWithLayer(0, 0) { alpha = 1f - t }
-            }
-            if (expandedPlaceable != null && expandedOnTop) {
-                expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
+            if (multiStepReveal) {
+                // Panel stays fully opaque; entries ripple in from revealProgress.
+                // Compact icon/label ease out over the early range, then back on close.
+                val compactAlpha = multiStepCompactAlpha(t)
+                if (expandedPlaceable != null && t > 0f) {
+                    expandedPlaceable.placeWithLayer(0, 0) { alpha = 1f }
+                }
+                if (compactAlpha > 0.001f) {
+                    compactPlaceable.placeWithLayer(0, 0) { alpha = compactAlpha }
+                }
+            } else {
+                // Single-entry / reasoning: one crossfade on the same spring.
+                val expandedOnTop = t >= 0.5f
+                if (expandedPlaceable != null && !expandedOnTop && t > 0f) {
+                    expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
+                }
+                if (t < 1f) {
+                    compactPlaceable.placeWithLayer(0, 0) { alpha = 1f - t }
+                }
+                if (expandedPlaceable != null && expandedOnTop) {
+                    expandedPlaceable.placeWithLayer(0, 0) { alpha = t }
+                }
             }
         }
     }
