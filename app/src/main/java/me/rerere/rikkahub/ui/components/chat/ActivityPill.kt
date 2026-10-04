@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -441,6 +442,9 @@ internal fun ActivityPillRow(
 
     val wasCompletedInitially = remember(key) { state is ActivityState.CompletedMultiple || state is ActivityState.CompletedSingle }
     
+    // Material's 48dp tap target was centering the 36dp pill under the avatar.
+    // The drawn pill is already 36dp, same as the avatar, so don't add that inset.
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
     // Animated visibility for the entire pill row
     if (wasCompletedInitially) {
         if (state !is ActivityState.Hidden) {
@@ -504,6 +508,7 @@ internal fun ActivityPillRow(
                 )
             }
         }
+    }
     }
 }
 
