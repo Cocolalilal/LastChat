@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,7 +47,7 @@ import me.rerere.common.html.SimpleHtmlText
 import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleColor
 import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape
 import me.rerere.rikkahub.ui.components.table.DataTable
-import me.rerere.rikkahub.ui.theme.AppSurface
+import me.rerere.rikkahub.ui.components.chat.chatImageOutline
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
 import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
@@ -394,16 +393,11 @@ private fun RenderImage(
                 modifier = Modifier
                     .then(
                         if (bubbleShape != null && bubbleColor != null) {
-                            Modifier.border(
-                                width = AppSurface.ImageRimWidth,
-                                color = bubbleColor,
-                                shape = imageShape,
-                            )
+                            Modifier.chatImageOutline(imageShape, bubbleColor)
                         } else {
-                            Modifier
+                            Modifier.clip(imageShape)
                         }
                     )
-                    .clip(imageShape)
                     .fillMaxWidth()
                     .heightIn(max = 400.dp),
                 contentScale = ContentScale.Fit,
