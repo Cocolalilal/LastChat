@@ -310,6 +310,7 @@ internal fun ActivityTimelinePanel(
     isLive: Boolean = false,
     listState: LazyListState = rememberLazyListState(),
     onTimelineClick: () -> Unit = {},
+    animateSize: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
@@ -529,6 +530,9 @@ internal fun ActivityTimelinePanel(
     }
 
     val useAccordionLayout = !isLive && entries.size > 1
+    // The first frame is already the open size. Animating it would stack on the pill morph.
+    var rowMorphReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { rowMorphReady = true }
 
     Surface(
         shape = AppShapes.InputField,
@@ -542,11 +546,17 @@ internal fun ActivityTimelinePanel(
                 indication = null,
                 onClick = onTimelineClick
             )
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = TIMELINE_PANEL_ANIMATION_MS,
-                    easing = LinearOutSlowInEasing
-                )
+            .then(
+                if (animateSize) {
+                    Modifier.animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = TIMELINE_PANEL_ANIMATION_MS,
+                            easing = LinearOutSlowInEasing
+                        )
+                    )
+                } else {
+                    Modifier
+                }
             )
     ) {
         if (entries.isEmpty()) {
@@ -647,6 +657,7 @@ internal fun ActivityTimelinePanel(
                             autoFollowCurrentEntry &&
                             currentEntryId != null &&
                             currentEntryId == entry.id,
+                        animateRowSize = animateSize && rowMorphReady,
                         onClickEntry = onTimelineClick,
                         onToggleExpanded = {
                             haptics.perform(HapticPattern.Pop)
@@ -782,6 +793,7 @@ private fun TimelineEntryItem(
     onRevertMemory: (Int, String) -> Unit,
     canRestore: Boolean,
     followLiveContent: Boolean,
+    animateRowSize: Boolean = true,
     onClickEntry: () -> Unit,
     onToggleExpanded: () -> Unit,
     onCopyEntry: () -> Unit,
@@ -822,6 +834,7 @@ private fun TimelineEntryItem(
             onRestoreMemory = onRestoreMemory,
             onRevertMemory = onRevertMemory,
             canRestore = canRestore,
+            animateRowSize = animateRowSize,
             onToggleExpanded = onToggleExpanded,
             onCopyEntry = onCopyEntry,
             shape = shape,
@@ -950,6 +963,7 @@ private fun TimelineAccordionEntry(
     onRestoreMemory: (String) -> Unit,
     onRevertMemory: (Int, String) -> Unit,
     canRestore: Boolean,
+    animateRowSize: Boolean = true,
     onToggleExpanded: () -> Unit,
     onCopyEntry: () -> Unit,
     shape: Shape = AppShapes.ListItem,
@@ -976,11 +990,17 @@ private fun TimelineAccordionEntry(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .animateContentSize(
-                animationSpec = tween(
-                    durationMillis = TIMELINE_PANEL_ANIMATION_MS,
-                    easing = LinearOutSlowInEasing,
-                )
+            .then(
+                if (animateRowSize) {
+                    Modifier.animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = TIMELINE_PANEL_ANIMATION_MS,
+                            easing = LinearOutSlowInEasing,
+                        )
+                    )
+                } else {
+                    Modifier
+                }
             )
             .combinedClickable(
                 onClick = onToggleExpanded,

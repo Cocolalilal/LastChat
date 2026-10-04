@@ -7,11 +7,13 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -306,8 +308,12 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
 private val LARGE_RADIUS = 20.dp
 private val SMALL_RADIUS = AppShapes.MessageBubbleJoint
 private val PILL_HEIGHT = 36.dp
-private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = 220, easing = FastOutSlowInEasing)
-private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = 220, easing = FastOutSlowInEasing)
+// Emphasized decelerate: the pill grows into the panel and settles, one clock for size, corners, and color.
+private val PILL_MORPH_EASING = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+private const val PILL_MORPH_MS = 320
+private val PILL_MORPH_SPEC = tween<IntSize>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
+private val PILL_CORNER_SPEC = tween<Dp>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
+private val PILL_FADE_SPEC = tween<Float>(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING)
 
 /**
  * Position of a pill in a row of pills.
@@ -562,7 +568,7 @@ private fun AnimatedSinglePill(
             surfaceExpanded -> MaterialTheme.colorScheme.surfaceContainerLow
             else -> MaterialTheme.colorScheme.surfaceContainerHigh
         },
-        animationSpec = tween(150),
+        animationSpec = tween(durationMillis = PILL_MORPH_MS, easing = PILL_MORPH_EASING),
         label = "pill_color"
     )
     val pillShape = RoundedCornerShape(
@@ -584,7 +590,7 @@ private fun AnimatedSinglePill(
     Surface(
         modifier = Modifier
             .then(
-                if (chatAnimationsEnabled && !wasCompletedInitially) {
+                if (chatAnimationsEnabled) {
                     Modifier.animateContentSize(
                         animationSpec = PILL_MORPH_SPEC,
                         alignment = Alignment.TopStart
@@ -617,13 +623,10 @@ private fun AnimatedSinglePill(
         AnimatedContent(
             targetState = requestedContentState,
             transitionSpec = {
-                if (wasCompletedInitially && targetState !is SinglePillContentState.ExpandedTimeline && initialState !is SinglePillContentState.ExpandedTimeline) {
-                    EnterTransition.None togetherWith ExitTransition.None
-                } else {
-                    (fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(90))) using SizeTransform(clip = false) { _, _ ->
-                        PILL_MORPH_SPEC
-                    }
-                }
+                // The surface owns the size. A second SizeTransform here fights it and steps.
+                // Snap the content bounds and let animateContentSize grow the clipped pill.
+                (fadeIn(animationSpec = PILL_FADE_SPEC) togetherWith fadeOut(animationSpec = tween(180, easing = PILL_MORPH_EASING)))
+                    .using(SizeTransform(clip = true) { _, _ -> snap() })
             },
             contentAlignment = Alignment.TopStart,
             contentKey = { 
@@ -644,6 +647,7 @@ private fun AnimatedSinglePill(
                         scrollHandoffMode = targetContentState.scrollHandoffMode,
                         isLive = targetContentState.isLive,
                         onTimelineClick = onTimelineDismiss,
+                        animateSize = false,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
