@@ -55,7 +55,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -92,9 +92,14 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
+import kotlin.math.exp
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
@@ -203,28 +208,75 @@ internal fun chatListTurnKey(
     }
 }
 
-internal fun streamingBottomOverflow(
-    itemOffset: Int,
-    itemSize: Int,
+/**
+ * How far the list still is from its real resting bottom, the spot where
+ * [LazyListState.canScrollForward] turns false. [itemEnd] is the end of the
+ * last list item. The bottom content padding counts: measuring against the
+ * raw viewport edge left the newest lines under the input bar.
+ */
+internal fun streamingBottomDistance(
+    itemEnd: Int,
     viewportEnd: Int,
-): Int = (itemOffset + itemSize - viewportEnd).coerceAtLeast(0)
+    afterContentPadding: Int,
+): Int = (itemEnd + afterContentPadding - viewportEnd).coerceAtLeast(0)
 
 /**
- * Spend a new line across a few frames. Consuming the whole overflow at once
- * is the step. This only moves downward, and only the caller that already
- * decided the user is pinned to the bottom should apply it.
+ * The one motion that keeps a pinned chat on the growing reply.
+ *
+ * A critically damped follow that keeps its velocity from frame to frame. A
+ * new line only moves the target, so the list eases into it and a run of
+ * lines blends into one glide. It never snaps, never restarts per token, and
+ * never moves up.
  */
-internal fun streamingFollowScrollDelta(
-    overflow: Int,
-    frameMillis: Float,
-): Float {
-    if (overflow <= 0) return 0f
-    val fraction = (frameMillis / STREAMING_FOLLOW_FRAME_MILLIS).coerceIn(0.42f, 0.7f)
-    return (overflow * fraction).coerceIn(1f, overflow.toFloat())
+internal class StreamingFollowMotion {
+    var velocity: Float = 0f
+        private set
+
+    fun reset() {
+        velocity = 0f
+    }
+
+    /** Returns how far to scroll down this frame. */
+    fun step(distance: Float, frameSeconds: Float, omega: Float): Float {
+        if (distance <= 0f || frameSeconds <= 0f) {
+            velocity = 0f
+            return 0f
+        }
+        // Exact solution of x'' = -omega^2 x - 2 omega x' over this frame,
+        // where x is the signed gap to the bottom. Frame rate independent.
+        val error = -distance
+        val k = velocity + omega * error
+        val decay = exp(-omega * frameSeconds)
+        val nextError = (error + k * frameSeconds) * decay
+        var nextVelocity = (velocity - omega * k * frameSeconds) * decay
+        var delta = nextError - error
+        if (delta <= 0f) {
+            delta = 0f
+            nextVelocity = nextVelocity.coerceAtLeast(0f)
+        } else if (delta >= distance) {
+            delta = distance
+            nextVelocity = 0f
+        }
+        velocity = nextVelocity.coerceAtLeast(0f)
+        return delta
+    }
 }
 
-private const val STREAMING_FOLLOW_FRAME_MILLIS = 32f
-private const val STREAMING_FOLLOW_GRACE_NANOS = 420_000_000L
+/**
+ * Line-sized gaps glide gently. A tall block that lands at once (a code
+ * block, an image) is caught up faster, still without a jump.
+ */
+internal fun streamingFollowOmega(distancePx: Float, linePx: Float): Float {
+    val lines = if (linePx > 0f) distancePx / linePx else 0f
+    val boost = ((lines - 3f) / 6f).coerceIn(0f, 1f)
+    return STREAMING_FOLLOW_OMEGA * (1f + boost)
+}
+
+private const val STREAMING_FOLLOW_OMEGA = 10f
+private const val STREAMING_FOLLOW_SETTLE_NANOS = 700_000_000L
+private const val STREAMING_FOLLOW_GROWTH_HOLD_NANOS = 250_000_000L
+private const val STREAMING_FOLLOW_MAX_TAIL_NANOS = 3_500_000_000L
+private val ScrollBottomSpacerHeight = 5.dp
 
 internal fun isChatListAtStreamingBottom(
     visibleItems: List<LazyListItemInfo>,
@@ -339,38 +391,30 @@ private fun SharedTransitionScope.ChatListNormal(
     val context = LocalContext.current
     val navController = LocalNavController.current
 
-    var streamingFollowActive by remember { mutableStateOf(false) }
-    var streamingFollowGraceUntilNanos by remember { mutableLongStateOf(0L) }
+    val density = LocalDensity.current
 
     suspend fun snapToStreamingBottom() {
         if (!loadingState) return
-        val info = state.layoutInfo
-        val totalCount = info.totalItemsCount
+        val totalCount = state.layoutInfo.totalItemsCount
         if (totalCount <= 0) return
         val targetIndex = totalCount - 1
         try {
-            val visible = info.visibleItemsInfo.lastOrNull { it.index == targetIndex }
-            if (visible == null) {
+            if (state.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
+                // The last item is the short bottom spacer, so this clamps to the
+                // real end. It never pins the top of a tall turn.
                 state.scrollToItem(targetIndex)
                 if (!loadingState) return
-                val brought = state.layoutInfo.visibleItemsInfo.lastOrNull { it.index == targetIndex }
-                    ?: return
-                val overflow = streamingBottomOverflow(
-                    itemOffset = brought.offset,
-                    itemSize = brought.size,
-                    viewportEnd = state.layoutInfo.viewportEndOffset,
-                )
-                if (overflow > 0) state.scroll { scrollBy(overflow.toFloat()) }
-                return
             }
-            // scrollToItem(last) pins the top of a tall turn. That is the jump
-            // up at the end of a reply. Only move by what is still below the fold.
-            val overflow = streamingBottomOverflow(
-                itemOffset = visible.offset,
-                itemSize = visible.size,
+            val info = state.layoutInfo
+            val tail = info.visibleItemsInfo.lastOrNull { it.index == targetIndex } ?: return
+            val distance = streamingBottomDistance(
+                itemEnd = tail.offset + tail.size,
                 viewportEnd = info.viewportEndOffset,
+                afterContentPadding = info.afterContentPadding,
             )
-            if (overflow > 0) state.scroll { scrollBy(overflow.toFloat()) }
+            if (distance > 0) state.scroll { scrollBy(distance.toFloat()) }
+        } catch (e: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw e
         } catch (_: Exception) {
             // The lazy list can be between measure passes while a streaming turn morphs.
         }
@@ -449,12 +493,14 @@ private fun SharedTransitionScope.ChatListNormal(
             snapshotFlow {
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
-                if (isScrolling && loadingState && !streamingFollowActive) {
+                // The follow below scrolls with dispatchRawDelta, which never sets
+                // isScrollInProgress, so only the user's own drag or fling (or an
+                // explicit jump) reaches this.
+                if (isScrolling && loadingState) {
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
                     if (scrolledUp) {
                         followStreamingBottom = false
-                        streamingFollowGraceUntilNanos = 0L
                     }
                     if (
                         isChatListAtStreamingBottom(
@@ -476,12 +522,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 followStreamingBottom = true
                 forceBottomAttachPending = true
             } else {
+                // The follow loop settles the tail on its own. No snap here.
                 forceBottomAttachPending = false
-                // The tail can still grow as the last run finishes. Glide with
-                // it. Do not snap, and do not jump when generation ends.
-                if (followStreamingBottom) {
-                    streamingFollowGraceUntilNanos = System.nanoTime() + STREAMING_FOLLOW_GRACE_NANOS
-                }
             }
         }
 
@@ -498,50 +540,95 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Ease toward the bottom every frame while the user is pinned there.
-        // A size change used to scroll the whole new line in one shot.
-        LaunchedEffect(state) {
-            snapshotFlow {
-                followStreamingBottom &&
-                    !forceBottomAttachPending &&
-                    (loadingState || System.nanoTime() < streamingFollowGraceUntilNanos)
-            }.collect { following ->
-                if (!following) return@collect
+        // The only thing that scrolls while a reply streams. One frame loop,
+        // one motion. The turn still grows a whole line at a time when text
+        // wraps; a pinned list now eases into each new line with velocity
+        // carried over, so steady streaming reads as one continuous glide
+        // instead of a jump per line. Scrolling uses raw deltas so it never
+        // looks like a user scroll, and it pauses the moment the user touches
+        // the list. After generation ends it keeps going until the tail has
+        // settled, then stops without a final snap.
+        LaunchedEffect(state, density) {
+            val linePx = with(density) { 24.dp.toPx() }
+            val spacerPx = with(density) { ScrollBottomSpacerHeight.toPx() }
+            val motion = StreamingFollowMotion()
+            while (isActive) {
+                // Re-read every time, so a quick unpin and re-pin cannot be missed.
+                snapshotFlow {
+                    followStreamingBottom && !forceBottomAttachPending && loadingState
+                }.first { it }
+                motion.reset()
                 var lastNanos = withFrameNanos { it }
-                while (
-                    isActive &&
-                    followStreamingBottom &&
-                    !forceBottomAttachPending &&
-                    (loadingState || System.nanoTime() < streamingFollowGraceUntilNanos)
-                ) {
+                var endedAtNanos = 0L
+                var settleUntilNanos = 0L
+                while (isActive && followStreamingBottom && !forceBottomAttachPending) {
                     val now = withFrameNanos { it }
-                    val frameMillis = ((now - lastNanos) / 1_000_000f).coerceIn(8f, 34f)
+                    val frameSeconds = ((now - lastNanos) / 1_000_000_000f).coerceIn(0.001f, 0.064f)
                     lastNanos = now
-                    if (state.isScrollInProgress && !streamingFollowActive) continue
+                    if (state.isScrollInProgress) {
+                        // The user (or a jump) owns the list right now.
+                        motion.reset()
+                        if (!loadingState) break
+                        continue
+                    }
                     val info = state.layoutInfo
                     val total = info.totalItemsCount
-                    if (total <= 0) continue
-                    val visible = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-                    streamingFollowActive = true
-                    try {
-                        if (visible == null) {
-                            // The tail is off screen. Bring it in, then ease.
-                            // Never do this to a tall turn that is already visible:
-                            // scrollToItem would pin its top.
-                            state.scrollToItem(total - 1)
-                        } else {
-                            val overflow = streamingBottomOverflow(
-                                itemOffset = visible.offset,
-                                itemSize = visible.size,
-                                viewportEnd = info.viewportEndOffset,
-                            )
-                            val delta = streamingFollowScrollDelta(overflow, frameMillis)
-                            if (delta > 0f) state.scroll { scrollBy(delta) }
+                    if (total <= 0) {
+                        if (!loadingState) break
+                        continue
+                    }
+                    val tail = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                    val tailEnd = when {
+                        tail != null -> tail.offset + tail.size
+                        else -> info.visibleItemsInfo.lastOrNull { it.index == total - 2 }?.let {
+                            // The spacer is just past the screen edge after a tall jump.
+                            it.offset + it.size + info.mainAxisItemSpacing + spacerPx.roundToInt()
                         }
-                    } catch (_: Exception) {
-                        // The list can be between measure passes while the turn grows.
-                    } finally {
-                        streamingFollowActive = state.isScrollInProgress
+                    }
+                    if (tailEnd == null) {
+                        // Far from the bottom (a whole new turn landed). Rare. The
+                        // bottom spacer is short, so this lands on the real end.
+                        motion.reset()
+                        try {
+                            state.scrollToItem(total - 1)
+                        } catch (e: CancellationException) {
+                            if (!isActive) throw e
+                        } catch (_: Exception) {
+                        }
+                        if (!loadingState) break
+                        continue
+                    }
+                    val distance = streamingBottomDistance(
+                        itemEnd = tailEnd,
+                        viewportEnd = info.viewportEndOffset,
+                        afterContentPadding = info.afterContentPadding,
+                    ).toFloat()
+                    if (loadingState) {
+                        endedAtNanos = 0L
+                    } else {
+                        if (endedAtNanos == 0L) {
+                            endedAtNanos = now
+                            settleUntilNanos = now + STREAMING_FOLLOW_SETTLE_NANOS
+                        }
+                        // The reveal can still be draining the last run.
+                        if (distance > 0.5f) {
+                            settleUntilNanos = maxOf(settleUntilNanos, now + STREAMING_FOLLOW_GROWTH_HOLD_NANOS)
+                        }
+                        val settled = distance <= 0.5f && motion.velocity < 4f
+                        if ((settled && now >= settleUntilNanos) ||
+                            now - endedAtNanos > STREAMING_FOLLOW_MAX_TAIL_NANOS
+                        ) {
+                            break
+                        }
+                    }
+                    val delta = motion.step(
+                        distance = distance,
+                        frameSeconds = frameSeconds,
+                        omega = streamingFollowOmega(distance, linePx),
+                    )
+                    if (delta > 0f) {
+                        val consumed = state.dispatchRawDelta(delta)
+                        if (consumed + 0.5f < delta) motion.reset()
                     }
                 }
             }
@@ -779,7 +866,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     Spacer(
                         Modifier
                             .fillMaxWidth()
-                            .height(5.dp)
+                            .height(ScrollBottomSpacerHeight)
                     )
                 }
             }
