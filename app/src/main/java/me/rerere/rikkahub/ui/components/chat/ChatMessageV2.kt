@@ -110,7 +110,10 @@ import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.ui.components.ui.FileActionBottomSheet
+import me.rerere.rikkahub.utils.ResolvedLocalFile
 import me.rerere.rikkahub.utils.openAttachmentUri
+import me.rerere.rikkahub.utils.resolveLocalFileTarget
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.ai.core.MessageRole as AIMessageRole
@@ -613,6 +616,7 @@ private fun AttachmentRow(
 
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
+    var pendingFile by remember { mutableStateOf<ResolvedLocalFile?>(null) }
     val saturationMatrix = remember {
         android.graphics.ColorMatrix().apply { setSaturation(0f) }
     }
@@ -674,10 +678,19 @@ private fun AttachmentRow(
                         onClick = {
                             if (attachment.url.isNotBlank()) {
                                 haptics.perform(HapticPattern.Pop)
-                                context.openAttachmentUri(
-                                    uri = attachment.url.toUri(),
-                                    mimeType = attachment.mimeType,
+                                val resolved = context.resolveLocalFileTarget(
+                                    target = attachment.url,
+                                    displayNameHint = attachment.fileName,
+                                    mimeHint = attachment.mimeType,
                                 )
+                                if (resolved != null) {
+                                    pendingFile = resolved
+                                } else {
+                                    context.openAttachmentUri(
+                                        uri = attachment.url.toUri(),
+                                        mimeType = attachment.mimeType,
+                                    )
+                                }
                             }
                         }
                     )
@@ -694,6 +707,13 @@ private fun AttachmentRow(
                 }
             }
         }
+    }
+
+    pendingFile?.let { file ->
+        FileActionBottomSheet(
+            file = file,
+            onDismissRequest = { pendingFile = null },
+        )
     }
 }
 
@@ -1713,6 +1733,7 @@ private fun AssistantBubbleStack(
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
     val userNickname = settings.displaySetting.userNickname
     val haptics = rememberPremiumHaptics()
+    var pendingStackFile by remember { mutableStateOf<ResolvedLocalFile?>(null) }
     val slots = remember(
         group.attachmentsSignature(),
         group.filteredNodes.map { it.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().joinToString { part -> part.text } },
@@ -1806,10 +1827,19 @@ private fun AssistantBubbleStack(
                     onClick = {
                         if (slot.attachment.url.isNotBlank()) {
                             haptics.perform(HapticPattern.Pop)
-                            context.openAttachmentUri(
-                                uri = slot.attachment.url.toUri(),
-                                mimeType = slot.attachment.mimeType,
+                            val resolved = context.resolveLocalFileTarget(
+                                target = slot.attachment.url,
+                                displayNameHint = slot.attachment.fileName,
+                                mimeHint = slot.attachment.mimeType,
                             )
+                            if (resolved != null) {
+                                pendingStackFile = resolved
+                            } else {
+                                context.openAttachmentUri(
+                                    uri = slot.attachment.url.toUri(),
+                                    mimeType = slot.attachment.mimeType,
+                                )
+                            }
                         } else {
                             onBubbleClick()
                         }
@@ -1843,6 +1873,15 @@ private fun AssistantBubbleStack(
         }
         cursor += count
     }
+
+
+    pendingStackFile?.let { file ->
+        FileActionBottomSheet(
+            file = file,
+            onDismissRequest = { pendingStackFile = null },
+        )
+    }
+
 }
 
 private fun buildAssistantStackSlots(

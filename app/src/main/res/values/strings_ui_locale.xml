@@ -433,4 +433,16 @@
     <string name="a11y_remove_provider_override">Remove override</string>
     <string name="a11y_toggle_view_mode">Toggle view mode</string>
     <string name="a11y_assistant_widget">Assistant</string>
+
+    <string name="file_action_sheet_title">File</string>
+    <string name="file_action_preview">Preview</string>
+    <string name="file_action_preview_desc">View in LastChat</string>
+    <string name="file_action_open">Open</string>
+    <string name="file_action_open_desc">Open with another app</string>
+    <string name="file_action_share_desc">Send via apps</string>
+    <string name="file_action_save_downloads">Downloads</string>
+    <string name="file_action_save_downloads_desc">Save to Downloads</string>
+    <string name="file_action_preview_loading">Loading preview…</string>
+    <string name="file_action_preview_failed">Unable to preview this file</string>
+    <string name="file_action_not_found">File not found</string>
 </resources>

@@ -117,7 +117,10 @@ import me.rerere.rikkahub.utils.BidiDirection
 import me.rerere.rikkahub.utils.appLocale
 import me.rerere.rikkahub.utils.resolveBidiDirection
 import me.rerere.rikkahub.utils.toDp
-import me.rerere.rikkahub.utils.saveToDownloads
+import me.rerere.rikkahub.ui.components.ui.FileActionBottomSheet
+import me.rerere.rikkahub.ui.components.ui.LocalRequestFileAction
+import me.rerere.rikkahub.utils.looksLikeLocalFileTarget
+import me.rerere.rikkahub.utils.resolveLocalFileTarget
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
@@ -995,12 +998,19 @@ fun MarkdownBlock(
         null
     }
 
+    // Host file-action sheet for workspace/local markdown links
+    var pendingLocalFile by remember { mutableStateOf<me.rerere.rikkahub.utils.ResolvedLocalFile?>(null) }
+    val requestFileAction: (me.rerere.rikkahub.utils.ResolvedLocalFile) -> Unit = remember {
+        { pendingLocalFile = it }
+    }
+
     // Provide rpStyleRules to entire tree via CompositionLocal
     CompositionLocalProvider(
         LocalRpStyleRules provides rpStyleRules,
         LocalStreamingTextReveal provides streamingReveal,
         LocalMarkdownParagraphSpacing provides paragraphSpacing,
         LocalMarkdownWorkspaceId provides workspaceId,
+        LocalRequestFileAction provides requestFileAction,
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
@@ -1082,6 +1092,14 @@ fun MarkdownBlock(
             }
         }
     }
+
+    pendingLocalFile?.let { localFile ->
+        FileActionBottomSheet(
+            file = localFile,
+            onDismissRequest = { pendingLocalFile = null },
+        )
+    }
+
 }
 
 internal class StreamingTextPresentationState(
@@ -1594,7 +1612,8 @@ private fun MarkdownNode(
             val linkDest =
                 node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
             val context = LocalContext.current
-            val scope = rememberCoroutineScope()
+            val workspaceId = LocalMarkdownWorkspaceId.current
+            val requestFileAction = LocalRequestFileAction.current
             Text(
                 text = linkText,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
@@ -1602,25 +1621,36 @@ private fun MarkdownNode(
                 fontWeight = FontWeight.Medium,
                 modifier = modifier.clickable {
                     Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
-                    val uri = linkDest.toUri()
-                    Log.d("Markdown", "Parsed URI: scheme=${uri.scheme}, authority=${uri.authority}, packageName=${context.packageName}")
-                    // Handle content:// URIs as downloads (files from sandbox/fileprovider)
-                    if (uri.scheme == "content") {
-                        val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "downloaded_file"
-                        Log.d("Markdown", "Content URI detected, saving to downloads: $fileName")
-                        scope.launch {
-                            context.saveToDownloads(uri, fileName)
+                    if (looksLikeLocalFileTarget(linkDest)) {
+                        val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) {
+                            linkText
+                        } else {
+                            null
                         }
-                    } else if (uri.scheme in listOf("http", "https", "mailto")) {
-                        val intent = Intent(Intent.ACTION_VIEW, uri)
-                        context.startActivity(intent)
+                        val resolved = context.resolveLocalFileTarget(
+                            target = linkDest,
+                            workspaceId = workspaceId,
+                            displayNameHint = displayName,
+                        )
+                        if (resolved != null) {
+                            requestFileAction(resolved)
+                            return@clickable
+                        }
+                        Log.w("Markdown", "Local file link could not be resolved: $linkDest")
+                        return@clickable
+                    }
+                    val uri = linkDest.toUri()
+                    if (uri.scheme in listOf("http", "https", "mailto")) {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        }.onFailure { e ->
+                            Log.e("Markdown", "Failed to open link: $linkDest", e)
+                        }
                     } else {
-                        // Try to open with ACTION_VIEW for other schemes (file://, etc)
-                        Log.d("Markdown", "Non-content scheme '${uri.scheme}', trying ACTION_VIEW")
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, uri)
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
+                        Log.d("Markdown", "Non-local scheme '${uri.scheme}', trying ACTION_VIEW")
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        }.onFailure { e ->
                             Log.e("Markdown", "Failed to open link: $linkDest", e)
                         }
                     }
@@ -2444,29 +2474,39 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     )
                     appendInlineContent("citation:$linkDest")
                 }
-            } else if (linkDest.startsWith("content://")) {
-                // Handle content:// URIs as downloadable files - looks like regular link
-                val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else linkDest.substringAfterLast("/")
-                val inlineKey = "download:$linkDest"
+            } else if (looksLikeLocalFileTarget(linkDest)) {
+                // Local / workspace / content URIs → in-app file action sheet
+                val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) {
+                    linkText
+                } else {
+                    linkDest.substringAfterLast('/').ifBlank { linkText }
+                }
+                val inlineKey = "localfile:$linkDest"
                 inlineContents.putIfAbsent(
                     inlineKey, InlineTextContent(
                         placeholder = Placeholder(
-                            width = (displayName.length * 12 + 32).sp, // Extra width to avoid clipping long download link text
-                            height = (style.fontSize.value * 1.3f).sp, // Extra height for descenders (p, g, y)
+                            width = (displayName.length * 12 + 32).sp,
+                            height = (style.fontSize.value * 1.3f).sp,
                             placeholderVerticalAlign = PlaceholderVerticalAlign.TextBottom,
                         ), children = {
                             val context = LocalContext.current
-                            val scope = rememberCoroutineScope()
+                            val workspaceId = LocalMarkdownWorkspaceId.current
+                            val requestFileAction = LocalRequestFileAction.current
                             Text(
                                 text = displayName,
-                                modifier = Modifier
-                                    .clickable {
-                                        Log.d("Markdown", "Download clicked: $displayName from $linkDest")
-                                        val uri = linkDest.toUri()
-                                        scope.launch {
-                                            context.saveToDownloads(uri, displayName)
-                                        }
-                                    },
+                                modifier = Modifier.clickable {
+                                    Log.d("Markdown", "Local file clicked: $displayName from $linkDest")
+                                    val resolved = context.resolveLocalFileTarget(
+                                        target = linkDest,
+                                        workspaceId = workspaceId,
+                                        displayNameHint = displayName,
+                                    )
+                                    if (resolved != null) {
+                                        requestFileAction(resolved)
+                                    } else {
+                                        Log.w("Markdown", "Local file link could not be resolved: $linkDest")
+                                    }
+                                },
                                 style = TextStyle(
                                     fontSize = style.fontSize,
                                     color = colorScheme.primary.copy(alpha = 0.9f),

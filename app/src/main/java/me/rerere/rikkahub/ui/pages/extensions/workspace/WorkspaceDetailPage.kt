@@ -101,6 +101,13 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import me.rerere.rikkahub.ui.components.ui.FileActionBottomSheet
+import me.rerere.rikkahub.utils.ResolvedLocalFile
+import me.rerere.rikkahub.utils.guessMimeFromFileName
+import me.rerere.rikkahub.utils.isImageFileName
+import me.rerere.rikkahub.utils.resolveWorkspaceEntry
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -134,6 +141,7 @@ fun WorkspaceDetailPage(id: String) {
     val haptics = rememberPremiumHaptics()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
+    var pendingFileAction by remember { mutableStateOf<ResolvedLocalFile?>(null) }
     var showInstallDialog by remember { mutableStateOf(false) }
     var showPythonInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -249,20 +257,28 @@ fun WorkspaceDetailPage(id: String) {
                             exportTarget = entry
                             exportLauncher.launch(entry.name)
                         },
-                        onShare = { entry ->
+                        onFileAction = fileAction@{ entry ->
                             haptics.perform(HapticPattern.Pop)
-                            vm.shareFile(entry, context.cacheDir) { file ->
-                                val uri = FileProvider.getUriForFile(
+                            val workspace = state.workspace ?: return@fileAction
+                            val areaSubdir = when (state.area) {
+                                WorkspaceStorageArea.FILES -> "files"
+                                WorkspaceStorageArea.LINUX -> "linux"
+                            }
+                            val resolved = context.resolveWorkspaceEntry(
+                                workspaceRoot = workspace.root,
+                                areaSubdir = areaSubdir,
+                                relativePath = entry.path,
+                                displayName = entry.name,
+                                mimeHint = guessMimeFromFileName(entry.name),
+                            )
+                            if (resolved != null) {
+                                pendingFileAction = resolved
+                            } else {
+                                Toast.makeText(
                                     context,
-                                    "${context.packageName}.fileprovider",
-                                    file,
-                                )
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/octet-stream"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(intent, null))
+                                    context.getString(R.string.file_action_not_found),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
                         },
                     )
@@ -388,6 +404,13 @@ fun WorkspaceDetailPage(id: String) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
+        )
+    }
+
+    pendingFileAction?.let { file ->
+        FileActionBottomSheet(
+            file = file,
+            onDismissRequest = { pendingFileAction = null },
         )
     }
 }
@@ -885,8 +908,15 @@ private fun WorkspaceFilesPage(
     onOpen: (WorkspaceFileEntry) -> Unit,
     onDelete: (WorkspaceFileEntry) -> Unit,
     onExport: (WorkspaceFileEntry) -> Unit,
-    onShare: (WorkspaceFileEntry) -> Unit,
+    onFileAction: (WorkspaceFileEntry) -> Unit,
 ) {
+    val context = LocalContext.current
+    val workspaceRoot = state.workspace?.root
+    val areaSubdir = when (state.area) {
+        WorkspaceStorageArea.FILES -> "files"
+        WorkspaceStorageArea.LINUX -> "linux"
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding + PaddingValues(16.dp) + PaddingValues(bottom = 104.dp),
@@ -926,13 +956,25 @@ private fun WorkspaceFilesPage(
                 index == state.entries.lastIndex -> ItemPosition.LAST
                 else -> ItemPosition.MIDDLE
             }
+            val thumbModel = remember(workspaceRoot, areaSubdir, entry.path, entry.isDirectory) {
+                if (entry.isDirectory || workspaceRoot.isNullOrBlank() || !isImageFileName(entry.name)) {
+                    null
+                } else {
+                    val file = java.io.File(
+                        context.filesDir,
+                        "workspaces/$workspaceRoot/$areaSubdir/${entry.path}",
+                    )
+                    file.takeIf { it.isFile }?.let { "file://${it.absolutePath}" }
+                }
+            }
             WorkspaceFileCard(
                 entry = entry,
                 position = position,
+                thumbnailModel = thumbModel,
                 onOpen = { onOpen(entry) },
                 onDelete = { onDelete(entry) },
                 onExport = { onExport(entry) },
-                onShare = { onShare(entry) },
+                onFileAction = { onFileAction(entry) },
             )
         }
     }
@@ -1009,10 +1051,11 @@ private fun WorkspacePathBar(
 private fun WorkspaceFileCard(
     entry: WorkspaceFileEntry,
     position: ItemPosition,
+    thumbnailModel: String? = null,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
-    onShare: () -> Unit,
+    onFileAction: () -> Unit,
 ) {
     PhysicsSwipeToDelete(
         position = position,
@@ -1021,7 +1064,7 @@ private fun WorkspaceFileCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (entry.isDirectory) Modifier.clickable(onClick = onOpen) else Modifier),
+                .clickable(onClick = if (entry.isDirectory) onOpen else onFileAction),
             shape = shape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
@@ -1032,16 +1075,27 @@ private fun WorkspaceFileCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(
-                    imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = if (entry.isDirectory) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                if (thumbnailModel != null) {
+                    AsyncImage(
+                        model = thumbnailModel,
+                        contentDescription = entry.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(AppShapes.CardMediumInner12),
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (entry.isDirectory) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -1061,16 +1115,16 @@ private fun WorkspaceFileCard(
                     )
                 }
                 if (!entry.isDirectory) {
-                    IconButton(onClick = onExport) {
+                    IconButton(onClick = onFileAction) {
                         Icon(
-                            imageVector = Icons.Rounded.UploadFile,
-                            contentDescription = stringResource(R.string.common_export),
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = stringResource(R.string.download),
                         )
                     }
-                    IconButton(onClick = onShare) {
+                    IconButton(onClick = onExport) {
                         Icon(
-                            imageVector = Icons.Rounded.Share,
-                            contentDescription = stringResource(R.string.common_share),
+                            imageVector = Icons.Rounded.SaveAlt,
+                            contentDescription = stringResource(R.string.common_export),
                         )
                     }
                 }

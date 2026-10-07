@@ -1626,4 +1626,16 @@
   <string name="chat_message_tool_workspace_view_image">查看工作区图片: %1$s</string>
   <string name="activity_timeline_tool_workspace_view_image">查看工作区图片</string>
   <string name="workspace_detail_tool_view_image">查看图片</string>
+
+  <string name="file_action_sheet_title">文件</string>
+  <string name="file_action_preview">预览</string>
+  <string name="file_action_preview_desc">在 LastChat 中查看</string>
+  <string name="file_action_open">打开</string>
+  <string name="file_action_open_desc">用其他应用打开</string>
+  <string name="file_action_share_desc">通过应用分享</string>
+  <string name="file_action_save_downloads">下载</string>
+  <string name="file_action_save_downloads_desc">保存到下载目录</string>
+  <string name="file_action_preview_loading">正在加载预览…</string>
+  <string name="file_action_preview_failed">无法预览此文件</string>
+  <string name="file_action_not_found">找不到文件</string>
 </resources>
