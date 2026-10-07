@@ -407,6 +407,9 @@ object AssistantExportImport : KoinComponent {
                 // Create placeholder with emoji text
                 createEmojiPng(avatar.content)
             }
+            is Avatar.Animated -> {
+                createPlaceholderPng(assistant.name)
+            }
             Avatar.Dummy -> {
                 createPlaceholderPng(assistant.name)
             }

@@ -175,6 +175,10 @@ import me.rerere.rikkahub.navigation.CHAT_ROUTE_TARGET_KEY
 import me.rerere.rikkahub.navigation.ChatRouteTarget
 import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
+import me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage
+import me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage
+import me.rerere.rikkahub.ui.components.avatar.animated.ProvideAvatarMotionHints
+import me.rerere.rikkahub.ui.components.avatar.animated.AvatarMotionHints
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -1241,6 +1245,56 @@ private fun ChatPageContent(
     val toolbarPlacement = chatTopBarPlacement(setting)
     val reduceMotion = LocalMotionPolicy.current.reduceMotion
     val isGenerating = loadingJob != null
+    var inputFocused by remember(conversation.id) { mutableStateOf(false) }
+    val composerText = inputState.textContent.text
+    val isTyping = inputFocused && composerText.isNotBlank()
+    val latestAssistantMessage = remember(conversation.messageNodes) {
+        conversation.currentMessages.lastOrNull { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+    }
+    val hasStreamedTokens = latestAssistantMessage?.toText()?.isNotBlank() == true
+    val isUsingTools = latestAssistantMessage?.getToolCalls()?.isNotEmpty() == true
+    val avatarMotionHints = remember(
+        isGenerating,
+        hasStreamedTokens,
+        isUsingTools,
+        inputFocused,
+        isTyping,
+    ) {
+        AvatarMotionHints(
+            isGenerating = isGenerating,
+            hasStreamedTokens = hasStreamedTokens,
+            isUsingTools = isUsingTools,
+            inputFocused = inputFocused,
+            isTyping = isTyping,
+            hasError = false,
+            idleMs = 0L,
+        )
+    }
+    // Tell on-screen avatars what just happened so they can (rarely) glance at it.
+    val avatarStage = LocalAvatarStage.current
+    val messageCount = conversation.messageNodes.size
+    var lastSeenMessageCount by remember(conversation.id) { mutableStateOf(messageCount) }
+    LaunchedEffect(messageCount) {
+        if (messageCount > lastSeenMessageCount) avatarStage.emit(AvatarStage.EventKind.MessageArrived)
+        lastSeenMessageCount = messageCount
+    }
+    LaunchedEffect(chatListState) {
+        snapshotFlow { chatListState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { scrolling ->
+                if (!scrolling) return@collect
+                val startIndex = chatListState.firstVisibleItemIndex
+                val startOffset = chatListState.firstVisibleItemScrollOffset
+                delay(160)
+                val dIndex = chatListState.firstVisibleItemIndex - startIndex
+                val dOffset = chatListState.firstVisibleItemScrollOffset - startOffset
+                val direction = when {
+                    dIndex != 0 -> dIndex.coerceIn(-1, 1)
+                    else -> dOffset.coerceIn(-1, 1)
+                }
+                if (direction != 0) avatarStage.emit(AvatarStage.EventKind.Scroll, direction = direction)
+            }
+    }
     val density = LocalDensity.current
     val statusBarTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val hazeState = rememberHazeState()
@@ -1364,7 +1418,8 @@ private fun ChatPageContent(
     }
 
     AssistantChatTheme(assistant = currentAssistant) {
-        CompositionLocalProvider(LocalLastChatBlur provides blur) {
+        ProvideAvatarMotionHints(hints = avatarMotionHints) {
+            CompositionLocalProvider(LocalLastChatBlur provides blur) {
             Surface(
                 color = if (renderBackground) {
                     MaterialTheme.colorScheme.background
@@ -1877,6 +1932,7 @@ private fun ChatPageContent(
                             }
                         ),
                     state = inputState,
+                    onInputFocusChanged = { focused -> inputFocused = focused },
                     settings = setting,
                     conversation = conversation,
                     mcpManager = vm.mcpManager,
@@ -2090,6 +2146,7 @@ private fun ChatPageContent(
                     },
                     onShareClick = { startChatShareSelection() },
                 )
+            }
             }
         }
         }
@@ -2557,6 +2614,7 @@ private fun ChatToolbarActionPill(
     buttonShape: RoundedCornerShape,
     containerColor: Color,
     border: BorderStroke,
+    isGenerating: Boolean = false,
     onNewChat: () -> Unit,
     onOpenOverflowMenu: () -> Unit,
     onCloseAction: () -> Unit,
@@ -2636,6 +2694,7 @@ private fun ChatToolbarActionPill(
                     fullPillWidth = fullPillWidth,
                     currentAssistant = currentAssistant,
                     temporary = false,
+                    isGenerating = isGenerating,
                     onToggleTemporaryChat = onToggleTemporaryChat,
                     onOpenAssistantPicker = onOpenAssistantPicker
                 )
@@ -2648,6 +2707,7 @@ private fun ChatToolbarActionPill(
                     fullPillWidth = fullPillWidth,
                     currentAssistant = currentAssistant,
                     temporary = true,
+                    isGenerating = isGenerating,
                     onToggleTemporaryChat = onToggleTemporaryChat,
                     onOpenAssistantPicker = onOpenAssistantPicker
                 )
@@ -2705,6 +2765,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarNewChatLayer(
     fullPillWidth: Dp,
     currentAssistant: Assistant,
     temporary: Boolean,
+    isGenerating: Boolean = false,
     onToggleTemporaryChat: () -> Unit,
     onOpenAssistantPicker: () -> Unit,
 ) {
@@ -2735,6 +2796,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ChatToolbarNewChatLayer(
                 name = currentAssistant.name.ifBlank { "Character" },
                 value = currentAssistant.avatar,
                 modifier = Modifier.size(30.dp),
+                loading = isGenerating,
                 onClick = if (enabled) onOpenAssistantPicker else null
             )
         }
@@ -3030,6 +3092,7 @@ private fun ChatToolbar(
                 buttonShape = buttonShape,
                 containerColor = topContainerColor,
                 border = topContainerBorder,
+                isGenerating = isGenerating,
                 onNewChat = onNewChat,
                 onOpenOverflowMenu = onOpenOverflowMenu,
                 onCloseAction = onCloseAction,

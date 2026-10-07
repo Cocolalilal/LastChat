@@ -264,6 +264,7 @@ fun MinimalChatInput(
     showScrollToBottomButton: Boolean = false,
     onScrollToBottomClick: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
+    onInputFocusChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -975,7 +976,10 @@ fun MinimalChatInput(
                                             Modifier.contentReceiver(receiveContentListener)
                                         }
                                     )
-                                    .onFocusChanged { isFocused = it.isFocused },
+                                    .onFocusChanged {
+                                        isFocused = it.isFocused
+                                        onInputFocusChanged(it.isFocused)
+                                    },
                                 placeholder = {
                                     androidx.compose.animation.AnimatedVisibility(
                                         visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),

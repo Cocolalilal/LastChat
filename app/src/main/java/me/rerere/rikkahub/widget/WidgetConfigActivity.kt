@@ -122,6 +122,7 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Emoji -> "emoji" to avatar.content
             is Avatar.Image -> "image" to avatar.url
             is Avatar.Resource -> "resource" to avatar.id.toString()
+            is Avatar.Animated -> "dummy" to "" // Glance can't easily draw custom canvas, fallback to dummy
         }
         
         LogUtil.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, avatarData=$avatarData")

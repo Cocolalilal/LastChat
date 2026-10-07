@@ -119,6 +119,9 @@ class AppShortcutManager(
                 // This preserves the original icon shape (like Generical)
                 Icon.createWithResource(context, avatar.id)
             }
+            is Avatar.Animated -> {
+                createTextIcon(fallbackName)
+            }
             is Avatar.Dummy -> {
                 // Create icon with first letter of name
                 createTextIcon(fallbackName)

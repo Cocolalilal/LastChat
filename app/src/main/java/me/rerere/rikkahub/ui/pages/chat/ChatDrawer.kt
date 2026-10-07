@@ -685,8 +685,13 @@ private fun DrawerAvatarVisual(
     modifier: Modifier = Modifier,
     forceCircle: Boolean = false
 ) {
+    val shapeModifier = if (avatar is Avatar.Animated) {
+        modifier // floating mark — do not circle-crop
+    } else {
+        modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false))
+    }
     Box(
-        modifier = modifier.clip(if (forceCircle) CircleShape else rememberAvatarShape(false)),
+        modifier = shapeModifier,
         contentAlignment = Alignment.Center
     ) {
         when (avatar) {
@@ -712,6 +717,18 @@ private fun DrawerAvatarVisual(
                 Text(
                     text = avatar.content,
                     style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            is Avatar.Animated -> {
+                me.rerere.rikkahub.ui.components.avatar.animated.AnimatedMarkAvatar(
+                    shapeId = avatar.shape,
+                    eyeType = avatar.eyeType,
+                    colorHex = avatar.colorHex,
+                    colorPreset = avatar.colorPreset,
+                    eyeColorHex = avatar.eyeColorHex,
+                    isLoading = false,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 

@@ -1,0 +1,672 @@
+{
+  "b": 114.2705,
+  "He": 114.2705,
+  "JC": 21,
+  "jie": 5,
+  "viewBox": "-15 -15 259 259",
+  "yqe": 1.1310043668122272,
+  "shapeIds": [
+    "blob",
+    "pebble",
+    "bean",
+    "egg",
+    "squircle",
+    "tablet",
+    "capsule",
+    "cylinder",
+    "hex",
+    "gem",
+    "crystal",
+    "wedge",
+    "shield",
+    "dome",
+    "arch",
+    "cloud",
+    "teardrop",
+    "leaf",
+    "square",
+    "sparkle",
+    "clover",
+    "flower",
+    "heart",
+    "house",
+    "star"
+  ],
+  "clipBody": "sphere",
+  "asarSha256": "9e915c58818cdde8dae93b0eb0bfc54b0c810ebf3aafea410e13f2666fed8fae",
+  "from056": {
+    "source": "index-Dg6vDWnr.js mark engine constants",
+    "He": 114.2705,
+    "viewBox": "-15 -15 259 259",
+    "viewBoxParsed": {
+      "minX": -15,
+      "minY": -15,
+      "width": 259,
+      "height": 259
+    },
+    "pathCanvasApprox": {
+      "width": 228.541,
+      "height": 228.541,
+      "center": 114.2705
+    },
+    "JC": 21,
+    "jie": 5,
+    "yqe": 1.1310043668122272,
+    "Nie": {
+      "blob": 0.92,
+      "pebble": 0.96,
+      "squircle": 0.84,
+      "tablet": 1,
+      "wedge": 0.94,
+      "hex": 0.94,
+      "cloud": 1,
+      "teardrop": 1
+    },
+    "blobPath_bqe": "M228.541 114.228C228.541 130.133 225.184 145.994 218.738 160.534C212.674 174.217 203.904 186.669 193.065 196.988C155.933 232.34 99.497 238.596 55.5255 212.24C45.097 205.99 35.6851 198.072 27.7451 188.866C19.1926 178.953 12.3686 167.569 7.65781 155.351C2.60712 142.264 0 128.257 0 114.228C0 98.3219 3.35751 82.4611 9.80315 67.9215C15.8672 54.2382 24.6377 41.7862 35.4767 31.4668C72.6081 -3.88483 129.044 -10.1413 173.016 16.2153C183.444 22.4653 192.856 30.3829 200.796 39.5896C209.349 49.5018 216.173 60.8859 220.883 73.1037C225.934 86.1906 228.541 100.198 228.541 114.228Z",
+    "starPath_vqe": "M0.000 -1.000L0.247 -0.340L0.951 -0.309L0.399 0.130L0.588 0.809L0.000 0.420L-0.588 0.809L-0.399 0.130L-0.951 -0.309L-0.247 -0.340Z",
+    "poseTableIndices_Q2": {
+      "sleeping": [
+        13,
+        22,
+        4
+      ],
+      "waking": [
+        13
+      ],
+      "idle": [
+        0,
+        8
+      ],
+      "listening": [
+        10,
+        1,
+        19
+      ],
+      "thinking": [
+        8,
+        16,
+        14,
+        17,
+        5
+      ],
+      "searching": [
+        15,
+        9,
+        3,
+        20,
+        12,
+        18
+      ],
+      "working": [
+        7,
+        16,
+        11,
+        10
+      ],
+      "excited": [
+        2,
+        17,
+        21,
+        3,
+        11
+      ],
+      "surprised": [
+        3,
+        21
+      ],
+      "suspicious": [
+        14,
+        5,
+        23
+      ],
+      "angry": [
+        7,
+        16
+      ],
+      "drowsy": [
+        4,
+        22,
+        13
+      ],
+      "happy": [
+        2,
+        11,
+        17,
+        19
+      ],
+      "curious": [
+        3,
+        21,
+        0,
+        15
+      ],
+      "confused": [
+        14,
+        5,
+        8
+      ],
+      "bored": [
+        4,
+        22,
+        0
+      ],
+      "proud": [
+        15,
+        8,
+        2
+      ],
+      "shy": [
+        0,
+        24,
+        13
+      ],
+      "sad": [
+        4,
+        13,
+        22
+      ],
+      "laughing": [
+        2,
+        11,
+        17
+      ],
+      "scared": [
+        3,
+        21
+      ],
+      "playful": [
+        2,
+        17,
+        11,
+        8
+      ],
+      "celebrate": [
+        2,
+        8,
+        17
+      ],
+      "orbit": [
+        0,
+        8
+      ],
+      "radar": [
+        0,
+        8
+      ],
+      "progress": [
+        0,
+        8
+      ],
+      "spawning": [
+        3,
+        0
+      ],
+      "humming": [
+        0,
+        8
+      ],
+      "loading": [
+        0,
+        8
+      ],
+      "dictating": [
+        10,
+        1,
+        19
+      ],
+      "sending": [
+        0,
+        8
+      ],
+      "receiving": [
+        19,
+        0,
+        8
+      ],
+      "uploading": [
+        15,
+        9,
+        8
+      ],
+      "writing": [
+        15,
+        9
+      ],
+      "notifying": [
+        3,
+        21,
+        0
+      ],
+      "alerting": [
+        3,
+        21
+      ],
+      "bouncing": [
+        2,
+        17
+      ],
+      "dragging": [
+        3,
+        15,
+        0
+      ],
+      "powering-down": [
+        13,
+        22
+      ]
+    },
+    "Q2_note": "Q2 maps lifecycle/reaction state \u2192 indices into an internal pose keyframe table (not the Idle_A clip bodies). The numbered pose library itself is procedural in the RAF loop, not named clip assets.",
+    "blinkIntervals_Kq_ms": {
+      "sleeping": [
+        6000,
+        10000
+      ],
+      "waking": [
+        800,
+        800
+      ],
+      "idle": [
+        9000,
+        16000
+      ],
+      "listening": [
+        2800,
+        5000
+      ],
+      "thinking": [
+        2000,
+        3600
+      ],
+      "searching": [
+        1000,
+        1800
+      ],
+      "working": [
+        1800,
+        3200
+      ],
+      "excited": [
+        1100,
+        2000
+      ],
+      "surprised": [
+        2500,
+        4000
+      ],
+      "suspicious": [
+        2600,
+        4500
+      ],
+      "angry": [
+        2200,
+        3800
+      ],
+      "drowsy": [
+        4000,
+        8000
+      ],
+      "happy": [
+        2500,
+        4500
+      ],
+      "curious": [
+        1800,
+        3200
+      ],
+      "confused": [
+        2200,
+        3800
+      ],
+      "bored": [
+        3500,
+        6000
+      ],
+      "proud": [
+        3500,
+        6000
+      ],
+      "shy": [
+        3000,
+        5500
+      ],
+      "sad": [
+        4000,
+        7000
+      ],
+      "laughing": [
+        1200,
+        2400
+      ],
+      "scared": [
+        900,
+        1800
+      ],
+      "playful": [
+        1500,
+        3000
+      ],
+      "celebrate": [
+        1400,
+        2600
+      ],
+      "orbit": [
+        4000,
+        8000
+      ],
+      "radar": [
+        4000,
+        8000
+      ],
+      "progress": [
+        4000,
+        8000
+      ],
+      "spawning": [
+        1200,
+        1200
+      ],
+      "humming": [
+        5000,
+        9000
+      ],
+      "loading": [
+        6000,
+        10000
+      ],
+      "dictating": [
+        4000,
+        8000
+      ],
+      "sending": [
+        4000,
+        8000
+      ],
+      "receiving": [
+        4000,
+        8000
+      ],
+      "uploading": [
+        4000,
+        8000
+      ],
+      "writing": [
+        4000,
+        8000
+      ],
+      "notifying": [
+        1500,
+        2600
+      ],
+      "alerting": [
+        2000,
+        3600
+      ],
+      "bouncing": [
+        3000,
+        6000
+      ],
+      "dragging": [
+        1600,
+        3000
+      ],
+      "powering-down": [
+        6000,
+        9000
+      ]
+    },
+    "faceTuneOverrides_CVe": {
+      "angry": {
+        "gap": 1.28,
+        "size": 0.78,
+        "eyeWidth": 0.88,
+        "eyeHeight": 0.84
+      },
+      "suspicious": {
+        "gap": 1.24,
+        "size": 0.82,
+        "eyeWidth": 0.9
+      },
+      "confused": {
+        "gap": 1.2,
+        "size": 0.84,
+        "eyeWidth": 0.9
+      },
+      "scared": {
+        "size": 0.8,
+        "eyeWidth": 0.9,
+        "eyeHeight": 0.88
+      },
+      "surprised": {
+        "size": 0.76,
+        "eyeWidth": 0.86,
+        "eyeHeight": 0.86
+      },
+      "excited": {
+        "size": 0.78,
+        "eyeWidth": 0.88,
+        "eyeHeight": 0.88
+      },
+      "celebrate": {
+        "size": 0.74,
+        "eyeWidth": 0.84,
+        "eyeHeight": 0.84
+      },
+      "happy": {
+        "size": 0.76,
+        "eyeWidth": 0.86,
+        "eyeHeight": 0.84
+      },
+      "curious": {
+        "size": 0.84
+      },
+      "drowsy": {
+        "size": 0.92,
+        "eyeWidth": 0.96
+      },
+      "bored": {
+        "size": 0.92,
+        "eyeWidth": 0.96
+      },
+      "sad": {
+        "size": 0.92,
+        "eyeWidth": 0.96
+      },
+      "playful": {
+        "size": 0.84,
+        "gap": 1.2
+      }
+    },
+    "poseIndexTable_Q2": {
+      "sleeping": [
+        13,
+        22,
+        4
+      ],
+      "waking": [
+        13
+      ],
+      "idle": [
+        0,
+        8
+      ],
+      "listening": [
+        10,
+        1,
+        19
+      ],
+      "thinking": [
+        8,
+        16,
+        14,
+        17,
+        5
+      ],
+      "searching": [
+        15,
+        9,
+        3,
+        20,
+        12,
+        18
+      ],
+      "working": [
+        7,
+        16,
+        11,
+        10
+      ],
+      "excited": [
+        2,
+        17,
+        21,
+        3,
+        11
+      ],
+      "surprised": [
+        3,
+        21
+      ],
+      "suspicious": [
+        14,
+        5,
+        23
+      ],
+      "angry": [
+        7,
+        16
+      ],
+      "drowsy": [
+        4,
+        22,
+        13
+      ],
+      "happy": [
+        2,
+        11,
+        17,
+        19
+      ],
+      "curious": [
+        3,
+        21,
+        0,
+        15
+      ],
+      "confused": [
+        14,
+        5,
+        8
+      ],
+      "bored": [
+        4,
+        22,
+        0
+      ],
+      "proud": [
+        15,
+        8,
+        2
+      ],
+      "shy": [
+        0,
+        24,
+        13
+      ],
+      "sad": [
+        4,
+        13,
+        22
+      ],
+      "laughing": [
+        2,
+        11,
+        17
+      ],
+      "scared": [
+        3,
+        21
+      ],
+      "playful": [
+        2,
+        17,
+        11,
+        8
+      ],
+      "celebrate": [
+        2,
+        8,
+        17
+      ],
+      "orbit": [
+        0,
+        8
+      ],
+      "radar": [
+        0,
+        8
+      ],
+      "progress": [
+        0,
+        8
+      ],
+      "spawning": [
+        3,
+        0
+      ],
+      "humming": [
+        0,
+        8
+      ],
+      "loading": [
+        0,
+        8
+      ],
+      "dictating": [
+        10,
+        1,
+        19
+      ],
+      "sending": [
+        0,
+        8
+      ],
+      "receiving": [
+        19,
+        0,
+        8
+      ],
+      "uploading": [
+        15,
+        9,
+        8
+      ],
+      "writing": [
+        15,
+        9
+      ],
+      "notifying": [
+        3,
+        21,
+        0
+      ],
+      "alerting": [
+        3,
+        21
+      ],
+      "bouncing": [
+        2,
+        17
+      ],
+      "dragging": [
+        3,
+        15,
+        0
+      ],
+      "powering-down": [
+        13,
+        22
+      ]
+    },
+    "goldAccent_Sqe": "#f4c34e"
+  }
+}

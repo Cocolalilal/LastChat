@@ -215,7 +215,7 @@ fun AssistantProfileSubPage(
  * preferred theme color index.
  */
 @Composable
-private fun ColorPalettePicker(
+fun ColorPalettePicker(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit
 ) {
@@ -294,7 +294,7 @@ private fun ColorPalettePicker(
 }
 
 @Composable
-private fun CustomColorSwatch(
+fun CustomColorSwatch(
     color: Color,
     isSelected: Boolean,
     onClick: () -> Unit
@@ -324,7 +324,7 @@ private fun CustomColorSwatch(
 }
 
 @Composable
-private fun CustomThemeColorDialog(
+fun CustomThemeColorDialog(
     initialHex: String,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
@@ -413,7 +413,7 @@ private fun CustomThemeColorDialog(
 }
 
 @Composable
-private fun SaturationValuePicker(
+fun SaturationValuePicker(
     hue: Float,
     saturation: Float,
     brightness: Float,
@@ -455,7 +455,7 @@ private fun SaturationValuePicker(
 }
 
 @Composable
-private fun HuePicker(
+fun HuePicker(
     hue: Float,
     onHueChange: (Float) -> Unit
 ) {
@@ -487,11 +487,11 @@ private fun HuePicker(
     }
 }
 
-private fun hsvColor(hue: Float, saturation: Float, brightness: Float): Color {
+fun hsvColor(hue: Float, saturation: Float, brightness: Float): Color {
     return Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, brightness)))
 }
 
-private fun Color.toHexColor(): String {
+fun Color.toHexColor(): String {
     return "#%02X%02X%02X".format(
         (red * 255).toInt(),
         (green * 255).toInt(),
@@ -499,7 +499,7 @@ private fun Color.toHexColor(): String {
     )
 }
 
-private fun normalizeHexInput(value: String): String {
+fun normalizeHexInput(value: String): String {
     val digits = value.trim().removePrefix("#")
         .filter { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
         .take(6)
@@ -508,7 +508,7 @@ private fun normalizeHexInput(value: String): String {
 }
 
 @Composable
-private fun ColorSwatch(
+fun ColorSwatch(
     color: Color,
     isSelected: Boolean,
     onClick: () -> Unit
@@ -563,6 +563,6 @@ private fun ColorSwatch(
 /**
  * Simple luminance calculation for contrast decisions.
  */
-private fun Color.luminance(): Float {
+fun Color.luminance(): Float {
     return 0.299f * red + 0.587f * green + 0.114f * blue
 }

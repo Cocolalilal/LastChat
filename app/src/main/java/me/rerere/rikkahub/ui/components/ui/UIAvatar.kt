@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarMotionHints
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.utils.createChatFilesByContents
 
@@ -104,60 +106,95 @@ fun UIAvatar(
         }
     }
 
-    Surface(
-        shape = rememberAvatarShape(loading),
-        modifier = modifier.size(32.dp),
-        onClick = {
-            onClick?.invoke()
-            if (onUpdate != null) showPickOption = true
-        },
-        tonalElevation = 4.dp,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
+    var showAnimatedEditor by remember { mutableStateOf(false) }
+
+    if (value is Avatar.Animated) {
+        // Floating mark: no circle crop, no filled surface background.
+        val animatedModifier = modifier
+            .size(32.dp)
+            .background(Color.Transparent)
+            .let { base ->
+                if (onClick != null || onUpdate != null) {
+                    base.clickable {
+                        onClick?.invoke()
+                        if (onUpdate != null) showPickOption = true
+                    }
+                } else base
+            }
         Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
+            modifier = animatedModifier,
+            contentAlignment = Alignment.Center
         ) {
-            when (value) {
-                is Avatar.Image -> {
-                    AsyncImage(
-                        model = value.url,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
+            val motionHints = LocalAvatarMotionHints.current
+            me.rerere.rikkahub.ui.components.avatar.animated.AnimatedMarkAvatar(
+                shapeId = value.shape,
+                eyeType = value.eyeType,
+                colorHex = value.colorHex,
+                colorPreset = value.colorPreset,
+                eyeColorHex = value.eyeColorHex,
+                isLoading = loading || motionHints.isGenerating,
+                isTyping = motionHints.isTyping,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    } else {
+        Surface(
+            shape = rememberAvatarShape(loading),
+            modifier = modifier.size(32.dp),
+            onClick = {
+                onClick?.invoke()
+                if (onUpdate != null) showPickOption = true
+            },
+            tonalElevation = 4.dp,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                when (value) {
+                    is Avatar.Image -> {
+                        AsyncImage(
+                            model = value.url,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
 
-                is Avatar.Emoji -> {
-                    Text(
-                        text = value.content,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 15.sp,
-                            maxFontSize = 30.sp,
-                        ),
-                        lineHeight = 1.em,
-                        modifier = Modifier.padding(2.dp)
-                    )
-                }
+                    is Avatar.Emoji -> {
+                        Text(
+                            text = value.content,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 15.sp,
+                                maxFontSize = 30.sp,
+                            ),
+                            lineHeight = 1.em,
+                            modifier = Modifier.padding(2.dp)
+                        )
+                    }
 
-                is Avatar.Resource -> {
-                    AsyncImage(
-                        model = value.id,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
+                    is Avatar.Resource -> {
+                        AsyncImage(
+                            model = value.id,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
 
-                is Avatar.Dummy -> {
-                    Text(
-                        text = name
-                            .ifBlank { stringResource(R.string.user_default_name) }
-                            .takeIf { it.isNotEmpty() }
-                            ?.firstOrNull()?.toString()?.uppercase() ?: "A",
-                        fontSize = 20.sp,
-                        lineHeight = 1.em
-                    )
+                    is Avatar.Dummy -> {
+                        Text(
+                            text = name
+                                .ifBlank { stringResource(R.string.user_default_name) }
+                                .takeIf { it.isNotEmpty() }
+                                ?.firstOrNull()?.toString()?.uppercase() ?: "A",
+                            fontSize = 20.sp,
+                            lineHeight = 1.em
+                        )
+                    }
+                    
+                    is Avatar.Animated -> { /* handled above */ }
                 }
             }
         }
@@ -175,6 +212,19 @@ fun UIAvatar(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Button(
+                        onClick = {
+                            showPickOption = false
+                            showAnimatedEditor = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (value is Avatar.Animated) {
+                            Text(text = stringResource(id = R.string.avatar_edit_animated))
+                        } else {
+                            Text(text = stringResource(id = R.string.avatar_create_animated))
+                        }
+                    }
                     Button(
                         onClick = {
                             showPickOption = false
@@ -226,6 +276,17 @@ fun UIAvatar(
                 ) {
                     Text(stringResource(id = R.string.avatar_cancel))
                 }
+            }
+        )
+    }
+
+    if (showAnimatedEditor) {
+        me.rerere.rikkahub.ui.components.avatar.animated.AnimatedAvatarEditor(
+            initialAvatar = value as? Avatar.Animated,
+            onDismiss = { showAnimatedEditor = false },
+            onSave = { newAvatar ->
+                onUpdate?.invoke(newAvatar)
+                showAnimatedEditor = false
             }
         )
     }

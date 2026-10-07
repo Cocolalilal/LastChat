@@ -186,6 +186,16 @@ android {
             isProfileable = true
         }
     }
+    testOptions {
+        unitTests {
+            // Avatar render harness (Robolectric native graphics) needs assets/res.
+            isIncludeAndroidResources = true
+            all {
+                it.systemProperty("lastchat.renderDir", System.getProperty("lastchat.renderDir") ?: "")
+                it.maxHeapSize = "2g"
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -416,6 +426,8 @@ dependencies {
 
     // tests
     testImplementation(libs.junit)
+    // Avatar render harness: Robolectric native-graphics screenshots of the mark.
+    testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

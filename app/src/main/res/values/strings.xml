@@ -147,6 +147,16 @@
     <string name="audio">Audio</string>
     <string name="avatar_cancel">Cancel</string>
     <string name="avatar_change_avatar">Change Avatar</string>
+    <string name="avatar_create_animated">Create animated avatar</string>
+    <string name="avatar_edit_animated">Edit animated avatar</string>
+    <string name="avatar_animated_shape">Shape</string>
+    <string name="avatar_animated_eyes">Eyes</string>
+    <string name="avatar_animated_eye_grok">Grok</string>
+    <string name="avatar_animated_eye_generical">Generical</string>
+    <string name="avatar_animated_color">Color</string>
+    <string name="avatar_animated_eye_color">Eye color</string>
+    <string name="avatar_animated_eye_color_default">Default</string>
+    <string name="avatar_animated_save">Save</string>
     <string name="avatar_input_url">Input URL</string>
     <string name="avatar_pick_emoji">Pick Emoji</string>
     <string name="avatar_pick_image">Pick Image</string>
