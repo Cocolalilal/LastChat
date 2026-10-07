@@ -1,14 +1,18 @@
 package me.rerere.ai.util
 
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import me.rerere.ai.provider.KeyPoolConfig
 import me.rerere.ai.provider.KeyPoolStrategy
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.UIMessageChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import kotlin.uuid.Uuid
 
@@ -58,6 +62,9 @@ class SmartKeyRouletteTest {
 
         // Key1 fails with error
         roulette.reportOutcome(key1.id, KeyOutcome.Error(statusCode = 500, temporary = true))
+
+        // Sticky pointer for the failed key is cleared
+        assertNull(roulette.getActiveKeyId(providerId))
 
         // Next call switches to key2
         val third = roulette.next(listOf(key1, key2), providerId, config)
@@ -184,5 +191,173 @@ class SmartKeyRouletteTest {
         val roulette = SmartKeyRoulette()
         val key = roulette.next("key1, key2, key3")
         assertTrue(key in listOf("key1", "key2", "key3"))
+    }
+
+    @Test
+    fun `persistence restores health and sticky active key after reopen`() {
+        val store = InMemoryKeyRouletteStore()
+        val providerId = Uuid.random()
+        val key1 = PooledKey(Uuid.random(), "Key 1", "sk-1", 0, providerId = providerId)
+        val key2 = PooledKey(Uuid.random(), "Key 2", "sk-2", 1, providerId = providerId)
+        val config = KeyPoolConfig(strategy = KeyPoolStrategy.STICKY_UNTIL_FAILURE)
+
+        val firstSession = SmartKeyRoulette(store = store)
+        val selected = firstSession.next(listOf(key1, key2), providerId, config)
+        assertEquals(key1.id, selected.id)
+
+        // Fail key1 — health + sticky clear are persisted
+        firstSession.reportOutcome(key1.id, KeyOutcome.AuthFailure(statusCode = 401, keyName = "Key 1"))
+        assertFalse(firstSession.getKeyHealth(key1.id).isHealthy)
+        assertNull(firstSession.getActiveKeyId(providerId))
+
+        // Stick to key2 so reopen remembers the working sticky key
+        val afterFailover = firstSession.next(listOf(key1, key2), providerId, config)
+        assertEquals(key2.id, afterFailover.id)
+        assertEquals(key2.id, firstSession.getActiveKeyId(providerId))
+
+        // Simulate process death / app reopen
+        val secondSession = SmartKeyRoulette(store = store)
+        assertFalse(secondSession.getKeyHealth(key1.id).isHealthy)
+        assertTrue(secondSession.getKeyHealth(key1.id).hasAuthError)
+        assertEquals(key2.id, secondSession.getActiveKeyId(providerId))
+
+        val restored = secondSession.next(listOf(key1, key2), providerId, config)
+        assertEquals(key2.id, restored.id)
+    }
+
+    @Test
+    fun `absolute cooldownUntil survives restore across clock continuity`() {
+        val store = InMemoryKeyRouletteStore()
+        val keyId = Uuid.random()
+        val session1 = SmartKeyRoulette(store = store)
+        session1.reportOutcome(keyId, KeyOutcome.RateLimited(retryAfterMs = 120_000L))
+        val cooldownUntil = session1.getKeyHealth(keyId).cooldownUntil
+        assertTrue(cooldownUntil > System.currentTimeMillis())
+
+        val session2 = SmartKeyRoulette(store = store)
+        assertEquals(cooldownUntil, session2.getKeyHealth(keyId).cooldownUntil)
+        assertFalse(session2.getKeyHealth(keyId).isHealthy)
+    }
+
+    @Test
+    fun `withProviderKeyFailover retries next key on 401 then succeeds`() = runBlocking {
+        val store = InMemoryKeyRouletteStore()
+        val roulette = SmartKeyRoulette(store = store)
+        val providerId = Uuid.random()
+        val key1Id = Uuid.random()
+        val key2Id = Uuid.random()
+        val provider = ProviderSetting.OpenAI(
+            id = providerId,
+            name = "Test",
+            apiKey = "",
+            apiKeyPool = listOf(
+                me.rerere.ai.provider.ApiKeyEntry(id = key1Id, name = "A", key = "sk-a"),
+                me.rerere.ai.provider.ApiKeyEntry(id = key2Id, name = "B", key = "sk-b"),
+            ),
+            keyPoolConfig = KeyPoolConfig(strategy = KeyPoolStrategy.STICKY_UNTIL_FAILURE),
+        )
+
+        val tried = mutableListOf<String>()
+        val result = withProviderKeyFailover(roulette, provider, "Test") { key ->
+            tried.add(key.value)
+            if (key.value == "sk-a") {
+                roulette.reportHttpStatusFailure(key, provider, 401, "bad key")
+                throw KeyRequestException(401, "unauthorized")
+            }
+            "ok:${key.value}"
+        }
+
+        assertEquals("ok:sk-b", result)
+        assertEquals(listOf("sk-a", "sk-b"), tried)
+        assertFalse(roulette.getKeyHealth(key1Id).isHealthy)
+        assertEquals(key2Id, roulette.getActiveKeyId(providerId))
+    }
+
+    @Test
+    fun `withProviderKeyFailover stops when pool exhausted`() = runBlocking {
+        val roulette = SmartKeyRoulette()
+        val provider = ProviderSetting.OpenAI(
+            apiKey = "",
+            apiKeyPool = listOf(
+                me.rerere.ai.provider.ApiKeyEntry(name = "A", key = "sk-a"),
+                me.rerere.ai.provider.ApiKeyEntry(name = "B", key = "sk-b"),
+            ),
+        )
+
+        try {
+            withProviderKeyFailover(roulette, provider, "Test") { key ->
+                roulette.reportHttpStatusFailure(key, provider, 429, "rate")
+                throw KeyRequestException(429, "rate limited")
+            }
+            fail("expected KeyRequestException")
+        } catch (e: KeyRequestException) {
+            assertEquals(429, e.statusCode)
+        }
+    }
+
+    @Test
+    fun `streamWithProviderKeyFailover switches key only before first chunk`() = runBlocking {
+        val roulette = SmartKeyRoulette()
+        val provider = ProviderSetting.OpenAI(
+            apiKey = "",
+            apiKeyPool = listOf(
+                me.rerere.ai.provider.ApiKeyEntry(name = "A", key = "sk-a"),
+                me.rerere.ai.provider.ApiKeyEntry(name = "B", key = "sk-b"),
+            ),
+            keyPoolConfig = KeyPoolConfig(strategy = KeyPoolStrategy.STICKY_UNTIL_FAILURE),
+        )
+
+        val chunks = streamWithProviderKeyFailover(roulette, provider, "Test") { key ->
+            flow {
+                if (key.value == "sk-a") {
+                    roulette.reportHttpStatusFailure(key, provider, 500, "boom")
+                    throw KeyRequestException(500, "server error")
+                }
+                emit(
+                    MessageChunk(
+                        id = "1",
+                        model = "m",
+                        choices = listOf(
+                            UIMessageChoice(index = 0, delta = null, message = null, finishReason = "stop")
+                        ),
+                    )
+                )
+            }
+        }.toList()
+
+        assertEquals(1, chunks.size)
+        // After failing A before first chunk, sticky should stick on B
+        assertEquals(provider.apiKeyPool[1].id, roulette.getActiveKeyId(provider.id))
+    }
+
+    @Test
+    fun `streamWithProviderKeyFailover does not switch after emitting`() = runBlocking {
+        val roulette = SmartKeyRoulette()
+        val provider = ProviderSetting.OpenAI(
+            apiKey = "",
+            apiKeyPool = listOf(
+                me.rerere.ai.provider.ApiKeyEntry(name = "A", key = "sk-a"),
+                me.rerere.ai.provider.ApiKeyEntry(name = "B", key = "sk-b"),
+            ),
+        )
+
+        try {
+            streamWithProviderKeyFailover(roulette, provider, "Test") { key ->
+                flow {
+                    emit(
+                        MessageChunk(
+                            id = "1",
+                            model = "m",
+                            choices = emptyList(),
+                        )
+                    )
+                    roulette.reportHttpStatusFailure(key, provider, 500, "mid-stream")
+                    throw KeyRequestException(500, "mid-stream failure")
+                }
+            }.toList()
+            fail("expected mid-stream failure to propagate")
+        } catch (e: KeyRequestException) {
+            assertEquals(500, e.statusCode)
+        }
     }
 }

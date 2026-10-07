@@ -5,7 +5,6 @@ import kotlinx.coroutines.channels.awaitClose
 import me.rerere.common.platform.PlatformLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -47,6 +46,10 @@ import me.rerere.common.platform.PlatformHttpProxy
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformServerEvent
 import me.rerere.ai.util.KeyOutcome
+import me.rerere.ai.util.withProviderKeyFailover
+import me.rerere.ai.util.streamWithProviderKeyFailover
+import me.rerere.ai.util.reportHttpStatusFailure
+import me.rerere.ai.util.KeyRequestException
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.PooledKey
 import me.rerere.common.platform.PlatformMediaEncoder
@@ -79,59 +82,38 @@ class ResponseAPI(
 
         PlatformLog.i(TAG, "generateText: $encodedRequestBody")
 
-        val selectedKey = selectKey(providerSetting)
-        val response = httpClient.execute(
-            PlatformHttpRequest(
-                method = "POST",
-                url = "${providerSetting.baseUrl}/responses",
-                headers = params.customHeaders.toHeaderMap()
-                    .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                    .withAuthAndJson(selectedKey.value),
-                body = encodedRequestBody.encodeToByteArray(),
-                mediaType = "application/json",
-                proxy = providerSetting.proxy.toPlatformProxy()
+        return withProviderKeyFailover(keyRoulette, providerSetting, TAG) { selectedKey ->
+            val response = httpClient.execute(
+                PlatformHttpRequest(
+                    method = "POST",
+                    url = "${providerSetting.baseUrl}/responses",
+                    headers = params.customHeaders.toHeaderMap()
+                        .withReferHeaders(providerSetting.baseUrl, params.sessionId)
+                        .withAuthAndJson(selectedKey.value),
+                    body = encodedRequestBody.encodeToByteArray(),
+                    mediaType = "application/json",
+                    proxy = providerSetting.proxy.toPlatformProxy()
+                )
             )
-        )
-        val bodyStr = response.body.decodeToString()
-        if (response.statusCode !in 200..299) {
-            when (response.statusCode) {
-                401, 403 -> keyRoulette.reportOutcome(
-                    selectedKey.id,
-                    KeyOutcome.AuthFailure(
-                        statusCode = response.statusCode,
-                        keyName = selectedKey.name,
-                        providerId = providerSetting.id,
-                        providerName = providerSetting.name,
-                        errorMessage = bodyStr
-                    )
+            val bodyStr = response.body.decodeToString()
+            if (response.statusCode !in 200..299) {
+                keyRoulette.reportHttpStatusFailure(
+                    key = selectedKey,
+                    providerSetting = providerSetting,
+                    statusCode = response.statusCode,
+                    errorBody = bodyStr,
                 )
-                402 -> keyRoulette.reportOutcome(
-                    selectedKey.id,
-                    KeyOutcome.QuotaExhausted(
-                        keyName = selectedKey.name,
-                        providerId = providerSetting.id,
-                        providerName = providerSetting.name,
-                        errorMessage = bodyStr
-                    )
-                )
-                429 -> keyRoulette.reportOutcome(
-                    selectedKey.id,
-                    KeyOutcome.RateLimited()
-                )
-                in 500..599 -> keyRoulette.reportOutcome(
-                    selectedKey.id,
-                    KeyOutcome.Error(response.statusCode, temporary = true)
+                throw KeyRequestException(
+                    statusCode = response.statusCode,
+                    message = "Failed to get response: ${response.statusCode} $bodyStr",
                 )
             }
-            throw Exception("Failed to get response: ${response.statusCode} $bodyStr")
+            keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
+
+            PlatformLog.i(TAG, "generateText: $bodyStr")
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+            parseResponseOutput(bodyJson)
         }
-        keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
-
-        PlatformLog.i(TAG, "generateText: $bodyStr")
-        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val output = parseResponseOutput(bodyJson)
-
-        return output
     }
 
     override suspend fun streamText(
@@ -139,8 +121,9 @@ class ResponseAPI(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<MessageChunk> {
-        val selectedKey = selectKey(providerSetting)
-        return streamTextWithKey(providerSetting, messages, params, selectedKey)
+        return streamWithProviderKeyFailover(keyRoulette, providerSetting, TAG) { selectedKey ->
+            streamTextWithKey(providerSetting, messages, params, selectedKey)
+        }
     }
 
     private fun streamTextWithKey(
@@ -181,36 +164,25 @@ class ResponseAPI(
                         close()
                     }
                     is PlatformServerEvent.Failure -> {
-                        when (event.statusCode) {
-                            401, 403 -> keyRoulette.reportOutcome(
-                                selectedKey.id,
-                                KeyOutcome.AuthFailure(
-                                    statusCode = event.statusCode ?: 401,
-                                    keyName = selectedKey.name,
-                                    providerId = providerSetting.id,
-                                    providerName = providerSetting.name,
-                                    errorMessage = event.body ?: event.message
+                        val statusCode = event.statusCode ?: 0
+                        val cause = parseStreamFailure(event)
+                        if (statusCode != 0) {
+                            keyRoulette.reportHttpStatusFailure(
+                                key = selectedKey,
+                                providerSetting = providerSetting,
+                                statusCode = statusCode,
+                                errorBody = event.body ?: event.message,
+                            )
+                            close(
+                                KeyRequestException(
+                                    statusCode = statusCode,
+                                    message = cause.message ?: "Stream failed #$statusCode",
+                                    cause = cause,
                                 )
                             )
-                            402 -> keyRoulette.reportOutcome(
-                                selectedKey.id,
-                                KeyOutcome.QuotaExhausted(
-                                    keyName = selectedKey.name,
-                                    providerId = providerSetting.id,
-                                    providerName = providerSetting.name,
-                                    errorMessage = event.body ?: event.message
-                                )
-                            )
-                            429 -> keyRoulette.reportOutcome(
-                                selectedKey.id,
-                                KeyOutcome.RateLimited()
-                            )
-                            in 500..599 -> keyRoulette.reportOutcome(
-                                selectedKey.id,
-                                KeyOutcome.Error(event.statusCode ?: 500, temporary = true)
-                            )
+                        } else {
+                            close(cause)
                         }
-                        close(parseStreamFailure(event))
                     }
                     is PlatformServerEvent.Event -> {
                         PlatformLog.d(TAG, "onEvent: ${event.id}/${event.event} ${event.data}")
@@ -233,14 +205,6 @@ class ResponseAPI(
 
         awaitClose {
             job.cancel()
-        }
-    }.retryWhen { cause, attempt ->
-        if (attempt < 3 && cause.message?.contains("429") == true) {
-            PlatformLog.w(TAG, "streamText: Rate limit (429) hit. Retrying attempt ${attempt + 1}...")
-            kotlinx.coroutines.delay(1000L * (attempt + 1))
-            true
-        } else {
-            false
         }
     }
 

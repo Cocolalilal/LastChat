@@ -25,17 +25,55 @@ import kotlin.uuid.Uuid
  * - Auth failure (401/403) cooldown + event emission for in-app warning popup
  * - Quota exhaustion (402) cooldown + event emission
  * - Auto-recovery once a key returns a successful response
+ * - Persistence of health + sticky active keys across process death via [KeyRouletteStore]
  */
-class SmartKeyRoulette : KeyRoulette {
+class SmartKeyRoulette(
+    store: KeyRouletteStore? = null,
+) : KeyRoulette {
     private val healthMap = ConcurrentHashMap<Uuid, KeyHealthState>()
     private val activeKeyByProvider = ConcurrentHashMap<Uuid, Uuid>()
     private val roundRobinIndexByProvider = ConcurrentHashMap<Uuid, AtomicInteger>()
+
+    @Volatile
+    private var persistence: KeyRouletteStore? = store
 
     private val _authErrorEvents = MutableSharedFlow<KeyAuthErrorEvent>(
         extraBufferCapacity = 16,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     override val authErrorEvents: SharedFlow<KeyAuthErrorEvent> = _authErrorEvents.asSharedFlow()
+
+    init {
+        restoreFromStore()
+    }
+
+    /**
+     * Attach or replace the persistence backend and reload its snapshot.
+     * Safe to call once at app startup when the default singleton was created
+     * before the Android store was available.
+     */
+    fun configurePersistence(store: KeyRouletteStore) {
+        persistence = store
+        restoreFromStore()
+    }
+
+    private fun restoreFromStore() {
+        val snapshot = persistence?.load() ?: return
+        healthMap.clear()
+        healthMap.putAll(snapshot.toHealthMap())
+        activeKeyByProvider.clear()
+        activeKeyByProvider.putAll(snapshot.toActiveKeyMap())
+    }
+
+    private fun persist() {
+        val target = persistence ?: return
+        target.save(
+            buildKeyRouletteSnapshot(
+                health = HashMap(healthMap),
+                activeKeyByProvider = HashMap(activeKeyByProvider),
+            )
+        )
+    }
 
     override fun next(keys: List<PooledKey>): PooledKey {
         return next(keys, Uuid.NIL, KeyPoolConfig())
@@ -50,6 +88,14 @@ class SmartKeyRoulette : KeyRoulette {
             return PooledKey(Uuid.NIL, "default", "", 0, providerId = providerId)
         }
         if (keys.size == 1) {
+            // Still record sticky active key so it survives reopen for single-key pools.
+            if (config.strategy == KeyPoolStrategy.STICKY_UNTIL_FAILURE) {
+                val only = keys.first()
+                if (activeKeyByProvider[providerId] != only.id) {
+                    activeKeyByProvider[providerId] = only.id
+                    persist()
+                }
+            }
             return keys.first()
         }
 
@@ -70,7 +116,10 @@ class SmartKeyRoulette : KeyRoulette {
                         // All keys are currently in cooldown or error: pick key with earliest cooldown expiry
                         keys.minByOrNull { getKeyHealth(it.id).cooldownUntil } ?: keys.first()
                     }
-                    activeKeyByProvider[providerId] = nextKey.id
+                    if (activeKeyByProvider[providerId] != nextKey.id) {
+                        activeKeyByProvider[providerId] = nextKey.id
+                        persist()
+                    }
                     nextKey
                 }
             }
@@ -94,9 +143,10 @@ class SmartKeyRoulette : KeyRoulette {
 
     override fun reportOutcome(keyId: Uuid, outcome: KeyOutcome) {
         val now = System.currentTimeMillis()
+        var resulting: KeyHealthState? = null
         healthMap.compute(keyId) { _, current ->
             val prev = current ?: KeyHealthState()
-            when (outcome) {
+            val updated = when (outcome) {
                 is KeyOutcome.Success -> {
                     prev.copy(
                         consecutiveErrors = 0,
@@ -235,7 +285,19 @@ class SmartKeyRoulette : KeyRoulette {
                     )
                 }
             }
+            resulting = updated
+            updated
         }
+
+        // Clear sticky pointers when the active key becomes unhealthy so reopen /
+        // the next select immediately picks a different healthy key.
+        val health = resulting
+        if (health != null && !health.isHealthy) {
+            val stickyKeys = activeKeyByProvider.entries.filter { it.value == keyId }.map { it.key }
+            stickyKeys.forEach { providerId -> activeKeyByProvider.remove(providerId) }
+        }
+
+        persist()
     }
 
     override fun getKeyHealth(keyId: Uuid): KeyHealthState {
@@ -244,7 +306,13 @@ class SmartKeyRoulette : KeyRoulette {
 
     override fun resetKeyHealth(keyId: Uuid) {
         healthMap.remove(keyId)
+        val stickyKeys = activeKeyByProvider.entries.filter { it.value == keyId }.map { it.key }
+        stickyKeys.forEach { providerId -> activeKeyByProvider.remove(providerId) }
+        persist()
     }
+
+    /** Test / debug helper: sticky active key for a provider, if any. */
+    fun getActiveKeyId(providerId: Uuid): Uuid? = activeKeyByProvider[providerId]
 
     override fun next(keys: String): String {
         val keyList = splitKey(keys)

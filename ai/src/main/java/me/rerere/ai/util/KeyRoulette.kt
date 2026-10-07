@@ -1,6 +1,7 @@
 package me.rerere.ai.util
 
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 
 /**
@@ -52,6 +53,7 @@ data class KeyAuthErrorEvent(
 /**
  * Runtime health state of an API key in the pool.
  */
+@Serializable
 data class KeyHealthState(
     val consecutiveErrors: Int = 0,
     val lastErrorTime: Long = 0,
@@ -103,8 +105,20 @@ interface KeyRoulette {
         get() = kotlinx.coroutines.flow.MutableSharedFlow()
 
     companion object {
-        private val instance: KeyRoulette by lazy { SmartKeyRoulette() }
+        @Volatile
+        private var installed: KeyRoulette? = null
 
-        fun default(): KeyRoulette = instance
+        private val fallback: KeyRoulette by lazy { SmartKeyRoulette() }
+
+        fun default(): KeyRoulette = installed ?: fallback
+
+        /**
+         * Install the process-wide [KeyRoulette] (typically a [SmartKeyRoulette]
+         * backed by a [KeyRouletteStore]). Must be called at app startup before
+         * providers are constructed so persistence is active.
+         */
+        fun install(roulette: KeyRoulette) {
+            installed = roulette
+        }
     }
 }

@@ -45,6 +45,10 @@ import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.QuickSettingsCache
 import me.rerere.rikkahub.data.datastore.SecureStore
+import me.rerere.rikkahub.data.datastore.AndroidKeyRouletteStore
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.KeyRouletteStore
+import me.rerere.ai.util.SmartKeyRoulette
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SpontaneousMessagingStateStore
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -84,6 +88,14 @@ val dataSourceModule = module {
 
     single {
         SecureStore(context = get())
+    }
+
+    single<KeyRouletteStore> {
+        AndroidKeyRouletteStore(context = get())
+    }
+
+    single<KeyRoulette> {
+        SmartKeyRoulette(store = get()).also { KeyRoulette.install(it) }
     }
 
     single {
@@ -449,6 +461,8 @@ val dataSourceModule = module {
     single { me.rerere.asr.local.SherpaSttRuntime() }
 
     single {
+        // Ensure persisted KeyRoulette is installed before providers call KeyRoulette.default().
+        get<KeyRoulette>()
         ProviderManager(
             platformHttpClient = get(),
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
