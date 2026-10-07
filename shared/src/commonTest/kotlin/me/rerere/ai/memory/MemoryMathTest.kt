@@ -33,7 +33,7 @@ class MemoryMathTest {
     fun keywordScoreHandlesNonAsciiAndAccentedTerms() {
         val scoreCjk = MemoryVectorMath.keywordScore("喜欢", "用户喜欢喝茶")
         assertEquals(1f, scoreCjk)
-        val scoreAccented = MemoryVectorMath.keywordScore("München", "Julian lebt in München")
+        val scoreAccented = MemoryVectorMath.keywordScore("München", "Alex lebt in München")
         assertEquals(1f, scoreAccented)
     }
 

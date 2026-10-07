@@ -23,7 +23,7 @@ edges only as plumbing (`ABOUT`, `RELATES_TO`). Consequences, mapped to the brie
 | Brief failure | How attempt 1 exhibited it | v2 structural change |
 |---|---|---|
 | #9 not a proper graph; long-text nodes; can't digest the graph efficiently | Sentence-nodes meant the "graph" was a bag of paragraphs hub-linked to entities. The extraction digest had to quote whole sentences (token-expensive); the graph UI showed text blobs, not structure. | **Facts live on edges, not nodes.** Nodes are entities (short labels, hard caps); a fact is a typed `subject —predicate→ object` relationship with a ≤160-char rendering. The neighborhood digest serializes as compact triplet lines — the whole relevant subgraph fits in a few hundred tokens. |
-| #10 didn't merge nodes naturally ("user" vs the user's name as two nodes) | Entity resolution was label-match + FTS; nothing prevented the extractor from minting "Julian" as a person separate from "user". | **Pinned canonical nodes + structural rules.** Every store is born with a pinned `user` node and a pinned `character` node. The user's name is **never an entity** — it is an alias on the `user` node plus a fact `user —is_named→ "…"`. The applier resolves any PERSON whose name matches a known alias of `user`/`character` to that canonical node before anything is created. Duplicate-person creation for the two protagonists is impossible by construction. |
+| #10 didn't merge nodes naturally ("user" vs the user's name as two nodes) | Entity resolution was label-match + FTS; nothing prevented the extractor from minting "Alex" as a person separate from "user". | **Pinned canonical nodes + structural rules.** Every store is born with a pinned `user` node and a pinned `character` node. The user's name is **never an entity** — it is an alias on the `user` node plus a fact `user —is_named→ "…"`. The applier resolves any PERSON whose name matches a known alias of `user`/`character` to that canonical node before anything is created. Duplicate-person creation for the two protagonists is impossible by construction. |
 | #11 episode spam (an episode per message; endless variations) | Episodes were extracted per pass with a soft rubric only. | **Scene-level episodes with an upsert path.** ≤1 episode per detected scene; a continuing scene **extends** the existing episode (`EXTEND_EPISODE`) instead of creating a sibling; a salience rubric means most passes create zero episodes. Caps are enforced in the applier, not the prompt. |
 | #1 duplicates | Lexical dedup gate over sentence-nodes — "similar text" is a weak identity signal. | **Structural dedup.** After entity resolution, a fact is a `(subject_id, predicate, object)` triple. Exact triple match → REINFORCE, mechanically. Same `(subject, predicate)` with a different object → contradiction/update candidate, mechanically. Text similarity is demoted to a tie-breaker, never the decision. |
 
@@ -193,7 +193,7 @@ These ids are handed to every extraction prompt; first/second-person references 
 `(normalized, scope, owner_assistant_id)`. A dedicated table (not JSON-in-extra as attempt 1)
 because alias lookup is the first step of both entity resolution and query expansion — it must be
 an indexed query, not a JSON scan. The user's display name and nicknames land here on the `user`
-node ("Julian", "Jules"); "uni" lands on "TU Wien".
+node ("Alex", "Lex"); "uni" lands on "TU Wien".
 
 ### 4.3 `memory_fact` — the relationship edges (the semantic layer)
 
@@ -203,7 +203,7 @@ node ("Julian", "Jules"); "uni" lands on "TU Wien".
 | `subject_id` TEXT | → `memory_entity` |
 | `predicate` TEXT | **≤32 chars**, normalized snake_case verb phrase ("studies", "lives_in", "dislikes", "is_named", "works_at", "owns", "is_dating") — seeded vocabulary + open extension (§6.4) |
 | `object_id` TEXT? | → `memory_entity`; exactly one of `object_id`/`object_value` is set |
-| `object_value` TEXT? | literal **≤80 chars** ("Julian", "1999-04-12", "vegetarian") |
+| `object_value` TEXT? | literal **≤80 chars** ("Alex", "1999-04-12", "vegetarian") |
 | `statement` TEXT | **≤160 chars** human rendering for FTS/UI ("Takes math classes at TU Wien") |
 | `kind` INT | DURATIVE (state), POINT (one-time event-fact), HABIT (recurring pattern) |
 | `scope` INT, `owner_assistant_id` TEXT? | as entities |
@@ -376,10 +376,10 @@ conversations extract (TEMPORARY never; PERSIST_ON_REPLY once persisted).
   serialization attempt 1 lacked:
 
 ```
-[e12] user (aka Julian, Jules)
+[e12] user (aka Alex, Lex)
   [f31] user —studies→ [e4] TU Wien :: "Takes math classes at TU Wien" (durative, ACTIVE, since 2026-02, imp4, ×3)
   [f18] user —dislikes→ [e9] school (durative, ACTIVE, imp3)
-  [f44] user —is_named→ "Julian" (imp5, pinned)
+  [f44] user —is_named→ "Alex" (imp5, pinned)
 [e4] TU Wien (PLACE, aka uni, TU)
 [ep7] "Roleplayed learning together" (2026-06-28, frame: roleplay)
 ```

@@ -5,7 +5,7 @@
 **Scope:** Android app (`:app` + related modules), web-ui, catalog, iOS leftovers that still affect Android backups.  
 **Method:** code reading of delete/undo/backup/theme/motion/provider paths. Not a device QA pass.
 
-Julian: two pick-lists. **§2 Deez Einer** is the visual north star and mapping table. **§3 Prioritized backlog** is engineering severity (P0–P3). Suggested later Cursor split is in **§13**.
+Owner: two pick-lists. **§2 Deez Einer** is the visual north star and mapping table. **§3 Prioritized backlog** is engineering severity (P0–P3). Suggested later Cursor split is in **§13**.
 
 ---
 
@@ -24,7 +24,7 @@ Bing → Keyless and local-provider sync are largely landed on Android; leftover
 2. Assistant (and lorebook) undo: align 4s wipe with 6s toast; cancel cleanup on undo.
 3. Backup restore: do not `deleteRecursively` live dirs until DB/settings commit succeeds.
 
-**Do first if you want Deez’s canvas (visual):** tokens (U9, N4, D1, D3) → blur-off solid charcoal (U8, D4) → one destructive confirm pattern (U1, S7, S12, S17) → chat chrome sizes (D2). Ask Julian before changing default blur, confirm-vs-undo semantics, or true-black / accent.
+**Do first if you want Deez’s canvas (visual):** tokens (U9, N4, D1, D3) → blur-off solid charcoal (U8, D4) → one destructive confirm pattern (U1, S7, S12, S17) → chat chrome sizes (D2). Ask the owner before changing default blur, confirm-vs-undo semantics, or true-black / accent.
 
 **Already landed on this tip (do not re-fix):**
 
@@ -44,7 +44,7 @@ There is **no `.lcvault` format**. Portable backup is `LastChat_backup_*.zip` (f
 
 ## 2. Deez Einer design brief
 
-Source: Deez Einer (Julian’s designer). Visual north star for LastChat chrome. **Does not override engineering P0 data-loss work.** Still audit only — no app behavior changes in this branch.
+Source: Deez Einer (the product designer). Visual north star for LastChat chrome. **Does not override engineering P0 data-loss work.** Still audit only — no app behavior changes in this branch.
 
 ### North star
 
@@ -54,7 +54,7 @@ How the code sits against that today:
 
 | North-star line | Code reality |
 |---|---|
-| True-black canvas | Already forced. `withLastChatAmoledSurface(dark)` sets `background`/`surface` to `Color.Black`. `rememberAmoledDarkMode()` is a no-op `true`. **Do not “fix” this into tonal Material dark** without Julian (breaking true-black). |
+| True-black canvas | Already forced. `withLastChatAmoledSurface(dark)` sets `background`/`surface` to `Color.Black`. `rememberAmoledDarkMode()` is a no-op `true`. **Do not “fix” this into tonal Material dark** without the owner (breaking true-black). |
 | Floating charcoal surfaces | Dark `surfaceContainer*` on presets are charcoal (e.g. Sakura dark `surfaceContainer = #261D1E`). Blur-off still leaks translucent glass on some chrome (U8, D4) — that fights “solid charcoal floating layers.” |
 | Extreme optical rounding | `AppShapes` has 28/24/16 cards + inner optical helpers, but ~265 inline `RoundedCornerShape` and `LastChatComposerInputShape = 24.dp` vs `AppShapes.InputField = 20.dp` (U9, D3, U25). |
 | Tasteful blur when on | `Blur.kt` + Haze is the right centralizer (dark glass α 0.34 / light 0.28). Problem is blur **off**, not blur on. |
@@ -67,11 +67,11 @@ How the code sits against that today:
 ### Fix first (Deez)
 
 1. **Design tokens — single source of truth** (radius / space / surface / type / accent); audit one-offs.  
-   Tokens today: `AppShapes` + `buildLastChatTypography` in `LastChatDesignTokens.kt`. Missing: space, surface (charcoal floating layer + soft-edge), accent. One-offs: U9, N4, D1, D3, U25. **New accent → ask Julian.**
+   Tokens today: `AppShapes` + `buildLastChatTypography` in `LastChatDesignTokens.kt`. Missing: space, surface (charcoal floating layer + soft-edge), accent. One-offs: U9, N4, D1, D3, U25. **New accent → ask the owner.**
 2. **Surfaces when blur OFF** — solid charcoal floating layers with a soft edge; **same opacity rules as blur-on** for composer / chrome / sheets / dialogs.  
-   `blurredContainerColor` returns caller `fallback` unchanged when blur is off, so pre-alpha’d chrome stays glass (U8). Sheets/dialogs never go through that helper (D4). **Changing the default blur on/off → ask Julian.** Making blur-off *solid* is the brief, not a default change.
+   `blurredContainerColor` returns caller `fallback` unchanged when blur is off, so pre-alpha’d chrome stays glass (U8). Sheets/dialogs never go through that helper (D4). **Changing the default blur on/off → ask the owner.** Making blur-off *solid* is the brief, not a default change.
 3. **Destructive confirms — one pattern for irreversible actions.**  
-   Two patterns exist (AlertDialog vs swipe+undo toast). Chats are the dangerous outlier (S1/S2 plus no dialog). Mapping: U1, U2, U3, S7, S12, S17. **Switching “undo toast” → “always confirm” (or the reverse) is a semantics change → ask Julian.** Engineering still needs undo to actually restore files (S1/S3) whichever pattern he picks.
+   Two patterns exist (AlertDialog vs swipe+undo toast). Chats are the dangerous outlier (S1/S2 plus no dialog). Mapping: U1, U2, U3, S7, S12, S17. **Switching “undo toast” → “always confirm” (or the reverse) is a semantics change → ask the owner.** Engineering still needs undo to actually restore files (S1/S3) whichever pattern he picks.
 4. **Chat chrome consistency — menu / status / composer / + pill sizes.**  
    `LastChatMenuButton` default 48.dp; composer + pill 48.dp; composer send 56.dp; several `ChatPage` toolbar icons 44.dp; `topPillSize = 48.dp` hardcoded; `MinimalChatInput` also uses 40.dp. No `AppSize` token (D2).
 
@@ -83,7 +83,7 @@ Intro / empty states (U16, N6, S24). Settings density (U15, U17). Light motion p
 
 Model picker sheets (`ModelList` / picker `ModalBottomSheet`s). Capability badges (`ModelAbilityTag` WARNING/INFO tags). Bot marks (assistant model icon via `ChatMessageV2` `showModelIcon` — not a dedicated token). Do not start these in the first visual wave.
 
-### Ask Julian only
+### Ask the owner only
 
 | Topic | Why it is a product call | Not a product call (just implement) |
 |---|---|---|
@@ -123,8 +123,8 @@ Every audit ID → one Deez bucket. `—` means engineering/safety, not on his v
 | U13 | Overbouncy 0.34/0.4 springs | **Fix next** — light motion |
 | U14 | List `scaleIn(0.8)`; lateral settings slide with no fade | **Fix next** — light motion |
 | N5 | Overlay/onboarding long springs; ActivityPill hard cuts | **Fix next** — light motion |
-| U10 | Dark always forced OLED (matches true-black) | **Ask Julian** if breaking true-black; otherwise leave |
-| U11 | Assistant palettes custom HSL vs M3 / canvas | **Ask Julian** — accent / character vs true-black |
+| U10 | Dark always forced OLED (matches true-black) | **Ask the owner** if breaking true-black; otherwise leave |
+| U11 | Assistant palettes custom HSL vs M3 / canvas | **Ask the owner** — accent / character vs true-black |
 | U24 | Default “Generical” is a full RP character | **Later** (adjacent to bot marks / system chrome) |
 | S1 S2 S3 S4 S5 S6 | Delete/undo/restore data-loss cluster | **— engineering** (land before visual confirms on those surfaces) |
 | S8 S9 S10 S11 S13 S14 S15 S16 | Orphans, WAL, backup completeness, random model UUIDs | **— engineering** |
@@ -137,7 +137,7 @@ Every audit ID → one Deez bucket. `—` means engineering/safety, not on his v
 
 ## 3. Prioritized backlog (pick from this)
 
-IDs are stable for later tickets. Effort: **S** hours-scale, **M** a focused PR, **L** multi-file / architectural. **Deez** column is the §2 bucket (`Fix first` / `Fix next` / `Later` / `Ask Julian` / `—`).
+IDs are stable for later tickets. Effort: **S** hours-scale, **M** a focused PR, **L** multi-file / architectural. **Deez** column is the §2 bucket (`Fix first` / `Fix next` / `Later` / `Ask the owner` / `—`).
 
 ### P0 — data loss / restore corruption / silent undo failure
 
@@ -187,8 +187,8 @@ IDs are stable for later tickets. Effort: **S** hours-scale, **M** a focused PR,
 | U7 | Import | Chatbox/Cherry are merge-only; Chatbox drops providers with blank API key | S | — |
 | U8 | Theme | Blur-off still translucent on chat scroll FABs (`alpha = 0.65f` fallback) | S | Fix first |
 | U9 | Theme | `AppShapes.ListItem*` underused; ~265 inline `RoundedCornerShape` | M | Fix first |
-| U10 | Theme | Dark always forced OLED; `rememberAmoledDarkMode()` is a no-op `true` | S–M | Ask Julian |
-| U11 | Theme | Assistant palettes are custom HSL, not M3 tonal generation | M | Ask Julian |
+| U10 | Theme | Dark always forced OLED; `rememberAmoledDarkMode()` is a no-op `true` | S–M | Ask the owner |
+| U11 | Theme | Assistant palettes are custom HSL, not M3 tonal generation | M | Ask the owner |
 | U12 | Motion | Reduce-motion barely applied outside NavHost (~199 springs, ~6 policy consumers) | M | Fix next |
 | U13 | Motion | Overbouncy springs (0.34 / 0.4) vs AGENTS floor 0.5 / 0.6 | S–M | Fix next |
 | U14 | Motion | Chat list preview↔normal `scaleIn(0.8)`; lateral settings slides have no fade | S | Fix next |
@@ -429,17 +429,17 @@ Intentional for portability, but the zip is unencrypted. `addManagedFileEntries`
 
 **What’s solid:** `AppShapes` in `ui-core` (`LastChatDesignTokens`), Material You dynamic color (API 31+) + 6 presets, ~1583 `colorScheme` usages, `Blur.kt` + Haze for glass, web-ui `--lc-radius-*` for cards. Dark canvas is already true-black (Deez north star).
 
-**Deez Fix first on this section:** D1, D2, D3, D4, U8, U9, N4, U25. U10/U11 are Ask Julian (true-black / accent).
+**Deez Fix first on this section:** D1, D2, D3, D4, U8, U9, N4, U25. U10/U11 are Ask the owner (true-black / accent).
 
 **D1 — P2 — Token objects incomplete**  
 `LastChatDesignTokens.kt` is radius (`AppShapes` / `Shapes`) + type (`buildLastChatTypography`). There is no `AppSpacing`, no charcoal-surface recipe (fill + soft edge + when to use `surfaceContainer` vs glass), no accent object. `ExtendColors` exists and is almost unused. web-ui has `--lc-radius-*` but not a shared space/surface contract with Android.
 
-*Fix direction:* Add space / surface / accent tokens in `ui-core` next to `AppShapes`; migrate one-offs. **New accent values → ask Julian.**
+*Fix direction:* Add space / surface / accent tokens in `ui-core` next to `AppShapes`; migrate one-offs. **New accent values → ask the owner.**
 
 **D2 — P2 — Chat chrome sizes are not one token**  
 `LastChatMenuButton` default 48.dp. Composer + pill `Modifier.size(48.dp)`. Composer send `56.dp`. `ChatPage` toolbar icon buttons 44.dp. `topPillSize = 48.dp` local val. `MinimalChatInput` also uses 40.dp. Status/search field min height 56.dp. Deez wants menu / status / composer / + pill to share a size.
 
-*Fix direction:* One `AppSize` (or similar) for floating chrome pills; composer send can be the same size as + unless Julian wants send heavier.
+*Fix direction:* One `AppSize` (or similar) for floating chrome pills; composer send can be the same size as + unless the owner wants send heavier.
 
 **D3 — P2 — Composer radius vs `AppShapes.InputField`**  
 `LastChatComposerInputShape = RoundedCornerShape(24.dp)` with an in-file comment that 24 was user-confirmed. `AppShapes.InputField` is 20.dp. web-ui input/bubble is 24px (U25). Extreme rounding wants one number.
@@ -460,10 +460,10 @@ Intentional for portability, but the zip is unencrypted. `addManagedFileEntries`
 ~318 `AppShapes.` vs ~265 `RoundedCornerShape(` in `:app`. `ListItemFirst/Middle/Last` exist; mainly `SettingMcpPage` uses them. Same 24/10 grouped-list shape copied across provider/search/TTS/local-LLM/onboarding. Worst inline counts: `AssistantMemorySubPage`, `MinimalChatInput`, `ChatPage`, `InputPickerSheets`. `QuickAskShapes` (32dp) sits outside the token set.
 
 **U10 — P2 — Forced OLED (matches true-black; don’t silently revert)**  
-`ColorScheme.withLastChatAmoledSurface(dark)` always sets `background`/`surface` to `Color.Black`. `rememberAmoledDarkMode()` always returns `true` with a no-op setter. `SettingDisplayPage` still declares unused `amoledDarkMode`. `AssistantChatTheme` also forces `AMOLED_DARK_BACKGROUND`. **This already is Deez’s true-black canvas.** Wiring a real toggle that restores tonal dark **breaks true-black → ask Julian.** Cleanup of the dead setter/UI is fine if the canvas stays black.
+`ColorScheme.withLastChatAmoledSurface(dark)` always sets `background`/`surface` to `Color.Black`. `rememberAmoledDarkMode()` always returns `true` with a no-op setter. `SettingDisplayPage` still declares unused `amoledDarkMode`. `AssistantChatTheme` also forces `AMOLED_DARK_BACKGROUND`. **This already is Deez’s true-black canvas.** Wiring a real toggle that restores tonal dark **breaks true-black → ask the owner.** Cleanup of the dead setter/UI is fine if the canvas stays black.
 
 **U11 — P2 — Character themes vs Material You**  
-`AssistantChatTheme.buildAssistantColorScheme` HSL-lerps a Palette seed onto primary/secondary/tertiary only; dark is still blacked out. Dynamic system scheme can be the base, then overwritten. **Tinting the canvas or adding a new accent → ask Julian.**
+`AssistantChatTheme.buildAssistantColorScheme` HSL-lerps a Palette seed onto primary/secondary/tertiary only; dark is still blacked out. Dynamic system scheme can be the base, then overwritten. **Tinting the canvas or adding a new accent → ask the owner.**
 
 **U25 / N4 — P2–P3**  
 Android input/bubble 20dp vs web 24px. ~329 `Color(0x…)` — mostly presets + `CodeColor.kt`; chat has decorative/status literals. No `AppSpacing`. `ExtendColors` ~11 call sites vs ~1583 `colorScheme`.
@@ -475,7 +475,7 @@ Model picker sheets: `ModelList` + `ModalBottomSheet` pickers. Capability badges
 
 ## 8. Confirm dialogs & destructive actions
 
-Deez: **one pattern for irreversible actions** (Fix first). Today there are two. Picking confirm-always vs undo-always (or hybrid) is **Ask Julian**. Do not invent a third pattern.
+Deez: **one pattern for irreversible actions** (Fix first). Today there are two. Picking confirm-always vs undo-always (or hybrid) is **Ask the owner**. Do not invent a third pattern.
 
 Two patterns dominate:
 
@@ -487,7 +487,7 @@ Two patterns dominate:
 **U1 — P2 — Copy inconsistency**  
 Provider confirm uses `R.string.delete`; TTS/search use `R.string.confirm` with title `confirm_delete`; intro uses `delete`; user regen uses `regenerate`; web-ui uses `window.confirm`.
 
-*Fix direction:* After Julian picks semantics: one destructive pattern, title stating the object + impact, confirm labeled **Delete**, cancel labeled **Cancel**. Keep action-named confirms for regen. If undo stays, it must restore files (S1/S3/S5) — Deez’s pattern cannot ship on a fake undo.
+*Fix direction:* After the owner picks semantics: one destructive pattern, title stating the object + impact, confirm labeled **Delete**, cancel labeled **Cancel**. Keep action-named confirms for regen. If undo stays, it must restore files (S1/S3/S5) — Deez’s pattern cannot ship on a fake undo.
 
 | Action | Confirm? |
 |---|---|
@@ -626,23 +626,23 @@ Searched, **not** filed as live bugs: Room 1→39 migrations look registered; se
 
 ## 13. Recommended Cursor concurrency (later — do not start now)
 
-Do **not** spawn a “fix everything” wave. Suggested split after Julian picks. Deez visual work is the **UI tokens** agent; motion stays optional/next.
+Do **not** spawn a “fix everything” wave. Suggested split after the owner picks. Deez visual work is the **UI tokens** agent; motion stays optional/next.
 
 | Agent | Owns | First tickets | Notes |
 |---|---|---|---|
 | **Safety** (1) | Delete/undo/backup/secrets/web files | S1, S2, S3, S4, S5, S9, S14, S19, S20 | Highest leverage. Land before visual “one destructive pattern” on those surfaces. |
-| **Deez / UI tokens** (1) | Tokens, blur-off charcoal, confirms, chat chrome sizes | D1, D2, D3, D4, U8, U9, N4, U1, S7, S12, S17 | Deez **Fix first**. Do not retint the canvas or add accents (U10/U11) without Julian. Can run parallel to Safety if it does not touch `ChatService` delete. |
+| **Deez / UI tokens** (1) | Tokens, blur-off charcoal, confirms, chat chrome sizes | D1, D2, D3, D4, U8, U9, N4, U1, S7, S12, S17 | Deez **Fix first**. Do not retint the canvas or add accents (U10/U11) without the owner. Can run parallel to Safety if it does not touch `ChatService` delete. |
 | **Motion** (1, optional, Deez **Fix next**) | Policy helpers, springs, list/lateral | U12, U13, U14, N5 | Light pass — physics + ease, never a parade. Skip until Fix first visual lands if slots are scarce. |
 
 **2–3 agents is the right width.** A fourth (web-ui parity: S24, U20, confirms) only after Safety’s delete contract exists, or it will reimplement a second delete path.
 
 Leave iOS Bing (S21), Generical chrome (U24), model picker / badges / bot marks (D5–D7) as later or explicit product calls.
 
-**Ask Julian before the visual agent:** default blur change, destructive confirm-vs-undo semantics, new accent / breaking true-black.
+**Ask the owner before the visual agent:** default blur change, destructive confirm-vs-undo semantics, new accent / breaking true-black.
 
 ---
 
-## 14. Suggested first sprint (if Julian wants a default)
+## 14. Suggested first sprint (if the owner wants a default)
 
 Two tracks. Do not mix “make undo real” with “retint the canvas.”
 
@@ -654,9 +654,9 @@ Two tracks. Do not mix “make undo real” with “retint the canvas.”
 
 **Deez Fix first (visual), after or parallel if it doesn’t touch `ChatService`:**
 
-4. **D1 + U9 + N4 + D3** — tokens (radius/space/surface/type; accent only if Julian says).  
+4. **D1 + U9 + N4 + D3** — tokens (radius/space/surface/type; accent only if the owner says).  
 5. **U8 + D4** — blur-off = solid charcoal floating layers, same helper for composer/chrome/sheets/dialogs.  
-6. **U1 + S12 + D2** — one irreversible pattern (semantics from Julian) + chrome pill sizes.
+6. **U1 + S12 + D2** — one irreversible pattern (semantics from the owner) + chrome pill sizes.
 
 Deez **Fix next** after that: U16/N6 (intro/empty), U15/U17 (settings density), U12–U14 (light motion). **Later:** D5–D7.
 
@@ -687,4 +687,4 @@ Deez **Fix next** after that: U16/N6 (intro/empty), U15/U17 (settings density), 
 
 ## Appendix B. Confirm-pattern cheat sheet
 
-Use this when implementing U1 / Deez Fix first #3: **one pattern**. Candidate (if Julian agrees): dialog for irreversible / cascade, undo only when restore is complete (including files). Today several surfaces promise undo they cannot keep. **Do not switch confirm-vs-undo without Julian.**
+Use this when implementing U1 / Deez Fix first #3: **one pattern**. Candidate (if the owner agrees): dialog for irreversible / cascade, undo only when restore is complete (including files). Today several surfaces promise undo they cannot keep. **Do not switch confirm-vs-undo without the owner.**

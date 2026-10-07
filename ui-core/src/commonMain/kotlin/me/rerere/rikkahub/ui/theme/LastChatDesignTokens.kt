@@ -43,7 +43,7 @@ object AppSize {
  * floating chrome/sheets/dialogs sit on [fill]. Glass alpha is applied only when blur
  * is actually running (see [resolve]).
  *
- * No accent object — new accent values need Julian.
+ * No accent object — new accent values need owner sign-off.
  */
 object AppSurface {
     const val GlassAlphaDark = 0.34f

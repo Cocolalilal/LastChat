@@ -239,13 +239,15 @@ class AssistantExportImportTest {
 
     @Test
     fun testParseRealDownloadedCards() {
+        // Optional local fixtures: only parsed when present in ~/Downloads.
+        val downloads = java.io.File(System.getProperty("user.home") ?: "", "Downloads")
         val files = listOf(
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\NeoHex900 -- Yuko Akiyama [Pepper0].card.png"),
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\Lisatago -- Harumi_ Your Tsundare Sister Nurse.card.png"),
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\PapuPapu0 -- Tina - Your Crush ❤️.card.png"),
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\SzainX -- Sonya - Mommy's Love School.card.png"),
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\MWhittz -- Tilly.card.png"),
-            java.io.File("C:\\Users\\Julian Gander\\Downloads\\main_hoi-60e905767a77_spec_v2.png")
+            java.io.File(downloads, "NeoHex900 -- Yuko Akiyama [Pepper0].card.png"),
+            java.io.File(downloads, "Lisatago -- Harumi_ Your Tsundare Sister Nurse.card.png"),
+            java.io.File(downloads, "PapuPapu0 -- Tina - Your Crush ❤️.card.png"),
+            java.io.File(downloads, "SzainX -- Sonya - Mommy's Love School.card.png"),
+            java.io.File(downloads, "MWhittz -- Tilly.card.png"),
+            java.io.File(downloads, "main_hoi-60e905767a77_spec_v2.png")
         )
 
         for (file in files) {
