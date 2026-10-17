@@ -316,6 +316,7 @@ internal fun Settings.normalizeMemorySettings(): Settings = copy(
             assistant.copy(
                 ragLimit = assistant.ragLimit.coerceAtLeast(1),
                 ragSimilarityThreshold = finiteThreshold,
+                memorySummaryTokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000),
             )
         }
     },
@@ -457,7 +458,8 @@ internal fun Settings.migrateGenericalDefaultAvatar(): Settings {
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 
-fun Settings.findModelById(uuid: Uuid): Model? {
+fun Settings.findModelById(uuid: Uuid?): Model? {
+    if (uuid == null) return null
     return providers.findModelById(uuid)
 }
 
@@ -526,6 +528,11 @@ fun Settings.getCurrentAssistant(): Assistant {
 
 fun Settings.getAssistantById(id: Uuid): Assistant? {
     return assistants.find { it.id == id }
+}
+
+fun Settings.getAssistantById(id: String): Assistant? {
+    val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return null
+    return getAssistantById(uuid)
 }
 
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {

@@ -901,6 +901,14 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.MemorySummary> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemorySummary>()
+                        me.rerere.rikkahub.ui.pages.assistant.detail.MemorySummaryPage(
+                            assistantId = route.assistantId,
+                            navBackStack = navBackStack,
+                        )
+                    }
+
                     composable<Screen.Menu> {
                         MenuPage()
                     }
@@ -1371,6 +1379,9 @@ sealed interface Screen {
         val initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
         val scrollToMemoryId: Int? = null  // Memory ID to scroll to
     ) : Screen
+
+    @Serializable
+    data class MemorySummary(val assistantId: String) : Screen
 
     @Serializable
     data object Menu : Screen

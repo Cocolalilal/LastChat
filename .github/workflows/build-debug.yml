@@ -1,0 +1,106 @@
+name: Build Debug APK
+
+on:
+  push:
+    branches:
+      - feat/memory-summary
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install web-ui dependencies
+        working-directory: web-ui
+        run: |
+          npm ci || (bun install && pnpm install)
+
+      - name: Mock google-services.json
+        run: |
+          mkdir -p app
+          cat << 'EOF' > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "1234567890",
+              "project_id": "lastchat-mock",
+              "storage_bucket": "lastchat-mock.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:1234567890:android:abcdef1234567890",
+                  "android_client_info": {
+                    "package_name": "lastchat.rikkafork.cocolal"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "mock_api_key"
+                  }
+                ],
+                "services": {}
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:1234567890:android:abcdef1234567891",
+                  "android_client_info": {
+                    "package_name": "lastchat.rikkafork.cocolal.dev"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "mock_api_key"
+                  }
+                ],
+                "services": {}
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+
+      - name: Mock debug.keystore
+        run: |
+          mkdir -p app
+          cat << 'EOF' | base64 -d > app/debug.keystore
+          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
+          EOF
+
+      - name: Build Debug APK
+        run: |
+          free -h
+          chmod +x gradlew
+          ./gradlew :app:assembleDevDebug -Plastchat.abi.splits=true --no-parallel --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: lastchat-dev-debug-arm64-v8a
+          path: app/build/outputs/apk/dev/debug/*arm64-v8a*.apk
+          retention-days: 7

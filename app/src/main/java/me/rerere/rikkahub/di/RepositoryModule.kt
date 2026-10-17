@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import android.content.Context
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.ai.MemorySearchService
+import me.rerere.rikkahub.data.ai.MemorySummaryService
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -50,6 +51,21 @@ val repositoryModule = module {
 
     single {
         MemorySearchService(get(), get(), get(), get())
+    }
+
+    single {
+        val memoryRepo = get<MemoryRepository>()
+        val summaryService = MemorySummaryService(
+            settingsStore = get(),
+            memoryRepository = memoryRepo,
+            memorySummaryDao = get(),
+            providerManager = get(),
+            secretKeyManager = get(),
+        )
+        memoryRepo.onMemoryChange = { assistantId, changeType, content ->
+            summaryService.onMemoryChanged(assistantId, changeType, content)
+        }
+        summaryService
     }
 
     single {
