@@ -49,7 +49,8 @@ class LiteRtCatalog(private val context: Context) {
         val fromCache = runCatching {
             cacheFile.takeIf { it.exists() }?.readText()?.let { json.decodeFromString<LocalModelCatalog>(it) }
         }.getOrNull()
-        val result = fromCache ?: loadBundled()
+        // Older cached snapshots must not hide models added by an app update, including offline.
+        val result = mergeCachedLocalCatalog(loadBundled(), fromCache)
         cached = result
         result
     }
@@ -137,4 +138,16 @@ class LiteRtCatalog(private val context: Context) {
         const val ALLOWLIST_URL =
             "https://raw.githubusercontent.com/google-ai-edge/gallery/main/model_allowlists/1_0_19.json"
     }
+}
+
+internal fun mergeCachedLocalCatalog(
+    bundled: LocalModelCatalog,
+    cached: LocalModelCatalog?,
+): LocalModelCatalog {
+    val cachedById = cached?.models.orEmpty().associateBy { it.id }
+    return bundled.copy(models = bundled.models.map { meta ->
+        cachedById[meta.id]?.takeIf {
+            it.hfRepo == meta.hfRepo && it.modelFile == meta.modelFile && it.kind == meta.kind
+        } ?: meta
+    })
 }

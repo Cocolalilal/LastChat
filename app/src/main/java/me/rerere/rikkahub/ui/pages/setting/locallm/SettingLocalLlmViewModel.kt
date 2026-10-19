@@ -94,11 +94,10 @@ class SettingLocalLlmViewModel(
     ) { installed, cat, downloads, runtimeQueue, settings ->
         val (runtimeState, queue) = runtimeQueue
         val installedIds = installed.map { it.id }.toSet()
-        // Hide on-device embedding models where the device ABI can't run the RAG native libraries.
-        val embeddingSupported = embedder.isSupported
+        // Each embedding runtime ships its own set of native ABIs.
         val downloadable = cat.models
             .filter { it.id !in installedIds }
-            .filter { embeddingSupported || it.kind != LocalModelKind.EMBEDDING }
+            .filter { it.kind != LocalModelKind.EMBEDDING || embedder.isSupported(it) }
         val updates = installed.filter { inst ->
             cat.models.firstOrNull { it.id == inst.id }?.let { it.commitHash != inst.commitHash } == true
         }.map { it.id }.toSet()

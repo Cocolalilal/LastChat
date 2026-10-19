@@ -3,6 +3,23 @@
   "allowlist_version": "1_0_19",
   "models": [
     {
+      "id": "EmbeddingGemma-2-Text-270M",
+      "name": "EmbeddingGemma 2 Text 270M",
+      "description": "Google on-device text embeddings for offline memory and search. 768-dimensional vectors with an 8K-token input window.",
+      "kind": "embedding",
+      "hfRepo": "litert-community/embeddinggemma-2-text-270m-litert-lm",
+      "modelFile": "embeddinggemma-2-text-270m.litertlm",
+      "commitHash": "9be6e8b90982095dc05c2bd162e4b954ee4dbac7",
+      "sizeInBytes": 164626432,
+      "minDeviceMemoryInGb": 4,
+      "embeddingDimension": 768,
+      "defaultConfig": {
+        "maxContextLength": 8192,
+        "accelerators": ["cpu", "gpu"]
+      },
+      "requiresLicense": false
+    },
+    {
       "id": "EmbeddingGemma-300M",
       "name": "EmbeddingGemma 300M",
       "description": "Google on-device text embedding model (768-dim) for semantic memory and RAG offline.",

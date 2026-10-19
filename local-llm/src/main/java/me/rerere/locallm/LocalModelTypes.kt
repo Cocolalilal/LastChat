@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 /**
  * What kind of on-device model this is. [LLM] models run text generation through the LiteRT-LM
  * [me.rerere.locallm.LiteRtRuntime] engine; [EMBEDDING] models produce text embeddings through the
- * AI Edge RAG [me.rerere.locallm.LiteRtEmbedder] (a separate runtime — the generation engine has no
- * embedding API).
+ * [me.rerere.locallm.LiteRtEmbedder], using LiteRT-LM's embedding engine or the legacy AI Edge RAG
+ * runtime depending on the model file format.
  */
 @Serializable
 enum class LocalModelKind {
@@ -101,12 +101,11 @@ data class LocalModelMetadata(
     val kind: LocalModelKind = LocalModelKind.LLM,
     /** HuggingFace repo, e.g. "litert-community/Qwen2.5-1.5B-Instruct". */
     val hfRepo: String,
-    /** The .litertlm (LLM) or .tflite (embedding) file name inside the repo. */
+    /** The .litertlm bundle (LLM or embedding), or legacy .tflite embedding file inside the repo. */
     val modelFile: String,
     /**
-     * For [LocalModelKind.EMBEDDING] models: the SentencePiece tokenizer file name in the same repo
-     * revision (downloaded alongside [modelFile]). Null for LLMs, whose tokenizer is bundled in the
-     * .litertlm.
+     * SentencePiece tokenizer for legacy .tflite embedding models, downloaded alongside [modelFile].
+     * Null for .litertlm bundles, which include their tokenizer (LLM and embedding models).
      */
     val tokenizerFile: String? = null,
     /** HuggingFace commit hash pinning the exact file revision (also drives update detection). */
@@ -154,9 +153,9 @@ data class InstalledLocalModel(
     val id: String,
     val displayName: String,
     val kind: LocalModelKind = LocalModelKind.LLM,
-    /** Absolute path of the .litertlm (LLM) or .tflite (embedding) file on disk. */
+    /** Absolute path of the .litertlm bundle or legacy .tflite embedding file on disk. */
     val filePath: String,
-    /** Absolute path of the SentencePiece tokenizer on disk (embedding models only). */
+    /** Absolute path of the separate SentencePiece tokenizer (legacy .tflite embeddings only). */
     val tokenizerPath: String? = null,
     /** Commit hash of the installed file — compared against the catalog to detect updates. */
     val commitHash: String,

@@ -55,7 +55,7 @@ class ModelInstall(
         meta: LocalModelMetadata,
         onProgress: (DownloadProgress) -> Unit,
     ): InstalledLocalModel {
-        // Embedding models ship a small SentencePiece tokenizer alongside the .tflite; fetch it first
+        // Legacy embedding models ship a SentencePiece tokenizer alongside the .tflite; fetch it first
         // (it's tiny, so we don't fold it into the reported progress of the large model file).
         val tokenizerPath = meta.tokenizerDownloadUrl?.let { url ->
             val file = modelFile(meta.tokenizerFile!!)
