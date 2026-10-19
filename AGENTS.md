@@ -2,6 +2,11 @@
 
 Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this repo.
 
+## Workspace branch and commits
+
+- Always work on the `lastchat_dev` branch in this workspace. Switch to it before making changes.
+- Always commit your completed changes to `lastchat_dev` before finishing a task.
+
 ## Project
 
 **LastChat** — Android AI assistant app, fork of RikkaHub. Kotlin + Jetpack Compose + Koin + Room. Single-activity architecture with type-safe Compose Navigation. Packages an embedded Ktor web server that serves a React Router 7 SPA (`web-ui/`) for browser/remote access.

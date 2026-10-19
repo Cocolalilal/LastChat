@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import me.rerere.ai.core.MessageRole
-import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
@@ -70,7 +69,7 @@ class LiteRtProvider(
                 val sendable = preparedMessages.sendable
                 val reply = conversation.sendMessage(toSendableMessage(effective, sendable), emptyMap())
                 val (reasoning, text) = splitThink(reply.textString())
-                val benchmark = conversation.getBenchmarkInfo()
+                val usage = readLiteRtTokenUsage { conversation.getBenchmarkInfo() }
                 val parts = buildList {
                     if (reasoning.isNotBlank()) add(UIMessagePart.Reasoning(reasoning = reasoning))
                     if (text.isNotBlank()) add(UIMessagePart.Text(text))
@@ -87,12 +86,7 @@ class LiteRtProvider(
                             finishReason = if (reply.toolCalls.isNotEmpty()) "tool_calls" else "stop",
                         )
                     ),
-                    usage = TokenUsage(
-                        promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
-                        completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
-                        totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
-                            .coerceAtLeast(0),
-                    ),
+                    usage = usage,
                 )
             } catch (t: Throwable) {
                 if (t is CancellationException || !currentCoroutineContext().isActive) {
@@ -175,7 +169,7 @@ class LiteRtProvider(
                         }
 
                     val toolParts = lastToolCalls.toUiToolCalls(gson)
-                    val benchmark = conversation.getBenchmarkInfo()
+                    val usage = readLiteRtTokenUsage { conversation.getBenchmarkInfo() }
                     emit(
                         MessageChunk(
                             id = modelId,
@@ -192,12 +186,7 @@ class LiteRtProvider(
                                     finishReason = if (toolParts.isNotEmpty()) "tool_calls" else "stop",
                                 )
                             ),
-                            usage = TokenUsage(
-                                promptTokens = benchmark.lastPrefillTokenCount.coerceAtLeast(0),
-                                completionTokens = benchmark.lastDecodeTokenCount.coerceAtLeast(0),
-                                totalTokens = (benchmark.lastPrefillTokenCount + benchmark.lastDecodeTokenCount)
-                                    .coerceAtLeast(0),
-                            ),
+                            usage = usage,
                         )
                     )
                 } catch (t: Throwable) {

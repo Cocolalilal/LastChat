@@ -100,6 +100,7 @@ class LiteRtRuntime(
         result
     }
 
+    @OptIn(ExperimentalApi::class)
     private fun loadEngine(
         model: InstalledLocalModel,
         backends: ResolvedBackends,
@@ -132,7 +133,8 @@ class LiteRtRuntime(
         )
         if (backends.usingGpu) armGpuCrashMarker(model.id)
         return try {
-            @OptIn(ExperimentalApi::class)
+            // LiteRT-LM snapshots this flag when Engine is created; token usage needs it enabled.
+            ExperimentalFlags.enableBenchmark = true
             ExperimentalFlags.enableSpeculativeDecoding = false
 
             Engine(config).also { engine ->
