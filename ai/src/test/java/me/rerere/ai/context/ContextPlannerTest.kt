@@ -187,12 +187,12 @@ class ContextPlannerTest {
         )
 
         assertNotNull(slice)
-        assertEquals(8, slice!!.groupsSummarized)
-        assertEquals(turnGroups[7].endIndex, slice.lastIndexToSummarize)
+        assertEquals(6, slice!!.groupsSummarized)
+        assertEquals(turnGroups[5].endIndex, slice.lastIndexToSummarize)
     }
 
     @Test
-    fun calculateMilestoneSlice_compactArchetype_smallHistory_retainsTwoTurns() {
+    fun calculateMilestoneSlice_compactArchetype_smallHistory_retainsFourTurns() {
         val messages = buildList {
             repeat(5) { i ->
                 add(UIMessage.user("Prompt $i"))
@@ -209,13 +209,13 @@ class ContextPlannerTest {
         )
 
         assertNotNull(slice)
-        // 5 unsummarized groups: retains 2 at tail, summarizes 3
-        assertEquals(3, slice!!.groupsSummarized)
-        assertEquals(turnGroups[2].endIndex, slice.lastIndexToSummarize)
+        // Preserve four recent turns when a manual refresh has no pressure target.
+        assertEquals(1, slice!!.groupsSummarized)
+        assertEquals(turnGroups[0].endIndex, slice.lastIndexToSummarize)
     }
 
     @Test
-    fun calculateMilestoneSlice_criticalPressure_summarizesAggressively() {
+    fun calculateMilestoneSlice_criticalTierAloneDoesNotEraseRecentDialogue() {
         val messages = buildList {
             repeat(15) { i ->
                 add(UIMessage.user("Prompt $i"))
@@ -232,9 +232,9 @@ class ContextPlannerTest {
         )
 
         assertNotNull(slice)
-        // Under CRITICAL pressure, retains only 1 active tail group, summarizes 14
-        assertEquals(14, slice!!.groupsSummarized)
-        assertEquals(turnGroups[13].endIndex, slice.lastIndexToSummarize)
+        // A tier alone is insufficient to justify reducing the recent tail.
+        assertEquals(8, slice!!.groupsSummarized)
+        assertEquals(turnGroups[7].endIndex, slice.lastIndexToSummarize)
     }
 
     @Test
@@ -321,4 +321,66 @@ class ContextPlannerTest {
         // Must always keep at least 1 tail group (maxGroups = 12 - 1 = 11)
         assertTrue(sliceWithTarget.groupsSummarized <= 11)
     }
+    @Test
+    fun largeWindowDoesNotSummarizeJustBecauseTwentyTurnsPassed() {
+        val model = Model(modelId = "large", contextWindowTokens = 128_000)
+        val messages = (0 until 24).flatMap {
+            listOf(UIMessage.user("User requirement $it. ".repeat(40)), UIMessage.assistant("Acknowledged."))
+        }
+        val tokens = ContextTokenEstimator.messagesTokens(messages, model)
+        assertTrue(tokens > ContextTurnEstimator.minimumCooldownTokens(ContextScaleArchetype.VAST))
+        assertFalse(ContextPlanner.shouldTriggerSummarization(
+            messages, model, tokens, 24, ContextPlanner.plan(messages, model),
+        ))
+    }
+
+    @Test
+    fun outputReserveIsNotSubtractedTwice() {
+        val model = Model(modelId = "compact", contextWindowTokens = 32_000)
+        val usable = smartInputBudget(model, null)!!
+        val plan = ContextPlanner.plan(emptyList(), model, usable, systemPromptTokens = 1_000)
+        assertEquals(usable - 1_000, plan.discretionaryTokens)
+    }
+
+    @Test
+    fun budgetedSliceSummarizesOnlyTheNecessaryOldPrefix() {
+        val model = Model(modelId = "large", contextWindowTokens = 128_000)
+        val messages = (0 until 22).flatMap {
+            listOf(UIMessage.user("Question $it"), UIMessage.assistant("Answer $it"))
+        }
+        val groups = messages.toTurnGroups()
+        val tailTokens = ContextTokenEstimator.messagesTokens(messages.drop(4), model)
+        val slice = ContextPlanner.calculateMilestoneSlice(
+            groups, 0, ContextScaleArchetype.VAST, ContextPressureTier.HIGH,
+            messages, model, tailTokens,
+        )!!
+        assertEquals(2, slice.groupsSummarized)
+        assertEquals(groups[1].endIndex, slice.lastIndexToSummarize)
+        assertNull(ContextPlanner.calculateMilestoneSlice(
+            groups, 0, ContextScaleArchetype.VAST, ContextPressureTier.NORMAL,
+            messages, model, ContextTokenEstimator.messagesTokens(messages, model),
+        ))
+    }
+
+    @Test
+    fun budgetedSliceNeverSplitsToolExchangeOrCoversUnresolvedCalls() {
+        val model = Model(modelId = "test", contextWindowTokens = 32_000)
+        val messages = listOf(
+            UIMessage.user("Do the work"),
+            UIMessage(role = MessageRole.ASSISTANT, parts = listOf(
+                UIMessagePart.ToolCall("c1", "run_command", "{}"),
+            )),
+            UIMessage.user("Next task"),
+            UIMessage.assistant("Ready"),
+        )
+        assertNull(ContextPlanner.calculateMilestoneSlice(
+            messages.toTurnGroups(), 0, ContextScaleArchetype.COMPACT, ContextPressureTier.CRITICAL,
+            messages, model, 1,
+        ))
+        assertNull(ContextPlanner.calculateMilestoneSlice(
+            messages.toTurnGroups(), 1, ContextScaleArchetype.COMPACT, ContextPressureTier.CRITICAL,
+            messages, model, 1,
+        ))
+    }
+
 }

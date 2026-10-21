@@ -60,7 +60,8 @@ object ContextPlanner {
             ?: smartInputBudget(model, null)
             ?: capacity
         val reservedOutput = smartOutputTokenBudget(model, null) ?: 0
-        val fixedOverhead = systemPromptTokens + toolDefinitionTokens + reservedOutput
+        // usableInput already excludes the response reserve and safety margin.
+        val fixedOverhead = systemPromptTokens + toolDefinitionTokens
         val discretionary = (usableInput - fixedOverhead).coerceAtLeast(0)
 
         val rawMessageTokens = ContextTokenEstimator.messagesTokens(messages, model)
@@ -69,7 +70,7 @@ object ContextPlanner {
 
         val protectedTurns = when (archetype) {
             ContextScaleArchetype.MICRO -> if (pressure == ContextPressureTier.CRITICAL) 1 else 2
-            ContextScaleArchetype.COMPACT -> if (pressure >= ContextPressureTier.HIGH) 2 else 4
+            ContextScaleArchetype.COMPACT -> 4
             ContextScaleArchetype.VAST -> 6
         }
 
@@ -104,11 +105,11 @@ object ContextPlanner {
         }
 
         val gammaClearance = when (archetype) {
-            ContextScaleArchetype.MICRO -> 0.45f
-            ContextScaleArchetype.COMPACT -> 0.50f
-            ContextScaleArchetype.VAST -> 0.60f
+            ContextScaleArchetype.MICRO -> 0.60f
+            ContextScaleArchetype.COMPACT -> 0.65f
+            ContextScaleArchetype.VAST -> 0.70f
         }
-        val lowWatermarkTarget = fixedOverhead + (discretionary * gammaClearance).toInt()
+        val lowWatermarkTarget = (discretionary * gammaClearance).toInt()
 
         val discretionaryUsed = (totalEstimatedUsed - (systemPromptTokens + toolDefinitionTokens)).coerceAtLeast(0)
         val discretionaryFraction = if (discretionary > 0) {
@@ -186,31 +187,13 @@ object ContextPlanner {
             return false
         }
 
-        // For VAST models, trigger periodic milestone preservation after sufficient dialogue
-        if (plan.archetype == ContextScaleArchetype.VAST && unsummarizedTurnCount >= 20) {
-            return true
-        }
-
         return plan.shouldTriggerAutoSummary
     }
 
     /**
-     * Computes the atomic TurnGroup milestone slicing boundary for conversation summarization.
-     *
-     * First picks a heuristic baseline (turn-count-based chunk per archetype), then performs a
-     * token-budget expansion loop: absorbs additional TurnGroups from the tail-boundary inward
-     * until the tokens remaining in the unsummarized tail fall at or below [targetRemainingTokens].
-     *
-     * This prevents the "too-conservative" compaction bug where a fixed chunk summarizes only
-     * 130k → 72k when the low watermark would require reaching ~44k.
-     *
-     * Always preserves at least 1 TurnGroup untouched at the tail (protected "live" dialogue).
-     *
-     * @param messages      The full flat message list (needed for token estimation of tail slices).
-     * @param model         The active model (for per-model token estimation).
-     * @param targetRemainingTokens  The low-watermark token budget that the unsummarized tail
-     *                      should stay at or below. Pass [ContextPlan.lowWatermarkTargetTokens].
-     *                      Pass 0 or negative to skip expansion (pure heuristic mode).
+     * Summarizes the smallest old prefix needed to reach the tail budget. A manual refresh
+     * without a token target uses a bounded chunk. All boundaries remain atomic; only a tail
+     * that cannot otherwise fit may reduce the recent-turn protection, down to one live turn.
      */
     fun calculateMilestoneSlice(
         turnGroups: List<TurnGroup>,
@@ -221,62 +204,36 @@ object ContextPlanner {
         model: Model? = null,
         targetRemainingTokens: Int = 0,
     ): MilestoneSlicePlan? {
-        val unsummarizedGroups = turnGroups.filter { it.startIndex >= startIndex }
-        if (unsummarizedGroups.size <= 1) return null
-
-        val milestoneChunkSize = when (archetype) {
-            ContextScaleArchetype.MICRO -> 4
-            ContextScaleArchetype.COMPACT -> 8
-            ContextScaleArchetype.VAST -> 16
+        val groups = turnGroups.filter { it.startIndex >= startIndex }
+        if (groups.size <= 1 || groups.first().startIndex != startIndex) return null
+        val protectedTurns = when (archetype) {
+            ContextScaleArchetype.MICRO -> 2
+            ContextScaleArchetype.COMPACT -> 4
+            ContextScaleArchetype.VAST -> 6
+        }.coerceAtMost(groups.size - 1)
+        val maxGroups = groups.size - 1
+        val groupsToSummarize = if (targetRemainingTokens > 0 && model != null && messages.isNotEmpty()) {
+            // Count each group once rather than recounting the full tail for every boundary.
+            var remaining = ContextTokenEstimator.messagesTokens(groups.flatMap { it.messages }, model)
+            var count = 0
+            while (remaining > targetRemainingTokens && count < maxGroups) {
+                remaining -= groups[count].messages.sumOf { ContextTokenEstimator.messageTokens(it, model) }
+                count++
+            }
+            count
+        } else {
+            val chunkSize = when (archetype) {
+                ContextScaleArchetype.MICRO -> 4
+                ContextScaleArchetype.COMPACT -> 8
+                ContextScaleArchetype.VAST -> 16
+            }
+            minOf(chunkSize, groups.size - protectedTurns)
         }
-
-        // ─── Heuristic baseline (turn-count) ─────────────────────────────────────
-        val baseGroupsToSummarize = when {
-            pressureTier >= ContextPressureTier.HIGH -> {
-                val tailToKeep = when {
-                    pressureTier == ContextPressureTier.CRITICAL -> 1
-                    archetype == ContextScaleArchetype.MICRO -> 2
-                    archetype == ContextScaleArchetype.COMPACT -> 4
-                    else -> 6
-                }.coerceAtMost(unsummarizedGroups.size - 1)
-                (unsummarizedGroups.size - tailToKeep).coerceIn(1, unsummarizedGroups.size - 1)
-            }
-            unsummarizedGroups.size >= milestoneChunkSize + 2 -> {
-                milestoneChunkSize
-            }
-            else -> {
-                val tailToKeep = 2.coerceAtMost(unsummarizedGroups.size - 1)
-                (unsummarizedGroups.size - tailToKeep).coerceIn(1, unsummarizedGroups.size - 1)
-            }
-        }
-
-        // ─── Token-budget expansion pass ──────────────────────────────────────────
-        // After the heuristic, expand the slice further if the unsummarized tail would still
-        // exceed the target remaining budget. We always keep at least 1 tail group live.
-        var groupsToSummarize = baseGroupsToSummarize
-        val maxGroups = unsummarizedGroups.size - 1  // must keep ≥1 tail group
-
-        if (targetRemainingTokens > 0 && model != null && messages.isNotEmpty()) {
-            // Fast estimate of current tail tokens before any expansion
-            var tailStartIdx = unsummarizedGroups[groupsToSummarize].startIndex
-            var tailTokens = ContextTokenEstimator.messagesTokens(
-                messages.subList(tailStartIdx, messages.size), model
-            )
-            // Expand one group at a time until tail is within budget or no more to take
-            while (tailTokens > targetRemainingTokens && groupsToSummarize < maxGroups) {
-                groupsToSummarize++
-                tailStartIdx = unsummarizedGroups[groupsToSummarize].startIndex
-                tailTokens = ContextTokenEstimator.messagesTokens(
-                    messages.subList(tailStartIdx, messages.size), model
-                )
-            }
-        }
-
-        val targetGroup = unsummarizedGroups[groupsToSummarize - 1]
-        return MilestoneSlicePlan(
-            startIndex = startIndex,
-            lastIndexToSummarize = targetGroup.endIndex,
-            groupsSummarized = groupsToSummarize,
-        )
+        if (groupsToSummarize == 0) return null
+        // Never claim coverage of an unfinished tool exchange.
+        val safeCount = groups.take(groupsToSummarize).indexOfFirst { it.hasUnresolvedToolCalls }
+            .takeIf { it >= 0 } ?: groupsToSummarize
+        if (safeCount == 0) return null
+        return MilestoneSlicePlan(startIndex, groups[safeCount - 1].endIndex, safeCount)
     }
 }

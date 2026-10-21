@@ -43,4 +43,20 @@ class HelperModelGenerationParamsTest {
         assertEquals(1_024, settings.buildSuggestionGenerationParams(model).thinkingBudget)
         assertEquals(16_000, settings.buildOcrGenerationParams(model).thinkingBudget)
     }
+
+    @Test
+    fun summaryRequestsUseTheOutputLimitReservedByTheBatchPlanner() {
+        val params = Settings(summarizerThinkingBudget = 0)
+            .buildSummarizerGenerationParams(model, temperature = 0.2f, maxTokens = 2_048)
+        assertEquals(2_048, params.maxTokens)
+        assertEquals(0, params.thinkingBudget)
+    }
+
+    @Test
+    fun summaryThinkingLeavesRoomForVisibleCheckpointText() {
+        val params = Settings(summarizerThinkingBudget = 32_000)
+            .buildSummarizerGenerationParams(model, temperature = 0.2f, maxTokens = 4_096)
+        assertEquals(3_072, params.thinkingBudget)
+        assertEquals(4_096, params.maxTokens)
+    }
 }

@@ -12,6 +12,7 @@ import me.rerere.ai.provider.baseCapacityTokens
 import me.rerere.ai.provider.contextCapacityTokens
 import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.math.ceil
@@ -544,6 +545,18 @@ fun List<UIMessage>.compactToTokenBudget(model: Model, budget: Int): List<UIMess
             message.copy(parts = message.parts.map { part ->
                 when (part) {
                     is UIMessagePart.Text -> part.copy(text = compactText(part.text, limit))
+                    // A generous evidence receipt may itself exceed a tiny emergency budget.
+                    // Reduce only its text, retaining the provider's root shape and tool arguments.
+                    is UIMessagePart.ToolResult -> part.copy(content = when (val content = part.content) {
+                        is JsonPrimitive -> JsonPrimitive(compactText(content.content, limit))
+                        is JsonObject -> {
+                            val receipt = content["receipt"] as? JsonPrimitive
+                            if (receipt == null) content else JsonObject(
+                                content + ("receipt" to JsonPrimitive(compactText(receipt.content, limit))),
+                            )
+                        }
+                        else -> content
+                    })
                     else -> part
                 }
             })

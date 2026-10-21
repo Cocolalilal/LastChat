@@ -52,14 +52,20 @@ fun createSemanticToolReceipt(part: UIMessagePart.ToolResult): JsonElement {
         return null
     }
 
+    fun excerpt(text: String, limit: Int = 2_048): String = if (text.length <= limit) text else {
+        text.take(limit / 2) + "\n[${text.length - limit} characters omitted]\n" + text.takeLast(limit / 2)
+    }
+
     val receiptText = when {
         // 1. Shell commands / code execution
         lowerName.contains("command") || lowerName.contains("exec") || lowerName.contains("shell") ||
-            lowerName.contains("bash") || lowerName.contains("sh") || lowerName.contains("terminal") || lowerName.contains("run") -> {
+            lowerName == "bash" || lowerName == "sh" || lowerName.contains("terminal") -> {
             val cmd = arg("command", "cmd", "CommandLine", "command_line") ?: "command"
-            val exitCode = arg("exit_code", "exitCode", "code") ?: run {
-                if (rawContent.contains("exit code: 0", ignoreCase = true) || rawContent.contains("\"exit_code\": 0")) "0" else null
-            }
+            val resultObject = (part.content as? JsonObject)
+                ?: runCatching { json.parseToJsonElement(rawContent) as? JsonObject }.getOrNull()
+            val exitCode = listOf("exit_code", "exitCode", "code").firstNotNullOfOrNull {
+                resultObject?.get(it)?.jsonPrimitiveOrNull?.contentOrNull
+            } ?: arg("exit_code", "exitCode", "code")
             // Retain full compiler errors / stderr
             val hasError = rawContent.contains("error", ignoreCase = true) ||
                 rawContent.contains("exception", ignoreCase = true) ||
@@ -75,11 +81,11 @@ fun createSemanticToolReceipt(part: UIMessagePart.ToolResult): JsonElement {
                     }
                     .take(8)
                     .joinToString("\n")
-                val errorDetails = errorLines.ifBlank { rawContent.take(300) }
-                "[Command: $cmd | Exit code: ${exitCode ?: "non-zero"} | Errors:\n$errorDetails]"
+                val errorDetails = excerpt(rawContent) + if (errorLines.isNotBlank()) "\n$errorLines" else ""
+                "[Command: $cmd | Exit code: ${exitCode ?: "unknown"} | Errors:\n$errorDetails]"
             } else {
-                val preview = rawContent.take(120).replace("\n", " ").trim()
-                "[Command: $cmd | Exit: ${exitCode ?: 0} | Output: $preview]"
+                val preview = excerpt(rawContent)
+                "[Command: $cmd | Exit: ${exitCode ?: "unknown"} | Output: $preview]"
             }
         }
 
@@ -102,21 +108,21 @@ fun createSemanticToolReceipt(part: UIMessagePart.ToolResult): JsonElement {
         // 3. File writes / edits
         lowerName.contains("write") || lowerName.contains("edit") || lowerName.contains("replace") || lowerName.contains("create") -> {
             val path = arg("path", "file_path", "AbsolutePath", "TargetFile", "target_file", "file") ?: "file"
-            "[Modified file: $path | Status: completed successfully]"
+            "[File operation: $path | Observed result: ${excerpt(rawContent)}]"
         }
 
         // 4. Web search
         lowerName.contains("search") || lowerName.contains("brave") || lowerName.contains("google") || lowerName.contains("tavily") || lowerName.contains("bing") -> {
             val query = arg("query", "q") ?: "search"
-            val preview = rawContent.take(160).replace("\n", " ").trim()
+            val preview = excerpt(rawContent)
             "[Web search: \"$query\" | Key findings: $preview]"
         }
 
         // 5. Default
         else -> {
-            val preview = if (rawContent.length > 96) rawContent.take(93).trimEnd() + "…" else rawContent
+            val preview = excerpt(rawContent)
             if (preview.isNotBlank() && !preview.startsWith("[")) {
-                "[Completed $toolName: $preview]"
+                "[Tool $toolName result: $preview]"
             } else {
                 "[Older $toolName result compacted; call/result relationship retained]"
             }
@@ -154,6 +160,7 @@ fun smartFitContext(
         candidate,
         aggressive = plan.pressureTier >= ContextPressureTier.HIGH,
         receiptify = plan.receiptifyHistoricalTools,
+        protectedTurnCount = plan.protectedRecentTurns,
     )
     if (ContextTokenEstimator.messagesTokens(candidate, model) <= budget) return candidate
 
@@ -203,17 +210,21 @@ fun smartPrepareHistory(
     val budget = availableBudgetTokens.coerceAtLeast(1)
     val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget)
     val limitedImages = limitImages(messages, plan.imageLimit)
+    // A pressure tier alone is not a reason to discard tool evidence that still fits.
+    if (ContextTokenEstimator.messagesTokens(limitedImages, model) <= budget) return limitedImages
     return when {
         plan.pressureTier < ContextPressureTier.NORMAL -> limitedImages
         plan.pressureTier < ContextPressureTier.HIGH -> compactLowValuePayloads(
             limitedImages,
             aggressive = false,
             receiptify = plan.receiptifyHistoricalTools,
+            protectedTurnCount = plan.protectedRecentTurns,
         )
         else -> compactLowValuePayloads(
             limitedImages,
             aggressive = true,
             receiptify = plan.receiptifyHistoricalTools,
+            protectedTurnCount = plan.protectedRecentTurns,
         )
     }
 }
@@ -235,13 +246,13 @@ private fun compactLowValuePayloads(
     messages: List<UIMessage>,
     aggressive: Boolean,
     receiptify: Boolean = true,
+    protectedTurnCount: Int = 4,
 ): List<UIMessage> {
     val turnGroups = messages.toTurnGroups()
-    val protectedTurnCount = if (aggressive) 2 else 4
     val protectedStart = if (turnGroups.size > protectedTurnCount) {
         turnGroups[turnGroups.size - protectedTurnCount].startIndex
     } else {
-        (messages.size - (if (aggressive) 4 else 6)).coerceAtLeast(0)
+        0 // All groups belong to the protected recent tail.
     }
 
     val lastToolResultIndex = messages.indexOfLast { message ->
@@ -253,13 +264,12 @@ private fun compactLowValuePayloads(
             when (part) {
                 is UIMessagePart.ToolResult -> {
                     val isSearch = part.toolName.contains("search", ignoreCase = true)
-                    if (aggressive || isSearch || index != lastToolResultIndex) {
+                    if (receiptify && (aggressive || isSearch || index != lastToolResultIndex)) {
+                        val receipt = createSemanticToolReceipt(part)
+                        // Short results often carry more evidence than a generated receipt.
+                        if (receipt.toString().length >= part.content.toString().length) return@mapNotNull part
                         part.copy(
-                            content = if (receiptify) {
-                                createSemanticToolReceipt(part)
-                            } else {
-                                JsonPrimitive("[Older ${part.toolName.ifBlank { "tool" }} result compacted; call/result retained]")
-                            },
+                            content = receipt,
                             // Arguments are mandatory for agent memory; NEVER wipe them.
                             arguments = part.arguments,
                             inspectedImages = part.inspectedImages.map { it.copy(url = "") },

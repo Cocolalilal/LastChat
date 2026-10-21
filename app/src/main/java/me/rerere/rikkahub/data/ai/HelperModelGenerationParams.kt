@@ -22,12 +22,17 @@ internal fun Settings.buildSuggestionGenerationParams(model: Model): TextGenerat
 
 internal fun Settings.buildSummarizerGenerationParams(
     model: Model,
-    temperature: Float
+    temperature: Float,
+    maxTokens: Int? = null,
 ): TextGenerationParams {
     return TextGenerationParams(
         model = model,
         temperature = temperature,
-        thinkingBudget = summarizerThinkingBudget,
+        maxTokens = maxTokens,
+        thinkingBudget = if (maxTokens != null && summarizerThinkingBudget > 0) {
+            // Leave room for visible checkpoint text when the helper has a small output limit.
+            summarizerThinkingBudget.coerceAtMost((maxTokens - 1_024).coerceAtLeast(0))
+        } else summarizerThinkingBudget,
     )
 }
 

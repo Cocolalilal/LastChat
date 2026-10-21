@@ -202,26 +202,24 @@ data class UIMessage(
      * Used by conversation summarizers so tool actions, bash commands, code edits, and search results
      * are never lost or rendered as blank lines.
      */
-    fun toSummarizableDigest(maxPartLength: Int = 1000): String {
+    fun toSummarizableDigest(maxPartLength: Int = Int.MAX_VALUE): String {
+        fun source(text: String): String {
+            if (text.length <= maxPartLength) return text
+            val keep = maxPartLength.coerceAtLeast(0)
+            return text.take(keep / 2) + "\n[${text.length - keep} characters omitted]\n" + text.takeLast(keep - keep / 2)
+        }
         return parts.mapNotNull { part ->
             when (part) {
-                is UIMessagePart.Text -> {
-                    if (part.text.isBlank()) null else {
-                        if (part.text.length > maxPartLength) part.text.take(maxPartLength) + "…" else part.text
-                    }
-                }
+                is UIMessagePart.Text -> part.text.takeIf { it.isNotBlank() }?.let(::source)
                 is UIMessagePart.ToolCall -> {
-                    val args = if (part.arguments.length > 250) part.arguments.take(247) + "…" else part.arguments
-                    "[Action: ${part.toolName}($args)]"
+                    "[Action: ${part.toolName} (id=${part.toolCallId})]\n${source(part.arguments)}"
                 }
                 is UIMessagePart.ToolResult -> {
                     val raw = when (val c = part.content) {
                         is JsonPrimitive -> c.content
-                        is JsonObject -> c["receipt"]?.jsonPrimitiveOrNull?.contentOrNull ?: c.toString()
                         else -> c.toString()
-                    }.trim()
-                    val preview = if (raw.length > 400) raw.take(397).trimEnd() + "…" else raw
-                    "[Action Result: ${part.toolName} -> $preview]"
+                    }
+                    "[Action Result: ${part.toolName} (id=${part.toolCallId})]\n${source(raw)}"
                 }
                 is UIMessagePart.Document -> "[Document: ${part.fileName} (${part.mime})]"
                 is UIMessagePart.Image -> "[Image attachment]"
