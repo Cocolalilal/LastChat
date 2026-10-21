@@ -147,9 +147,10 @@ fun smartFitContext(
     messages: List<UIMessage>,
     model: Model,
     messageBudgetTokens: Int,
+    policy: ContextCompressionPolicy = ContextCompressionPolicy(),
 ): List<UIMessage> {
     val budget = messageBudgetTokens.coerceAtLeast(1)
-    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget)
+    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget, policy = policy)
     val imageLimit = plan.imageLimit
 
     var candidate = limitImages(messages, imageLimit)
@@ -205,10 +206,11 @@ fun smartPrepareHistory(
     messages: List<UIMessage>,
     model: Model,
     availableBudgetTokens: Int,
+    policy: ContextCompressionPolicy = ContextCompressionPolicy(),
 ): List<UIMessage> {
     if (messages.isEmpty()) return messages
     val budget = availableBudgetTokens.coerceAtLeast(1)
-    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget)
+    val plan = ContextPlanner.plan(messages, model, customBudgetTokens = budget, policy = policy)
     val limitedImages = limitImages(messages, plan.imageLimit)
     // A pressure tier alone is not a reason to discard tool evidence that still fits.
     if (ContextTokenEstimator.messagesTokens(limitedImages, model) <= budget) return limitedImages

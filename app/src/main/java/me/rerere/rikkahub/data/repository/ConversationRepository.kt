@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.UsageStatsEntity
+import me.rerere.rikkahub.data.model.canApplyContextCompression
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.ai.ui.MessageNode
 import kotlinx.serialization.json.JsonArray
@@ -187,6 +188,22 @@ class ConversationRepository(
                 conversationToConversationEntity(syncedConversation)
             )
         }
+    }
+
+    /** Conditional update of summary metadata only; concurrent appends/edits cannot be overwritten. */
+    suspend fun updateContextSummaryIfUnchanged(
+        source: Conversation,
+        summary: String,
+        upToIndex: Int,
+        refreshedAt: Long,
+    ): Boolean {
+        val entity = conversationDAO.getConversationById(source.id.toString()) ?: return false
+        val latest = conversationEntityToConversation(entity)
+        if (!canApplyContextCompression(source, latest, upToIndex)) return false
+        return conversationDAO.updateContextSummaryIfUnchanged(
+            entity.id, summary, upToIndex, refreshedAt, entity.nodes, entity.contextSummary,
+            entity.contextSummaryUpToIndex, entity.lastRefreshTime,
+        ) == 1
     }
 
     suspend fun deleteConversation(conversation: Conversation, deleteFiles: Boolean = true) {

@@ -68,6 +68,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.contextCompressionPolicy
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
@@ -908,8 +909,7 @@ class GenerationHandler(
         fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
-        val smartEnabled = assistant.smartContextManagement &&
-            model.contextCapacityTokens?.let { it > 0 } == true
+        val smartEnabled = model.contextCapacityTokens?.let { it > 0 } == true
         val maxTokens = if (smartEnabled) {
             smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
         } else {
@@ -1235,6 +1235,7 @@ class GenerationHandler(
                 messages = historyWithPreservedOcr,
                 model = model,
                 availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
+                policy = assistant.contextCompressionPolicy,
             )
         } else assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
@@ -1607,6 +1608,7 @@ class GenerationHandler(
                 messages = rawBuiltMessages,
                 model = model,
                 messageBudgetTokens = smartMessageBudget,
+                policy = assistant.contextCompressionPolicy,
             )
         } else {
             rawBuiltMessages

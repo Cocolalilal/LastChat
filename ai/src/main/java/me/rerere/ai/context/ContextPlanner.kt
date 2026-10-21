@@ -53,6 +53,7 @@ object ContextPlanner {
         customBudgetTokens: Int? = null,
         systemPromptTokens: Int = 0,
         toolDefinitionTokens: Int = 0,
+        policy: ContextCompressionPolicy = ContextCompressionPolicy(),
     ): ContextPlan {
         val capacity = model.contextCapacityTokens ?: Int.MAX_VALUE
         val archetype = ContextScaleArchetype.fromCapacity(capacity)
@@ -68,11 +69,7 @@ object ContextPlanner {
         val totalEstimatedUsed = rawMessageTokens + systemPromptTokens + toolDefinitionTokens
         val pressure = ContextPressureTier.fromUsage(totalEstimatedUsed, usableInput, archetype)
 
-        val protectedTurns = when (archetype) {
-            ContextScaleArchetype.MICRO -> if (pressure == ContextPressureTier.CRITICAL) 1 else 2
-            ContextScaleArchetype.COMPACT -> 4
-            ContextScaleArchetype.VAST -> 6
-        }
+        val protectedTurns = policy.protectedTurns(archetype)
 
         val turnGroups = messages.toTurnGroups()
         val freezeBoundary = if (pressure == ContextPressureTier.CRITICAL) {
@@ -98,18 +95,18 @@ object ContextPlanner {
         }
 
         // Dual-watermark discretionary hysteresis
-        val highWatermarkFraction = when (archetype) {
+        val highWatermarkFraction = policy.triggerFraction(when (archetype) {
             ContextScaleArchetype.MICRO -> 0.70f
             ContextScaleArchetype.COMPACT -> 0.75f
             ContextScaleArchetype.VAST -> 0.85f
-        }
+        })
 
         val gammaClearance = when (archetype) {
             ContextScaleArchetype.MICRO -> 0.60f
             ContextScaleArchetype.COMPACT -> 0.65f
             ContextScaleArchetype.VAST -> 0.70f
         }
-        val lowWatermarkTarget = (discretionary * gammaClearance).toInt()
+        val lowWatermarkTarget = (discretionary * policy.targetFraction(gammaClearance)).toInt()
 
         val discretionaryUsed = (totalEstimatedUsed - (systemPromptTokens + toolDefinitionTokens)).coerceAtLeast(0)
         val discretionaryFraction = if (discretionary > 0) {
@@ -138,7 +135,7 @@ object ContextPlanner {
 
         val overallPressureRatio = totalEstimatedUsed.toFloat() / usableInput
         val shouldAutoSummary = discretionaryFraction >= highWatermarkFraction ||
-            pressure >= ContextPressureTier.HIGH ||
+            pressure == ContextPressureTier.CRITICAL ||
             overallPressureRatio >= 0.92f
 
         return ContextPlan(
@@ -203,15 +200,16 @@ object ContextPlanner {
         messages: List<UIMessage> = emptyList(),
         model: Model? = null,
         targetRemainingTokens: Int = 0,
+        policy: ContextCompressionPolicy = ContextCompressionPolicy(),
     ): MilestoneSlicePlan? {
         val groups = turnGroups.filter { it.startIndex >= startIndex }
         if (groups.size <= 1 || groups.first().startIndex != startIndex) return null
-        val protectedTurns = when (archetype) {
-            ContextScaleArchetype.MICRO -> 2
-            ContextScaleArchetype.COMPACT -> 4
-            ContextScaleArchetype.VAST -> 6
-        }.coerceAtMost(groups.size - 1)
-        val maxGroups = groups.size - 1
+        if (policy.recentTurns != null && groups.size <= policy.protectedTurns(archetype) &&
+            pressureTier != ContextPressureTier.CRITICAL
+        ) return null
+        val protectedTurns = policy.protectedTurns(archetype).coerceAtMost(groups.size - 1)
+        val maxGroups = if (pressureTier == ContextPressureTier.CRITICAL) groups.size - 1
+            else groups.size - protectedTurns
         val groupsToSummarize = if (targetRemainingTokens > 0 && model != null && messages.isNotEmpty()) {
             // Count each group once rather than recounting the full tail for every boundary.
             var remaining = ContextTokenEstimator.messagesTokens(groups.flatMap { it.messages }, model)

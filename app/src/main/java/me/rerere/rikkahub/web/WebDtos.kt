@@ -438,6 +438,11 @@ data class WebAssistantDto(
     val enableMemoryConsolidation: Boolean = false,
     val enableHistorySummarization: Boolean = false,
     val autoRegenerateSummary: Boolean = false,
+    val contextManagementMode: me.rerere.rikkahub.data.model.ContextManagementMode? = null,
+    val contextCompressionStyle: me.rerere.ai.context.ContextCompressionStyle =
+        me.rerere.ai.context.ContextCompressionStyle.BALANCED,
+    val contextRecentTurns: Int? = null,
+    val contextSummaryInstructions: String = "",
     val maxHistoryMessages: Int? = null,
 )
 
@@ -856,6 +861,10 @@ internal fun Assistant.toWebAssistantDto(context: Context): WebAssistantDto {
         enableMemoryConsolidation = enableMemoryConsolidation,
         enableHistorySummarization = enableHistorySummarization,
         autoRegenerateSummary = autoRegenerateSummary,
+        contextManagementMode = contextManagementMode,
+        contextCompressionStyle = contextCompressionStyle,
+        contextRecentTurns = contextRecentTurns,
+        contextSummaryInstructions = contextSummaryInstructions,
         maxHistoryMessages = maxHistoryMessages,
     )
 }

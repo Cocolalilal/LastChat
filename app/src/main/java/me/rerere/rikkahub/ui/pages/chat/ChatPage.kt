@@ -190,7 +190,8 @@ import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
-import me.rerere.rikkahub.service.ContextManagementActivity
+import me.rerere.rikkahub.ui.components.ai.ContextManagementSheet
+import me.rerere.rikkahub.ui.components.ai.ContextOptimizationGlyph
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.getFileNameFromUri
@@ -1356,7 +1357,7 @@ private fun ChatPageContent(
     }
     val blur = inheritedBlur ?: localBlur
     val requestContextUsage by vm.contextUsage.collectAsStateWithLifecycle()
-    val contextManagementActivity by vm.contextManagementActivity.collectAsStateWithLifecycle()
+    val contextCompressionStatus by vm.contextCompressionStatus.collectAsStateWithLifecycle()
     val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
     val contextMeterUsage = rememberContextMeterUsage(
         enabled = setting.displaySetting.showContextTokenSummary,
@@ -2076,7 +2077,10 @@ private fun ChatPageContent(
                     onNavigateToLorebook = { lorebookId ->
                         navController.navigate(Screen.SettingLorebookDetail(lorebookId))
                     },
-                    onRefreshContext = { vm.refreshContext() },
+                    onRefreshContext = vm::optimizeContext,
+                    contextCompressionStatus = contextCompressionStatus,
+                    contextUsage = contextMeterUsage,
+                    onCancelContextCompression = vm::cancelContextOptimization,
                     onDeleteFile = { vm.deleteFile(it) },
                     bottomAccessory = bottomToolbarContent,
                     showScrollToBottomButton = showScrollToBottomButton,
@@ -2094,60 +2098,29 @@ private fun ChatPageContent(
                 }
             }
 
-            // Popups are siblings placed after Scaffold so its top fade can never draw over them.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = showContextUsagePopup && contextMeterUsage != null,
-                enter = if (reduceMotion) {
-                    fadeIn(tween(90))
-                } else fadeIn(
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.75f,
-                        stiffness = 360f,
-                    )
-                ),
-                exit = if (reduceMotion) {
-                    fadeOut(tween(80))
-                } else fadeOut(
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 420f,
-                    )
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                val popupScale by transition.animateFloat(
-                    transitionSpec = {
-                        if (targetState == EnterExitState.Visible) {
-                            androidx.compose.animation.core.spring(
-                                dampingRatio = 0.75f,
-                                stiffness = 360f,
-                            )
-                        } else {
-                            androidx.compose.animation.core.spring(
-                                dampingRatio = 0.85f,
-                                stiffness = 420f,
+            if (showContextUsagePopup) {
+                ContextManagementSheet(
+                    conversation = conversation,
+                    assistant = currentAssistant,
+                    model = currentChatModel,
+                    usage = contextMeterUsage,
+                    status = contextCompressionStatus,
+                    onOptimize = vm::optimizeContext,
+                    onCancel = vm::cancelContextOptimization,
+                    onUpdateConversation = vm::updateConversation,
+                    onDismiss = { showContextUsagePopup = false },
+                    details = {
+                        contextMeterUsage?.let { usage ->
+                            ContextUsagePopupContent(
+                                usage = usage,
+                                model = currentChatModel,
+                                onUpdateModelLimit = { newLimit ->
+                                    currentChatModel?.let { vm.updateModelContextLimit(it.id, newLimit) }
+                                },
                             )
                         }
                     },
-                    label = "chat_context_usage_popup_scale",
-                ) { state ->
-                    if (reduceMotion || state == EnterExitState.Visible) 1f else 0.96f
-                }
-                contextMeterUsage?.let { usage ->
-                    ContextUsageOverlay(
-                        usage = usage,
-                        activity = contextManagementActivity,
-                        placement = toolbarPlacement,
-                        popupScale = popupScale,
-                        model = currentChatModel,
-                        onUpdateModelLimit = { newLimit ->
-                            currentChatModel?.let { model ->
-                                vm.updateModelContextLimit(model.id, newLimit)
-                            }
-                        },
-                        onDismissRequest = { showContextUsagePopup = false },
-                    )
-                }
+                )
             }
 
             androidx.compose.animation.AnimatedVisibility(
@@ -3065,8 +3038,10 @@ private fun ChatToolbar(
                 )
             }
 
+            val compressionStatus by vm.contextCompressionStatus.collectAsStateWithLifecycle()
             ContextMeterAnchor(
                 usage = contextUsage,
+                status = compressionStatus,
                 onClick = onContextMeterClick,
                 modifier = Modifier.padding(start = if (bigScreen) 0.dp else 8.dp),
             )
@@ -3195,7 +3170,7 @@ private fun rememberContextMeterUsage(
         if (requestUsage != null) return requestUsage
         if (lastStableUsage != null) return lastStableUsage
     }
-    val smartActive = assistant.smartContextManagement && (activeModel.contextCapacityTokens ?: 0) > 0
+    val smartActive = (activeModel.contextCapacityTokens ?: 0) > 0
     val rawMessages = conversation.currentMessages
     val messages = effectiveHistoryForContext(
         messages = rawMessages,
@@ -3601,75 +3576,9 @@ private fun rememberContextMeterUsage(
 }
 
 @Composable
-private fun ContextUsageOverlay(
-    usage: ContextUsageBreakdown,
-    activity: ContextManagementActivity?,
-    placement: ChatToolbarPlacement,
-    popupScale: Float,
-    model: Model? = null,
-    onUpdateModelLimit: ((Int?) -> Unit)? = null,
-    onDismissRequest: () -> Unit,
-) {
-    BackHandler(onBack = onDismissRequest)
-    val interactionSource = remember { MutableInteractionSource() }
-    val shape = AppShapes.CardMedium
-    val containerColor = MaterialTheme.colorScheme.surfaceContainer
-    val border = lastChatSoftEdgeBorder()
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.16f))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onDismissRequest,
-            )
-    ) {
-        Surface(
-            shape = shape,
-            color = blurredContainerColor(containerColor),
-            border = border,
-            modifier = Modifier
-                .align(
-                    if (placement == ChatToolbarPlacement.Top) Alignment.TopCenter
-                    else Alignment.BottomCenter
-                )
-                .then(
-                    if (placement == ChatToolbarPlacement.Top) Modifier.statusBarsPadding()
-                    else Modifier.navigationBarsPadding()
-                )
-                .padding(
-                    top = chatToolbarPopupTopPadding(placement),
-                    bottom = chatToolbarPopupBottomPadding(placement),
-                    start = 16.dp,
-                    end = 16.dp,
-                )
-                .fillMaxWidth()
-                .graphicsLayer {
-                    scaleX = 1f
-                    scaleY = popupScale
-                    transformOrigin = chatToolbarPopupTransformOrigin(placement)
-                }
-                .lastChatBlurEffect(containerColor, shape)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
-        ) {
-            ContextUsagePopupContent(
-                usage = usage,
-                activity = activity,
-                model = model,
-                onUpdateModelLimit = onUpdateModelLimit,
-            )
-        }
-    }
-}
-
-@Composable
 private fun ContextMeterAnchor(
     usage: ContextUsageBreakdown?,
+    status: me.rerere.rikkahub.service.ContextCompressionStatus?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -3701,6 +3610,7 @@ private fun ContextMeterAnchor(
         displayedUsage?.let { animatedUsage ->
             ContextMeterButton(
                 usage = animatedUsage,
+                status = status,
                 onClick = {
                     haptics.perform(HapticPattern.Pop)
                     onClick()
@@ -3713,6 +3623,7 @@ private fun ContextMeterAnchor(
 @Composable
 private fun ContextMeterButton(
     usage: ContextUsageBreakdown,
+    status: me.rerere.rikkahub.service.ContextCompressionStatus?,
     onClick: () -> Unit,
 ) {
     val animatedPressure by animateFloatAsState(
@@ -3756,37 +3667,12 @@ private fun ContextMeterButton(
         border = lastChatSoftEdgeBorder(),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            val reserveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-            Canvas(modifier = Modifier.size(27.dp)) {
-                val strokeWidth = 3.5.dp.toPx()
-                val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                drawArc(
-                    color = trackColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    style = stroke,
-                )
-                if (animatedReservedProgress > 0f) {
-                    drawArc(
-                        color = reserveColor,
-                        startAngle = -90f + (1f - animatedReservedProgress) * 360f,
-                        sweepAngle = animatedReservedProgress * 360f,
-                        useCenter = false,
-                        style = stroke,
-                    )
-                }
-                if (animatedWindowProgress > 0f) {
-                    drawArc(
-                        color = progressColor,
-                        startAngle = -90f,
-                        sweepAngle = animatedWindowProgress * 360f,
-                        useCenter = false,
-                        style = stroke,
-                    )
-                }
-            }
+            ContextOptimizationGlyph(
+                status = status,
+                windowFraction = animatedWindowProgress,
+                reservedFraction = animatedReservedProgress,
+                progressColor = progressColor,
+            )
         }
     }
 }
@@ -3794,7 +3680,6 @@ private fun ContextMeterButton(
 @Composable
 private fun ContextUsagePopupContent(
     usage: ContextUsageBreakdown,
-    activity: ContextManagementActivity?,
     model: Model? = null,
     onUpdateModelLimit: ((Int?) -> Unit)? = null,
 ) {
@@ -3895,7 +3780,7 @@ private fun ContextUsagePopupContent(
             ) { editing ->
                 if (editing) {
                     Text(
-                        text = "Target Limit: ${compactTokenCount(draggedTokens)}",
+                        text = "Context limit: ${compactTokenCount(draggedTokens)}",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -3917,7 +3802,7 @@ private fun ContextUsagePopupContent(
             ) { editing ->
                 if (editing) {
                     Text(
-                        text = "Floor: ${compactTokenCount(safeFloor)}",
+                        text = "Minimum: ${compactTokenCount(safeFloor)}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -4134,22 +4019,6 @@ private fun ContextUsagePopupContent(
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AnimatedContent(
-                targetState = activity,
-                transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(110)) },
-                label = "context_management_activity",
-            ) { currentActivity ->
-                if (currentActivity == ContextManagementActivity.SUMMARIZING) {
-                    Text(
-                        stringResource(R.string.context_meter_summarizing),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else {
-                    Spacer(Modifier.width(0.dp))
-                }
-            }
-            if (activity != null && usage.maxImages != null) Spacer(Modifier.width(12.dp))
             usage.maxImages?.let { maxImages ->
                 Text(
                     stringResource(R.string.context_meter_images, animatedImages, maxImages),

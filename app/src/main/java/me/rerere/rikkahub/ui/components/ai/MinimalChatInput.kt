@@ -253,12 +253,10 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
-        ChatService.ContextRefreshResult(
-            success = false,
-            errorResId = R.string.context_refresh_no_summarizer,
-        )
-    },
+    onRefreshContext: () -> Unit = {},
+    contextCompressionStatus: me.rerere.rikkahub.service.ContextCompressionStatus? = null,
+    contextUsage: me.rerere.ai.context.ContextUsageBreakdown? = null,
+    onCancelContextCompression: () -> Unit = {},
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
     showScrollToBottomButton: Boolean = false,
@@ -272,6 +270,7 @@ fun MinimalChatInput(
         settings.resolveConversationContext(conversation)
     }
     val assistant = conversationContext.assistant
+    var showContextManagement by remember(conversation.id) { mutableStateOf(false) }
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
@@ -1394,7 +1393,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
-                onRefreshContext = onRefreshContext,
+                onManageContext = { showPicker = false; showContextManagement = true },
                 importScope = scope,
                 onAttachmentImportStarted = onAttachmentImportStarted,
                 onAttachmentImportFinished = onAttachmentImportFinished,
@@ -1402,6 +1401,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             )
         }
     }
+    if (showContextManagement) {
+        ContextManagementSheet(
+            conversation = conversation, assistant = assistant, model = currentChatModel,
+            usage = contextUsage, status = contextCompressionStatus,
+            onOptimize = onRefreshContext, onCancel = onCancelContextCompression,
+            onUpdateConversation = onUpdateConversation,
+            onDismiss = { showContextManagement = false },
+        )
+    }
+
 }
 
 @Composable
@@ -1871,7 +1880,7 @@ private fun MinimalPickerContent(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    onManageContext: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
     onAttachmentImportFinished: () -> Unit,
@@ -1906,11 +1915,6 @@ private fun MinimalPickerContent(
     var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
-    var showContextRefreshDialog by remember { mutableStateOf(false) }
-    var showContextSummaryEditDialog by remember { mutableStateOf(false) }
-    var editableContextSummary by remember(conversation.contextSummary) {
-        mutableStateOf(conversation.contextSummary.orEmpty())
-    }
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
@@ -2294,10 +2298,10 @@ private fun MinimalPickerContent(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                title = stringResource(R.string.minimal_input_summarize),
-                subtitle = stringResource(R.string.minimal_input_summarize_desc),
+                title = "Optimize context",
+                subtitle = "Make room without losing the conversation",
                 onClick = {
-                    showContextRefreshDialog = true
+                    onManageContext()
                 }
             )
         }
@@ -2408,95 +2412,6 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         )
     }
     
-    // Context Refresh dialog (same as floating toolbar)
-    if (showContextRefreshDialog) {
-        ContextRefreshDialog(
-            conversation = conversation,
-            onRefresh = onRefreshContext,
-            onEditSummary = {
-                editableContextSummary = conversation.contextSummary.orEmpty()
-                showContextSummaryEditDialog = true
-            },
-            onRevertSummary = {
-                onUpdateConversation(
-                    conversation.copy(
-                        contextSummary = null,
-                        contextSummaryUpToIndex = -1,
-                        lastRefreshTime = 0L,
-                        updateAt = Instant.now()
-                    )
-                )
-            },
-            onDismiss = { showContextRefreshDialog = false }
-        )
-    }
-
-    if (showContextSummaryEditDialog) {
-        AlertDialog(
-            onDismissRequest = { showContextSummaryEditDialog = false },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            title = {
-                Text(
-                    text = stringResource(R.string.context_refresh_edit_summary),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            text = {
-                TextField(
-                    value = editableContextSummary,
-                    onValueChange = { editableContextSummary = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp),
-                    placeholder = {
-                        Text(stringResource(R.string.context_refresh_edit_summary_placeholder))
-                    }
-                )
-            },
-            confirmButton = {
-                IconButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Success)
-                        val trimmedSummary = editableContextSummary.trim()
-                        onUpdateConversation(
-                            conversation.copy(
-                                contextSummary = trimmedSummary.takeIf { it.isNotBlank() },
-                                contextSummaryUpToIndex = if (trimmedSummary.isBlank()) {
-                                    -1
-                                } else {
-                                    conversation.contextSummaryUpToIndex
-                                },
-                                lastRefreshTime = if (trimmedSummary.isBlank()) 0L else System.currentTimeMillis(),
-                                updateAt = Instant.now()
-                            )
-                        )
-                        showContextSummaryEditDialog = false
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Save,
-                        contentDescription = stringResource(R.string.context_refresh_save_summary)
-                    )
-                }
-            },
-            dismissButton = {
-                IconButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        showContextSummaryEditDialog = false
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(android.R.string.cancel)
-                    )
-                }
-            }
-        )
-    }
-    
-    // Search picker sheet (same as floating toolbar) - direct content, no intermediate button
     if (showSearchPicker) {
         val chatModel = currentChatModel
         

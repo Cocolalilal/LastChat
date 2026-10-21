@@ -114,6 +114,17 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.resolveConversationContext
+import me.rerere.rikkahub.data.model.canApplyContextCompression
+import me.rerere.rikkahub.data.model.preserveNewerContextSummary
+import me.rerere.rikkahub.data.model.ContextManagementMode
+import me.rerere.rikkahub.data.model.effectiveContextManagementMode
+import me.rerere.rikkahub.data.model.contextCompressionPolicy
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.model.getInitialMessageNodes
@@ -682,10 +693,50 @@ class ChatService(
     private val _contextUsage = MutableStateFlow<Map<Uuid, ContextUsageBreakdown>>(emptyMap())
     val contextUsage: StateFlow<Map<Uuid, ContextUsageBreakdown>> = _contextUsage.asStateFlow()
 
-    private val _contextManagementActivity =
-        MutableStateFlow<Map<Uuid, ContextManagementActivity>>(emptyMap())
-    val contextManagementActivity: StateFlow<Map<Uuid, ContextManagementActivity>> =
-        _contextManagementActivity.asStateFlow()
+    private val compressionExecutionGate = Semaphore(1)
+    private val compressionJobs = ContextCompressionJobs<Uuid, ContextRefreshResult>(appScope)
+    private val _contextCompressionStatus = MutableStateFlow<Map<Uuid, ContextCompressionStatus>>(emptyMap())
+    val contextCompressionStatus: StateFlow<Map<Uuid, ContextCompressionStatus>> = _contextCompressionStatus.asStateFlow()
+    private val compressionCooldowns = MutableStateFlow<Map<Uuid, Long>>(emptyMap())
+
+    fun observeContextCompression(conversationId: Uuid): Flow<ContextCompressionStatus?> {
+        val work = context.workManagerOrNull()?.getWorkInfosForUniqueWorkFlow(ContextCompressionWorker.name(conversationId))
+        return if (work == null) _contextCompressionStatus.map { it[conversationId] }
+        else kotlinx.coroutines.flow.combine(_contextCompressionStatus, work) { states, jobs ->
+            states[conversationId] ?: jobs.firstOrNull { !it.state.isFinished }?.let {
+                ContextCompressionStatus(ContextManagementActivity.QUEUED)
+            }
+        }
+    }
+
+    fun requestContextCompression(conversationId: Uuid, automatic: Boolean = false) {
+        val previousStatus = _contextCompressionStatus.value[conversationId]
+        if (previousStatus?.isRunning == true) return
+        setCompressionStatus(conversationId, ContextCompressionStatus(ContextManagementActivity.QUEUED))
+        appScope.launch {
+            val manager = context.workManagerOrNull()
+            val alreadyQueued = runCatching {
+                manager?.getWorkInfosForUniqueWorkFlow(ContextCompressionWorker.name(conversationId))
+                    ?.first()?.any { !it.state.isFinished } == true
+            }.getOrDefault(false)
+            if (alreadyQueued && previousStatus == null) return@launch
+            if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL ||
+                !ContextCompressionWorker.enqueue(context, conversationId, automatic)
+            ) summarizeAndRefresh(conversationId, automatic)
+        }
+    }
+
+    fun cancelContextCompression(conversationId: Uuid) {
+        ContextCompressionWorker.cancel(context, conversationId)
+        appScope.launch {
+            compressionJobs.cancel(conversationId)
+            setCompressionStatus(conversationId, ContextCompressionStatus(ContextManagementActivity.CANCELLED))
+        }
+    }
+
+    private fun setCompressionStatus(id: Uuid, status: ContextCompressionStatus) {
+        _contextCompressionStatus.update { current -> current + (id to status) }
+    }
 
     // 错误流
     private val _errorFlow = MutableSharedFlow<Throwable>()
@@ -1041,7 +1092,9 @@ class ChatService(
             LogUtil.i(TAG, "persistConversationToRepository: refusing tombstoned ${conversation.id}")
             return false
         }
-        val normalizedConversation = normalizeConversation(conversation).stripEphemeralToolImagePayloads()
+        val normalizedConversation = normalizeConversation(
+            preserveNewerContextSummary(getConversationState(conversation.id)?.value, conversation)
+        ).stripEphemeralToolImagePayloads()
         if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
 
         val retryDelaysMs = longArrayOf(40L, 120L, 240L)
@@ -1835,7 +1888,6 @@ class ChatService(
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
                     if (
-                        assistant.smartContextManagement &&
                         model.contextCapacityTokens != null &&
                         contextOverflowAttempts < SMART_CONTEXT_OVERFLOW_RETRIES &&
                         error.isContextWindowOverflow()
@@ -2399,6 +2451,7 @@ class ChatService(
      * assistant wipe so a streaming checkpoint cannot resurrect chats that were just deleted.
      */
     fun tombstoneConversation(conversationId: Uuid) {
+        cancelContextCompression(conversationId)
         conversationDeletionLedger.cancelJob(conversationId)?.cancel()
         conversationDeletionLedger.tombstone(conversationId)
         conversationDeletionLedger.expireUndoWindow(conversationId)
@@ -2408,6 +2461,7 @@ class ChatService(
 
     fun deleteConversation(conversation: Conversation) {
         // Tombstone + cancel first so onCompletion persist cannot re-insert the row.
+        cancelContextCompression(conversation.id)
         conversationDeletionLedger.cancelJob(conversation.id)?.cancel()
         conversationDeletionLedger.tombstone(conversation.id)
         stopGeneration(conversation.id)
@@ -2449,6 +2503,7 @@ class ChatService(
     }
 
     fun undoDeleteConversation(conversationId: Uuid): Boolean {
+        cancelContextCompression(conversationId)
         conversationDeletionLedger.cancelJob(conversationId)?.cancel()
         val conversation = conversationDeletionLedger.takeForUndo(conversationId) ?: return false
         appScope.launch {
@@ -2600,7 +2655,9 @@ class ChatService(
     private suspend fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
         if (conversationDeletionLedger.isTombstoned(conversationId)) return
-        val normalizedConversation = normalizeConversation(conversation)
+        val normalizedConversation = normalizeConversation(
+            preserveNewerContextSummary(getConversationState(conversationId)?.value, conversation)
+        )
         getOrCreateConversationState(conversationId) { normalizedConversation }.value =
             normalizedConversation
     }
@@ -2658,29 +2715,14 @@ class ChatService(
         try {
             val assistant = settings.resolveConversationContext(conversation).assistant
             val messages = conversation.currentMessages
-            val lastSummaryIndex = conversation.contextSummaryUpToIndex
-            val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
-            
-            val messagesToKeep = 4 // Keep last 2 user+assistant exchanges
-            val messagesToSummarizeCount = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
-                // Messages after last summary, minus the ones we keep
-                (messages.size - lastSummaryIndex - 1 - messagesToKeep).coerceAtLeast(0)
-            } else {
-                // No previous summary - all messages minus kept ones
-                (messages.size - messagesToKeep).coerceAtLeast(0)
-            }
-            
+            if (assistant.effectiveContextManagementMode != ContextManagementMode.AUTOMATIC) return
+            if ((compressionCooldowns.value[conversationId] ?: 0L) > System.currentTimeMillis()) return
             val conversationContext = settings.resolveConversationContext(conversation)
             val model = conversationContext.chatModel
             val smartThresholdReached = if (
-                assistant.smartContextManagement &&
                 model?.contextCapacityTokens != null
             ) {
-                val unsummarized = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
-                    messages.drop(lastSummaryIndex + 1)
-                } else {
-                    messages
-                }
+                val unsummarized = activeContextMessages(conversation)
                 val usable = smartInputBudget(model, assistant.maxTokens)
                     ?: model.contextCapacityTokens
                     ?: Int.MAX_VALUE
@@ -2688,6 +2730,7 @@ class ChatService(
                     // Covered history is represented by the stored summary, not counted again.
                     messages = unsummarized,
                     model = model,
+                    policy = assistant.contextCompressionPolicy,
                     customBudgetTokens = usable,
                     systemPromptTokens = ContextTokenEstimator.textTokens(
                         assistant.systemPrompt + "\n" + conversation.contextSummary.orEmpty(), model,
@@ -2706,43 +2749,60 @@ class ChatService(
             } else {
                 false
             }
-            val manualThresholdReached = !assistant.smartContextManagement &&
-                assistant.shouldAutoSummarizeMessages() &&
-                assistant.maxHistoryMessages?.let { messagesToSummarizeCount >= it } == true
-
-            if (smartThresholdReached || manualThresholdReached) {
-                Log.i(
-                    TAG,
-                    "Auto-summarization triggered by " +
-                        if (smartThresholdReached) "smart context pressure" else "manual history limit",
-                )
-                val result = summarizeAndRefresh(conversationId, automatic = smartThresholdReached)
-                if (result.success) {
-                    Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")
-                } else {
-                    Log.w(TAG, "Auto-summarization failed: ${result.errorResId}, args=${result.errorArgs}")
-                }
-            }
+            if (smartThresholdReached) requestContextCompression(conversationId, automatic = true)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.e(TAG, "checkAndAutoSummarize failed", e)
         }
     }
 
-    // Summarize and refresh context
     suspend fun summarizeAndRefresh(
         conversationId: Uuid,
         automatic: Boolean = false,
+    ): ContextRefreshResult = compressionJobs.run(conversationId) {
+        addConversationReference(conversationId)
+        setCompressionStatus(conversationId, ContextCompressionStatus(ContextManagementActivity.QUEUED))
+        try {
+            val result = compressionExecutionGate.withPermit {
+                setCompressionStatus(conversationId, ContextCompressionStatus(ContextManagementActivity.SUMMARIZING))
+                executeContextCompression(conversationId, automatic)
+            }
+            setCompressionStatus(conversationId, ContextCompressionStatus(
+                activity = if (result.success) ContextManagementActivity.COMPLETE else ContextManagementActivity.FAILED,
+                tokensSaved = result.tokensSaved,
+                messagesCompressed = result.messagesSummarized,
+                errorResId = result.errorResId,
+                errorArgs = result.errorArgs,
+                completedAt = System.currentTimeMillis(),
+            ))
+            if (!result.success) compressionCooldowns.update { it + (conversationId to System.currentTimeMillis() + 300_000) }
+            result
+        } catch (cancelled: CancellationException) {
+            setCompressionStatus(conversationId, ContextCompressionStatus(ContextManagementActivity.CANCELLED))
+            throw cancelled
+        } finally {
+            removeConversationReference(conversationId)
+        }
+    }
+
+    private suspend fun executeContextCompression(
+        conversationId: Uuid,
+        automatic: Boolean,
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
-            val settings = settingsStore.settingsFlow.first()
+            if (conversationDeletionLedger.isTombstoned(conversationId)) {
+                return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
+            }
+            val settings = settingsStore.settingsFlow.first { !it.init }
             val conversation = normalizeConversation(
-                conversationRepo.getConversationById(conversationId)
+                getConversationState(conversationId)?.value ?: conversationRepo.getConversationById(conversationId)
                     ?: return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
             )
             val conversationContext = settings.resolveConversationContext(conversation)
             val assistant = conversationContext.assistant
-
+            if (automatic && assistant.effectiveContextManagementMode != ContextManagementMode.AUTOMATIC) {
+                return@withContext ContextRefreshResult(success = true)
+            }
             // Check for empty messages FIRST before model lookup
             val messages = conversation.currentMessages
             if (messages.isEmpty()) {
@@ -2758,51 +2818,12 @@ class ChatService(
 
             // Determine which messages to summarize using atomic TurnGroups
             val previousSummary = conversation.contextSummary
-            val lastSummaryIndex = conversation.contextSummaryUpToIndex
-            val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
 
-            val turnGroups = messages.toTurnGroups()
-            val startIndex = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
-                lastSummaryIndex + 1
-            } else {
-                0
-            }
-            // Retention belongs to the chat model. A small helper model must not make the
-            // chat's recent history smaller; its own input is independently batched below.
             val chatModel = conversationContext.chatModel ?: model
-            val usable = smartInputBudget(chatModel, assistant.maxTokens)
-                ?: chatModel.contextCapacityTokens
-                ?: 16_000
-            val plan = me.rerere.ai.context.ContextPlanner.plan(
-                messages = messages.drop(startIndex),
-                model = chatModel,
-                customBudgetTokens = usable,
-                systemPromptTokens = ContextTokenEstimator.textTokens(
-                    assistant.systemPrompt + "\n" + previousSummary.orEmpty(), chatModel,
-                ),
-            )
-            if (startIndex >= messages.size) {
-                return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
-            }
-
-            val slicePlan = me.rerere.ai.context.ContextPlanner.calculateMilestoneSlice(
-                turnGroups = turnGroups,
-                startIndex = startIndex,
-                archetype = plan.archetype,
-                pressureTier = plan.pressureTier,
-                messages = messages,
-                model = chatModel,
-                // Leave room for the new checkpoint as well as existing fixed context.
-                targetRemainingTokens = if (automatic) {
-                    // Budget the expected checkpoint (~1/4 of the removed prefix), including
-                    // multiple batches, rather than reserving only one small summary block.
-                    val rawTokens = ContextTokenEstimator.messagesTokens(messages.drop(startIndex), chatModel)
-                    ((plan.lowWatermarkTargetTokens - rawTokens * 0.25f) / 0.75f)
-                        .toInt().coerceAtLeast(1)
-                } else 0,
-            ) ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
-
-            val lastIndexToSummarize = slicePlan.lastIndexToSummarize
+            val preview = previewContextCompression(conversation, assistant, chatModel, automatic)
+                ?: return@withContext ContextRefreshResult(success = true)
+            val startIndex = preview.slice.startIndex
+            val lastIndexToSummarize = preview.slice.lastIndexToSummarize
             val messagesToSummarize = messages.subList(startIndex, lastIndexToSummarize + 1)
             if (messagesToSummarize.isEmpty()) {
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
@@ -2810,6 +2831,7 @@ class ChatService(
 
             val summaryRequests = me.rerere.ai.context.ConversationSummarizer.requests(
                 messagesToSummarize, model, settings.summarizerThinkingBudget,
+                assistant.contextCompressionStyle.summaryFraction, assistant.contextSummaryInstructions,
             )
             if (summaryRequests.isEmpty()) {
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
@@ -2822,26 +2844,35 @@ class ChatService(
 
             val originalTokens = ContextTokenEstimator.messagesTokens(messagesToSummarize, chatModel)
             val providerHandler = providerManager.getProviderByType(provider)
-            val rawSummary = try {
-                setContextManagementActivity(conversationId, ContextManagementActivity.SUMMARIZING)
-                me.rerere.ai.context.ConversationSummarizer.summarize(summaryRequests) { request ->
-                    providerHandler.generateText(
-                        providerSetting = provider,
-                        messages = request.messages,
-                        params = settings.buildSummarizerGenerationParams(
-                            model = model,
-                            temperature = 0.2f,
-                            maxTokens = request.maxOutputTokens,
-                        ),
-                    ).choices.firstOrNull()
-                }
-            } finally {
-                setContextManagementActivity(conversationId, null)
+            var completedBatches = 0
+            val rawSummary = me.rerere.ai.context.ConversationSummarizer.summarize(summaryRequests) { request ->
+                setCompressionStatus(conversationId, ContextCompressionStatus(
+                    ContextManagementActivity.SUMMARIZING, completedBatches, summaryRequests.size,
+                ))
+                providerHandler.generateText(
+                    providerSetting = provider,
+                    messages = request.messages,
+                    params = settings.buildSummarizerGenerationParams(
+                        model = model, temperature = 0.2f, maxTokens = request.maxOutputTokens,
+                    ),
+                ).choices.firstOrNull().also { completedBatches++ }
+            }
+
+            // Local inference and network generations keep ownership of the active turn. Apply
+            // the completed draft at a turn boundary, without blocking the user's input or reply.
+            while (getGenerationJob(conversationId)?.isActive == true) {
+                setCompressionStatus(conversationId, ContextCompressionStatus(
+                    ContextManagementActivity.WAITING, summaryRequests.size, summaryRequests.size,
+                ))
+                getGenerationJob(conversationId)?.join()
+            }
+            if (conversationDeletionLedger.isTombstoned(conversationId)) {
+                return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
             }
 
             // Append-only frozen Milestone Block to preserve KV prompt cache across turns
             val milestoneHeader = "### [Milestone $nextMilestoneNumber]"
-            val milestoneBlock = "$milestoneHeader\n$rawSummary"
+            val milestoneBlock = "$milestoneHeader <!-- lastchat:coverage=$startIndex..$lastIndexToSummarize -->\n$rawSummary"
             val finalSummary = if (previousSummary.isNullOrBlank()) {
                 milestoneBlock
             } else {
@@ -2854,27 +2885,40 @@ class ChatService(
             }
 
             // Update conversation with summary
-            val now = System.currentTimeMillis()
+            val now = maxOf(System.currentTimeMillis(), conversation.lastRefreshTime + 1)
             // Summarization is asynchronous: preserve appended messages and never apply coverage
             // to a branch or source text that changed while the helper was running.
             val latestConversation = getConversationState(conversationId)?.value
                 ?: conversationRepo.getConversationById(conversationId)
                 ?: return@withContext contextRefreshError(R.string.context_refresh_error_conversation_not_found)
-            check(latestConversation.contextSummary == previousSummary &&
-                latestConversation.contextSummaryUpToIndex == lastSummaryIndex &&
-                latestConversation.currentMessages.take(lastIndexToSummarize + 1) ==
-                messages.take(lastIndexToSummarize + 1)) {
+            check(canApplyContextCompression(conversation, latestConversation, lastIndexToSummarize)) {
                 "Conversation changed during summarization; history was retained"
             }
-            val updatedConversation = latestConversation.copy(
-                contextSummary = finalSummary,
-                contextSummaryUpToIndex = lastIndexToSummarize, // Index of last message included in summary
-                lastRefreshTime = now
-            )
-
-            // Persist changes
-            conversationRepo.updateConversation(updatedConversation)
-            updateConversation(conversationId, updatedConversation)
+            val latestAssistant = settingsStore.settingsFlow.value.resolveConversationContext(latestConversation).assistant
+            if (automatic && latestAssistant.effectiveContextManagementMode != ContextManagementMode.AUTOMATIC) {
+                return@withContext ContextRefreshResult(success = true)
+            }
+            check(latestAssistant.contextCompressionPolicy == assistant.contextCompressionPolicy &&
+                latestAssistant.contextSummaryInstructions == assistant.contextSummaryInstructions) {
+                "Context preferences changed during optimization; original context was retained"
+            }
+            currentCoroutineContext().ensureActive()
+            if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
+                check(conversationRepo.updateContextSummaryIfUnchanged(
+                    source = conversation, summary = finalSummary,
+                    upToIndex = lastIndexToSummarize, refreshedAt = now,
+                )) { "Conversation changed during optimization; original context was retained" }
+            }
+            val live = getConversationState(conversationId)
+            live?.update { current ->
+                if (canApplyContextCompression(conversation, current, lastIndexToSummarize)) {
+                    current.copy(
+                        contextSummary = finalSummary,
+                        contextSummaryUpToIndex = lastIndexToSummarize,
+                        lastRefreshTime = now,
+                    )
+                } else current
+            }
 
             Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages into Milestone $nextMilestoneNumber, saved ~${originalTokens - summaryTokens} tokens")
 
@@ -3022,18 +3066,6 @@ class ChatService(
     }
 
     // 清理对话相关资源
-    private fun setContextManagementActivity(
-        conversationId: Uuid,
-        activity: ContextManagementActivity?,
-    ) {
-        val current = _contextManagementActivity.value
-        _contextManagementActivity.value = if (activity == null) {
-            current - conversationId
-        } else {
-            current + (conversationId to activity)
-        }
-    }
-
     private fun removeContextUsage(conversationId: Uuid) {
         val current = _contextUsage.value
         if (current.containsKey(conversationId)) {
@@ -3046,7 +3078,6 @@ class ChatService(
         removeGenerationJob(conversationId)
         removeConversationState(conversationId)
         removeContextUsage(conversationId)
-        setContextManagementActivity(conversationId, null)
         setConversationPersistenceMode(conversationId, ChatPersistenceMode.NORMAL)
 
         Log.i(

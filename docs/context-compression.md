@@ -55,7 +55,8 @@ Provider-specific opaque compaction was not adopted because LastChat supports mu
    exchanges and boundaries inside turns cannot be marked covered.
 4. **Separate chat and helper budgets.** The chat model determines retention. The helper's
    own input, response reserve and safety margin determine each summary batch. Each request
-   has at most 16k estimated input tokens and up to 4,096 tokens for checkpoint text. Explicit
+   has at most 16k estimated input tokens and normally up to 4,096 tokens for checkpoint text.
+   The character's detail preference scales that allowance, with an 8,192-token hard ceiling. Explicit
    thinking budgets reserve additional output space, subject to the helper model's limits.
 5. **Send the source text.** Dialogue, tool arguments and tool results are no longer clipped
    by default. Oversized transcripts are split into ordered requests without skipping source
@@ -71,9 +72,46 @@ Provider-specific opaque compaction was not adopted because LastChat supports mu
    summary are checked against the latest conversation; appended messages are preserved.
 
 Existing milestones remain frozen and new ones append, avoiding repeated summary-of-summary
-rewrites. No database migration or new setting is required. The original conversation remains
-stored and the existing summary-edit/revert controls continue to work. An old summary cannot
+rewrites. No database migration is required. The original conversation remains
+stored. An old summary cannot
 recover details it already lost; revert it and summarize the original messages to rebuild it.
+
+## Unified controls and quiet background work
+
+Updated 2026-10-21:
+
+- Characters have one context mode: **Automatic** or **Only when I ask**. Automatic mode
+  responds to token pressure; manual mode still enforces the model's request budget.
+  Legacy smart-management and auto-summary preferences migrate into this single choice.
+  Competing message-count, search-result and image-age retention controls are retired.
+- **More detail**, **Balanced**, and **More room** adjust both when optimization happens
+  and how much space its checkpoint receives. Advanced controls retain a chosen number of
+  recent exchanges and supply details to preserve. Tight context limits can require a smaller
+  recent tail. A dedicated summarizer model remains optional.
+- The context meter blends into the native Material expressive loading indicator while
+  queued, optimizing or waiting to apply. Successful compression morphs into a circle before
+  returning to the meter. Reduced-motion settings skip that animation. There are no completion
+  notifications, banners, toasts or haptics.
+- The meter and composer menu open the same dismissible **Chat context** sheet. It shows
+  usage, the eligible source range, background progress, an editable checkpoint and context
+  details. Closing it leaves work running. New checkpoints record coverage boundaries so
+  **Undo last optimization** restores just the previous checkpoint. Legacy or manually edited
+  checkpoints offer **Restore original context** instead. Neither action deletes messages.
+- Persisted conversations use unique, ordinary WorkManager jobs, without a foreground
+  service or notification. A per-conversation shared job prevents duplicate helper requests;
+  a global semaphore limits compression to one helper operation at a time. Cancelling a UI
+  waiter does not cancel compression; the sheet provides an explicit Stop action. Transient
+  conversations stay in application memory rather than being persisted for background work.
+- The executor waits for any current reply before applying. Source edits, context resets,
+  checkpoint edits and changed retention preferences invalidate its draft. A conditional,
+  metadata-only database update preserves messages appended while the helper was running.
+  Older streaming snapshots preserve newer checkpoint metadata. Clearing context cancels
+  compression and respects the new active-history boundary.
+
+WorkManager can restart pending work after process death, subject to Android scheduling.
+Individual helper-batch drafts are not persisted, so an interrupted operation may need to
+generate its checkpoint again. Leaving the sheet or navigating elsewhere in the app does not
+interrupt an active operation. Failed automatic attempts have a five-minute cooldown.
 
 ## Validation and remaining limits
 
@@ -81,19 +119,27 @@ Validated in the task environment:
 
 ```sh
 ./gradlew :ai:testDebugUnitTest :app:testStableDebugUnitTest \
+  --tests 'me.rerere.rikkahub.service.ContextCompressionTest' \
+  --tests 'me.rerere.rikkahub.data.model.AssistantContextSettingsTest' \
   --tests 'me.rerere.rikkahub.data.ai.HelperModelGenerationParamsTest' \
+  --tests '*ContextManagementRenderTest' \
+  -Dlastchat.renderDir=/workspace/scratch/context-ui \
   iosPortabilityReport --configure-on-demand --max-workers=2 --console=plain
 ```
 
-Result: 201 AI-module tests and five app helper-parameter tests passed, including app Kotlin
-compilation. The non-failing iOS portability report was generated. `git diff --check` passed.
+Result: 216 AI-module tests and 20 app tests passed, including app Kotlin compilation and
+four Robolectric native-graphics renders of the real sheet (light/dark, ready/running).
+The non-failing iOS portability report was generated. `git diff --check` passed.
 The requested repository graph refresh could not run because `graphify` is not installed.
 
 Regression coverage exercises late requirements and tool details beyond the old clipping
 limits; a giant multilingual/emoji turn batched for a 4k helper; exact source reconstruction;
 per-request budget fit; blank/truncated intermediate failures; ordered successful batches;
 unchanged in-budget tool evidence; truthful receipt outcomes; no low-pressure 20-turn trigger;
-single output reservation; minimal-prefix slicing; and unresolved tool-call protection.
+single output reservation; minimal-prefix slicing; unresolved tool-call protection; style and
+recent-tail preferences; legacy settings migration; source validation; checkpoint undo;
+streaming metadata preservation; explicit context reset; shared-job deduplication; caller
+cancellation; and explicit cancellation followed by retry.
 
 The tests validate selection, budgeting and failure handling without calling a paid model.
 They do not measure semantic recall of generated summaries. A follow-up evaluation should use

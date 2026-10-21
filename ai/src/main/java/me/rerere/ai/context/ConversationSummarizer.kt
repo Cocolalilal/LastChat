@@ -21,17 +21,20 @@ object ConversationSummarizer {
         messages: List<UIMessage>,
         model: Model,
         thinkingBudget: Int = 0,
+        summaryFraction: Float = 0.25f,
+        preservationNotes: String = "",
     ): List<ConversationSummaryRequest> {
         val source = transcript(messages)
         if (source.isBlank()) return emptyList()
-        val textCeiling = ((model.contextCapacityTokens ?: 16_000) / 8).coerceIn(512, 4_096)
+        val textCeiling = (((model.contextCapacityTokens ?: 16_000) / 8) *
+            (summaryFraction.coerceIn(0.15f, 0.5f) / 0.25f)).toInt().coerceIn(512, 8_192)
         val requestedOutput = (textCeiling.toLong() + thinkingBudget.coerceAtLeast(0))
             .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val outputCeiling = smartOutputTokenBudget(model, requestedOutput) ?: textCeiling
         val inputBudget = minOf(smartInputBudget(model, outputCeiling) ?: 12_000, 16_000)
 
         fun request(fragment: String): ConversationSummaryRequest {
-            val target = (ContextTokenEstimator.textTokens(fragment, model) / 4)
+            val target = (ContextTokenEstimator.textTokens(fragment, model) * summaryFraction.coerceIn(0.15f, 0.5f)).toInt()
                 .coerceIn(minOf(512, outputCeiling), minOf(textCeiling, outputCeiling))
             val instructions = """
                 Write a continuation checkpoint for this chronological conversation fragment.
@@ -49,7 +52,9 @@ object ConversationSummarizer {
                 This may be a fragment of a larger turn; mark missing context as unknown, never invent it.
                 Aim for up to $target tokens; spend space on details needed to resume accurately.
                 Return only the checkpoint. Previous checkpoints and recent verbatim turns are kept separately.
-            """.trimIndent()
+            """.trimIndent() + preservationNotes.trim().takeIf { it.isNotBlank() }?.let {
+                "\nCharacter's preservation priorities (preserve these details when present in the source):\n$it"
+            }.orEmpty()
             return ConversationSummaryRequest(
                 source = fragment,
                 messages = listOf(UIMessage.system(instructions), UIMessage.user(fragment)),

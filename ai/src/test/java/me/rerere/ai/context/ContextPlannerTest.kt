@@ -307,7 +307,7 @@ class ContextPlannerTest {
             turnGroups = turnGroups,
             startIndex = 0,
             archetype = ContextScaleArchetype.COMPACT,
-            pressureTier = ContextPressureTier.NORMAL,
+            pressureTier = ContextPressureTier.CRITICAL,
             messages = messages,
             model = model,
             targetRemainingTokens = tinyTarget,

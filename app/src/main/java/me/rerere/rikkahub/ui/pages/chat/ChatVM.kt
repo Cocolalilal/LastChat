@@ -58,7 +58,6 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.ContextManagementActivity
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -98,10 +97,12 @@ class ChatVM(
     val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
         .map { usageByConversation -> usageByConversation[_conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val contextManagementActivity: StateFlow<ContextManagementActivity?> =
-        chatService.contextManagementActivity
-            .map { activityByConversation -> activityByConversation[_conversationId] }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val contextCompressionStatus = chatService.observeContextCompression(_conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun optimizeContext() = chatService.requestContextCompression(_conversationId)
+    fun cancelContextOptimization() = chatService.cancelContextCompression(_conversationId)
+
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
     internal var chatListScrollPosition: ChatListScrollPosition? = null
@@ -537,7 +538,11 @@ class ChatVM(
         viewModelScope.launch {
             val lastTruncateIndex = conversation.value.messageNodes.lastIndex + 1
             // 如果截断在最后一个索引，则取消截断，否则更新 truncateIndex 到最后一个截断位置
+            chatService.cancelContextCompression(_conversationId)
             val newConversation = conversation.value.copy(
+                contextSummary = null,
+                contextSummaryUpToIndex = -1,
+                lastRefreshTime = maxOf(System.currentTimeMillis(), conversation.value.lastRefreshTime + 1),
                 truncateIndex = if (conversation.value.truncateIndex == lastTruncateIndex) -1 else lastTruncateIndex,
                 title = "",
                 chatSuggestions = emptyList(), // 清空建议
@@ -636,11 +641,6 @@ class ChatVM(
         appScope.launch(Dispatchers.IO) {
             chatAttachmentRepository.discardImportedUri(uri)
         }
-    }
-
-    // Context Refresh - summarize conversation and update context
-    suspend fun refreshContext(): ChatService.ContextRefreshResult {
-        return chatService.summarizeAndRefresh(_conversationId)
     }
 
     private fun getDateLabel(date: LocalDate): String {

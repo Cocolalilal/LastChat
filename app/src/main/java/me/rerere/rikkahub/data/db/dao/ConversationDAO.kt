@@ -12,6 +12,16 @@ import me.rerere.rikkahub.data.repository.LightConversationEntity
 
 @Dao
 interface ConversationDAO {
+    @Query("""
+        UPDATE ConversationEntity SET context_summary = :summary,
+            context_summary_up_to_index = :upToIndex, last_refresh_time = :refreshedAt
+        WHERE id = :id AND nodes = :expectedNodes AND context_summary = :expectedSummary
+            AND context_summary_up_to_index = :expectedIndex AND last_refresh_time = :expectedRefresh
+    """)
+    suspend fun updateContextSummaryIfUnchanged(
+        id: String, summary: String, upToIndex: Int, refreshedAt: Long,
+        expectedNodes: String, expectedSummary: String, expectedIndex: Int, expectedRefresh: Long,
+    ): Int
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAll(): Flow<List<ConversationEntity>>
 

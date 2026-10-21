@@ -100,6 +100,11 @@ data class Assistant(
 
     // Context Management Settings
     val smartContextManagement: Boolean = true,
+    val contextManagementMode: ContextManagementMode? = null, // null migrates legacy switches on read
+    val contextCompressionStyle: me.rerere.ai.context.ContextCompressionStyle =
+        me.rerere.ai.context.ContextCompressionStyle.BALANCED,
+    val contextRecentTurns: Int? = null, // null = adapt to the model
+    val contextSummaryInstructions: String = "",
     val maxHistoryMessages: Int? = null, // null = unlimited (use token budgeting only)
     val enableHistorySummarization: Boolean = false, // Generate summaries of pruned messages
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
@@ -147,6 +152,27 @@ fun Assistant.getInitialMessageNodes(): List<me.rerere.ai.ui.MessageNode> {
 }
 
 internal const val DEFAULT_AUTO_SUMMARY_HISTORY_LIMIT = 10
+
+@Serializable
+enum class ContextManagementMode { AUTOMATIC, MANUAL }
+
+val Assistant.effectiveContextManagementMode: ContextManagementMode
+    get() = contextManagementMode ?: if (smartContextManagement || autoRegenerateSummary) {
+        ContextManagementMode.AUTOMATIC
+    } else ContextManagementMode.MANUAL
+
+val Assistant.contextCompressionPolicy: me.rerere.ai.context.ContextCompressionPolicy
+    get() = me.rerere.ai.context.ContextCompressionPolicy(contextCompressionStyle, contextRecentTurns)
+
+fun Assistant.withContextManagementMode(mode: ContextManagementMode): Assistant = copy(
+    contextManagementMode = mode,
+    smartContextManagement = true, // Budget protection applies in both modes.
+    autoRegenerateSummary = mode == ContextManagementMode.AUTOMATIC,
+    enableHistorySummarization = mode == ContextManagementMode.AUTOMATIC,
+    maxHistoryMessages = null, // Replaced by token pressure and recent-exchange protection.
+    maxSearchResultsRetained = null,
+    archiveImagesAfterMessageAge = null,
+)
 
 internal fun Assistant.canManuallySummarizeConversation(messageCount: Int): Boolean {
     return messageCount > 2
