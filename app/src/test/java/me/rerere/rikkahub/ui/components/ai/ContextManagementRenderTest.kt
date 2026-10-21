@@ -7,16 +7,11 @@ import android.os.Looper
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.unit.dp
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.MessageNode
 import me.rerere.ai.ui.UIMessage
@@ -27,6 +22,12 @@ import me.rerere.rikkahub.service.ContextManagementActivity
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import me.rerere.rikkahub.ui.motion.MotionPolicy
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.SeafoamMintThemeId
+import me.rerere.rikkahub.ui.theme.Shapes
+import me.rerere.rikkahub.ui.theme.Typography
+import me.rerere.rikkahub.ui.theme.findPresetTheme
+import me.rerere.rikkahub.ui.theme.withLastChatAmoledSurface
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -40,7 +41,7 @@ import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.time.Duration
 
-/** Opt-in screenshots of the actual native sheet; uses the existing repository render harness contract. */
+/** Opt-in renders of the real popup using LastChat's default palette, typography and shapes. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = Application::class, qualifiers = "w360dp-h800dp-xhdpi")
@@ -51,7 +52,7 @@ class ContextManagementRenderTest {
     }, null, false)
 
     @Test
-    fun rendersReadyAndRunningSheetsInBothThemes() {
+    fun rendersReadyAndRunningDialogsInBothThemes() {
         assumeTrue(output != null)
         output?.mkdirs()
         val assistant = Assistant()
@@ -66,12 +67,21 @@ class ContextManagementRenderTest {
             contextSummaryUpToIndex = 3,
         )
         for (dark in listOf(true, false)) for (running in listOf(false, true)) {
+            val colorScheme = findPresetTheme(SeafoamMintThemeId).getColorScheme(dark)
+                .withLastChatAmoledSurface(dark)
             val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
             val activity = controller.get()
             activity.setContent {
-                MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                    CompositionLocalProvider(LocalMotionPolicy provides MotionPolicy(reduceMotion = true)) {
-                        ContextManagementSheet(
+                MaterialTheme(
+                    colorScheme = colorScheme,
+                    typography = Typography,
+                    shapes = Shapes,
+                ) {
+                    CompositionLocalProvider(
+                        LocalMotionPolicy provides MotionPolicy(reduceMotion = true),
+                        LocalDarkMode provides dark,
+                    ) {
+                        ContextManagementDialog(
                             conversation = conversation, assistant = assistant,
                             model = Model(modelId = "chat", contextWindowTokens = 32_000),
                             status = if (running) ContextCompressionStatus(ContextManagementActivity.SUMMARIZING, 1, 3) else null,
@@ -85,18 +95,25 @@ class ContextManagementRenderTest {
             val view = ShadowDialog.getLatestDialog()?.window?.decorView ?: activity.window.decorView
             val width = (360 * activity.resources.displayMetrics.density).toInt()
             val height = (800 * activity.resources.displayMetrics.density).toInt()
-            view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
-            view.layout(0, 0, width, height)
+            // A dialog has its own, narrower window. Don't stretch that window across the
+            // screenshot as we did for the former full-width sheet.
+            val dialogWidth = width - (48 * activity.resources.displayMetrics.density).toInt()
+            fun layoutDialog() {
+                view.measure(View.MeasureSpec.makeMeasureSpec(dialogWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST))
+                view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+            }
+            layoutDialog()
             repeat(3) {
                 shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(120))
-                view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
-                view.layout(0, 0, width, height)
+                layoutDialog()
             }
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            view.draw(Canvas(bitmap))
-            val name = "context-${if (dark) "dark" else "light"}-${if (running) "running" else "ready"}.png"
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(colorScheme.background.toArgb())
+            canvas.translate((width - view.width) / 2f, (height - view.height) / 2f)
+            view.draw(canvas)
+            val name = "context-popup-${if (dark) "dark" else "light"}-${if (running) "running" else "ready"}.png"
             File(output, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             assertTrue(view.width > 0 && view.height > 0)
             ShadowDialog.getLatestDialog()?.dismiss()

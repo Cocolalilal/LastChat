@@ -190,7 +190,7 @@ import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
-import me.rerere.rikkahub.ui.components.ai.ContextManagementSheet
+import me.rerere.rikkahub.ui.components.ai.ContextManagementDialog
 import me.rerere.rikkahub.ui.components.ai.ContextOptimizationGlyph
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
@@ -2099,7 +2099,7 @@ private fun ChatPageContent(
             }
 
             if (showContextUsagePopup) {
-                ContextManagementSheet(
+                ContextManagementDialog(
                     conversation = conversation,
                     assistant = currentAssistant,
                     model = currentChatModel,
@@ -3768,7 +3768,7 @@ private fun ContextUsagePopupContent(
         ((effectiveAvailable.toFloat() / activeBudgetCeiling) * 100).toInt().coerceIn(0, 100)
 
     Column(
-        modifier = Modifier.padding(20.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

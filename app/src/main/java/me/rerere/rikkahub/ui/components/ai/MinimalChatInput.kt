@@ -1402,7 +1402,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         }
     }
     if (showContextManagement) {
-        ContextManagementSheet(
+        ContextManagementDialog(
             conversation = conversation, assistant = assistant, model = currentChatModel,
             usage = contextUsage, status = contextCompressionStatus,
             onOptimize = onRefreshContext, onCancel = onCancelContextCompression,

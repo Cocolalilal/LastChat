@@ -92,15 +92,17 @@ Updated 2026-10-21:
   queued, optimizing or waiting to apply. Successful compression morphs into a circle before
   returning to the meter. Reduced-motion settings skip that animation. There are no completion
   notifications, banners, toasts or haptics.
-- The meter and composer menu open the same dismissible **Chat context** sheet. It shows
-  usage, the eligible source range, background progress, an editable checkpoint and context
+- The meter and composer menu open the same dismissible **Chat context** popup. It uses
+  the shared floating dialog surface, typography and pill actions, with compact rows rather
+  than stacked cards. It shows usage, the eligible source range, background progress,
+  an editable checkpoint and context
   details. Closing it leaves work running. New checkpoints record coverage boundaries so
   **Undo last optimization** restores just the previous checkpoint. Legacy or manually edited
   checkpoints offer **Restore original context** instead. Neither action deletes messages.
 - Persisted conversations use unique, ordinary WorkManager jobs, without a foreground
   service or notification. A per-conversation shared job prevents duplicate helper requests;
   a global semaphore limits compression to one helper operation at a time. Cancelling a UI
-  waiter does not cancel compression; the sheet provides an explicit Stop action. Transient
+  waiter does not cancel compression; the popup provides an explicit Stop action. Transient
   conversations stay in application memory rather than being persisted for background work.
 - The executor waits for any current reply before applying. Source edits, context resets,
   checkpoint edits and changed retention preferences invalidate its draft. A conditional,
@@ -110,7 +112,7 @@ Updated 2026-10-21:
 
 WorkManager can restart pending work after process death, subject to Android scheduling.
 Individual helper-batch drafts are not persisted, so an interrupted operation may need to
-generate its checkpoint again. Leaving the sheet or navigating elsewhere in the app does not
+generate its checkpoint again. Leaving the popup or navigating elsewhere in the app does not
 interrupt an active operation. Failed automatic attempts have a five-minute cooldown.
 
 ## Validation and remaining limits
@@ -123,12 +125,13 @@ Validated in the task environment:
   --tests 'me.rerere.rikkahub.data.model.AssistantContextSettingsTest' \
   --tests 'me.rerere.rikkahub.data.ai.HelperModelGenerationParamsTest' \
   --tests '*ContextManagementRenderTest' \
-  -Dlastchat.renderDir=/workspace/scratch/context-ui \
+  -Dlastchat.renderDir=/workspace/scratch/context-popup \
   iosPortabilityReport --configure-on-demand --max-workers=2 --console=plain
 ```
 
 Result: 216 AI-module tests and 20 app tests passed, including app Kotlin compilation and
-four Robolectric native-graphics renders of the real sheet (light/dark, ready/running).
+four Robolectric native-graphics renders of the popup (light/dark, ready/running), using
+LastChat's default Seafoam Mint palette, AMOLED surface conversion, typography and shapes.
 The non-failing iOS portability report was generated. `git diff --check` passed.
 The requested repository graph refresh could not run because `graphify` is not installed.
 
