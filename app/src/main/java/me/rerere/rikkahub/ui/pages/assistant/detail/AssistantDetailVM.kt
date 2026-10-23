@@ -28,6 +28,8 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.ai.MemorySummaryService
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -54,6 +56,7 @@ class AssistantDetailVM(
     private val providerManager: me.rerere.ai.provider.ProviderManager,
     private val appStorageRepository: AppStorageRepository,
     private val embeddingService: EmbeddingService,
+    private val memorySummaryService: MemorySummaryService,
 ) : ViewModel() {
     private val assistantId = runCatching { Uuid.parse(id) }
         .onFailure { Log.w(TAG, "Invalid assistant id route parameter: $id", it) }
@@ -68,6 +71,48 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
         )
+
+    val memorySummary: StateFlow<MemorySummaryEntity?> =
+        memoryRepository.getMemorySummaryFlow(assistantId.toString())
+            .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    private val _isSummaryGenerating = MutableStateFlow(false)
+    val isSummaryGenerating: StateFlow<Boolean> = _isSummaryGenerating.asStateFlow()
+
+    private val _summaryError = MutableStateFlow<String?>(null)
+    val summaryError: StateFlow<String?> = _summaryError.asStateFlow()
+
+    fun regenerateMemorySummary() {
+        viewModelScope.launch {
+            _isSummaryGenerating.value = true
+            _summaryError.value = null
+            memorySummaryService.fullRegenerate(assistantId.toString())
+                .onFailure {
+                    _summaryError.value = it.message ?: "Failed to generate summary"
+                }
+            _isSummaryGenerating.value = false
+        }
+    }
+
+    fun askOrUpdateMemorySummary(instruction: String) {
+        if (instruction.isBlank()) return
+        viewModelScope.launch {
+            _isSummaryGenerating.value = true
+            _summaryError.value = null
+            memorySummaryService.askOrUpdate(assistantId.toString(), instruction)
+                .onFailure {
+                    _summaryError.value = it.message ?: "Failed to update summary"
+                }
+            _isSummaryGenerating.value = false
+        }
+    }
+
+    fun switchToAssistant(id: String) {
+        val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
+        viewModelScope.launch {
+            settingsStore.updateAssistant(uuid)
+        }
+    }
 
     val assistant: StateFlow<Assistant> = settingsStore
         .settingsFlow

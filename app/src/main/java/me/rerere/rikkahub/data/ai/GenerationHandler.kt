@@ -1326,6 +1326,10 @@ class GenerationHandler(
             // payloads and removes complete old turn groups only when the real budget requires it.
             selectedMessages.addAll(imageArchivedMessages)
             if (assistant.enableMemory) {
+                val memorySummary = if (assistant.enableMemorySummary) {
+                    memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
+                } else null
+
                 val memorySelection = selectSmartMemoryContext(
                     candidates = effectiveMemoriesCandidates,
                     model = model,
@@ -1334,6 +1338,7 @@ class GenerationHandler(
                     historyMessages = imageArchivedMessages,
                     contextPriority = assistant.contextPriority,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
+                    memorySummary = memorySummary,
                 )
                 selectedMemories.addAll(memorySelection.memories)
                 selectedMemoryPromptText = memorySelection.promptText
@@ -1435,11 +1440,16 @@ class GenerationHandler(
         }
 
         if (assistant.enableMemory && selectedMemoryPromptText.isBlank()) {
-            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities) {
+            val memorySummary = if (assistant.enableMemorySummary) {
+                memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
+            } else null
+
+            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank()) {
                 selectedMemoryPromptText = renderMemoryContextPrompt(
                     model = model,
                     memories = selectedMemories,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
+                    memorySummary = memorySummary,
                 )
             }
         }
