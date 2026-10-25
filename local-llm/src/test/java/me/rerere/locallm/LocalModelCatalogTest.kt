@@ -43,7 +43,7 @@ class LocalModelCatalogTest {
     @Test
     fun `cached updates remain available alongside new bundled models`() {
         val bundled = bundled()
-        val original = bundled.models.single { it.id == "EmbeddingGemma-300M" }
+        val original = bundled.models.first { it.kind == LocalModelKind.LLM }
         val updated = original.copy(commitHash = "updated", updateInfo = "New revision")
         val result = mergeCachedLocalCatalog(bundled, bundled.copy(models = listOf(updated)))
 
@@ -59,4 +59,16 @@ class LocalModelCatalogTest {
 
         assertEquals(bundled, mergeCachedLocalCatalog(bundled, bundled.copy(models = listOf(stale))))
     }
+    @Test
+    fun `only EmbeddingGemma 2 Text is offered and old caches cannot restore the retired model`() {
+        val bundled = bundled()
+        val replacement = bundled.models.single { it.kind == LocalModelKind.EMBEDDING }
+        assertEquals(TEXT_EMBEDDING_MODEL_ID, replacement.id)
+        val retired = replacement.copy(id = RETIRED_EMBEDDING_MODEL_ID, modelFile = "embeddinggemma-300m.tflite")
+        val cached = bundled.copy(models = bundled.models + retired)
+
+        assertEquals(bundled, mergeCachedLocalCatalog(bundled, cached))
+        assertFalse(mergeCachedLocalCatalog(bundled, cached).models.any { it.id == RETIRED_EMBEDDING_MODEL_ID })
+    }
+
 }

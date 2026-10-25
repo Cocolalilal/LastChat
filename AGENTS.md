@@ -40,6 +40,7 @@ Dependency graph: `:app` → all other modules. `:common` →(`api`)→ `:shared
 ## Build
 
 - **Node.js + npm required** — `:app:preBuild` triggers `buildWebUi` which runs `npm run build` in `web-ui/`.
+- LiteRT-LM 0.18 JVM dependencies require **Java 21 for host tests**. Use a full JDK 21, or a Java 21 test launcher with the existing JDK 17 compiler. Android source/bytecode targets remain 17.
 - Signing: release config reads from `local.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); falls back to debug signing if absent.
 - Firebase: `google-services.json` must be in `app/` for release builds. Plugin no-ops if missing. Crashlytics + RemoteConfig only (Analytics removed for privacy — don't re-add).
 - `lastchat.release.minify` Gradle property (default `true`) — pass `-Plastchat.release.minify=false` to disable R8/resource shrinking.

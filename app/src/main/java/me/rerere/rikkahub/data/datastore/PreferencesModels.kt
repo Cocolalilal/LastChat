@@ -689,7 +689,8 @@ internal fun Settings.clearMissingModelReferences(): Settings {
         assistant.copy(
             chatModelId = assistant.chatModelId.ensureValidOrNull(),
             backgroundModelId = assistant.backgroundModelId.ensureValidOrNull(),
-            embeddingModelId = assistant.embeddingModelId.ensureValidOrNull(),
+            // An explicitly disabled local embedder must not inherit a global cloud selection.
+            embeddingModelId = assistant.embeddingModelId?.takeIf { it == DISABLED_MODEL_ID || it in allModelIds },
             summarizerModelId = assistant.summarizerModelId.ensureValidOrNull(),
         )
     }

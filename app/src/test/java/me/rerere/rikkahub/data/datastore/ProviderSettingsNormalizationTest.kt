@@ -5,6 +5,8 @@ import kotlinx.coroutines.runBlocking
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.locallm.RETIRED_EMBEDDING_MODEL_ID
+import me.rerere.locallm.TEXT_EMBEDDING_MODEL_ID
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.utils.JsonInstant
@@ -213,4 +215,64 @@ class ProviderSettingsNormalizationTest {
         val settings = Settings(searchServices = listOf(keyless))
         assertEquals(settings.searchServices, settings.normalizeSearchServices().searchServices)
     }
+    @Test
+    fun `retired embedding selections are disabled without falling back to cloud`() {
+        val retired = Model(modelId = RETIRED_EMBEDDING_MODEL_ID, type = ModelType.EMBEDDING)
+        val cloud = Model(modelId = "cloud-embedding", type = ModelType.EMBEDDING)
+        val local = ProviderSetting.LiteRtLocal(models = listOf(retired))
+        val settings = Settings(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(cloud)), local),
+            embeddingModelId = retired.id,
+            assistants = listOf(Assistant(embeddingModelId = retired.id)),
+            favoriteModels = listOf(retired.id),
+        )
+
+        val synced = settings.withSyncedLocalProviderModels(listOf(retired), emptyList())
+            .clearMissingModelReferences()
+
+        assertEquals(DISABLED_MODEL_ID, synced.embeddingModelId)
+        assertEquals(DISABLED_MODEL_ID, synced.assistants.single().embeddingModelId)
+        assertTrue(synced.favoriteModels.isEmpty())
+        assertTrue(synced.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().single().models.isEmpty())
+    }
+
+    @Test
+    fun `installed text replacement keeps its own vector identity and respects explicit selections`() {
+        val retired = Model(modelId = RETIRED_EMBEDDING_MODEL_ID, type = ModelType.EMBEDDING)
+        val replacement = Model(modelId = TEXT_EMBEDDING_MODEL_ID, type = ModelType.EMBEDDING)
+        val cloud = Model(modelId = "cloud-embedding", type = ModelType.EMBEDDING)
+        val settings = Settings(
+            providers = listOf(
+                ProviderSetting.OpenAI(models = listOf(cloud)),
+                ProviderSetting.LiteRtLocal(models = listOf(retired, replacement)),
+            ),
+            embeddingModelId = cloud.id,
+            assistants = listOf(
+                Assistant(embeddingModelId = retired.id),
+                Assistant(embeddingModelId = cloud.id),
+                Assistant(embeddingModelId = DISABLED_MODEL_ID),
+                Assistant(embeddingModelId = null),
+            ),
+        )
+
+        val synced = settings.withSyncedLocalProviderModels(listOf(retired, replacement), emptyList())
+            .clearMissingModelReferences()
+
+        assertEquals(cloud.id, synced.embeddingModelId)
+        assertEquals(listOf(replacement.id, cloud.id, DISABLED_MODEL_ID, null), synced.assistants.map { it.embeddingModelId })
+        assertEquals(listOf(replacement), synced.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().single().models)
+        val global = settings.copy(embeddingModelId = retired.id)
+            .withSyncedLocalProviderModels(listOf(replacement), emptyList())
+        assertEquals(replacement.id, global.embeddingModelId)
+        assertFalse(replacement.id == retired.id)
+        assertEquals(synced, synced.withSyncedLocalProviderModels(listOf(retired, replacement), emptyList()))
+    }
+
+    @Test
+    fun `a retired install by itself does not recreate a local provider`() {
+        val retired = Model(modelId = RETIRED_EMBEDDING_MODEL_ID, type = ModelType.EMBEDDING)
+        val settings = Settings(providers = emptyList())
+        assertEquals(settings, settings.withSyncedLocalProviderModels(listOf(retired), emptyList()))
+    }
+
 }
