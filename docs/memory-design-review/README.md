@@ -1,5 +1,9 @@
 # Memory design review — 27 October 2026
 
+**Read REVISION-2.md first.** The user rejected the first browser prototype; its visual
+checks missed important defects. Revision 2 replaces that artifact and strengthens the
+daily-use audit. Production implementation is still awaiting review.
+
 Status: design proposal for review, not authorization to replace the app's memory feature.
 The implementation baseline is `lastchat_dev` at `db906721`, based on upstream dev
 `e7b0d276`. Upstream was fetched again during this review and has not advanced.
@@ -134,8 +138,11 @@ Dive deeper suggestions must have answerable evidence. Selecting a question expa
 an answer with references in the current page/work surface; it does not create a new
 normal chat or invent an answer just to populate the suggestion card.
 
-"Last updated" refers to the displayed summary. Update refreshes that presentation
-from current eligible memory; it does not secretly reprocess all chats. Preparation
+Proposed Advanced behavior: "Last updated" refers to the displayed summary and Update
+refreshes that presentation from current eligible memory. This is not yet approved;
+review whether Update should also finish pending learning. Basic's manual Dream now
+operation must be mapped explicitly rather than mislabeled as a summary refresh.
+Neither action should silently initiate a full historical rebuild. Preparation
 has its own explicit progress and pause/resume controls. If the underlying memory
 changes, links must still resolve safely. Deletion invalidates affected summary text
 immediately; regenerating a polished paragraph may happen afterward.

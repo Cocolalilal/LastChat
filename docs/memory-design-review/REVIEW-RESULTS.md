@@ -1,5 +1,9 @@
 # Review record and remaining gates
 
+**Superseded visual confidence:** see REVISION-2.md. The earlier passing bounds/state
+checks did not catch whole-panel transparency, clutter, weak grouping or graph quality.
+The user correctly identified these as defects.
+
 Four independent subagent reviews examined current-code engine integration, actual
 RikkaHub behavior, native component reuse and adversarial memory semantics. The parent
 combined their findings into the proposal and a 44-case behavioral ledger.
