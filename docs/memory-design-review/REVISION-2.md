@@ -144,3 +144,10 @@ details. The fixture does not establish production graph scaling/retrieval/priva
 Browser state checks verify modeled editing/forgetting/Undo/cancellation behavior. They
 do not evaluate an actual memory model or the unimplemented engine proposal. No app
 implementation has changed in this revision.
+
+Live progress must preserve user-owned UI state: an expiring notice or completed tool
+run cannot clear unsent composer text/caret, close inspected tool details or steal focus
+from typing. If a focused activity row disappears on completion, restore focus to a
+meaningful ready-state target. Native implementation needs stable component identity and
+separate editor/job state; a correct transaction engine does not prevent these UI losses.
+The independent browser review explicitly exercises these transition races.
