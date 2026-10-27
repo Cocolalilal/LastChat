@@ -4,7 +4,10 @@
 checks missed important defects. Revision 2 replaces that artifact and strengthens the
 daily-use audit. Production implementation is still awaiting review.
 
-Status: design proposal for review, not authorization to replace the app's memory feature.
+Status: design proposal. The user now permits implementation if there is sufficient confidence
+to deliver a complete product. That condition has not been established by the browser fixture
+or code audit; this pass does not replace the runtime. See MIGRATION-AND-MODELS.md for the
+floating-UI clarification, migration proposal, embedding recommendation and optional Jev review.
 The implementation baseline is `lastchat_dev` at `db906721`, based on upstream dev
 `e7b0d276`. Upstream was fetched again during this review and has not advanced.
 The rejected v4 branch is not the implementation baseline.
