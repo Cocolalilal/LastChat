@@ -151,7 +151,18 @@ class MemoryLearningWorker(context: Context, params: WorkerParameters) : Corouti
             if(repository.configuration(owner)!=configuration || repository.metadata(owner).let { it.paused || it.cancelled }) return@withContext Result.success()
             if (assistant.memoryMode() == MemoryExperience.ADVANCED) repository.index(owner)
             if(repository.configuration(owner)!=configuration || repository.metadata(owner).let { it.paused || it.cancelled }) return@withContext Result.success()
-            if (assistant.memoryMode() == MemoryExperience.ADVANCED && (calls>0||staged||inputData.getBoolean("refresh",false))) processor.refreshSummary(owner)
+            if (assistant.memoryMode() == MemoryExperience.ADVANCED && (calls>0||staged||inputData.getBoolean("refresh",false))) {
+                repository.database.withTransaction {
+                    val latest=repository.metadata(owner)
+                    check(!latest.paused && !latest.cancelled && repository.configuration(owner)==configuration)
+                    repository.put(owner,"meta","meta",latest.copy(progress="Updating overview",inFlight="summary"))
+                }
+                processor.refreshSummary(owner)
+                repository.database.withTransaction {
+                    val latest=repository.metadata(owner)
+                    repository.put(owner,"meta","meta",latest.copy(inFlight=null))
+                }
+            }
             repository.database.withTransaction {
                 val latest = repository.metadata(owner)
                 if (!latest.paused && !latest.cancelled) repository.put(owner, "meta", "meta", latest.copy(
