@@ -258,4 +258,23 @@ class CharacterMemoryRepositoryTest {
         try{repository.apply(owner,draft(listOf(MemoryChange("node","user",node=MemoryNode("user","Wrong person","Person")))));fail("Expected reserved identity rejection")}catch(_:IllegalArgumentException){}
         assertTrue(repository.view(owner).nodes.isEmpty())
     }
+    @Test fun pausingDuringIndexStopsFurtherInferenceAndFencesItsVectorWrite()=runBlocking {
+        repository.initialise(owner)
+        assistant=assistant.copy(memoryExperience="ADVANCED")
+        repository.apply(owner,draft(listOf("a","b").map{MemoryChange("fact",it,fact=MemoryFact(it,"Likes $it",authored=true))}))
+        var calls=0
+        lateinit var indexed:CharacterMemoryRepository
+        indexed=CharacterMemoryRepository(db,object:MemoryEmbeddingClient{
+            override fun getEmbeddingModelId(assistantId:String?)="test"
+            override suspend fun embedWithModelId(text:String,assistantId:String?):EmbeddingResult {
+                calls++
+                indexed.configure(owner){it.copy(paused=true)}
+                return EmbeddingResult(listOf(List(768){if(it==0)1f else 0f}),"test")
+            }
+        }){if(it==owner)assistant else null}
+        indexed.index(owner)
+        assertEquals(1,calls)
+        assertTrue(indexed.dao.all(owner).none{it.kind=="vector"})
+        assertTrue(indexed.metadata(owner).paused)
+    }
 }

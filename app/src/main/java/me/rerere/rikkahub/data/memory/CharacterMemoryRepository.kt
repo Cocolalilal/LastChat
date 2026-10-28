@@ -516,13 +516,21 @@ class CharacterMemoryRepository(
 
     suspend fun index(owner: String) {
         val view = view(owner)
-        for (fact in view.facts) {
+        val configurationAtStart = configuration(owner)
+        val facts = view.facts.filter { isCurrentMemory(it,System.currentTimeMillis()) && it.context==owner(owner).memoryContext }
+        for ((position,fact) in facts.withIndex()) {
+            if(metadata(owner).let { it.paused || it.cancelled } || configuration(owner)!=configurationAtStart) return
             val old = dao.get(owner, "vector", fact.id)?.let { decode<MemoryVector>(it) }
             if (old?.revision == fact.revision && old.recipe == embeddings.getEmbeddingModelId(owner)) continue
+            database.withTransaction {
+                val meta = metadata(owner)
+                if(!meta.paused && !meta.cancelled && configuration(owner)==configurationAtStart)
+                    put(owner,"meta","meta",meta.copy(progress="${position+1}/${facts.size} memories · preparing recall"))
+            }
             val vector = embeddings.embedWithModelId(fact.text, owner)
             database.withTransaction {
                 val current = dao.get(owner, "fact", fact.id)?.let { decode<MemoryFact>(it) }
-                if (current?.revision == fact.revision && metadata(owner).paused.not()) {
+                if (current?.revision == fact.revision && metadata(owner).let { !it.paused && !it.cancelled } && configuration(owner)==configurationAtStart) {
                     put(owner, "vector", fact.id, MemoryVector(fact.revision, vector.modelId, vector.embeddings.first()))
                 }
             }

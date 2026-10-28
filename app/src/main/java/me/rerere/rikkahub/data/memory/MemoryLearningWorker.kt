@@ -148,7 +148,9 @@ class MemoryLearningWorker(context: Context, params: WorkerParameters) : Corouti
                 enqueue(applicationContext, owner, delaySeconds = 5)
                 return@withContext Result.success()
             }
+            if(repository.configuration(owner)!=configuration || repository.metadata(owner).let { it.paused || it.cancelled }) return@withContext Result.success()
             if (assistant.memoryMode() == MemoryExperience.ADVANCED) repository.index(owner)
+            if(repository.configuration(owner)!=configuration || repository.metadata(owner).let { it.paused || it.cancelled }) return@withContext Result.success()
             if (assistant.memoryMode() == MemoryExperience.ADVANCED && (calls>0||staged||inputData.getBoolean("refresh",false))) processor.refreshSummary(owner)
             repository.database.withTransaction {
                 val latest = repository.metadata(owner)
