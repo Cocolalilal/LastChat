@@ -21,6 +21,11 @@ import kotlin.uuid.Uuid
 class SecretKeyManager(
     private val secureStore: SecureStore
 ) {
+    fun getMemoryDecisionKey(): String? = secureStore.getSecret("memory_decision_typesafe")
+    fun setMemoryDecisionKey(key: String?) {
+        if (key == null) secureStore.removeSecret("memory_decision_typesafe")
+        else secureStore.putSecret("memory_decision_typesafe", key)
+    }
     companion object {
         private const val PROVIDER_APIKEY_PREFIX = "provider_apikey_"
         private const val PROVIDER_APIKEY_POOL_PREFIX = "provider_apikey_pool_"

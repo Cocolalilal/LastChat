@@ -448,31 +448,8 @@ fun AssistantDetailPage(
 
             // Memory
             composable(AssistantDetailRoutes.MEMORY) {
-                val embeddingProgress by vm.embeddingProgress.collectAsStateWithLifecycle()
-                val estimatedMemoryCapacity by vm.estimatedMemoryCapacity.collectAsStateWithLifecycle()
-                val needsEmbeddingRegeneration by vm.needsEmbeddingRegeneration.collectAsStateWithLifecycle()
-                val embeddingStatus by vm.embeddingStatus.collectAsStateWithLifecycle()
-                val retrievalDebugState by vm.retrievalDebugState.collectAsStateWithLifecycle()
-                AssistantMemorySettings(
-                    assistant = assistant,
-                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
-                    memories = memories,
-                    onUpdateAssistant = { onUpdate(it) },
-                    onDeleteMemory = { vm.deleteMemory(it) },
-                    onAddMemory = { vm.addMemory(it) },
-                    onUpdateMemory = { vm.updateMemory(it) },
-                    onRegenerateEmbeddings = { vm.regenerateEmbeddings() },
-                    embeddingProgress = embeddingProgress,
-                    onTestRetrieval = { vm.testRetrieval(it) },
-                    retrievalDebugState = retrievalDebugState,
-                    assistantDetailVM = vm,
-                    estimatedMemoryCapacity = estimatedMemoryCapacity,
-                    needsEmbeddingRegeneration = needsEmbeddingRegeneration,
-                    embeddingStatus = embeddingStatus,
-                    initialMemoryTab = initialMemoryTab,
-                    scrollToMemoryId = scrollToMemoryId,
-                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
-                )
+                CharacterMemoryPage(assistant = assistant, onUpdateAssistant = { onUpdate(it) })
+
             }
 
             // UI Customization

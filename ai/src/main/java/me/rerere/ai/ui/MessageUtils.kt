@@ -27,6 +27,9 @@ data class UIMessage(
     val annotations: List<UIMessageAnnotation> = emptyList(),
     val createdAt: LocalDateTime = Clock.System.now()
         .toLocalDateTime(TimeZone.currentSystemDefault()),
+    val sentAtEpochMillis: Long? = null,
+    val sentAtZoneId: String? = null,
+    val memoryContext: String? = null,
     val modelId: Uuid? = null,
     val usage: TokenUsage? = null,
     val translation: String? = null,
@@ -279,7 +282,9 @@ data class UIMessage(
 
         fun user(prompt: String) = UIMessage(
             role = MessageRole.USER,
-            parts = listOf(UIMessagePart.Text(prompt))
+            parts = listOf(UIMessagePart.Text(prompt)),
+            sentAtEpochMillis = Clock.System.now().toEpochMilliseconds(),
+            sentAtZoneId = TimeZone.currentSystemDefault().id,
         )
 
         fun assistant(prompt: String) = UIMessage(

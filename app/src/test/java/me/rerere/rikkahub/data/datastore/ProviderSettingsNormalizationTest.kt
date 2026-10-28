@@ -120,7 +120,7 @@ class ProviderSettingsNormalizationTest {
     }
 
     @Test
-    fun `advanced memory normalizes hidden states that disable recall`() {
+    fun `legacy advanced maps once without enabling memory or reviving episodes`() {
         val normalized = Settings(
             assistants = listOf(
                 Assistant(
@@ -136,11 +136,11 @@ class ProviderSettingsNormalizationTest {
             )
         ).normalizeMemorySettings().assistants.single()
 
-        assertTrue(normalized.enableMemory)
-        assertTrue(normalized.useRagMemoryRetrieval)
-        assertTrue(normalized.enableRecentChatsReference)
-        assertTrue(normalized.ragIncludeCore)
-        assertTrue(normalized.ragIncludeEpisodes)
+        assertFalse(normalized.enableMemory)
+        assertEquals("ADVANCED", normalized.memoryExperience)
+        assertFalse(normalized.enableMemoryConsolidation)
+        assertFalse(normalized.enableRecentChatsReference)
+        assertFalse(normalized.ragIncludeEpisodes)
         assertEquals(1, normalized.ragLimit)
         assertEquals(0.45f, normalized.ragSimilarityThreshold)
     }

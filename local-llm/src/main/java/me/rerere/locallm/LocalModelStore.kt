@@ -57,6 +57,21 @@ class LocalModelStore(private val context: Context) {
 
     suspend fun clear() = mutate { emptyList() }
 
+    /** Retire only LastChat-managed old embedding files; never delete an arbitrary imported path. */
+    suspend fun retireLegacyEmbedding() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val installed = current()
+        val retired = installed.filter { it.id == RETIRED_EMBEDDING_MODEL_ID }
+        if (retired.isEmpty()) return@withContext
+        val remainingPaths = installed.filter { it.id != RETIRED_EMBEDDING_MODEL_ID }
+            .flatMap { listOfNotNull(it.filePath,it.tokenizerPath) }.map { File(it).canonicalPath }.toSet()
+        val managed = File(context.filesDir,"local_models").canonicalFile
+        retired.flatMap { listOfNotNull(it.filePath,it.tokenizerPath) }.distinct().forEach { path ->
+            val file = File(path).canonicalFile
+            if (file.path.startsWith(managed.path+File.separator) && file.path !in remainingPaths) file.delete()
+        }
+        mutate { list -> list.filterNot { it.id == RETIRED_EMBEDDING_MODEL_ID } }
+    }
+
     suspend fun updateConfig(id: String, config: LocalModelConfig) =
         update(id) { it.copy(config = config) }
 

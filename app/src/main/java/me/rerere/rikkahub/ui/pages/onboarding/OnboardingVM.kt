@@ -46,6 +46,19 @@ class OnboardingVM(
             .prioritizeSetupProviders()
     }
 
+    fun configureMemory(experience: String?, onDone: () -> Unit) {
+        viewModelScope.launch {
+            settingsStore.update { current ->
+                val target = current.assistants.firstOrNull()?.id
+                current.copy(assistants = current.assistants.map { assistant ->
+                    if (assistant.id == target) assistant.copy(enableMemory = experience != null,
+                        memoryExperience = experience ?: "BASIC", memoryDreaming = false) else assistant
+                })
+            }
+            onDone()
+        }
+    }
+
     fun skipSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {

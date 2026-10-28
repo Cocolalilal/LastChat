@@ -657,7 +657,9 @@ class WebdavSync(
     }
 
     private fun restoreLiveDatabase(stagedDbFile: File): DatabaseSanitizer.SanitizationResult {
+        val privacyReceipts = me.rerere.rikkahub.data.memory.MemoryRestorePrivacy.receipts(appDatabase.openHelper.readableDatabase)
         val (cleanDb, result) = DatabaseSanitizer.sanitize(context, stagedDbFile)
+        me.rerere.rikkahub.data.memory.MemoryRestorePrivacy.merge(cleanDb, privacyReceipts)
         appDatabase.close()
         context.deleteDatabase(BackupArchiveFormat.DB_ENTRY)
 

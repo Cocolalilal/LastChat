@@ -1,4 +1,7 @@
-# Review record and remaining gates
+# Historical design review record
+
+See IMPLEMENTATION.md for the later implementation and native verification. The status
+statements below describe the earlier proposal review, not the current working tree.
 
 **Superseded visual confidence:** see REVISION-2.md. The earlier passing bounds/state
 checks did not catch whole-panel transparency, clutter, weak grouping or graph quality.

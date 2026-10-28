@@ -1,6 +1,6 @@
 # Engine proposal and adversarial review
 
-This is a candidate architecture, not an approved schema or an implemented guarantee.
+This records the design target. See IMPLEMENTATION.md for implemented behavior and remaining limitations; this document is not an implemented guarantee.
 It deliberately separates Basic note semantics from Advanced structured memory. Shared
 infrastructure covers permissions, sources, revisions, drafts and scheduling; it does
 not turn Basic into a hidden graph engine.

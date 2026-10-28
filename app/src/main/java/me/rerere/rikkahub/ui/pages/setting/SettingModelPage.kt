@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.material3.Surface
+
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.layout.Arrangement
@@ -919,80 +921,11 @@ private fun DefaultEmbeddingModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
-    val toaster = LocalToaster.current
-    var isRegenerating by remember { mutableStateOf(false) }
-    ModelFeatureCard(
-        title = {
-            Text(
-                stringResource(R.string.setting_model_page_embedding_model),
-                maxLines = 1
-            )
-        },
-        description = {
-            Text(stringResource(R.string.setting_model_page_embedding_model_desc))
-        },
-        icon = {
-            Icon(Icons.Rounded.Psychology, null)
-        },
-        actions = {
-            Box(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.wrapContentWidth(),
-                ) {
-                    ModelSelector(
-                        modelId = settings.embeddingModelId,
-                        type = ModelType.EMBEDDING,
-                        onSelect = {
-                            vm.updateSettings { settings -> settings.copy(
-                                    embeddingModelId = it.id
-                                ) }
-                        },
-                        providers = settings.providers,
-                        allowClear = true,
-                        onClear = {
-                            vm.updateSettings { settings -> settings.copy(
-                                    embeddingModelId = DISABLED_MODEL_ID
-                                ) }
-                        },
-                        modifier = Modifier.wrapContentWidth()
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = settings.embeddingModelId != DISABLED_MODEL_ID,
-                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
-                    ) {
-                        IconButton(
-                            enabled = !isRegenerating,
-                            onClick = {
-                                isRegenerating = true
-                                vm.regenerateMemoryEmbeddings(
-                                    onComplete = { success, failure ->
-                                        isRegenerating = false
-                                        toaster.show(
-                                            "Updated $success embeddings${if (failure > 0) ", $failure failed" else ""}",
-                                            type = if (failure > 0) ToastType.Warning else ToastType.Success,
-                                        )
-                                    },
-                                    onError = { error ->
-                                        isRegenerating = false
-                                        toaster.show(error.message ?: "Embedding refresh failed", type = ToastType.Error)
-                                    },
-                                )
-                            },
-                        ) {
-                            if (isRegenerating) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                            } else {
-                                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh embeddings")
-                            }
-                        }
-                    }
-                }
-            }
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Box(Modifier.padding(16.dp)) {
+            me.rerere.rikkahub.ui.pages.assistant.detail.EmbeddingModelCard()
         }
-    )
+    }
 }
 
 @Composable

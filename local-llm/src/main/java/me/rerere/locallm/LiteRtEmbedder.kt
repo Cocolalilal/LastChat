@@ -30,7 +30,7 @@ class LiteRtEmbedder(@Suppress("unused") private val context: Context) {
     private data class Loaded(val key: String, val engine: EmbeddingEngine)
 
     fun isSupported(model: LocalModelMetadata): Boolean =
-        supportsLocalEmbedding(model.modelFile, Build.SUPPORTED_ABIS?.toList().orEmpty())
+        model.id == TEXT_EMBEDDING_MODEL_ID && supportsLocalEmbedding(model.modelFile, Build.SUPPORTED_ABIS?.toList().orEmpty())
 
     /**
      * Embeds [texts] with the installed embedding [model], returning one vector per input. Loads the
@@ -39,7 +39,7 @@ class LiteRtEmbedder(@Suppress("unused") private val context: Context) {
      */
     suspend fun embed(model: InstalledLocalModel, texts: List<String>): List<List<Float>> {
         check(model.kind == LocalModelKind.EMBEDDING) { "not_embedding_model" }
-        check(model.id != RETIRED_EMBEDDING_MODEL_ID && usesLiteRtEmbeddingEngine(model.filePath)) {
+        check(model.id == TEXT_EMBEDDING_MODEL_ID && usesLiteRtEmbeddingEngine(model.filePath)) {
             "embedding_model_retired:install_$TEXT_EMBEDDING_MODEL_ID"
         }
         check(supportsLocalEmbedding(model.filePath, Build.SUPPORTED_ABIS?.toList().orEmpty())) {
@@ -76,7 +76,8 @@ class LiteRtEmbedder(@Suppress("unused") private val context: Context) {
     private fun acquireLocked(model: InstalledLocalModel): Loaded {
         // CPU is the default; GPU is used only when explicitly requested and not marked failed.
         val useGpu = model.config.accelerator == LocalAccelerator.GPU && !model.runtimeFlags.gpuCrashed
-        val key = "${model.filePath}|${model.commitHash}|$useGpu"
+        val file = File(model.filePath)
+        val key = "${model.filePath}|${model.commitHash}|${file.length()}|${file.lastModified()}|$useGpu"
         loaded?.let { if (it.key == key) return it }
         disposeLocked()
         PlatformLog.i(TAG, "Loading embedding model ${model.id} (gpu=$useGpu)")

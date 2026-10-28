@@ -72,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -156,10 +157,35 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
     val selectedModels = remember { mutableStateListOf<Model>() }
     var roleModels by remember { mutableStateOf(SetupRoleModels()) }
 
-    fun finishToChat() {
+    var memorySetup by remember { mutableStateOf(false) }
+    var memoryChoice by remember { mutableStateOf<String?>(null) }
+    fun finishToChat() { memorySetup = true }
+    fun leaveSetup() {
         navController.navigate(Screen.Chat(Uuid.random().toString())) {
             popUpTo(0) { inclusive = true }
         }
+    }
+
+    if (memorySetup) {
+        AlertDialog(
+            onDismissRequest = { memorySetup = false; leaveSetup() },
+            title = { Text("Memory") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Choose how your character remembers. You can change this later.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf<String?>(null, "BASIC", "ADVANCED").forEach { option ->
+                            FilterChip(selected = memoryChoice == option, onClick = { memoryChoice = option },
+                                label = { Text(option?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Off") })
+                        }
+                    }
+                    if (memoryChoice == "ADVANCED") {
+                        me.rerere.rikkahub.ui.pages.assistant.detail.EmbeddingModelCard()
+                    } else if (memoryChoice == "BASIC") Text("Readable notes, with optional Dreaming. No model download required.")
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.configureMemory(memoryChoice) { memorySetup = false; leaveSetup() } }) { Text("Continue") } },
+        )
     }
 
     fun goTo(nextPage: SetupPage) {

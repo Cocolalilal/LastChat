@@ -13,7 +13,7 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this
 
 - `applicationId`: `lastchat.rikkafork.cocolal`
 - Kotlin namespace: `me.rerere.rikkahub` (DO NOT rename — would break Room migrations, DataStore keys, catalog UUIDs, schema paths)
-- Version: 1.4.6 / versionCode 34
+- Version: 1.4.9 / versionCode 42
 - SDK: compile=36, target=36, min=28, JVM=17
 - ABIs: `arm64-v8a`, `armeabi-v7a`, `x86_64`, universal APK (splits auto-disabled when building AAB)
 
@@ -72,7 +72,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ### Package layout (`me.rerere.rikkahub.*`)
 - `data/ai/` — `GenerationHandler` (orchestrator, ~1768 lines), `MemorySearchService`, `AILogging`, `AIRequestInterceptor`, `BuiltInToolResolution.kt` (top-level functions, NOT a class), transformers (`transformers/`), tools (`tools/`), MCP (`mcp/`), RAG (`rag/`), model catalog (`models/`). (`ChatService` lives in `service/`, NOT here.)
-- `data/db/` — Room v35, 10 entities, 10 DAOs, schemas at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/{1..35}.json`
+- `data/db/` — Room v40; schema history at `app/schemas/me.rerere.rikkahub.data.db.AppDatabase/`. New owner-scoped memory records live in `data/memory/`
 - `data/datastore/` — `PreferencesStore.kt` (canonical `SettingsStore.update { ... }` API), `SecureStore.kt` (EncryptedSharedPreferences), `QuickSettingsCache.kt`, `SecretKeyManager.kt`, `DefaultProviders.kt`, `migration/PreferenceStoreV1Migration.kt`
 - `data/repository/` — 7 repos (Conversation with paging3, ChatAttachment with sha256-dedup + OCR, Memory with RAG, GenMedia, AppStorage, Workspace, ChatAttachmentManager)
 - `data/sync/` — `WebdavSync.kt` (dav4jvm + zip), `BackupArchiveFormat.kt`, `DatabaseSanitizer.kt`, importer (`ChatboxImporter`, `CherryStudioProviderImporter`)
@@ -152,7 +152,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 - **`derivedStateOf` rule for `LazyColumn`** — never pass mutable collections (`SnapshotStateList`) to `items(...)`; use `derivedStateOf` to pass simple immutable values (e.g., `Boolean`) to prevent unnecessary recompositions.
 - **Secrets MUST go through `SecretKeyManager`** (uses `SecureStore` = EncryptedSharedPreferences). Key naming: `provider_apikey_<id>`, `provider_privatekey_<id>`, `tts_provider_apikey_<id>`, `stt_provider_apikey_<id>`, `webdav_password`. **Never persist plaintext API keys in Settings.**
 - **`Settings.init = true` is a dummy flag** — `SettingsStore.update` refuses to persist if `init==true`. Use `Settings.dummy()` for placeholders.
-- **Embeddings stored in BOTH source entities AND `EmbeddingCacheDAO`** (keyed by `memory_id+memory_type+model_id` so model switches don't invalidate cache). Sync both. Prefer existing entity embeddings over re-computation.
+- **Character memory:** Basic notes and Advanced facts/entities are canonical in `character_memory` (`data/memory/`). Advanced vectors are derived records keyed by actual Gemma 2 bundle/recipe and fact revision. Old memory/episode caches are retired; legacy columns remain for migration compatibility. See `docs/memory-design-review/IMPLEMENTATION.md`.
 - **`MessageNode` branching**: each node has `messages: List<UIMessage>` + `selectIndex`. Users can regenerate/edit to create branches. `selectConversationTurnVersion` switches versions.
 - **`ChatPersistenceMode`**: `NORMAL`/`TEMPORARY`/`PERSIST_ON_REPLY` (used by spontaneous "unrelated" messages).
 - **Streaming checkpoint**: `STREAMING_CHECKPOINT_INTERVAL_MS=1000` (saves to DB every 1s).
@@ -162,7 +162,7 @@ ViewModels live in `ui/pages/<feature>/<Feature>VM.kt`. Expose `StateFlow`/`Shar
 
 ## Database
 
-- Room v35. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`. 10 entities, 10 DAOs.
+- Room v40. KSP (not kapt). `room.schemaLocation = "$projectDir/schemas"`. 10 entities, 10 DAOs.
 - **Adding a migration**:
   1. Bump `version = N` in `@Database`.
   2. Prefer `AutoMigration(from=N-1, to=N)` (no spec) → `AutoMigration(..., spec=...)` (@DeleteColumn/@RenameColumn/@RenameTable/@DeleteTable) → manual `val MIGRATION_X_Y = object : Migration(X, Y) { ... }` in companion object of `AppDatabase`.

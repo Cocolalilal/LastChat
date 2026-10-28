@@ -1,7 +1,7 @@
 # Revision 2 — critical review after the user's screenshots
 
-Status: review proposal and browser fixture only. No replacement engine or production
-UI has been implemented. The earlier visual artifact is superseded for this review.
+Historical review proposal. Implementation followed explicit user authorization; see
+IMPLEMENTATION.md. The browser artifact below is not native verification.
 
 ## Why the first prototype was not acceptable
 

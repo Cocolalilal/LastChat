@@ -32,40 +32,18 @@ class MemoryRepository(
     private val embeddingService: EmbeddingService,
     private val embeddingCacheDAO: EmbeddingCacheDAO,
     private val database: AppDatabase,
+    private val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryRepository,
 ) {
     private val embeddingCache = java.util.concurrent.ConcurrentHashMap<String, List<FloatArray>>()
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfAssistantFlow(assistantId)
-            .map { entities ->
-                entities.map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
-            }
-
-    /**
-     * Get combined memories (core) and episodes (episodic) as AssistantMemory objects.
-     * This includes significance scores for episodic memories.
-     */
-    fun getCombinedMemoriesFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        kotlinx.coroutines.flow.combine(
-            memoryDAO.getMemoriesOfAssistantFlow(assistantId),
-            chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
-        ) { memories, episodes ->
-            val coreMemories = memories.map { 
-                AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt)
-            }
-            val episodicMemories = episodes.map { 
-                AssistantMemory(
-                    id = -it.id,
-                    content = it.content,
-                    type = MemoryType.EPISODIC,
-                    hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
-                    embeddingModelId = it.embeddingModelId,
-                    timestamp = it.startTime,
-                    significance = it.significance,
-                )
-            }
-            coreMemories + episodicMemories
+        characterMemory.observe(assistantId).map { view ->
+            val context = characterMemory.owner(assistantId).memoryContext
+            view.notes.filter { !it.sourceOnly && it.context == context }.map { AssistantMemory(it.id.hashCode(), it.body, timestamp = it.updatedAt) } +
+                view.facts.filter { it.context == context && me.rerere.rikkahub.data.memory.isCurrentMemory(it,System.currentTimeMillis()) }.map { AssistantMemory(it.id.hashCode(), it.text, timestamp = it.recordedAt) }
         }
+
+    fun getCombinedMemoriesFlow(assistantId: String): Flow<List<AssistantMemory>> = getMemoriesOfAssistantFlow(assistantId)
 
     fun getAverageMemoryLength(assistantId: String): Flow<Int> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
@@ -76,13 +54,14 @@ class MemoryRepository(
             }
 
     suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfAssistant(assistantId)
-            .map { AssistantMemory(it.id, it.content, it.type, !it.embedding.isNullOrBlank() || it.embeddingBlob != null, it.embeddingModelId, it.createdAt) }
+        characterMemory.initialise(assistantId)
+        val view = characterMemory.view(assistantId)
+        val context = characterMemory.owner(assistantId).memoryContext
+        return view.notes.filter { !it.sourceOnly && it.context == context }.map { AssistantMemory(it.id.hashCode(), it.body, timestamp = it.updatedAt) } +
+            view.facts.filter { it.context == context && me.rerere.rikkahub.data.memory.isCurrentMemory(it,System.currentTimeMillis()) }.map { AssistantMemory(it.id.hashCode(), it.text, timestamp = it.recordedAt) }
     }
 
-    suspend fun getMemoryCountOfAssistant(assistantId: String): Int {
-        return memoryDAO.getMemoryCountOfAssistant(assistantId)
-    }
+    suspend fun getMemoryCountOfAssistant(assistantId: String): Int = getMemoriesOfAssistant(assistantId).size
 
     suspend fun getMemoryById(id: Int): AssistantMemory? {
         val memory = memoryDAO.getMemoryById(id) ?: return null
@@ -97,11 +76,13 @@ class MemoryRepository(
     }
 
     suspend fun getMemoryEntitiesOfAssistantLimited(assistantId: String, limit: Int): List<MemoryEntity> {
-        return memoryDAO.getMemoriesOfAssistantLimited(assistantId, limit)
+        return getMemoriesOfAssistant(assistantId).take(limit.coerceIn(1, 100)).map {
+            MemoryEntity(id = it.id, assistantId = assistantId, content = it.content, createdAt = it.timestamp)
+        }
     }
 
     suspend fun getEpisodeEntitiesOfAssistant(assistantId: String): List<ChatEpisodeEntity> {
-        return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
+        return emptyList()
     }
 
     suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
@@ -124,21 +105,7 @@ class MemoryRepository(
         }
     }
 
-    suspend fun getCombinedMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
-        val core = getMemoriesOfAssistant(assistantId)
-        val episodic = chatEpisodeDAO.getEpisodesOfAssistant(assistantId).map { episode ->
-            AssistantMemory(
-                id = -episode.id,
-                content = episode.content,
-                type = MemoryType.EPISODIC,
-                hasEmbedding = !episode.embedding.isNullOrBlank() || episode.embeddingBlob != null,
-                embeddingModelId = episode.embeddingModelId,
-                timestamp = episode.startTime,
-                significance = episode.significance,
-            )
-        }
-        return core + episodic
-    }
+    suspend fun getCombinedMemoriesOfAssistant(assistantId: String): List<AssistantMemory> = getMemoriesOfAssistant(assistantId)
 
     private suspend fun getStoredEmbeddings(
         memoryId: Int,
@@ -199,6 +166,7 @@ class MemoryRepository(
     }
 
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
+        characterMemory.dao.deleteOwner(assistantId)
         val (memoryIds, episodeIds) = database.withTransaction {
             val memoryIds = memoryDAO.getMemoriesOfAssistant(assistantId).map { it.id }
             val episodeIds = chatEpisodeDAO.getEpisodesOfAssistant(assistantId).map { it.id }
@@ -375,53 +343,12 @@ class MemoryRepository(
     }
 
     suspend fun addMemory(assistantId: String, content: String): AssistantMemory {
-        val chunks = MemoryChunker.chunkText(content)
-        val embeddingResult = try {
-            embeddingService.embedBatch(chunks, assistantId)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            PlatformLog.w(TAG, "Core memory saved without an embedding: ${e.message}")
-            null
-        }
-        val floatArrays = embeddingResult?.embeddings?.map { it.toFloatArray() }
-        val blob = floatArrays?.toByteArray()
-
-        val entity = MemoryEntity(
-            assistantId = assistantId,
-            content = content,
-            embedding = null,
-            embeddingBlob = blob,
-            embeddingModelId = embeddingResult?.modelId,
-            type = MemoryType.CORE,
-            createdAt = System.currentTimeMillis(),
-            lastAccessedAt = System.currentTimeMillis()
-        )
-        
-        val id = memoryDAO.insertMemory(entity)
-        
-        if (embeddingResult != null) {
-             val modelId = embeddingResult.modelId
-             embeddingCacheDAO.insertEmbedding(
-                EmbeddingCacheEntity(
-                    memoryId = id.toInt(),
-                    memoryType = MemoryType.CORE,
-                    modelId = modelId,
-                    embedding = "",
-                    embeddingBlob = blob
-                )
-             )
-             embeddingCache["${MemoryType.CORE}:${id.toInt()}:$modelId"] =
-                 embeddingResult.embeddings.map { it.toFloatArray() }
-        }
-
-        return AssistantMemory(
-            id = id.toInt(),
-            content = content,
-            type = MemoryType.CORE,
-            hasEmbedding = embeddingResult != null,
-            embeddingModelId = embeddingResult?.modelId,
-            timestamp = entity.createdAt,
-        )
+        characterMemory.initialise(assistantId)
+        val id = kotlin.uuid.Uuid.random().toString()
+        val note = me.rerere.rikkahub.data.memory.MemoryNote(id, "Saved memory", paragraphs = listOf(
+            me.rerere.rikkahub.data.memory.MemoryParagraph(kotlin.uuid.Uuid.random().toString(), content, authored = true)))
+        characterMemory.saveNote(assistantId, note, null)
+        return AssistantMemory(id.hashCode(), content, timestamp = note.updatedAt)
     }
 
     suspend fun deleteMemory(id: Int) {
@@ -455,30 +382,7 @@ class MemoryRepository(
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true
     ): List<AssistantMemory> {
-        val safeLimit = limit.coerceIn(1, MAX_RETRIEVAL_LIMIT)
-        val outcome = retrieveRelevantMemoriesOutcome(
-            assistantId, query, safeLimit, similarityThreshold, includeCore, includeEpisodes
-        )
-        val matches = outcome.matches.map { it.first }
-        if (matches.isNotEmpty()) return matches
-        if (outcome.vectorPathAvailable) return emptyList()
-
-        // A provider outage, stale/incompatible vectors, or unavailable local runtime must not turn
-        // a healthy durable memory store into an empty context forever. Do not use this fallback
-        // merely because healthy vector search found no relevant match.
-        val fallback = durableRecallFallback(
-            assistantId = assistantId,
-            limit = minOf(safeLimit, DURABLE_FALLBACK_LIMIT),
-            includeCore = includeCore,
-            includeEpisodes = includeEpisodes,
-        )
-        if (fallback.isNotEmpty()) {
-            PlatformLog.w(
-                TAG,
-                "Vector recall unavailable; using ${fallback.size} durable fallback memories",
-            )
-        }
-        return fallback
+        return characterMemory.context(assistantId, query, tools = false).take(limit.coerceIn(1, 50))
     }
 
     suspend fun retrieveRelevantMemoriesWithScores(

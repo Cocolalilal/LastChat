@@ -16,6 +16,13 @@ import org.koin.dsl.module
 import java.io.File
 
 val repositoryModule = module {
+    single<me.rerere.rikkahub.data.memory.MemoryEmbeddingClient> { get<EmbeddingService>() }
+    single { me.rerere.rikkahub.data.memory.CharacterMemoryRepository(get(), get()) { owner ->
+        get<me.rerere.rikkahub.data.datastore.SettingsStore>().settingsFlow.value.assistants.firstOrNull { it.id.toString() == owner }
+    } }
+    single<me.rerere.rikkahub.data.memory.MemoryTextClient> { me.rerere.rikkahub.data.memory.MemoryModelClient(get(), get(), get(), get()) }
+    single { me.rerere.rikkahub.data.memory.JevDecisionClient(get(), get()) }
+    single { me.rerere.rikkahub.data.memory.MemoryProcessor(get(), get(), get()) }
     single {
         ChatAttachmentRepository(
             context = get(),
@@ -41,11 +48,11 @@ val repositoryModule = module {
     }
 
     single {
-        EmbeddingService(get(), get())
+        EmbeddingService(get(), get(), get(), get())
     }
 
     single {
-        MemoryRepository(get(), get(), get(), get(), get())
+        MemoryRepository(get(), get(), get(), get(), get(), get())
     }
 
     single {

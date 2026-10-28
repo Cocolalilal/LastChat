@@ -50,9 +50,11 @@ data class AssistantExportV1(
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
     val memories: List<AssistantMemory> = emptyList(),
+    val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryPackage? = null,
 )
 
 object AssistantExportImport : KoinComponent {
+    private val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryRepository by inject()
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
@@ -129,29 +131,12 @@ object AssistantExportImport : KoinComponent {
             emptyList()
         }
 
-        // 4. Process Memories
-        val bundledMemories: List<AssistantMemory> = if (includeMemories) {
-            // Fetch Core Memories (already returns AssistantMemory list)
-            val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-            
-            // Fetch Episodic Memories
-            val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistant.id.toString())
-            val episodicConfigured = episodes.map {
-                AssistantMemory(
-                    id = -it.id, // Negative to distinguish
-                    content = it.content,
-                    type = 1, // EPISODIC
-                    hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
-                    embeddingModelId = it.embeddingModelId,
-                    timestamp = it.startTime,
-                    significance = it.significance
-                )
-            }
-            
-            coreConfigured + episodicConfigured
-        } else {
-            emptyList()
-        }
+        val memoryBundle = if (includeMemories) {
+            characterMemory.initialise(assistant.id.toString())
+            val view = characterMemory.view(assistant.id.toString())
+            me.rerere.rikkahub.data.memory.CharacterMemoryPackage(notes = view.notes, facts = view.facts,
+                nodes = view.nodes, rememberingRules = view.metadata.rules)
+        } else null
 
         val export = AssistantExportV1(
             assistant = assistant,
@@ -160,7 +145,7 @@ object AssistantExportImport : KoinComponent {
             backgroundContent = backgroundContent,
             backgroundMimeType = backgroundMime,
             lorebooks = bundledLorebooks,
-            memories = bundledMemories,
+            characterMemory = memoryBundle,
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -271,29 +256,14 @@ object AssistantExportImport : KoinComponent {
              assistant = assistant.copy(enabledLorebookIds = emptySet())
         }
 
-        // 4. Restore Memories
         if (importMemories) {
-            export.memories.forEach { memory ->
-                if (memory.type == 0) { // Core
-                     memoryRepository.addMemory(
-                         assistantId = assistant.id.toString(),
-                         content = memory.content
-                     )
-                } else if (memory.type == 1) { // Episodic
-                     val entity = me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity(
-                         id = 0, // Auto-generate
-                         assistantId = assistant.id.toString(),
-                         startTime = memory.timestamp,
-                         endTime = memory.timestamp, // approximate
-                         content = memory.content,
-                         lastAccessedAt = System.currentTimeMillis(),
-                         significance = memory.significance ?: 5,
-                         embedding = null, // Needs regeneration
-                         embeddingModelId = null
-                     )
-                     chatEpisodeDAO.insertEpisode(entity)
-                }
-            }
+            val bundle = export.characterMemory ?: me.rerere.rikkahub.data.memory.CharacterMemoryPackage(
+                notes = export.memories.filter { it.type == 0 }.map { memory ->
+                    me.rerere.rikkahub.data.memory.MemoryNote(Uuid.random().toString(), "Saved memory",
+                        paragraphs = listOf(me.rerere.rikkahub.data.memory.MemoryParagraph(Uuid.random().toString(), memory.content,
+                            evidence = listOf(me.rerere.rikkahub.data.memory.MemoryEvidence(origin = "imported note")))))
+                })
+            characterMemory.importPackage(assistant.id.toString(), bundle)
         }
 
         return assistant
@@ -712,7 +682,7 @@ object AssistantExportImport : KoinComponent {
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
-                        hasMemories = export.memories.isNotEmpty(),
+                        hasMemories = export.memories.isNotEmpty() || export.characterMemory?.let { it.notes.isNotEmpty() || it.facts.isNotEmpty() } == true,
                         hasLorebooks = export.lorebooks.isNotEmpty(),
                         missingModels = checkMissingModels(export.assistant)
                     )

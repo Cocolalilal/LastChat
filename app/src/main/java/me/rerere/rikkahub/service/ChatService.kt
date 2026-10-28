@@ -657,6 +657,7 @@ class ChatService(
     private val conversationRepo: ConversationRepository,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val memoryRepository: MemoryRepository,
+    private val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryRepository,
     private val generationHandler: GenerationHandler,
     private val templateTransformer: TemplateTransformer,
     private val providerManager: ProviderManager,
@@ -1453,6 +1454,9 @@ class ChatService(
                     messageNodes = currentConversation.messageNodes + UIMessage(
                         role = MessageRole.USER,
                         parts = effectiveContent,
+                        sentAtEpochMillis = System.currentTimeMillis(),
+                        sentAtZoneId = java.time.ZoneId.systemDefault().id,
+                        memoryContext = settingsStore.settingsFlow.value.assistants.firstOrNull { it.id == currentConversation.assistantId }?.memoryContext,
                     ).toMessageNode(),
                 )
                 if (effectiveMode == ChatPersistenceMode.PERSIST_ON_REPLY) {
@@ -1646,49 +1650,12 @@ class ChatService(
                 try {
                     val memoryContextEnabled = assistant.enableMemory &&
                         getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL
-                    val memorySnapshot = if (memoryContextEnabled) {
-                        memoryRepository.getCombinedMemoriesFlow(conversation.assistantId.toString()).first()
-                    } else {
-                        emptyList()
-                    }
-                    val requestMemories = if (!memoryContextEnabled) {
-                        emptyList()
-                    } else if (assistant.useRagMemoryRetrieval) {
-                        val lastUserMessage = conversation.currentMessages
-                            .lastOrNull { it.role == MessageRole.USER }
-                            ?.toText()
-                            .orEmpty()
-                        if (settings.enableRagLogging) Log.d("RAG", "Query: $lastUserMessage")
-                        if (lastUserMessage.isNotBlank()) {
-                            memoryRepository.retrieveRelevantMemories(
-                                assistantId = conversation.assistantId.toString(),
-                                query = lastUserMessage,
-                                limit = if (assistant.ragLimit > 50) 9999 else assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes,
-                            ).also { results ->
-                                if (settings.enableRagLogging) {
-                                    Log.d("RAG", "Retrieved ${results.size} memories")
-                                    results.forEach { memory ->
-                                        Log.d("RAG", " - [${memory.type}] ${memory.content.take(50)}...")
-                                    }
-                                }
-                            }
-                        } else {
-                            memorySnapshot.filter { it.type == 0 }.take(50)
-                        }
-                    } else {
-                        memorySnapshot.filter { it.type == 0 }.take(50)
-                    }
-                    val memoryRevisionCandidates = if (assistant.useRagMemoryRetrieval) {
-                        memorySnapshot.filter { memory ->
-                            (memory.type == 0 && assistant.ragIncludeCore) ||
-                                (memory.type == 1 && assistant.ragIncludeEpisodes)
-                        }.take(1_000)
-                    } else {
-                        memorySnapshot.filter { it.type == 0 }.take(50)
-                    }
+                    val requestMemories = if (memoryContextEnabled) {
+                        characterMemory.context(conversation.assistantId.toString(),
+                            conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty(),
+                            ModelAbility.TOOL in model.abilities)
+                    } else emptyList()
+                    val memoryRevisionCandidates = requestMemories
                     val memoryRevision = memoryRevisionCandidates.map { memory ->
                         listOf(memory.id, memory.content, memory.type, memory.timestamp)
                     }.hashCode()
@@ -1705,6 +1672,7 @@ class ChatService(
                 },
                 assistant = assistant,
                 memories = requestMemories,
+                allowMemory = memoryContextEnabled,
                 inputTransformers = buildList {
                     addAll(defaultChatInputTransformers)
                     val cwd = getWorkspaceCwd(
@@ -2655,12 +2623,11 @@ class ChatService(
             ?: return
         val assistant = settingsStore.settingsFlow.value.getAssistantById(conversation.assistantId)
             ?: return
-        if (!assistant.enableMemory || !assistant.enableMemoryConsolidation) return
-        MemoryConsolidationWorker.enqueueForConversation(
-            context = context,
-            conversation = conversation,
-            consolidationDelayMinutes = assistant.consolidationDelayMinutes,
-        )
+        if (!assistant.enableMemory) return
+        if (assistant.memoryExperience == "ADVANCED" || assistant.memoryDreaming) {
+            me.rerere.rikkahub.data.memory.MemoryLearningWorker.enqueue(context, assistant.id.toString())
+        }
+
     }
 
     // 检查文件删除

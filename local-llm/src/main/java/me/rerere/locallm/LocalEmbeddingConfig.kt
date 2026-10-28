@@ -3,6 +3,10 @@ package me.rerere.locallm
 const val TEXT_EMBEDDING_MODEL_ID = "EmbeddingGemma-2-Text-270M"
 const val RETIRED_EMBEDDING_MODEL_ID = "EmbeddingGemma-300M"
 
+fun InstalledLocalModel.hasUsableTextEmbeddingFile(): Boolean =
+    id == TEXT_EMBEDDING_MODEL_ID && isEmbedding && sizeInBytes > 0 &&
+        java.io.File(filePath).let { it.isFile && it.length() == sizeInBytes }
+
 internal fun usesLiteRtEmbeddingEngine(modelFile: String): Boolean =
     modelFile.endsWith(".litertlm", ignoreCase = true)
 
