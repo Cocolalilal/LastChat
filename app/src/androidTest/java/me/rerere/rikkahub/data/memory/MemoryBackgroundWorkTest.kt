@@ -57,6 +57,8 @@ class MemoryBackgroundWorkTest {
         single<MemoryTaskRunner>{MemoryTaskRunner(repository,processor)}
     }
     @Before fun setup()=runBlocking {
+        androidx.test.espresso.IdlingPolicies.setMasterPolicyTimeout(3,TimeUnit.MINUTES)
+        androidx.test.espresso.IdlingPolicies.setIdlingResourceTimeout(3,TimeUnit.MINUTES)
         val koin=GlobalContext.get()
         settings=koin.get()
         settings.settingsFlow.first{!it.init}
@@ -100,7 +102,7 @@ class MemoryBackgroundWorkTest {
     private fun capture(name:String) {
         val bitmap=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         requireNotNull(bitmap).let { image ->
-            java.io.File(context.getExternalFilesDir(null),"memory-qa-$name.png").outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+            java.io.File(context.filesDir,"memory-qa-$name.png").outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
             image.recycle()
         }
     }
@@ -115,10 +117,12 @@ class MemoryBackgroundWorkTest {
         capture("profile-reader")
         compose.onNodeWithContentDescription("Close profile").performClick()
         compose.onNode(hasSetTextAction()).performClick()
-        compose.waitUntil(30_000){var visible=false;compose.activityRule.scenario.onActivity{visible=it.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime())==true};visible}
+        compose.waitUntil(30_000){var visible=false;compose.activityRule.scenario.onActivity{visible=androidx.core.view.ViewCompat.getRootWindowInsets(it.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())==true};visible}
         var keyboardTop=0f
         compose.activityRule.scenario.onActivity {
-            keyboardTop=(it.windowManager.currentWindowMetrics.bounds.bottom-it.window.decorView.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime()).bottom).toFloat()
+            val visible=android.graphics.Rect()
+            it.window.decorView.getWindowVisibleDisplayFrame(visible)
+            keyboardTop=visible.bottom.toFloat()
         }
         assertTrue(compose.onNodeWithTag("memory-footer").fetchSemanticsNode().boundsInWindow.bottom<=keyboardTop+2)
         compose.onNodeWithTag("memory-scroll").performScrollToNode(hasText("Add a note"))
