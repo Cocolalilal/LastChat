@@ -190,8 +190,7 @@ class CharacterMemoryRepository(
         originalView.nodes.forEach { put(owner,"node",it.id,it) }
         dao.all(owner).filter { it.kind == "candidate-receipt" }.forEach { dao.put(it.copy(kind = "receipt")) }
         listOf("candidate-fact", "candidate-node", "candidate-note", "candidate-receipt").forEach { dao.clearKind(owner, it) }
-        val summary = (facts + preserved).distinctBy { it.id }.filter { isCurrentMemory(it, System.currentTimeMillis()) && it.kind in setOf("fact", "habit") }
-            .groupBy { it.topic }.map { (topic, items) -> MemorySummarySection(topic, items.joinToString(" ") { it.text }, items.map { it.id }) }
+        val summary = compactMemoryOverview((facts + preserved).distinctBy { it.id }.filter { it.context==owner(owner).memoryContext })
         put(owner, "meta", "meta", meta.copy(activeAdvanced = true, preparing = false, preparationId = null,
             progress = "", summary = summary, revision = meta.revision + 1, updatedAt = System.currentTimeMillis()))
         true

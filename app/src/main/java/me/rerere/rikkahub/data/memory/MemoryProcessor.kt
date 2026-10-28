@@ -345,7 +345,6 @@ class MemoryProcessor(private val repository: CharacterMemoryRepository, private
     private fun summaryPreview(view: CharacterMemory, draft: MemoryDraft): List<MemorySummarySection> {
         val changedIds = draft.changes.filter { it.kind == "fact" }.map { it.id }.toSet()
         val facts = view.facts.filter { it.id !in changedIds } + draft.changes.filterNot { it.delete }.mapNotNull { it.fact }
-        return facts.filter { isCurrentMemory(it, System.currentTimeMillis()) && it.kind in setOf("fact", "habit") }
-            .groupBy { it.topic }.map { (topic, entries) -> MemorySummarySection(topic, entries.joinToString(" ") { it.text }, entries.map { it.id }) }
+        return compactMemoryOverview(facts)
     }
 }

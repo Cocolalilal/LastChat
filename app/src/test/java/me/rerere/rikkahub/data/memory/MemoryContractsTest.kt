@@ -56,4 +56,12 @@ class MemoryContractsTest {
     @Test fun historicalRelationshipsAreNotCurrent() {
         assertFalse(isCurrentMemory(MemoryFact("x","Clara is my girlfriend",status="historical",authored=true),1))
     }
+    @Test fun largeGraphFallbackStaysCompactWithoutChangingCanonicalFacts() {
+        val facts=(0 until 5000).map { MemoryFact("fact-$it","A supported lasting detail $it. ".repeat(4),topic="Topic ${it%12}",authored=true) }
+        val overview=compactMemoryOverview(facts)
+        assertTrue(overview.size<=5)
+        assertTrue(overview.all { it.text.length<=2200 })
+        assertTrue(overview.flatMap { it.factIds }.all { id -> facts.any { it.id==id } })
+        assertEquals(5000,facts.size)
+    }
 }

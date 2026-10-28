@@ -98,6 +98,20 @@ data class MemoryMetadata(
 @Serializable
 data class MemorySummarySection(val title: String, val text: String, val factIds: List<String> = emptyList())
 
+/** A bounded whole-fact fallback; the canonical graph is never serialized into one summary. */
+internal fun compactMemoryOverview(facts: List<MemoryFact>, now: Long = System.currentTimeMillis()): List<MemorySummarySection> =
+    facts.filter { isCurrentMemory(it,now) && it.kind in setOf("fact","habit") }
+        .sortedWith(compareByDescending<MemoryFact> { it.pinned }.thenByDescending { it.evidence.distinct().size }.thenByDescending { it.recordedAt })
+        .take(80).groupBy { it.topic }.entries
+        .sortedWith(compareByDescending<Map.Entry<String,List<MemoryFact>>> { it.key=="Overview" }.thenByDescending { it.value.size })
+        .take(5).mapNotNull { (topic,entries) ->
+            var length=0
+            val chosen=entries.filter { fact ->
+                if(length+fact.text.length+1>2200)false else { length+=fact.text.length+1;true }
+            }
+            if(chosen.isEmpty())null else MemorySummarySection(topic,chosen.joinToString(" "){it.text},chosen.map{it.id})
+        }
+
 @Serializable
 data class MemoryVector(val revision: Long, val recipe: String, val values: List<Float>)
 
