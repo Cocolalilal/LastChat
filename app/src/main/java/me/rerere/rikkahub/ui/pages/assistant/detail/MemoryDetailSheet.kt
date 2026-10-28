@@ -18,6 +18,7 @@ import kotlin.uuid.Uuid
 internal fun MemoryDetailSheet(
     view:CharacterMemory,id:String,repository:CharacterMemoryRepository,owner:String,
     onDismiss:()->Unit,onRequest:(String)->Unit,onSelect:(String)->Unit,onChanged:(String)->Unit,onError:(String)->Unit,
+    initialEditing: Boolean = false,
 ) {
     val scope=rememberCoroutineScope()
     val navController=me.rerere.rikkahub.ui.context.LocalNavController.current
@@ -28,7 +29,7 @@ internal fun MemoryDetailSheet(
     val note=view.notes.firstOrNull{it.id==id}?:newNote
     val fact=view.facts.firstOrNull{it.id==id}?:newFact
     val node=view.nodes.firstOrNull{it.id==id}?:newNode
-    var editing by remember(id){mutableStateOf(newNote!=null||newNode!=null||newFact!=null)}
+    var editing by remember(id,initialEditing){mutableStateOf(initialEditing||newNote!=null||newNode!=null||newFact!=null)}
     var deleting by remember(id){mutableStateOf(false)}
     var localError by remember(id){mutableStateOf<String?>(null)}
     var title by remember(id){mutableStateOf(note?.title?:node?.name.orEmpty())}
@@ -79,9 +80,13 @@ internal fun MemoryDetailSheet(
                 }
             }else{
                 Text(note?.category?:node?.type?:fact?.kind.orEmpty(),style=MaterialTheme.typography.labelLarge,color=colors.primary)
-                Text(note?.title?:node?.name?:fact?.text?:"Memory unavailable",style=MaterialTheme.typography.headlineSmall)
-                if(note!=null)Text(note.body,style=MaterialTheme.typography.bodyLarge)
-                if(fact!=null||node!=null)MemoryGraph(view,focus=id)
+                Text(note?.let(::memoryNoteTitle)?:node?.name?:fact?.text?:"Memory unavailable",style=MaterialTheme.typography.headlineSmall)
+                if(note!=null) {
+                    val paragraphs=if(note.paragraphs.firstOrNull()?.text?.trim()==memoryNoteTitle(note).trim())note.paragraphs.drop(1)else note.paragraphs
+                    if(paragraphs.isNotEmpty())MemoryReadableBody(paragraphs)
+                }
+                val connectedFacts = if(node!=null)view.facts.filter{it.subject==id||it.objectId==id} else emptyList()
+                if(fact!=null||connectedFacts.isNotEmpty())MemoryGraph(view,focus=id)
                 if(fact!=null){
                     Text(relativeMemoryTime(fact.recordedAt),style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant)
                     fact.occurredAt?.let{Text("Reported time: $it",style=MaterialTheme.typography.bodyMedium)}
@@ -96,9 +101,14 @@ internal fun MemoryDetailSheet(
                     else -> emptyList()
                 }
                 if(evidence.isNotEmpty()){
+                    val sources = evidence.distinct()
+                    var sourcesExpanded by remember(id) { mutableStateOf(sources.size <= 2 && sources.none{it.quote.length>280}) }
                     Surface(shape=MaterialTheme.shapes.extraLarge,color=colors.secondaryContainer){Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-                        Text("Sources",style=MaterialTheme.typography.titleSmall)
-                        evidence.distinct().forEach{e->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Sources",Modifier.weight(1f),style=MaterialTheme.typography.titleSmall)
+                            IconButton(onClick={sourcesExpanded=!sourcesExpanded}) { Icon(if(sourcesExpanded)Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,if(sourcesExpanded)"Collapse sources" else "Expand sources") }
+                        }
+                        if(sourcesExpanded)sources.forEach{e->
                             when(e.origin) {
                                 "chat" -> {
                                     Text("“${e.quote}”")
@@ -121,23 +131,22 @@ internal fun MemoryDetailSheet(
                     }}
                 }
                 if(node!=null){
-                    val connected=view.facts.filter{it.subject==id||it.objectId==id}
-                    connected.forEach{f->ConnectedMemoryRow(f.text,f.occurredAt.orEmpty(),true,true){onSelect(f.id)}}
+                    connectedFacts.forEachIndexed{index,f->ConnectedMemoryRow(f.text,f.occurredAt.orEmpty(),index==0,index==connectedFacts.lastIndex){onSelect(f.id)}}
                 }
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){
+                if(note!=null||fact!=null||node!=null)Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement=Arrangement.spacedBy(4.dp)){
                     if(note!=null||fact!=null)FilledTonalButton(onClick={perform{
                         val change=if(note!=null)MemoryChange("note",id,note.revision,note=note.copy(pinned=!note.pinned))else MemoryChange("fact",id,fact?.revision,fact=requireNotNull(fact).copy(pinned=!fact.pinned))
                         onChanged(repository.apply(owner,MemoryDraft(Uuid.random().toString(),"Pin memory",listOf(change),repository.metadata(owner).policyRevision)))
-                    }},modifier=Modifier.weight(1f),shape=memoryActionShape(true,false)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.PushPin,null,Modifier.size(18.dp));Text(if(note?.pinned==true||fact?.pinned==true)"Unpin" else "Pin")}}
+                    }},modifier=Modifier.weight(1f).fillMaxHeight(),contentPadding=PaddingValues(horizontal=8.dp,vertical=12.dp),shape=memoryActionShape(true,false)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.PushPin,null,Modifier.size(18.dp));Text(if(note?.pinned==true||fact?.pinned==true)"Unpin" else "Pin")}}
                     FilledTonalButton(onClick={
                         title=note?.title?:node?.name.orEmpty();body=note?.body?:fact?.text.orEmpty()
                         description=note?.description.orEmpty();aliases=(note?.aliases?:node?.aliases).orEmpty().joinToString(", ")
                         category=note?.category?:"Topics";subject=fact?.subject?:"user";relation=fact?.relation?:"related to";objectId=fact?.objectId;nodeType=node?.type?:"Thing"
                         editing=true
-                    },modifier=Modifier.weight(1f),shape=memoryActionShape(note==null&&fact==null,false)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.Edit,null,Modifier.size(18.dp));Text("Edit")}}
-                    FilledTonalButton(onClick={deleting=true},modifier=Modifier.weight(1f),shape=memoryActionShape(false,true),colors=ButtonDefaults.filledTonalButtonColors(containerColor=colors.errorContainer,contentColor=colors.onErrorContainer)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.Delete,null,Modifier.size(18.dp));Text("Forget")}}
+                    },modifier=Modifier.weight(1f).fillMaxHeight(),contentPadding=PaddingValues(horizontal=8.dp,vertical=12.dp),shape=memoryActionShape(note==null&&fact==null,false)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.Edit,null,Modifier.size(18.dp));Text("Edit")}}
+                    FilledTonalButton(onClick={deleting=true},modifier=Modifier.weight(1f).fillMaxHeight(),contentPadding=PaddingValues(horizontal=8.dp,vertical=12.dp),shape=memoryActionShape(false,true),colors=ButtonDefaults.filledTonalButtonColors(containerColor=colors.errorContainer,contentColor=colors.onErrorContainer)){Column(horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally){Icon(Icons.Rounded.Delete,null,Modifier.size(18.dp));Text("Forget")}}
                 }
-                TextButton(onClick={onRequest("Change the memory about ${note?.title?:node?.name?:fact?.text.orEmpty()}: ")}){Text("Request a change")}
+                if(note!=null||fact!=null||node!=null)TextButton(onClick={onRequest("Change the memory about ${note?.let(::memoryNoteTitle)?:node?.name?:fact?.text.orEmpty()}: ")}){Text("Request a change")}
             }
         }
     }

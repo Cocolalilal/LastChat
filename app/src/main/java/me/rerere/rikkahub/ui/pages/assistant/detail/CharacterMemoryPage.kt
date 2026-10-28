@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import me.rerere.locallm.hasUsableTextEmbeddingFile
 import androidx.compose.ui.text.LinkAnnotation
@@ -33,7 +36,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.memory.*
 import me.rerere.rikkahub.data.model.Assistant
@@ -57,6 +59,7 @@ fun CharacterMemoryPage(
     settingsStore: SettingsStore = koinInject(),
     localModels: me.rerere.locallm.LocalModelStore = koinInject(),
     decisionClient: JevDecisionClient = koinInject(),
+    taskController: MemoryTaskController = koinInject(),
 ) {
     val owner = assistant.id.toString()
     val scope = rememberCoroutineScope()
@@ -77,23 +80,34 @@ fun CharacterMemoryPage(
     var selected by rememberSaveable(owner) { mutableStateOf<String?>(null) }
     var popup by rememberSaveable(owner) { mutableStateOf(false) }
     var draftId by rememberSaveable(owner) { mutableStateOf<String?>(null) }
-    var activities by remember { mutableStateOf<List<MemoryActivity>>(emptyList()) }
-    var work by remember { mutableStateOf<Job?>(null) }
-    var working by remember { mutableStateOf(false) }
-    var interruptedRequest by rememberSaveable(owner) { mutableStateOf<String?>(null) }
+    var taskId by rememberSaveable(owner) { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+    var profileOpen by rememberSaveable(owner) { mutableStateOf(false) }
+    var editSelected by rememberSaveable(owner) { mutableStateOf(false) }
+    var importedOpen by rememberSaveable(owner) { mutableStateOf(false) }
     var undoId by rememberSaveable(owner) { mutableStateOf<String?>(null) }
     var footerHeight by remember { mutableIntStateOf(130) }
     val density = LocalDensity.current
-    val draft = view.drafts.firstOrNull { it.id == draftId }
+    val selectedTask = view.tasks.firstOrNull { it.id == taskId }
+    val working = submitting || selectedTask?.active == true
+    val activities = selectedTask?.activities.orEmpty()
+    val draft = view.drafts.firstOrNull { it.id == (selectedTask?.draftId ?: draftId) }
+    val lastTask = view.tasks.lastOrNull { it.context==assistant.memoryContext && it.state !in setOf("cancelled") }
+    val focusManager=LocalFocusManager.current
+    val keyboard=LocalSoftwareKeyboardController.current
+    fun clearInputFocus(){focusManager.clearFocus();keyboard?.hide()}
+    fun openMemory(id:String,edit:Boolean=false){clearInputFocus();editSelected=edit;selected=id}
+    LaunchedEffect(selectedTask){if(selectedTask!=null)submitting=false}
     val visibleNotes = view.notes.filter { !it.sourceOnly && it.context == assistant.memoryContext }
     val colors = MaterialTheme.colorScheme
 
     LaunchedEffect(owner) {
-        if (interruptedRequest != null && request.isBlank()) {
-            request = interruptedRequest.orEmpty()
-            error = "The previous request was interrupted. Send it again to retry; nothing was applied."
+        try {
+            repository.initialise(owner)
+            val meta=repository.metadata(owner)
+            if(assistant.enableMemory&&assistant.memoryMode()==MemoryExperience.BASIC&&meta.pendingRefresh&&!meta.paused&&!meta.cancelled)
+                MemoryLearningWorker.enqueue(context,owner)
         }
-        try { repository.initialise(owner) }
         catch (e: Exception) { error = e.message }
     }
     LaunchedEffect(owner, assistant.enableMemory, assistant.memoryExperience, assistant.memoryContext, embeddingReady) {
@@ -130,41 +144,26 @@ fun CharacterMemoryPage(
         }
     }
     fun send() {
-        if (request.isBlank() || working) return
-        val sent = request
-        interruptedRequest = sent
-        working = true
-        request = ""
-        popup = true
-        activities = emptyList()
-        work = scope.launch {
-            try {
-                error = null
-                val refinement = draft?.let { "Previous request: ${it.request}\nRefinement: $sent" } ?: sent
-                val next = processor.request(owner, refinement, selected) { event ->
-                    activities = activities.filterNot { it.label == event.label } + event
-                }
-                draftId?.let { repository.dao.delete(owner, "draft", it) }
-                draftId = next.id
-                interruptedRequest = null
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                error = e.message ?: "No changes were made."
-            } finally {
-                working = false
-                if (interruptedRequest != null && request.isBlank()) request = interruptedRequest.orEmpty()
-            }
-        }
+        if(request.isBlank()||working)return
+        if(request.length>8000){error="Keep this request under 8,000 characters.";return}
+        val sent=request
+        val refinement=draft?.let{"Previous request: ${it.request}\nRefinement: $sent"}?:sent
+        submitting=true
+        taskId=taskController.submit(owner,refinement,selected,draft?.id)
+        draftId=null
+        request=""
+        error=null
+        popup=true
     }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(contentPadding = PaddingValues(start=20.dp,end=20.dp,top=8.dp,
+    Box(Modifier.fillMaxSize().imePadding()) {
+        LazyColumn(modifier=Modifier.fillMaxSize().testTag("memory-scroll"),contentPadding = PaddingValues(start=20.dp,end=20.dp,top=8.dp,
             bottom=with(density) { footerHeight.toDp() }+24.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
                     Text(if (!assistant.enableMemory) "Memory" else if (assistant.memoryMode()==MemoryExperience.BASIC) "You" else "Overview",
                         color=colors.primary, style=MaterialTheme.typography.titleMedium, modifier=Modifier.weight(1f))
-                    IconButton(onClick={ settingsOpen=true }) { Icon(Icons.Rounded.Settings,"Memory settings") }
+                    IconButton(onClick={ clearInputFocus();settingsOpen=true }) { Icon(Icons.Rounded.Settings,"Memory settings") }
                 }
             }
             if (!assistant.enableMemory) {
@@ -177,76 +176,85 @@ fun CharacterMemoryPage(
                 }
             } else if (assistant.memoryMode()==MemoryExperience.BASIC) {
                 val you = visibleNotes.filter { it.category=="You" }
-                if (you.isEmpty()) item { MemoryIdentityRow(settings.displaySetting.userNickname.ifBlank{"You"},settings.displaySetting.userAvatar,"Add details") {
-                    selected="new-you"
+                if (you.isEmpty()) item { MemoryIdentityRow(settings.displaySetting.userNickname.ifBlank{"You"},settings.displaySetting.userAvatar,"View profile") {
+                    clearInputFocus();profileOpen=true
                 } }
-                if (you.isNotEmpty()) item { MemoryIdentityRow(settings.displaySetting.userNickname.ifBlank{"You"},settings.displaySetting.userAvatar,relativeMemoryTime(you.first().updatedAt)){selected=you.first().id} }
-                items(you.drop(1), key={it.id}) { note -> ConnectedMemoryRow(note.title, relativeMemoryTime(note.updatedAt),true,true) { selected=note.id } }
+                if (you.isNotEmpty()) item { MemoryIdentityRow(settings.displaySetting.userNickname.ifBlank{"You"},settings.displaySetting.userAvatar,relativeMemoryTime(you.first().updatedAt)){clearInputFocus();profileOpen=true} }
+                items(you.drop(1), key={it.id}) { note -> ConnectedMemoryRow(memoryNoteTitle(note), relativeMemoryTime(note.updatedAt),true,true) { openMemory(note.id) } }
                 for (category in listOf("Topics","People")) {
-                    val notes=visibleNotes.filter { it.category==category }
+                    val notes=visibleNotes.filter { it.category==category && !it.id.startsWith("legacy-") }
                     if (notes.isNotEmpty()) {
                         item { MemoryHeading(category) }
                         items(notes.size,key={notes[it].id}) { index ->
-                            ConnectedMemoryRow(notes[index].title,relativeMemoryTime(notes[index].updatedAt),index==0,index==notes.lastIndex) { selected=notes[index].id }
+                            ConnectedMemoryRow(memoryNoteTitle(notes[index]),memoryNotePreview(notes[index]).ifBlank{relativeMemoryTime(notes[index].updatedAt)},index==0,index==notes.lastIndex) { openMemory(notes[index].id) }
                         }
                     }
                 }
+                val imported=view.notes.filter{it.id.startsWith("legacy-")}
+                if(imported.isNotEmpty()) {
+                    item { ConnectedMemoryRow("Imported details","${imported.size} saved memories",true,true){clearInputFocus();importedOpen=!importedOpen} }
+                    if(importedOpen)items(imported.size,key={"imported-${imported[it].id}"}) { index ->
+                        val note=imported[index]
+                        ConnectedMemoryRow(memoryNoteTitle(note),relativeMemoryTime(note.updatedAt),index==0,index==imported.lastIndex){openMemory(note.id)}
+                    }
+                }
                 item { TextButton(onClick={
-                    selected="new-topic"
+                    openMemory("new-topic")
                 }) { Icon(Icons.Rounded.Add,null); Text("Add a note") } }
             } else {
                 if (view.metadata.summary.isNotEmpty()) {
                     view.metadata.summary.forEachIndexed { index, section ->
                         if(index>0) item { MemoryHeading(section.title) }
-                        item { MemorySurface { LinkedMemoryText(section.text,view.nodes) { selected=it } } }
+                        item { MemorySurface { LinkedMemoryText(section.text,view.nodes) { openMemory(it) } } }
                     }
                 } else {
                     val durable=view.facts.filter { isCurrentMemory(it,System.currentTimeMillis()) && it.kind in setOf("fact","habit") && it.context==assistant.memoryContext }
-                    if (durable.isNotEmpty()) item { MemorySurface { LinkedMemoryText(durable.take(6).joinToString(" "){it.text},view.nodes) { selected=it } } }
+                    if (durable.isNotEmpty()) item { MemorySurface { LinkedMemoryText(durable.take(6).joinToString(" "){it.text},view.nodes) { openMemory(it) } } }
                     else item { MemorySurface {
-                        Text("A memory that grows with you",style=MaterialTheme.typography.titleLarge)
-                        Text(if(view.notes.isNotEmpty()) "Your saved notes are available while Advanced memory is prepared." else "Useful details will appear here as this character learns.",color=colors.onSurfaceVariant)
-                        Button(enabled=embeddingReady,onClick={ perform {
-                            repository.startPreparation(owner)
-                            MemoryLearningWorker.enqueue(context,owner,0)
-                        } }) { Text("Prepare memory") }
+                        Text(if(view.metadata.preparing)"Preparing memory" else "No organized memories yet",style=MaterialTheme.typography.titleMedium)
+                        if(view.notes.isNotEmpty())Text("Your saved details are still available.",style=MaterialTheme.typography.bodyMedium,color=colors.onSurfaceVariant)
+                        if(!view.metadata.preparing)FilledTonalButton(enabled=embeddingReady,onClick={taskController.requestUpdate(owner)}){Text("Prepare memory")}
+                        if(view.notes.isNotEmpty())TextButton(onClick={clearInputFocus();browse=true}){Text("Browse saved details")}
                     } }
                 }
                 val suggestions=view.nodes.filter { node -> view.facts.any { it.subject==node.id || it.objectId==node.id } }.take(3)
                 if(suggestions.isNotEmpty()) {
                     item { MemoryHeading("Dive deeper") }
-                    items(suggestions.size) { index -> ConnectedMemoryRow("More about ${suggestions[index].name}","",index==0,index==suggestions.lastIndex){selected=suggestions[index].id} }
+                    items(suggestions.size) { index -> ConnectedMemoryRow("More about ${suggestions[index].name}","",index==0,index==suggestions.lastIndex){openMemory(suggestions[index].id)} }
                 }
-                item { MemoryHeading("Memory Graph") }
-                item { MemoryGraph(view,avatars=mapOf("user" to (settings.displaySetting.userNickname.ifBlank{"You"} to settings.displaySetting.userAvatar),"assistant" to (assistant.name to assistant.avatar)),onOpen={ graph=true }) }
-                item { FilledTonalButton(onClick={browse=true},modifier=Modifier.fillMaxWidth()) { Text("Browse all memories") } }
+                if(view.facts.isNotEmpty()) {
+                    item { MemoryHeading("Memory Graph") }
+                    item { MemoryGraph(view,avatars=mapOf("user" to (settings.displaySetting.userNickname.ifBlank{"You"} to settings.displaySetting.userAvatar),"assistant" to (assistant.name to assistant.avatar)),onOpen={clearInputFocus();graph=true}) }
+                    item { FilledTonalButton(onClick={clearInputFocus();browse=true},modifier=Modifier.fillMaxWidth()) { Text("Browse all memories") } }
+                }
             }
-            view.metadata.error?.let { failure -> item { MemorySurface { Text(failure,color=colors.error);TextButton(onClick={perform {
-                repository.configure(owner){it.copy(paused=false,cancelled=false,error=null,inFlight=null)};MemoryLearningWorker.enqueue(context,owner,0)
-            }}){Text("Retry")} } } }
-            if(view.drafts.isNotEmpty()) item {
-                ConnectedMemoryRow("Review pending changes", "${view.drafts.size} requests",true,true){draftId=view.drafts.last().id;popup=true}
+            view.metadata.error?.let { failure -> item { MemoryIssueRow(failure){taskController.requestUpdate(owner,retryRejected=true)} } }
+            if(lastTask!=null) item {
+                ConnectedMemoryRow(when(lastTask.state){"queued"->"Memory request queued";"running"->"Working on your request";"ready"->"Changes ready to review";else->"Memory request needs attention"},
+                    lastTask.request.take(100),true,true){clearInputFocus();taskId=lastTask.id;draftId=null;popup=true}
+            }
+            val otherDrafts=view.drafts.filter{it.id!=lastTask?.draftId}
+            if(otherDrafts.isNotEmpty()) item {
+                ConnectedMemoryRow("Review pending changes", "${otherDrafts.size} requests",true,true){clearInputFocus();taskId=null;draftId=otherDrafts.last().id;popup=true}
             }
             if(undoId!=null) item { TextButton(onClick={perform { repository.undo(owner,requireNotNull(undoId));undoId=null }}){Text("Undo last change")} }
             error?.let { message -> item { Text(message,color=colors.error) } }
         }
         if (assistant.enableMemory) {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().testTag("memory-footer")
                 .background(Brush.verticalGradient(listOf(Color.Transparent,colors.background.copy(alpha=.94f),colors.background)))
                 .onSizeChanged {footerHeight=it.height}.padding(start=20.dp,end=20.dp,top=32.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(if(view.metadata.paused) "Paused" else view.metadata.progress.ifBlank { relativeMemoryTime(view.metadata.updatedAt) },
+                    Text(if(view.metadata.paused) "Paused" else view.metadata.progress.ifBlank { if(view.metadata.updatedAt==0L) "Ready to organize" else relativeMemoryTime(view.metadata.updatedAt) },
                         modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium,color=colors.onSurfaceVariant)
                     if(view.metadata.progress.isNotBlank() || view.metadata.paused) {
                         FilledTonalButton(onClick={perform {
                             val paused=!view.metadata.paused
-                            repository.configure(owner){it.copy(paused=paused,inFlight=if(paused)it.inFlight else null)}
+                            repository.configure(owner){it.copy(paused=paused,inFlight=null,inFlightWorker=null,progress=if(paused) "" else "Queued")}
                             if(paused) MemoryLearningWorker.cancel(context,owner) else MemoryLearningWorker.enqueue(context,owner,0)
                         }}){Text(if(view.metadata.paused) "Resume" else "Pause")}
                     } else FilledTonalButton(onClick={perform {
-                        repository.configure(owner){it.copy(paused=false,cancelled=false,error=null,inFlight=null)}
-                        if(assistant.memoryMode()==MemoryExperience.ADVANCED&&!view.metadata.activeAdvanced)repository.startPreparation(owner)
-                        MemoryLearningWorker.enqueue(context,owner,0,refresh=true)
+                        taskController.requestUpdate(owner)
                     }}){Text("Update")}
                 }
                 MemoryComposer(request,{request=it},false,::send,{})
@@ -326,23 +334,25 @@ fun CharacterMemoryPage(
             TextButton(onClick={settingsOpen=false}){Text("Done")}
         }
     }
-    if(selected!=null && !popup) {
+    if(profileOpen && !popup)MemoryProfileSheet(view,settings.displaySetting.userNickname,settings.displaySetting.userAvatar,
+        onDismiss={profileOpen=false},onOpenNote={profileOpen=false;openMemory(it)},onEditNote={profileOpen=false;openMemory(it,true)},onAdd={profileOpen=false;openMemory("new-you")})
+    if(selected!=null && !popup && !profileOpen) {
         MemoryDetailSheet(view,requireNotNull(selected),repository,owner,
-            onDismiss={selected=null},onRequest={text->request=text;popup=true},onSelect={selected=it},onChanged={undoId=it},onError={error=it})
+            onDismiss={selected=null},onRequest={text->request=text;popup=true},onSelect={selected=it},onChanged={undoId=it},onError={error=it},initialEditing=editSelected)
     }
     if(browse || graph) ModalBottomSheet(onDismissRequest={browse=false;graph=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         var search by rememberSaveable {mutableStateOf("")}
         Column(Modifier.fillMaxWidth().padding(horizontal=20.dp).padding(bottom=24.dp)) {
             Text(if(graph) "Memory Graph" else "All memories",style=MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                TextButton(onClick={selected="new-fact";browse=false;graph=false}){Text("Add memory")}
-                TextButton(onClick={selected="new-node";browse=false;graph=false}){Text("Add entity")}
+                TextButton(onClick={openMemory("new-fact");browse=false;graph=false}){Text("Add memory")}
+                TextButton(onClick={openMemory("new-node");browse=false;graph=false}){Text("Add entity")}
             }
             if(graph) MemoryGraph(view)
             OutlinedTextField(value=search,onValueChange={search=it},placeholder={Text("Search memories")},modifier=Modifier.fillMaxWidth())
             LazyColumn(Modifier.weight(1f,false).padding(top=12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                items(view.facts.filter{it.text.contains(search,true)},key={it.id}){fact->ConnectedMemoryRow(fact.text,fact.occurredAt?:relativeMemoryTime(fact.recordedAt),true,true){selected=fact.id;browse=false;graph=false}}
-                items(visibleNotes.filter{it.body.contains(search,true)||it.title.contains(search,true)},key={it.id}){note->ConnectedMemoryRow(note.title,"",true,true){selected=note.id;browse=false;graph=false}}
+                items(view.facts.filter{it.text.contains(search,true)},key={it.id}){fact->ConnectedMemoryRow(fact.text,fact.occurredAt?:relativeMemoryTime(fact.recordedAt),true,true){openMemory(fact.id);browse=false;graph=false}}
+                items(visibleNotes.filter{it.body.contains(search,true)||it.title.contains(search,true)},key={it.id}){note->ConnectedMemoryRow(memoryNoteTitle(note),memoryNotePreview(note),true,true){openMemory(note.id);browse=false;graph=false}}
             }
         }
     }
@@ -386,15 +396,17 @@ fun CharacterMemoryPage(
                                     if(summaryOpen)Text(draft.summary.joinToString("\n\n"){it.text})
                                 }
                             }
-                            error?.let{Text(it,color=colors.error)}
+                            selectedTask?.error?.let{Text(it,style=MaterialTheme.typography.bodyMedium,color=colors.onSurfaceVariant)}
+                            error?.let{Text(it,style=MaterialTheme.typography.bodyMedium,color=colors.error)}
                         }
                         if(draft!=null && !working) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
-                            TextButton(onClick={perform {repository.dao.delete(owner,"draft",draft.id);draftId=null;popup=false}}){Text("Discard")}
-                            Button(onClick={perform {undoId=repository.apply(owner,draft).takeIf{draft.changes.none{it.delete}};draftId=null;popup=false}}){Text("Apply changes")}
+                            TextButton(onClick={perform {taskController.discard(owner,draft);taskId?.let{repository.dao.delete(owner,"task",it)};taskId=null;draftId=null;popup=false}}){Text("Discard")}
+                            Button(onClick={perform {undoId=repository.apply(owner,draft).takeIf{draft.changes.none{it.delete}};taskId?.let{repository.dao.delete(owner,"task",it)};taskId=null;draftId=null;popup=false}}){Text("Apply changes")}
                         }
                     }
                 }
-                MemoryComposer(request,{request=it},working,::send,{work?.cancel();activities=activities.map{it.copy(running=false)}})
+                if(selectedTask?.state=="failed")TextButton(onClick={perform{taskController.retry(owner,selectedTask.id)}}){Text("Retry request")}
+                MemoryComposer(request,{request=it},working,::send,{taskId?.let{id->perform{taskController.cancel(owner,id)}}})
             }
         }
     }
@@ -459,4 +471,14 @@ internal fun relativeMemoryTime(time:Long):String {
     if(time<=0)return "Not updated yet"
     val minutes=((System.currentTimeMillis()-time)/60_000).coerceAtLeast(0)
     return when{minutes<1->"Updated just now";minutes<60->"Updated $minutes minutes ago";minutes<1440->"Updated ${minutes/60} hours ago";else->"Updated ${minutes/1440} days ago"}
+}
+
+@Composable private fun MemoryIssueRow(message:String,onRetry:()->Unit) {
+    Surface(shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surfaceContainerLow) {
+        Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Rounded.Info,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(message,Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick=onRetry){Text("Retry")}
+        }
+    }
 }

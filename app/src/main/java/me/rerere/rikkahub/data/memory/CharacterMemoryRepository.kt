@@ -49,7 +49,16 @@ class CharacterMemoryRepository(
         owner(owner)
         database.withTransaction {
             val initial = metadata(owner)
-            if (initial.migrated) return@withTransaction
+            if (initial.migrated) {
+                if(initial.runtimeVersion<2) {
+                    val legacyFailure=initial.error?.let { it=="Check failed." || it.contains("Temporary memories need") || it.contains("New entity is not present") || it.contains("interrupted and may have been billed") }==true
+                    val needsOrganization=dao.all(owner).any{it.kind=="note"&&it.id.startsWith("legacy-")}
+                    put(owner,"meta","meta",initial.copy(runtimeVersion=2,inFlight=null,inFlightWorker=null,
+                        paused=if(legacyFailure)false else initial.paused,error=if(legacyFailure)null else initial.error,
+                        pendingRefresh=initial.pendingRefresh||legacyFailure||needsOrganization,progress=if(legacyFailure||needsOrganization&&!initial.paused)"Queued" else initial.progress))
+                }
+                return@withTransaction
+            }
             val exclusions = suppressions(owner)
             database.memoryDao().getMemoriesOfAssistant(owner).filter { it.type == 0 }.forEach { old ->
                 val id = "legacy-${old.id}"
@@ -68,7 +77,7 @@ class CharacterMemoryRepository(
                 database.openHelper.writableDatabase.execSQL("DELETE FROM $table WHERE assistant_id = ?", arrayOf(owner))
             }
             database.openHelper.writableDatabase.execSQL("DELETE FROM memory_ingest_state WHERE assistant_id = ?", arrayOf(owner))
-            put(owner, "meta", "meta", initial.copy(migrated = true))
+            put(owner, "meta", "meta", initial.copy(migrated = true,runtimeVersion=2,pendingRefresh=dao.all(owner).any{it.kind=="note"&&it.id.startsWith("legacy-")}))
         }
     }
 
@@ -160,7 +169,7 @@ class CharacterMemoryRepository(
 
     suspend fun applyCandidate(owner: String, draft: MemoryDraft) = database.withTransaction {
         val meta = metadata(owner)
-        check(meta.preparing && !meta.paused && !meta.cancelled && meta.policyRevision == draft.policyRevision)
+        check(meta.preparing && !meta.paused && !meta.cancelled && meta.policyRevision == draft.policyRevision) { "Preparation changed while this batch was being processed. The batch was not applied." }
         check(draft.configuration.isEmpty() || configuration(owner) == draft.configuration) { "Memory mode or context changed. Retry." }
         validateChanges(owner, draft.changes, "candidate-")
         draft.changes.forEach { change ->
@@ -175,7 +184,7 @@ class CharacterMemoryRepository(
 
     suspend fun activateCandidate(owner: String, preparationId: String?, requireCatchUp: Boolean = false): Boolean = database.withTransaction {
         val meta = metadata(owner)
-        check(meta.preparing && meta.preparationId == preparationId && !meta.paused && !meta.cancelled)
+        check(meta.preparing && meta.preparationId == preparationId && !meta.paused && !meta.cancelled) { "This preparation was paused, cancelled or replaced." }
         if (requireCatchUp && !preparationCaughtUp(owner)) return@withTransaction false
         val candidate = candidateView(owner)
         // A deleted/edited source cannot be activated simply because extraction completed earlier.
@@ -214,7 +223,8 @@ class CharacterMemoryRepository(
         return CharacterMemory(metadata.copy(summary = validSummary), notes, facts,
             rows.filter { it.kind == "node" }.map { decode(it) },
             rows.filter { it.kind == "draft" }.map { decode(it) },
-            rows.filter { it.kind == "history" }.map { decode<MemoryCommit>(it) }.sortedByDescending { it.at })
+            rows.filter { it.kind == "history" }.map { decode<MemoryCommit>(it) }.sortedByDescending { it.at },
+            rows.filter { it.kind == "task" }.map { decode<MemoryTask>(it) }.sortedBy { it.createdAt })
     }
 
     suspend fun evidenceValid(owner: String, evidence: MemoryEvidence, depth: Int = 0): Boolean =
@@ -348,6 +358,7 @@ class CharacterMemoryRepository(
                 // History and unfinished previews must not become recovery copies of forgotten content.
                 dao.clearKind(owner, "history")
                 dao.clearKind(owner, "draft")
+                dao.clearKind(owner, "task")
                 dao.clearKind(owner, "vector")
                 listOf("candidate-fact", "candidate-node", "candidate-note", "candidate-receipt").forEach { dao.clearKind(owner, it) }
                 if (c.kind == "node") {
@@ -398,6 +409,7 @@ class CharacterMemoryRepository(
             activeAdvanced = if (owner(owner).memoryMode()==MemoryExperience.BASIC && draft.changes.any{it.kind=="note"}) false else meta.activeAdvanced,
             summary = if (erasing) emptyList() else draft.summary))
         dao.delete(owner, "draft", draft.id)
+        draft.taskId?.let{dao.delete(owner,"task",it)}
         commit.id
     }
 

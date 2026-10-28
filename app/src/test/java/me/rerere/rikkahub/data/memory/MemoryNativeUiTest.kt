@@ -57,6 +57,7 @@ class MemoryNativeUiTest {
     private lateinit var settings:SettingsStore
     private lateinit var repository:CharacterMemoryRepository
     private lateinit var processor:MemoryProcessor
+    private lateinit var controller:MemoryTaskController
     private lateinit var decision:JevDecisionClient
     private lateinit var models:me.rerere.locallm.LocalModelStore
     private var assistant=Assistant(name="Generical",enableMemory=true,memoryExperience="ADVANCED")
@@ -82,6 +83,7 @@ class MemoryNativeUiTest {
             override suspend fun generate(owner:String,prompt:String,maxTokens:Int)=JsonInstant.encodeToString(MemoryProposal(
                 memories=listOf(MemoryCandidate(id="relationship",text="Clara is your ex-partner.",source="request",quote="Clara is my ex now",objectId="clara",relation="former partner"))))
         })
+        controller=MemoryTaskController(context,repository,scope){id->scope.launch(Dispatchers.IO){MemoryTaskRunner(repository,processor).runOne(id,"ui-test") {}}}
         decision=JevDecisionClient(object:PlatformHttpClient{
             override suspend fun execute(request:PlatformHttpRequest):PlatformHttpResponse=error("No network in fixture")
             override fun streamEvents(request:PlatformHttpRequest)=kotlinx.coroutines.flow.emptyFlow<PlatformServerEvent>()
@@ -94,7 +96,7 @@ class MemoryNativeUiTest {
             CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f,fontScale),LocalNavController provides rememberNavController(),LocalSettings provides settings.settingsFlow.value,LocalMotionPolicy provides MotionPolicy(true)){
                 MaterialTheme(colorScheme=seafoamMintColorScheme(dark).withLastChatAmoledSurface(dark),typography=Typography){
                     Surface(Modifier.fillMaxSize()){
-                        CharacterMemoryPage(assistant,{},repository,processor,settings,models,decision)
+                        CharacterMemoryPage(assistant,{},repository,processor,settings,models,decision,controller)
                     }
                 }
             }

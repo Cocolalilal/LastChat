@@ -139,7 +139,7 @@ class WebdavSyncBackupRoundTripTest {
             assertEquals(
                 listOf(fixture.attachmentId),
                 restoredDb.conversationAttachmentRefDao()
-                    .getAttachmentIdsForConversation(fixture.conversationId.toString()),
+                    .getAll().filter { it.conversationId == fixture.conversationId.toString() }.map { it.attachmentId },
             )
             assertNotNull(restoredDb.workspaceDao().getById(fixture.workspaceId))
             assertNotNull(

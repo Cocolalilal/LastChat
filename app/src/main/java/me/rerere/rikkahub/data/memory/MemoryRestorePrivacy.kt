@@ -69,7 +69,7 @@ internal object MemoryRestorePrivacy {
                                 else if(safe!=n.paragraphs)db.update("character_memory",ContentValues().apply{put("payload",JsonInstant.encodeToString(n.copy(paragraphs=safe)))},"owner=? AND kind=? AND id=?",arrayOf(owner,row.kind,row.id))
                             }
                             "node","candidate-node"->if(row.id in erasedIds)db.delete("character_memory","owner=? AND kind=? AND id=?",arrayOf(owner,row.kind,row.id))
-                            "history","draft","vector","candidate-receipt"->db.delete("character_memory","owner=? AND kind=? AND id=?",arrayOf(owner,row.kind,row.id))
+                            "history","draft","task","vector","candidate-receipt"->db.delete("character_memory","owner=? AND kind=? AND id=?",arrayOf(owner,row.kind,row.id))
                             "meta"->{
                                 val meta=JsonInstant.decodeFromString<MemoryMetadata>(row.payload)
                                 db.update("character_memory",ContentValues().apply{put("payload",JsonInstant.encodeToString(meta.copy(summary=emptyList(),paused=true,progress="",policyRevision=meta.policyRevision+1)))},"owner=? AND kind=? AND id=?",arrayOf(owner,row.kind,row.id))

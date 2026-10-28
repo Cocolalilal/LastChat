@@ -23,6 +23,8 @@ val repositoryModule = module {
     single<me.rerere.rikkahub.data.memory.MemoryTextClient> { me.rerere.rikkahub.data.memory.MemoryModelClient(get(), get(), get(), get()) }
     single { me.rerere.rikkahub.data.memory.JevDecisionClient(get(), get()) }
     single { me.rerere.rikkahub.data.memory.MemoryProcessor(get(), get(), get()) }
+    single { me.rerere.rikkahub.data.memory.MemoryTaskController(get(),get(),get()) }
+    single { me.rerere.rikkahub.data.memory.MemoryTaskRunner(get(),get()) }
     single {
         ChatAttachmentRepository(
             context = get(),

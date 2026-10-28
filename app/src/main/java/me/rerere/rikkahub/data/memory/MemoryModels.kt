@@ -76,6 +76,7 @@ data class MemoryFact(
 
 @Serializable
 data class MemoryMetadata(
+    val runtimeVersion: Int = 0,
     val migrated: Boolean = false,
     val revision: Long = 0,
     val policyRevision: Long = 0,
@@ -93,6 +94,9 @@ data class MemoryMetadata(
     val progress: String = "",
     val error: String? = null,
     val inFlight: String? = null,
+    val inFlightWorker: String? = null,
+    val pendingRefresh: Boolean = false,
+    val retryCount: Int = 0,
 )
 
 @Serializable
@@ -157,6 +161,7 @@ data class MemoryDraft(
     val createdAt: Long = System.currentTimeMillis(),
     val configuration: String = "",
     val reviewNote: String? = null,
+    val taskId: String? = null,
 )
 
 @Serializable
@@ -175,6 +180,7 @@ data class CharacterMemory(
     val nodes: List<MemoryNode> = emptyList(),
     val drafts: List<MemoryDraft> = emptyList(),
     val history: List<MemoryCommit> = emptyList(),
+    val tasks: List<MemoryTask> = emptyList(),
 )
 
 @Serializable
