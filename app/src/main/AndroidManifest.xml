@@ -162,6 +162,14 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Persistent local HTTP server that serves the LastChat web UI on the LAN" />
     </service>
+    <service
+        android:name=".service.PythonServerService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Persistent local Python runtime and MCP server running in sandboxed PRoot Linux." />
+    </service>
 
     <service
         android:name="androidx.work.impl.foreground.SystemForegroundService"
@@ -220,7 +228,7 @@
         android:theme="@style/Theme.Rikkahub.Translucent"
         android:excludeFromRecents="true"
         android:launchMode="singleTask"
-        android:taskAffinity="lastchat.rikkafork.cocolal.assistant"
+        android:taskAffinity="lastchat.rikkafork.velvet.assistant"
         android:configChanges="keyboardHidden|orientation|screenSize"
         android:windowSoftInputMode="adjustResize"
         tools:ignore="Instantiatable" />

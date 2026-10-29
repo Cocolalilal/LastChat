@@ -1070,7 +1070,7 @@ fun ChatPage(
                                             current = conversation,
                                             settings = setting,
                                             onExpand = { isWidePanelCollapsed = false },
-                                            onOpenImageGen = { navController.navigate(Screen.ImageGen) },
+                                            onOpenImageGen = { navController.navigate(Screen.Studio) },
                                             onOpenStatistics = { navController.navigate(Screen.Menu) },
                                             onOpenSettings = { navController.navigate(Screen.Setting) },
                                             onOpenAssistant = {

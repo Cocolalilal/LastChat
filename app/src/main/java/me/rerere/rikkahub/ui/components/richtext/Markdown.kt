@@ -1,5 +1,14 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import android.content.Intent
@@ -108,6 +117,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.data.datastore.RpStyleRule
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.chat.chatImageOutline
@@ -952,9 +962,15 @@ fun MarkdownBlock(
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
     val streamingContent by rememberUpdatedState(content)
-    val streamingActive by rememberUpdatedState(streamingTextReveal)
+    val smoothStreamingEnabled = settings.displaySetting.enableSmoothStreamingAnimation
+    val streamingActive by rememberUpdatedState(streamingTextReveal && smoothStreamingEnabled)
     val onStreamingLayoutChanged by rememberUpdatedState(onExpandedStreamingCodeBlockChanged)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(smoothStreamingEnabled) {
+        if (!smoothStreamingEnabled) {
+            displayContent = streamingContent
+            settleRanges = emptyList()
+            streamingPresentation.snapTo(streamingContent)
+        }
         var previousFrameMillis = withFrameMillis { it }
         while (isActive) {
             val now = withFrameMillis { it }
@@ -962,6 +978,17 @@ fun MarkdownBlock(
             previousFrameMillis = now
             val raw = streamingContent
             val streaming = streamingActive
+            if (!smoothStreamingEnabled) {
+                if (displayContent != raw) {
+                    displayContent = raw
+                    streamingPresentation.snapTo(raw)
+                    if (streamingTextReveal) onStreamingLayoutChanged?.invoke()
+                }
+                settleRanges = emptyList()
+                snapshotFlow { streamingContent != displayContent }.first { it }
+                previousFrameMillis = withFrameMillis { it }
+                continue
+            }
             val edited = streamingPresentation.updateContent(raw, now, streaming)
             val advanced = streamingPresentation.step(nowMillis = now, elapsedMillis = elapsed)
             if (edited || advanced) {
@@ -1006,6 +1033,11 @@ fun MarkdownBlock(
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
+            val effectiveDisplay = LocalSettings.current.getEffectiveDisplaySetting()
+            val inWorldArtifactsEnabled = effectiveDisplay.enableInWorldArtifacts
+            val showArtifactBubble = effectiveDisplay.showArtifactBubble
+            val showArtifactOrb = effectiveDisplay.showArtifactOrb
+
             val bubbleRuns = remember(astTree, preprocessed, splitIntoMessageBubbles) {
                 if (splitIntoMessageBubbles) groupMarkdownBubbleRuns(astTree.children, preprocessed) else emptyList()
             }
@@ -1017,15 +1049,22 @@ fun MarkdownBlock(
                 ) {
                     bubbleRuns.forEachIndexed { index, run ->
                         val rich = run.size == 1 && run.first().isStandalone(preprocessed)
+                        val isArtifactBlock = run.size == 1 && run.first().let { piece ->
+                            piece is MarkdownWholePiece && piece.node.type == MarkdownElementTypes.CODE_FENCE && run {
+                                val lang = piece.node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(preprocessed) ?: ""
+                                normalizeCodeBlockLanguage(lang) in listOf("artifact", "visual", "inworld")
+                            }
+                        }
                         me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble(
                             position = me.rerere.rikkahub.ui.components.chat.getBubblePosition(
                                 index = bubbleLeadingCount + index,
                                 total = total,
                             ),
                             role = me.rerere.rikkahub.ui.components.chat.BubbleRole.ASSISTANT,
+                            containerColor = if (isArtifactBlock && !showArtifactBubble) Color.Transparent else null,
                             onClick = onBubbleClick,
-                            contentPaddingHorizontal = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
-                            contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
+                            contentPaddingHorizontal = if (rich && (!isArtifactBlock || !showArtifactBubble)) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
+                            contentPaddingVertical = if (rich && (!isArtifactBlock || !showArtifactBubble)) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
                             modifier = if (rich) Modifier.fillMaxWidth() else Modifier,
                         ) {
                             run.forEachIndexed { pieceIndex, piece ->
@@ -1879,8 +1918,10 @@ private fun MarkdownNode(
             val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val inWorldArtifactsEnabled = LocalSettings.current.getEffectiveDisplaySetting().enableInWorldArtifacts
+            val isArtifactFence = inWorldArtifactsEnabled && normalizedLanguage in listOf("artifact", "visual", "inworld")
 
-            // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
+            // Mermaid diagrams and in-world artifacts: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
@@ -1889,6 +1930,46 @@ private fun MarkdownNode(
                             .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),
                     )
+                } else if (isArtifactFence) {
+                    val showArtifactOrb = LocalSettings.current.getEffectiveDisplaySetting().showArtifactOrb
+                    if (showArtifactOrb) {
+                        AnimatedContent(
+                            targetState = hasEnd,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)) +
+                                 scaleIn(initialScale = 0.95f, animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = tween(450, easing = FastOutLinearInEasing)) +
+                                        scaleOut(targetScale = 1.08f, animationSpec = tween(450, easing = FastOutLinearInEasing))
+                                    )
+                            },
+                            label = "ArtifactPhaseTransition"
+                        ) { finished ->
+                            if (finished) {
+                                InWorldArtifact(
+                                    code = code,
+                                    modifier = modifier
+                                        .mediaEdgePadding(node, paragraphSpacing)
+                                        .fillMaxWidth(),
+                                )
+                            } else {
+                                ArtifactOrbGenerating(
+                                    modifier = modifier
+                                        .mediaEdgePadding(node, paragraphSpacing)
+                                        .fillMaxWidth(),
+                                )
+                            }
+                        }
+                    } else {
+                        if (hasEnd) {
+                            InWorldArtifact(
+                                code = code,
+                                modifier = modifier
+                                    .mediaEdgePadding(node, paragraphSpacing)
+                                    .fillMaxWidth(),
+                            )
+                        }
+                    }
                 } else CompositionLocalProvider(
                     LocalCodeRevealAnchor provides if (hasEnd) null else codeContentEndOffset
                 ) {

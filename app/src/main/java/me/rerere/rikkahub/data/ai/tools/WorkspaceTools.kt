@@ -26,6 +26,11 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
+    "python_server_start" to false,
+    "python_server_stop" to false,
+    "python_server_list" to false,
+    "mcp_add_local_connection" to false,
+    "python_extension_manage" to false,
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -36,18 +41,29 @@ suspend fun createWorkspaceTools(
     workspaceRepository: WorkspaceRepository,
     model: Model? = null,
     cwd: String? = null,
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager? = null,
 ): List<Tool> {
     if (workspaceId.isNullOrBlank()) return emptyList()
     val approvalOverrides = workspaceRepository.getById(workspaceId)?.toolApprovalOverrides().orEmpty()
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
 
-    return listOf(
+    val baseTools = mutableListOf(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository, model),
         createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
+
+    if (pythonPluginManager != null) {
+        baseTools.add(createPythonServerStartTool(workspaceId, pythonPluginManager, ::needsApproval))
+        baseTools.add(createPythonServerStopTool(workspaceId, pythonPluginManager, ::needsApproval))
+        baseTools.add(createPythonServerListTool(pythonPluginManager, ::needsApproval))
+        baseTools.add(createMcpAddLocalConnectionTool(pythonPluginManager, ::needsApproval))
+        baseTools.add(createPythonExtensionManageTool(workspaceId, pythonPluginManager, ::needsApproval))
+    }
+
+    return baseTools
 }
 
 private fun createReadFileTool(
@@ -527,4 +543,255 @@ internal fun prepareImageForModelInspection(
         height = finalHeight,
     )
 }
+
+private fun createPythonServerStartTool(
+    workspaceId: String,
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager,
+    needsApproval: (String) -> Boolean,
+) = Tool(
+    name = "python_server_start",
+    description = "Start a persistent background Python server, daemon, or script in the Linux PRoot workspace. Automatically promotes LastChat to an Android foreground service with a persistent notification so the server is never terminated by Android's Low Memory Killer (LMK).",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("command", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Command to run inside workspace, e.g. 'python3 server.py --port 8000' or 'python3 -m http.server 8000'")
+                })
+                put("port", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Port number the server listens on (optional, e.g. 8000)")
+                })
+                put("name", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Display name for the server (optional, e.g. 'Local MCP Server')")
+                })
+            },
+            required = listOf("command"),
+        )
+    },
+    approvalMode = if (needsApproval("python_server_start")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
+        val command = args["command"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val port = args["port"]?.jsonPrimitive?.intOrNull
+        val name = args["name"]?.jsonPrimitive?.contentOrNull ?: "Python Server"
+
+        val workspace = pythonPluginManager.getActiveWorkspace()
+        if (workspace == null) {
+            buildJsonObject { put("error", "No workspace active") }
+        } else {
+            val proc = pythonPluginManager.startServer(workspace, name, command, port)
+            buildJsonObject {
+                put("status", "running")
+                put("server_id", proc.id)
+                put("name", proc.name)
+                put("command", proc.command)
+                if (proc.port != null) put("port", proc.port)
+                put("log_file", proc.logFilePath)
+                put("note", "Server started in background with persistent Android foreground notification.")
+            }
+        }
+    },
+)
+
+private fun createPythonServerStopTool(
+    workspaceId: String,
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager,
+    needsApproval: (String) -> Boolean,
+) = Tool(
+    name = "python_server_stop",
+    description = "Stop a running background Python server or daemon by its server ID, name, or port number.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("target", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Server ID, name, or port number to stop")
+                })
+            },
+            required = listOf("target"),
+        )
+    },
+    approvalMode = if (needsApproval("python_server_stop")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
+        val target = args["target"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val servers = pythonPluginManager.runningServers.value
+        val matched = servers.values.firstOrNull {
+            it.id == target || it.name.equals(target, ignoreCase = true) || it.port?.toString() == target
+        }
+        if (matched != null) {
+            pythonPluginManager.stopServer(matched.id)
+            buildJsonObject {
+                put("status", "stopped")
+                put("server_id", matched.id)
+                put("name", matched.name)
+            }
+        } else {
+            buildJsonObject { put("error", "No running server matching '$target'") }
+        }
+    },
+)
+
+private fun createPythonServerListTool(
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager,
+    needsApproval: (String) -> Boolean,
+) = Tool(
+    name = "python_server_list",
+    description = "List all active background Python servers running in the Linux PRoot workspace, including their port numbers and status.",
+    parameters = { InputSchema.Obj(properties = buildJsonObject {}, required = emptyList()) },
+    approvalMode = if (needsApproval("python_server_list")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = {
+        val servers = pythonPluginManager.runningServers.value.values.toList()
+        buildJsonObject {
+            put("count", servers.size)
+            put("servers", buildJsonArray {
+                servers.forEach { s ->
+                    add(buildJsonObject {
+                        put("id", s.id)
+                        put("name", s.name)
+                        put("command", s.command)
+                        if (s.port != null) put("port", s.port)
+                        put("uptime_seconds", (System.currentTimeMillis() - s.startedAt) / 1000)
+                        put("log_file", s.logFilePath)
+                    })
+                }
+            })
+        }
+    },
+)
+
+private fun createMcpAddLocalConnectionTool(
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager,
+    needsApproval: (String) -> Boolean,
+) = Tool(
+    name = "mcp_add_local_connection",
+    description = "Connect LastChat to a local MCP (Model Context Protocol) server running in the workspace (e.g. http://127.0.0.1:8000/sse). Immediately registers the MCP connection in app settings so its tools become available for the assistant.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("name", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Unique human-readable name for the MCP server")
+                })
+                put("url", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Local HTTP or SSE URL, e.g. 'http://127.0.0.1:8000/sse' or 'http://127.0.0.1:8000'")
+                })
+                put("transport", buildJsonObject {
+                    put("type", "string")
+                    put("enum", buildJsonArray { add("sse"); add("streamable_http") })
+                    put("description", "MCP transport: 'sse' (default) or 'streamable_http'")
+                })
+            },
+            required = listOf("name", "url"),
+        )
+    },
+    approvalMode = if (needsApproval("mcp_add_local_connection")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
+        val name = args["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val url = args["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val transport = args["transport"]?.jsonPrimitive?.contentOrNull ?: "sse"
+        pythonPluginManager.addLocalMcpServer(name, url, transport)
+        buildJsonObject {
+            put("status", "connected")
+            put("name", name)
+            put("url", url)
+            put("transport", transport)
+            put("note", "Local MCP server successfully registered in LastChat.")
+        }
+    },
+)
+
+private fun createPythonExtensionManageTool(
+    workspaceId: String,
+    pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager,
+    needsApproval: (String) -> Boolean,
+) = Tool(
+    name = "python_extension_manage",
+    description = "Inspect, enable, disable, or create Python extensions in /workspace/plugins/.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("action", buildJsonObject {
+                    put("type", "string")
+                    put("enum", buildJsonArray { add("list"); add("enable"); add("disable"); add("create"); add("read") })
+                    put("description", "Action to perform")
+                })
+                put("plugin_name", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Extension name or file name (required for enable/disable/create/read)")
+                })
+                put("code", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Python source code (required for action='create')")
+                })
+            },
+            required = listOf("action"),
+        )
+    },
+    approvalMode = if (needsApproval("python_extension_manage")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
+        val action = args["action"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val pluginName = args["plugin_name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val code = args["code"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val ws = pythonPluginManager.getActiveWorkspace()
+        if (ws == null) {
+            buildJsonObject { put("error", "No workspace active") }
+        } else {
+            when (action) {
+                "list" -> {
+                    val list = pythonPluginManager.listPlugins(ws)
+                    buildJsonObject {
+                        put("count", list.size)
+                        put("plugins", buildJsonArray {
+                            list.forEach { p ->
+                                add(buildJsonObject {
+                                    put("id", p.id)
+                                    put("name", p.name)
+                                    put("file", p.fileName)
+                                    put("enabled", p.enabled)
+                                    put("hooks", buildJsonArray { p.hooks.forEach { h -> add(h) } })
+                                })
+                            }
+                        })
+                    }
+                }
+                "enable" -> {
+                    pythonPluginManager.setPluginEnabled(pluginName.removeSuffix(".py"), true)
+                    buildJsonObject {
+                        put("status", "enabled")
+                        put("plugin", pluginName)
+                    }
+                }
+                "disable" -> {
+                    pythonPluginManager.setPluginEnabled(pluginName.removeSuffix(".py"), false)
+                    buildJsonObject {
+                        put("status", "disabled")
+                        put("plugin", pluginName)
+                    }
+                }
+                "read" -> {
+                    val content = pythonPluginManager.readPluginCode(ws, if (pluginName.endsWith(".py")) pluginName else "$pluginName.py")
+                    buildJsonObject {
+                        put("file", pluginName)
+                        put("content", content)
+                    }
+                }
+                "create" -> {
+                    val fName = if (pluginName.endsWith(".py")) pluginName else "$pluginName.py"
+                    pythonPluginManager.savePluginCode(ws, fName, code)
+                    buildJsonObject {
+                        put("status", "created")
+                        put("file", fName)
+                    }
+                }
+                else -> buildJsonObject { put("error", "Unknown action '$action'") }
+            }
+        }
+    },
+)
 

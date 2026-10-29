@@ -148,6 +148,7 @@ private const val CATEGORY_APP_CACHE = "app_cache"
 private const val CATEGORY_CODE_CACHE = "code_cache"
 private const val CATEGORY_OTHER_UPLOADS = "other_uploads"
 private const val CATEGORY_OTHER_APP_DATA = "other_app_data"
+private const val CATEGORY_ARTIFACTS = "in_world_artifacts"
 
 private enum class StorageFilter(
     @StringRes val labelRes: Int,
@@ -1410,6 +1411,7 @@ private fun StorageCategoryUsage.localizedLabel(context: Context): String {
         CATEGORY_CODE_CACHE -> context.getString(R.string.setting_chat_storage_category_code_cache)
         CATEGORY_OTHER_UPLOADS -> context.getString(R.string.setting_chat_storage_category_other_uploads)
         CATEGORY_OTHER_APP_DATA -> context.getString(R.string.setting_chat_storage_category_other_app_data)
+        CATEGORY_ARTIFACTS -> context.getString(R.string.setting_in_world_artifacts_title)
         else -> label
     }
 }
@@ -1430,6 +1432,7 @@ private fun StorageCategoryUsage.icon(): ImageVector {
         CATEGORY_CODE_CACHE -> Icons.Rounded.Code
         CATEGORY_OTHER_UPLOADS -> Icons.Rounded.FolderOpen
         CATEGORY_OTHER_APP_DATA -> Icons.Rounded.Storage
+        CATEGORY_ARTIFACTS -> Icons.Rounded.AutoAwesome
         else -> Icons.Rounded.Storage
     }
 }

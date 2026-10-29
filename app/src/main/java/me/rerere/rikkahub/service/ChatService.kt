@@ -664,6 +664,7 @@ class ChatService(
     private val workspaceRepository: WorkspaceRepository,
     val mcpManager: McpManager,
     private val platformHttpClient: PlatformHttpClient,
+    private val pythonPluginManager: me.rerere.rikkahub.data.repository.PythonPluginManager? = null,
 ) {
     // 存储每个对话的状态
     private val conversationsLock = Any()
@@ -1986,6 +1987,7 @@ class ChatService(
                         workspaceId = workspaceId,
                         workspaceRepository = workspaceRepository,
                         model = model,
+                        pythonPluginManager = pythonPluginManager,
                     )
                 )
             }

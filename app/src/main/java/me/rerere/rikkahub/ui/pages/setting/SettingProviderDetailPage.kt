@@ -328,10 +328,10 @@ internal fun syncFreshModelMetadata(
     freshModels: List<Model>,
     currentProvider: ProviderSetting,
 ): ProviderSetting {
+    val freshByExactId = freshModels.associateBy { it.modelId.lowercase() }
     val updatedModels = currentProvider.models.map { savedModel ->
-        val freshModel = freshModels.firstOrNull { apiModel ->
-            modelsReferToSameApiModel(savedModel, apiModel)
-        }
+        val freshModel = freshByExactId[savedModel.modelId.lowercase()]
+            ?: freshModels.firstOrNull { apiModel -> modelsReferToSameApiModel(savedModel, apiModel) }
         if (freshModel != null) {
             val preserveManualContext = savedModel.contextLimitSource == ContextLimitSource.MANUAL ||
                 (savedModel.contextLimitSource == null && savedModel.contextWindowTokens != null)
@@ -904,21 +904,23 @@ private fun ModelList(
             isReloadingModels = true
             reloadModelsError = null
             runCatching {
-                withContext(Dispatchers.IO) {
-                    providerManager.getProviderByType(providerSetting)
+                val freshModels = withContext(Dispatchers.IO) {
+                    val rawModels = providerManager.getProviderByType(providerSetting)
                         .listModels(providerSetting)
                         .sortedBy { it.modelId }
                         .toList()
-                }.let { models ->
-                    resolveProviderModels(modelMetadataResolver, providerSetting, models)
+                    resolveProviderModels(modelMetadataResolver, providerSetting, rawModels)
                 }
-            }.onSuccess { freshModels ->
+                val updatedProvider = withContext(Dispatchers.Default) {
+                    syncFreshModelMetadata(
+                        freshModels = freshModels,
+                        currentProvider = providerSetting,
+                    )
+                }
+                freshModels to updatedProvider
+            }.onSuccess { (freshModels, updatedProvider) ->
                 ApiModelListCache.put(apiModelCacheKey, freshModels)
                 modelList = freshModels
-                val updatedProvider = syncFreshModelMetadata(
-                    freshModels = freshModels,
-                    currentProvider = providerSetting,
-                )
                 if (updatedProvider != providerSetting) {
                     onUpdateProvider(updatedProvider)
                 }
@@ -1539,22 +1541,27 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             var filterText by remember { mutableStateOf("") }
-            val filterKeywords = filterText.split(" ").filter { it.isNotBlank() }
+            val filterKeywords = remember(filterText) { filterText.split(" ").filter { it.isNotBlank() } }
             val resolvedModels = remember(models, parentProvider) {
                 resolveProviderModels(modelMetadataResolver, parentProvider, models)
             }
-            val filteredModels = resolvedModels.fastFilter {
-                if (filterKeywords.isEmpty()) {
-                    true
-                } else {
-                    filterKeywords.all { keyword ->
-                        it.modelId.contains(keyword, ignoreCase = true) ||
-                        it.displayName.contains(keyword, ignoreCase = true)
+            val filteredModels = remember(resolvedModels, filterKeywords) {
+                resolvedModels.fastFilter {
+                    if (filterKeywords.isEmpty()) {
+                        true
+                    } else {
+                        filterKeywords.all { keyword ->
+                            it.modelId.contains(keyword, ignoreCase = true) ||
+                            it.displayName.contains(keyword, ignoreCase = true)
+                        }
                     }
                 }
             }
-            val allFilteredSelected = filteredModels.isNotEmpty() && filteredModels.all { model ->
-                selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
+            val allFilteredSelected = remember(filteredModels, selectedModels) {
+                filteredModels.isNotEmpty() && filteredModels.all { model ->
+                    val exactMatch = selectedModels.any { it.modelId.equals(model.modelId, ignoreCase = true) }
+                    exactMatch || selectedModels.any { selected -> modelsReferToSameApiModel(selected, model) }
+                }
             }
             Column(
                 modifier = Modifier
@@ -1644,7 +1651,10 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         }
                     }
                     items(filteredModels) { model ->
-                        val selectedModel = selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
+                        val selectedModel = remember(model, selectedModels) {
+                            val exactMatch = selectedModels.firstOrNull { it.modelId.equals(model.modelId, ignoreCase = true) }
+                            exactMatch ?: selectedModels.firstOrNull { selected -> modelsReferToSameApiModel(selected, model) }
+                        }
                         val isSelected = selectedModel != null
                         val interactionSource = remember { MutableInteractionSource() }
                         val isPressed by interactionSource.collectIsPressedAsState()

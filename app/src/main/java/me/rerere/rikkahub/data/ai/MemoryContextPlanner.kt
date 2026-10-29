@@ -28,9 +28,10 @@ internal fun selectSmartMemoryContext(
     historyMessages: List<UIMessage>,
     contextPriority: ContextPriority,
     episodeGroup: (Long) -> String,
+    memorySummary: String? = null,
 ): MemoryContextSelection {
     if (candidates.isEmpty()) {
-        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup)
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary)
         if (toolPrompt.isBlank()) return MemoryContextSelection(emptyList(), "", 0, 0)
         val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
         val remaining = (inputBudgetTokens - requiredContextTokens).coerceAtLeast(0)
@@ -61,7 +62,7 @@ internal fun selectSmartMemoryContext(
     var renderedTokens = 0
     candidates.forEach { candidate ->
         val proposed = selected + candidate
-        val proposedText = renderMemoryContextPrompt(model, proposed, episodeGroup)
+        val proposedText = renderMemoryContextPrompt(model, proposed, episodeGroup, memorySummary)
         val proposedTokens = ContextTokenEstimator.textTokens(proposedText, model)
         if (proposedTokens <= allocation) {
             selected += candidate
@@ -70,8 +71,8 @@ internal fun selectSmartMemoryContext(
         }
     }
 
-    if (rendered.isEmpty() && ModelAbility.TOOL in model.abilities) {
-        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup)
+    if (rendered.isEmpty() && (ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank())) {
+        val toolPrompt = renderMemoryContextPrompt(model, emptyList(), episodeGroup, memorySummary)
         val toolTokens = ContextTokenEstimator.textTokens(toolPrompt, model)
         if (toolTokens <= allocation) {
             rendered = toolPrompt
@@ -87,13 +88,20 @@ internal fun renderMemoryContextPrompt(
     model: Model,
     memories: List<AssistantMemory>,
     episodeGroup: (Long) -> String,
+    memorySummary: String? = null,
 ): String {
     val hasToolAbility = ModelAbility.TOOL in model.abilities
-    if (memories.isEmpty() && !hasToolAbility) return ""
+    if (memories.isEmpty() && !hasToolAbility && memorySummary.isNullOrBlank()) return ""
 
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     return buildString {
+        if (!memorySummary.isNullOrBlank()) {
+            append("## User Memory Baseline Profile\n")
+            append("This is a synthesized, high-level understanding of the user across all past interactions:\n")
+            append(memorySummary.trim())
+            append("\n\n")
+        }
         if (memories.isNotEmpty()) {
             append("## Memories\n")
             append("These are memories that you can reference in future conversations.\n")

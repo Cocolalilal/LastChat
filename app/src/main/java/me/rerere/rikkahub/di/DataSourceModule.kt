@@ -133,6 +133,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_31_32,
                 AppDatabase.MIGRATION_32_33,
                 AppDatabase.MIGRATION_40_39,
+                AppDatabase.MIGRATION_39_41,
+                AppDatabase.MIGRATION_40_41,
             )
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
@@ -186,6 +188,10 @@ val dataSourceModule = module {
 
     single {
         get<AppDatabase>().memoryDao()
+    }
+
+    single {
+        get<AppDatabase>().memorySummaryDao()
     }
 
     single {

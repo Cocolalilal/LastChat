@@ -78,6 +78,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.data.memory.MemorySummaryCadence
+import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -144,7 +152,8 @@ fun AssistantMemorySettings(
     embeddingStatus: String? = null,
     initialMemoryTab: Int? = null,  // 0 = Core, 1 = Episodic
     scrollToMemoryId: Int? = null,
-    onNavigateToSummarizerSettings: () -> Unit = {}
+    onNavigateToSummarizerSettings: () -> Unit = {},
+    onNavigateToMemorySummary: () -> Unit = {},
 ) {
     var showReembedConfirmation by remember { mutableStateOf(false) }
     val requestEmbeddingRegeneration = onRegenerateEmbeddings?.let {
@@ -240,6 +249,7 @@ fun AssistantMemorySettings(
 
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
+    val memorySummary by assistantDetailVM.memorySummary.collectAsStateWithLifecycle(null)
     val currentMode = getMemoryMode(assistant)
 
     CollapseSpacingColumn(
@@ -252,6 +262,15 @@ fun AssistantMemorySettings(
     ) {
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
+
+        // Memory Summary Hero Card (when memory enabled)
+        ExpandableContent(visible = assistant.enableMemory) {
+            MemorySummaryHeroCard(
+                assistant = assistant,
+                memorySummary = memorySummary,
+                onClick = onNavigateToMemorySummary,
+            )
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
@@ -328,6 +347,23 @@ fun AssistantMemorySettings(
                 )
             }
 
+            // Memory Baseline Summary Toggle (when memory enabled)
+            ExpandableContent(visible = assistant.enableMemory) {
+                MemorySettingsItem(
+                    title = "Memory Baseline Summary",
+                    subtitle = "Inject a compact memory summary into every request as persistent baseline context",
+                    position = "MIDDLE",
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.enableMemorySummary,
+                            onCheckedChange = { enabled ->
+                                onUpdateAssistant(assistant.copy(enableMemorySummary = enabled))
+                            }
+                        )
+                    }
+                )
+            }
+
             // RAG Toggle (when memory enabled)
             ExpandableContent(visible = assistant.enableMemory) {
                 MemorySettingsItem(
@@ -380,6 +416,19 @@ fun AssistantMemorySettings(
                             }
                         )
                     }
+                )
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // MEMORY SUMMARY SETTINGS (when memory summary is enabled)
+        // ═══════════════════════════════════════════════════════════════════
+        ExpandableContent(visible = assistant.enableMemory && assistant.enableMemorySummary) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SettingsGroupHeader(title = "Summary Configuration")
+                MemorySummarySettingsCard(
+                    assistant = assistant,
+                    onUpdateAssistant = onUpdateAssistant,
                 )
             }
         }
@@ -937,6 +986,14 @@ private fun ManageMemoriesSection(
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
+    val pageSize = 10
+    var currentPage by remember { mutableIntStateOf(0) }
+    var showJumpDialog by remember { mutableStateOf(false) }
+
+    // Reset to first page when filtering or sorting changes
+    LaunchedEffect(selectedTab, memorySearchQuery, sortOrder) {
+        currentPage = 0
+    }
     
     // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
@@ -945,16 +1002,6 @@ private fun ManageMemoriesSection(
         }
     }
     
-    // Auto-open memory editor when navigating from context sources
-    LaunchedEffect(scrollToMemoryId, memories) {
-        if (scrollToMemoryId != null && memories.isNotEmpty()) {
-            val targetMemory = memories.find { it.id == scrollToMemoryId }
-            if (targetMemory != null) {
-                onEditMemory(targetMemory)
-            }
-        }
-    }
-
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     
@@ -974,6 +1021,29 @@ private fun ManageMemoriesSection(
             MemorySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
             MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
         }
+    }
+
+    // Auto-open memory editor and jump to page when navigating from context sources
+    LaunchedEffect(scrollToMemoryId, displayMemories) {
+        if (scrollToMemoryId != null && displayMemories.isNotEmpty()) {
+            val targetIndex = displayMemories.indexOfFirst { it.id == scrollToMemoryId }
+            if (targetIndex >= 0) {
+                currentPage = targetIndex / pageSize
+                val targetMemory = displayMemories[targetIndex]
+                onEditMemory(targetMemory)
+            }
+        }
+    }
+
+    val totalItems = displayMemories.size
+    val totalPages = (totalItems + pageSize - 1) / pageSize.coerceAtLeast(1)
+    val validPage = if (totalPages > 0) currentPage.coerceIn(0, totalPages - 1) else 0
+    val pageStart = validPage * pageSize
+    val pageEnd = (pageStart + pageSize).coerceAtMost(totalItems)
+    val pagedMemories = if (totalItems > 0 && pageStart < totalItems) {
+        displayMemories.subList(pageStart, pageEnd)
+    } else {
+        emptyList()
     }
 
     CollapseSpacingColumn(spacing = 12.dp) {
@@ -1097,12 +1167,12 @@ private fun ManageMemoriesSection(
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            displayMemories.forEachIndexed { index, memory ->
+            pagedMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
                     val position = when {
-                        displayMemories.size == 1 -> "ONLY"
+                        pagedMemories.size == 1 -> "ONLY"
                         index == 0 -> "FIRST"
-                        index == displayMemories.size - 1 -> "LAST"
+                        index == pagedMemories.size - 1 -> "LAST"
                         else -> "MIDDLE"
                     }
                     MemoryItem(
@@ -1136,6 +1206,117 @@ private fun ManageMemoriesSection(
                 }
             }
         }
+
+        // Pagination controls
+        if (totalPages > 1) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (validPage > 0) currentPage = validPage - 1
+                        },
+                        enabled = validPage > 0
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Previous Page"
+                        )
+                    }
+
+                    Surface(
+                        onClick = { showJumpDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Page ${validPage + 1} of $totalPages",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "(${pageStart + 1}–$pageEnd of $totalItems)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (validPage < totalPages - 1) currentPage = validPage + 1
+                        },
+                        enabled = validPage < totalPages - 1
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = "Next Page"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showJumpDialog && totalPages > 1) {
+        var targetPageText by remember { mutableStateOf((validPage + 1).toString()) }
+        AlertDialog(
+            onDismissRequest = { showJumpDialog = false },
+            title = { Text("Jump to Page") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter page (1–$totalPages):",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextField(
+                        value = targetPageText,
+                        onValueChange = { input ->
+                            targetPageText = input.filter { it.isDigit() }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = targetPageText.toIntOrNull()
+                        if (target != null && target in 1..totalPages) {
+                            currentPage = target - 1
+                        }
+                        showJumpDialog = false
+                    }
+                ) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJumpDialog = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -1445,6 +1626,200 @@ private fun MemoryDebugger(
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemorySummaryHeroCard(
+    assistant: Assistant,
+    memorySummary: MemorySummaryEntity?,
+    onClick: () -> Unit,
+) {
+    val isDark = LocalDarkMode.current
+    val parsedData = remember(memorySummary) {
+        memorySummary?.summaryJson?.let { parseMemorySummaryJson(it) }
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Memory Summary",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                val subtitle = when {
+                    parsedData != null -> {
+                        val sectionCount = parsedData.sections.size
+                        val tokens = memorySummary?.tokenCount ?: 0
+                        "$sectionCount sections • ~$tokens tokens"
+                    }
+                    assistant.enableMemorySummary -> "Tap to view and edit summary"
+                    else -> "Compact baseline understanding of your profile"
+                }
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemorySummarySettingsCard(
+    assistant: Assistant,
+    onUpdateAssistant: (Assistant) -> Unit,
+) {
+    val isDark = LocalDarkMode.current
+    Surface(
+        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // Token Budget Slider
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Token Budget",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "${assistant.memorySummaryTokenBudget} tokens",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Text(
+                    text = "Target token allocation for the synthesized baseline summary (200 - 10,000 tokens).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = assistant.memorySummaryTokenBudget.toFloat(),
+                    onValueChange = {
+                        onUpdateAssistant(
+                            assistant.copy(memorySummaryTokenBudget = it.toInt().coerceIn(200, 10000))
+                        )
+                    },
+                    valueRange = 200f..10000f,
+                    steps = 48,
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp,
+            )
+
+            // Update Cadence Dropdown
+            var cadenceMenuExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sync Frequency",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = when (assistant.memorySummaryCadence) {
+                            MemorySummaryCadence.IMMEDIATE -> "Updates immediately when memory changes"
+                            MemorySummaryCadence.DEBOUNCE_10M -> "Debounced 10 min after changes"
+                            MemorySummaryCadence.HOURLY -> "Updated hourly"
+                            MemorySummaryCadence.DAILY -> "Updated once daily"
+                            MemorySummaryCadence.MANUAL -> "Only updated on demand"
+                            else -> "Updates immediately when memory changes"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box {
+                    Button(
+                        onClick = { cadenceMenuExpanded = true },
+                    ) {
+                        Text(
+                            when (assistant.memorySummaryCadence) {
+                                MemorySummaryCadence.IMMEDIATE -> "Immediate"
+                                MemorySummaryCadence.DEBOUNCE_10M -> "10 Minutes"
+                                MemorySummaryCadence.HOURLY -> "Hourly"
+                                MemorySummaryCadence.DAILY -> "Daily"
+                                MemorySummaryCadence.MANUAL -> "Manual"
+                                else -> "Immediate"
+                            }
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = cadenceMenuExpanded,
+                        onDismissRequest = { cadenceMenuExpanded = false },
+                    ) {
+                        MemorySummaryCadence.entries.forEach { cadence ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when (cadence) {
+                                            MemorySummaryCadence.IMMEDIATE -> "Immediate"
+                                            MemorySummaryCadence.DEBOUNCE_10M -> "10 Minutes"
+                                            MemorySummaryCadence.HOURLY -> "Hourly"
+                                            MemorySummaryCadence.DAILY -> "Daily"
+                                            MemorySummaryCadence.MANUAL -> "Manual only"
+                                        }
+                                    )
+                                },
+                                onClick = {
+                                    cadenceMenuExpanded = false
+                                    onUpdateAssistant(assistant.copy(memorySummaryCadence = cadence))
+                                }
+                            )
                         }
                     }
                 }

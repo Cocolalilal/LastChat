@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.UsageStatsDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemorySummaryDao
 import me.rerere.rikkahub.data.db.dao.TemporalMemoryDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
@@ -32,6 +33,7 @@ import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryClaimEntity
 import me.rerere.rikkahub.data.db.entity.MemoryClaimFtsEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEpisodeV3Entity
@@ -73,8 +75,9 @@ import kotlinx.serialization.json.put
         MemorySourceV3FtsEntity::class,
         MemoryIngestStateEntity::class,
         MemoryProjectionEntity::class,
+        MemorySummaryEntity::class,
     ],
-    version = 39,
+    version = 41,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -122,6 +125,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationAttachmentRefDao(): ConversationAttachmentRefDao
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun memorySummaryDao(): MemorySummaryDao
 
     abstract fun temporalMemoryDao(): TemporalMemoryDao
 
@@ -541,6 +546,44 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: downgrade from 40 to 39")
                 db.execSQL("DROP INDEX IF EXISTS index_MemoryEntity_assistant_id")
+            }
+        }
+
+        val MIGRATION_39_41 = object : Migration(39, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 39 to 41")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `memory_summary` (
+                        `assistant_id` TEXT NOT NULL PRIMARY KEY,
+                        `summary_json` TEXT NOT NULL,
+                        `raw_markdown` TEXT NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `token_count` INTEGER NOT NULL DEFAULT 0,
+                        `source_hash` TEXT
+                    )
+                    """.trimIndent()
+                )
+                Log.i(TAG, "migrate: migrate from 39 to 41 success")
+            }
+        }
+
+        val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: start migrate from 40 to 41")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `memory_summary` (
+                        `assistant_id` TEXT NOT NULL PRIMARY KEY,
+                        `summary_json` TEXT NOT NULL,
+                        `raw_markdown` TEXT NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `token_count` INTEGER NOT NULL DEFAULT 0,
+                        `source_hash` TEXT
+                    )
+                    """.trimIndent()
+                )
+                Log.i(TAG, "migrate: migrate from 40 to 41 success")
             }
         }
     }

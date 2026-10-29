@@ -53,6 +53,7 @@ private const val CATEGORY_APP_CACHE = "app_cache"
 private const val CATEGORY_CODE_CACHE = "code_cache"
 private const val CATEGORY_OTHER_UPLOADS = "other_uploads"
 private const val CATEGORY_OTHER_APP_DATA = "other_app_data"
+private const val CATEGORY_ARTIFACTS = "in_world_artifacts"
 
 private data class AppPackageStorageStats(
     val appBytes: Long = 0L,
@@ -131,6 +132,7 @@ class AppStorageRepository(
             }
 
             CATEGORY_ICON_CACHE -> context.filesDir.resolve("icon_cache").deleteRecursively()
+            CATEGORY_ARTIFACTS -> context.filesDir.resolve(ArtifactStorageManager.DIR_NAME).deleteRecursively()
             else -> return@withContext
         }
         scanStorage()
@@ -457,11 +459,13 @@ class AppStorageRepository(
         )
         val codeCacheBytes = safeDirectoryBytes(context.codeCacheDir)
         val otherUploadBytes = safeDirectoryBytes(uploadDir, excludedCanonicalPaths = protectedUploadPaths)
+        val artifactsBytes = ArtifactStorageManager.getTotalSizeBytes(context)
 
         listOf(
             StorageCategoryUsage(CATEGORY_ASSISTANT_MEDIA, "Assistant media", assistantMediaBytes),
             StorageCategoryUsage(CATEGORY_LOREBOOK_MEDIA, "Lorebook media", lorebookMediaBytes),
             StorageCategoryUsage(CATEGORY_GENERATED_MEDIA, "Generated media", generatedMediaBytes),
+            StorageCategoryUsage(CATEGORY_ARTIFACTS, "In-world artifacts", artifactsBytes, clearable = true),
             StorageCategoryUsage(CATEGORY_WORKSPACES, "Workspaces", workspacesBytes),
             StorageCategoryUsage(CATEGORY_ICONS_AND_FONTS, "Icons and fonts", iconsAndFontsBytes),
             StorageCategoryUsage(CATEGORY_DATABASES, "Settings and database", databaseBytes),

@@ -374,6 +374,20 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     title = stringResource(R.string.setting_display_advanced)
                 ) {
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_ui_smooth_streaming_title),
+                        subtitle = stringResource(R.string.setting_ui_smooth_streaming_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.enableSmoothStreamingAnimation,
+                                onCheckedChange = {
+                                    updateDisplaySetting(
+                                        displaySetting.copy(enableSmoothStreamingAnimation = it)
+                                    )
+                                }
+                            )
+                        }
+                    )
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_ui_context_token_summary_title),
                         subtitle = stringResource(R.string.setting_ui_context_token_summary_desc),
                         trailing = {

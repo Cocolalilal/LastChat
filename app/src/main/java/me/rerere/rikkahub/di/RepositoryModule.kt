@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import android.content.Context
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import me.rerere.rikkahub.data.ai.MemorySearchService
+import me.rerere.rikkahub.data.ai.MemorySummaryService
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -53,6 +54,21 @@ val repositoryModule = module {
     }
 
     single {
+        val memoryRepo = get<MemoryRepository>()
+        val summaryService = MemorySummaryService(
+            settingsStore = get(),
+            memoryRepository = memoryRepo,
+            memorySummaryDao = get(),
+            providerManager = get(),
+            secretKeyManager = get(),
+        )
+        memoryRepo.onMemoryChange = { assistantId, changeType, content ->
+            summaryService.onMemoryChanged(assistantId, changeType, content)
+        }
+        summaryService
+    }
+
+    single {
         GenMediaRepository(get())
     }
 
@@ -93,6 +109,43 @@ val repositoryModule = module {
         me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager(
             context = get(),
             workspaceRepository = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.PythonPluginManager(
+            context = get(),
+            workspaceRepository = get(),
+            workspaceDao = get(),
+            environmentManager = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoiceRecordingManager(
+            context = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoicePlaybackManager()
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoiceMemoRepository(
+            context = get(),
+            workspaceDao = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.StoryStudioRepository(
+            context = get(),
+            workspaceDao = get(),
+            settingsStore = get(),
+            providerManager = get(),
+            secretKeyManager = get(),
         )
     }
 }

@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AutoAwesome
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.context.LocalNavController
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_IN_WORLD_ARTIFACTS_PROMPT
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.background
@@ -109,6 +116,62 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // In-World Visual Artifacts Dedicated Entry
+            item {
+                val navController = LocalNavController.current
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge,
+                    onClick = { navController.navigate(Screen.SettingArtifacts) }
+                ) {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (displaySetting.enableInWorldArtifacts) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_title),
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = "Configure rendering, bubble background, thinking orb, and AI prompt.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HapticSwitch(
+                                    checked = displaySetting.enableInWorldArtifacts,
+                                    onCheckedChange = { enabled ->
+                                        val newSetting = displaySetting.copy(enableInWorldArtifacts = enabled)
+                                        displaySetting = newSetting
+                                        vm.updateSettings { settings ->
+                                            settings.copy(displaySetting = settings.displaySetting.copy(enableInWorldArtifacts = enabled))
+                                        }
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+
             // Description
             item {
                 Card(

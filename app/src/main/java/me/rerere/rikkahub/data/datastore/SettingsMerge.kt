@@ -155,6 +155,21 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             edited.assistantOverlayConfig,
             latest.assistantOverlayConfig,
         ),
+        enableVoiceMemosMemoryBridge = selectEditedValue(
+            base.enableVoiceMemosMemoryBridge,
+            edited.enableVoiceMemosMemoryBridge,
+            latest.enableVoiceMemosMemoryBridge,
+        ),
+        smartMicProfiles = mergeSettingsValue(
+            base.smartMicProfiles,
+            edited.smartMicProfiles,
+            latest.smartMicProfiles,
+        ),
+        selectedSmartMicProfileId = selectEditedValue(
+            base.selectedSmartMicProfileId,
+            edited.selectedSmartMicProfileId,
+            latest.selectedSmartMicProfileId,
+        ),
     )
 }
 

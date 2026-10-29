@@ -75,6 +75,7 @@ const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val LOCAL_MODEL_DOWNLOAD_NOTIFICATION_CHANNEL_ID = "local_model_download"
 const val WORKSPACE_ENVIRONMENT_NOTIFICATION_CHANNEL_ID = "workspace_environment"
+const val PYTHON_SERVER_NOTIFICATION_CHANNEL_ID = "python_server"
 
 class LastChatApp : Application(), SingletonImageLoader.Factory {
     companion object {
@@ -325,11 +326,20 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             .setName(getString(R.string.notification_channel_workspace_environment))
             .setVibrationEnabled(false)
             .build()
+        val pythonServerChannel = NotificationChannelCompat
+            .Builder(
+                PYTHON_SERVER_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName("Python Background Servers")
+            .setVibrationEnabled(false)
+            .build()
         notificationManager.createNotificationChannel(chatCompletedChannel)
         notificationManager.createNotificationChannel(webServerChannel)
         notificationManager.createNotificationChannel(spontaneousChannel)
         notificationManager.createNotificationChannel(localModelDownloadChannel)
         notificationManager.createNotificationChannel(workspaceEnvironmentChannel)
+        notificationManager.createNotificationChannel(pythonServerChannel)
     }
 
     override fun onTerminate() {

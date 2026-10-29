@@ -162,6 +162,11 @@ class SettingsStore(
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
         val ASSISTANT_OVERLAY_CONFIG = stringPreferencesKey("assistant_overlay_config")
 
+        // Voice Memos & Smart Mic
+        val ENABLE_VOICE_MEMOS_MEMORY_BRIDGE = booleanPreferencesKey("enable_voice_memos_memory_bridge")
+        val SMART_MIC_PROFILES = stringPreferencesKey("smart_mic_profiles")
+        val SELECTED_SMART_MIC_PROFILE = stringPreferencesKey("selected_smart_mic_profile")
+
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
     }
@@ -270,6 +275,9 @@ class SettingsStore(
                         preferences[ASSISTANT_OVERLAY_CONFIG],
                         AssistantOverlayConfig(),
                     ),
+                    enableVoiceMemosMemoryBridge = preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] ?: true,
+                    smartMicProfiles = decodePreferenceList(preferences[SMART_MIC_PROFILES]) ?: DEFAULT_SMART_MIC_PROFILES,
+                    selectedSmartMicProfileId = preferences[SELECTED_SMART_MIC_PROFILE] ?: "raw_dictation",
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -734,6 +742,9 @@ class SettingsStore(
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
+            preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] = normalizedSettings.enableVoiceMemosMemoryBridge
+            preferences[SMART_MIC_PROFILES] = JsonInstant.encodeToString(normalizedSettings.smartMicProfiles)
+            preferences[SELECTED_SMART_MIC_PROFILE] = normalizedSettings.selectedSmartMicProfileId
         }
         return saved
     }

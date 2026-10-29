@@ -8,6 +8,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.LocalToolOptionListSerializer
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.memory.MemorySummaryCadence
 
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
@@ -66,6 +67,10 @@ data class Assistant(
     val ragIncludeCore: Boolean = true, // Include core memories in RAG
     val enableRagLogging: Boolean = false, // Enable detailed RAG logging
     val enableMemoryConsolidation: Boolean = false, // Enable episodic memory creation from chats (requires RAG)
+    val enableMemorySummary: Boolean = false, // Inject compact baseline summary on every turn
+    val memorySummaryTokenBudget: Int = 2048, // 200 - 10000 tokens
+    val memorySummaryCadence: MemorySummaryCadence = MemorySummaryCadence.IMMEDIATE,
+    val customMemorySummaryPrompt: String? = null,
     val notificationStartHour: Int = 7, // Hour when spontaneous messages can start (0-23)
     val notificationEndHour: Int = 22, // Hour when spontaneous messages must stop (0-23)
     val notificationFrequencyHours: Int = 4, // Minimum hours between spontaneous messages

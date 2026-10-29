@@ -56,6 +56,7 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.ai.ui.stripEphemeralToolImagePayloads
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_IN_WORLD_ARTIFACTS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
@@ -1188,6 +1189,26 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
 
+        if (settings.displaySetting.enableInWorldArtifacts) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                settings.displaySetting.inWorldArtifactsPrompt.ifBlank { DEFAULT_IN_WORLD_ARTIFACTS_PROMPT }
+            )
+        }
+
+        if (settings.enableVoiceMemosMemoryBridge) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ## Voice Memos & Audio Transcripts
+                - The user records voice memos and audio notes directly on their device.
+                - Transcripts and summaries are synced to `/workspace/transcripts/`.
+                - A lightweight catalog index is available at `/workspace/transcripts/index.json` containing memo titles, dates, durations, and brief summaries.
+                - When the user asks about their recordings, voice notes, or spoken ideas, inspect `/workspace/transcripts/index.json` and read the relevant transcript markdown file at `/workspace/transcripts/<id>.md`.
+                """.trimIndent()
+            )
+        }
+
         val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
@@ -1334,6 +1355,10 @@ class GenerationHandler(
             // payloads and removes complete old turn groups only when the real budget requires it.
             selectedMessages.addAll(imageArchivedMessages)
             if (assistant.enableMemory) {
+                val memorySummary = if (assistant.enableMemorySummary) {
+                    memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
+                } else null
+
                 val memorySelection = selectSmartMemoryContext(
                     candidates = effectiveMemoriesCandidates,
                     model = model,
@@ -1342,6 +1367,7 @@ class GenerationHandler(
                     historyMessages = imageArchivedMessages,
                     contextPriority = assistant.contextPriority,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
+                    memorySummary = memorySummary,
                 )
                 selectedMemories.addAll(memorySelection.memories)
                 selectedMemoryPromptText = memorySelection.promptText
@@ -1443,11 +1469,16 @@ class GenerationHandler(
         }
 
         if (assistant.enableMemory && selectedMemoryPromptText.isBlank()) {
-            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities) {
+            val memorySummary = if (assistant.enableMemorySummary) {
+                memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
+            } else null
+
+            if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank()) {
                 selectedMemoryPromptText = renderMemoryContextPrompt(
                     model = model,
                     memories = selectedMemories,
                     episodeGroup = runtimeInfo::episodicMemoryGroup,
+                    memorySummary = memorySummary,
                 )
             }
         }

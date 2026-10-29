@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.CircleShape
 import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -55,6 +56,8 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.font.FontWeight
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import androidx.compose.material3.Tab
@@ -128,6 +131,24 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.openUrl
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.font.FontFamily
+import me.rerere.rikkahub.data.repository.PythonPluginManager
+import me.rerere.rikkahub.data.repository.PythonPlugin
+import me.rerere.rikkahub.data.repository.PythonEnvStatus
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.Screen
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -162,6 +183,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val lazyListState = rememberLazyListState()
     val oauthManager = koinInject<McpOAuthManager>()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+    var selectedMainTab by rememberSaveable { mutableIntStateOf(0) }
+    val pythonPluginManager = koinInject<PythonPluginManager>()
+    var showCreatePythonPluginDialog by remember { mutableStateOf(false) }
 
     fun addConnection(preset: McpConnectionPreset) {
         val existing = mcpConfigs.firstOrNull { it.commonOptions.presetId == preset.id }
@@ -190,13 +214,46 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     
     Scaffold(
         topBar = {
-            OneUITopAppBar(
-                title = stringResource(R.string.setting_mcp_page_title),
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    BackButton()
+            Column {
+                OneUITopAppBar(
+                    title = stringResource(R.string.setting_mcp_page_title),
+                    scrollBehavior = scrollBehavior,
+                    navigationIcon = {
+                        BackButton()
+                    }
+                )
+                SecondaryTabRow(
+                    selectedTabIndex = selectedMainTab,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    Tab(
+                        selected = selectedMainTab == 0,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            selectedMainTab = 0
+                        },
+                        text = {
+                            Text(stringResource(R.string.setting_mcp_tab_mcp))
+                        },
+                        icon = {
+                            Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(18.dp))
+                        }
+                    )
+                    Tab(
+                        selected = selectedMainTab == 1,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            selectedMainTab = 1
+                        },
+                        text = {
+                            Text(stringResource(R.string.setting_mcp_tab_python))
+                        },
+                        icon = {
+                            Icon(Icons.Rounded.Code, null, modifier = Modifier.size(18.dp))
+                        }
+                    )
                 }
-            )
+            }
         },
         bottomBar = {
             Box(
@@ -205,36 +262,50 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 16.dp),
             ) {
-                Column(
-                    modifier = Modifier.align(Alignment.BottomEnd),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            showImportDialog = true
-                        },
-                        shape = AppShapes.CardLarge,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                if (selectedMainTab == 0) {
+                    Column(
+                        modifier = Modifier.align(Alignment.BottomEnd),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                        FloatingActionButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                showImportDialog = true
+                            },
+                            shape = AppShapes.CardLarge,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                        }
+                        FloatingActionButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                showConnectionsSheet = true
+                            },
+                            shape = AppShapes.CardLarge,
+                        ) {
+                            Icon(Icons.Rounded.Add, "Add connection")
+                        }
                     }
+                } else {
                     FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
-                            showConnectionsSheet = true
+                            showCreatePythonPluginDialog = true
                         },
                         shape = AppShapes.CardLarge,
+                        modifier = Modifier.align(Alignment.BottomEnd),
                     ) {
-                        Icon(Icons.Rounded.Add, "Add connection")
+                        Icon(Icons.Rounded.Add, stringResource(R.string.python_new_plugin))
                     }
                 }
             }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
+        if (selectedMainTab == 0) {
         val mcpManager = koinInject<McpManager>()
         val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
         val scope = rememberCoroutineScope()
@@ -361,6 +432,14 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 modifier = Modifier.align(Alignment.TopCenter)
             )
         }
+    } else {
+        PythonExtensionsContent(
+            pluginManager = pythonPluginManager,
+            showCreateDialog = showCreatePythonPluginDialog,
+            onDismissCreateDialog = { showCreatePythonPluginDialog = false },
+            innerPadding = innerPadding,
+        )
+    }
     }
     
     // Delete confirmation dialog
@@ -1410,3 +1489,738 @@ private fun McpImportModal(
         }
     }
 }
+
+@Composable
+private fun PythonExtensionsContent(
+    pluginManager: PythonPluginManager,
+    showCreateDialog: Boolean,
+    onDismissCreateDialog: () -> Unit,
+    innerPadding: PaddingValues,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val haptics = rememberPremiumHaptics()
+    val navController = LocalNavController.current
+
+    var envStatus by remember { mutableStateOf<PythonEnvStatus?>(null) }
+    var plugins by remember { mutableStateOf<List<PythonPlugin>>(emptyList()) }
+    val runningServers by pluginManager.runningServers.collectAsStateWithLifecycle()
+    var isRefreshing by remember { mutableStateOf(false) }
+    var newPluginName by remember { mutableStateOf("") }
+    var editingPlugin by remember { mutableStateOf<PythonPlugin?>(null) }
+    var editCode by remember { mutableStateOf("") }
+    var pluginToDelete by remember { mutableStateOf<PythonPlugin?>(null) }
+
+    fun reload() {
+        scope.launch {
+            isRefreshing = true
+            val status = pluginManager.checkEnvironmentStatus()
+            envStatus = status
+            if (status.workspace != null && status.isRootfsReady) {
+                plugins = pluginManager.listPlugins(status.workspace)
+            } else {
+                plugins = emptyList()
+            }
+            isRefreshing = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        reload()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = innerPadding.calculateTopPadding())
+            .consumeWindowInsets(innerPadding),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Environment Status Banner
+        item {
+            val status = envStatus
+            if (status == null || !status.hasWorkspace) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = "Workspace Required",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            text = "No workspace found. Python extensions require a workspace to run PRoot Linux.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = { navController.navigate(Screen.Workspaces) }
+                        ) {
+                            Text("Open Workspaces")
+                        }
+                    }
+                }
+            } else if (!status.isRootfsReady) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(R.string.python_env_needs_setup),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.python_env_setup_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (status.isBusy) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Text(
+                                text = stringResource(R.string.python_installing),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Button(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    status.workspace?.let { ws ->
+                                        pluginManager.installFullEnvironment(ws)
+                                        reload()
+                                    }
+                                }
+                            ) {
+                                Text(stringResource(R.string.python_install_action))
+                            }
+                        }
+                    }
+                }
+            } else if (!status.isPythonInstalled) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Code,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Python 3 Runtime Required",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Linux PRoot environment is ready in '${status.workspace?.name}', but Python 3 is not yet installed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (status.isBusy) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Text(
+                                text = "Installing Python 3 & pip…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Button(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    status.workspace?.let { ws ->
+                                        pluginManager.installPythonOnly(ws)
+                                        reload()
+                                    }
+                                }
+                            ) {
+                                Text("Install Python 3 & Pip")
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Environment is Ready!
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.python_env_ready),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Workspace: ${status.workspace?.name} • /workspace/plugins",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        SuggestionChip(
+                            onClick = { navController.navigate(Screen.Workspaces) },
+                            label = { Text("Terminal") },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Running Python Servers Section
+        if (runningServers.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Text(
+                            text = "Running Python Servers",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "${runningServers.size} active (Foreground Service)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            items(runningServers.values.toList(), key = { it.id }) { server ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ),
+                    shape = AppShapes.CardMedium
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Terminal,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Column {
+                                    Text(
+                                        text = server.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = server.command,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (server.port != null) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(":${server.port}") },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val uptimeSec = (System.currentTimeMillis() - server.startedAt) / 1000
+                            Text(
+                                text = "Running for ${uptimeSec}s • Foreground Notification Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (server.port != null) {
+                                    TextButton(
+                                        onClick = {
+                                            scope.launch {
+                                                pluginManager.addLocalMcpServer(
+                                                    name = server.name,
+                                                    url = "http://127.0.0.1:${server.port}/sse"
+                                                )
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Added ${server.name} to MCP servers",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    ) {
+                                        Text("Add to MCP")
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Thud)
+                                        pluginManager.stopServer(server.id)
+                                    },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Text("Stop")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section Title: Extensions
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Active Extensions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${plugins.count { it.enabled }} active / ${plugins.size} total",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (plugins.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = stringResource(R.string.python_no_plugins),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Drop Python scripts into /workspace/plugins/ or start with our template.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center
+                            )
+                            Button(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    envStatus?.workspace?.let { ws ->
+                                        scope.launch {
+                                            pluginManager.getPluginsDirectory(ws)
+                                            reload()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(stringResource(R.string.python_create_sample))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            items(plugins, key = { it.id }) { plugin ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ),
+                    shape = AppShapes.CardMedium
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Code,
+                                    contentDescription = null,
+                                    tint = if (plugin.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = plugin.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "v${plugin.version}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            HapticSwitch(
+                                checked = plugin.enabled,
+                                onCheckedChange = { isEnabled ->
+                                    scope.launch {
+                                        pluginManager.setPluginEnabled(plugin.id, isEnabled)
+                                        reload()
+                                    }
+                                }
+                            )
+                        }
+
+                        Text(
+                            text = plugin.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (plugin.hooks.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                plugin.hooks.forEach { hook ->
+                                    SuggestionChip(
+                                        onClick = {},
+                                        label = {
+                                            Text(
+                                                text = hook,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = plugin.fileName,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        envStatus?.workspace?.let { ws ->
+                                            scope.launch {
+                                                val code = pluginManager.readPluginCode(ws, plugin.fileName)
+                                                editCode = code
+                                                editingPlugin = plugin
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Rounded.Code, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Edit Code")
+                                }
+
+                                IconButton(
+                                    onClick = { pluginToDelete = plugin }
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Dialogs: Create, Edit, Delete
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissCreateDialog,
+            title = { Text(stringResource(R.string.python_new_plugin)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter a file name for your new extension (e.g. typing_fx or my_theme).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = newPluginName,
+                        onValueChange = { newPluginName = it },
+                        label = { Text("Extension Name") },
+                        singleLine = true,
+                        shape = AppShapes.InputField,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val base = newPluginName.trim().lowercase().replace(' ', '_').removeSuffix(".py")
+                        if (base.isNotBlank()) {
+                            val fName = "$base.py"
+                            envStatus?.workspace?.let { ws ->
+                                scope.launch {
+                                    val starterCode = """
+# Name: ${newPluginName.trim()}
+# Description: Custom extension in Python
+# Version: 1.0.0
+# Author: Ammar
+# Hooks: before_prompt, after_reply
+
+class Hook:
+    @staticmethod
+    def before_prompt(prompt: str) -> str:
+        return prompt
+
+    @staticmethod
+    def after_reply(reply: str) -> str:
+        return reply
+""".trimIndent()
+                                    pluginManager.savePluginCode(ws, fName, starterCode)
+                                    newPluginName = ""
+                                    onDismissCreateDialog()
+                                    reload()
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissCreateDialog) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (editingPlugin != null) {
+        AlertDialog(
+            onDismissRequest = { editingPlugin = null },
+            title = { Text("Edit: ${editingPlugin!!.name}") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "File: ${editingPlugin!!.fileName}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = editCode,
+                        onValueChange = { editCode = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        shape = AppShapes.InputField
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        envStatus?.workspace?.let { ws ->
+                            scope.launch {
+                                pluginManager.savePluginCode(ws, editingPlugin!!.fileName, editCode)
+                                editingPlugin = null
+                                reload()
+                            }
+                        }
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingPlugin = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (pluginToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { pluginToDelete = null },
+            title = { Text("Delete Extension?") },
+            text = { Text("Are you sure you want to delete '${pluginToDelete!!.name}' (${pluginToDelete!!.fileName})?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val toDel = pluginToDelete!!
+                        pluginToDelete = null
+                        envStatus?.workspace?.let { ws ->
+                            scope.launch {
+                                pluginManager.deletePlugin(ws, toDel.fileName)
+                                reload()
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pluginToDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+

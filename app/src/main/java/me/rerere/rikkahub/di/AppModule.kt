@@ -78,6 +78,7 @@ val appModule = module {
             workspaceRepository = get(),
             mcpManager = get(),
             platformHttpClient = get(),
+            pythonPluginManager = get(),
         )
     }
 

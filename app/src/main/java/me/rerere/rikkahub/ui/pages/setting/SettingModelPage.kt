@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -54,6 +56,12 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import me.rerere.rikkahub.data.datastore.SmartMicProfile
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelType
@@ -227,8 +235,9 @@ private fun DefaultSTTModelSetting(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 HelperReasoningSettings(
                     reasoningTokens = settings.sttThinkingBudget,
@@ -284,6 +293,173 @@ private fun DefaultSTTModelSetting(
                         )
                     }
                 )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // Voice Memos Memory Bridge Toggle
+                FormItem(
+                    label = { Text("Voice Memos Memory Bridge") },
+                    description = { Text("Allow AI assistants to index your voice memos and inspect transcripts on demand") },
+                    tail = {
+                        me.rerere.rikkahub.ui.components.ui.HapticSwitch(
+                            checked = settings.enableVoiceMemosMemoryBridge,
+                            onCheckedChange = { newValue ->
+                                vm.updateSettings { current ->
+                                    current.copy(enableVoiceMemosMemoryBridge = newValue)
+                                }
+                            }
+                        )
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                // Smart Mic Profiles Heading & Add Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text(
+                            text = "Smart Mic Profiles",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Long-press & slide the mic button in chat to pick a profile",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            val newProfile = SmartMicProfile(
+                                name = "Custom Profile ${settings.smartMicProfiles.size + 1}",
+                                description = "Custom post-processing prompt",
+                                modelId = settings.chatModelId,
+                                prompt = "Clean up and summarize the speech transcript."
+                            )
+                            vm.updateSettings { current ->
+                                current.copy(smartMicProfiles = current.smartMicProfiles + newProfile)
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
+                    }
+                }
+
+                // Profile Cards
+                settings.smartMicProfiles.forEach { profile ->
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
+                        ),
+                        shape = AppShapes.CardMedium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                if (!profile.isDefault && settings.smartMicProfiles.size > 1) {
+                                    IconButton(
+                                        onClick = {
+                                            vm.updateSettings { current ->
+                                                current.copy(
+                                                    smartMicProfiles = current.smartMicProfiles.filter { it.id != profile.id }
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Delete,
+                                            contentDescription = "Delete Profile",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Model Selector for this profile
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Post-Processing Model:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                ModelSelector(
+                                    modelId = profile.modelId,
+                                    type = ModelType.CHAT,
+                                    allowClear = true,
+                                    onClear = {
+                                        vm.updateSettings { current ->
+                                            current.copy(
+                                                smartMicProfiles = current.smartMicProfiles.map {
+                                                    if (it.id == profile.id) it.copy(modelId = null) else it
+                                                }
+                                            )
+                                        }
+                                    },
+                                    onSelect = { selectedModel ->
+                                        vm.updateSettings { current ->
+                                            current.copy(
+                                                smartMicProfiles = current.smartMicProfiles.map {
+                                                    if (it.id == profile.id) it.copy(modelId = selectedModel.id) else it
+                                                }
+                                            )
+                                        }
+                                    },
+                                    providers = settings.providers
+                                )
+                            }
+
+                            // Profile Prompt
+                            if (profile.modelId != null) {
+                                OutlinedTextField(
+                                    value = profile.prompt,
+                                    onValueChange = { newPrompt ->
+                                        vm.updateSettings { current ->
+                                            current.copy(
+                                                smartMicProfiles = current.smartMicProfiles.map {
+                                                    if (it.id == profile.id) it.copy(prompt = newPrompt) else it
+                                                }
+                                            )
+                                        }
+                                    },
+                                    label = { Text("Post-Processing Prompt") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = 4,
+                                    shape = AppShapes.CardSmall
+                                )
+                            } else {
+                                Text(
+                                    text = "Raw speech-to-text directly inserted without LLM post-processing.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

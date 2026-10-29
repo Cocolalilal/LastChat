@@ -114,4 +114,22 @@ class MemoryContextPlannerTest {
         assertTrue(toolPlan.promptTokens > 0)
         assertEquals(ContextTokenEstimator.textTokens(toolPlan.promptText, toolModel), toolPlan.promptTokens)
     }
+
+    @Test
+    fun smartMemoryContextIncludesBaselineProfileWhenPresent() {
+        val summary = "User is Ammar, operates on Lenovo Tab M9."
+        val plan = selectSmartMemoryContext(
+            candidates = emptyList(),
+            model = model,
+            inputBudgetTokens = 4_000,
+            requiredContextTokens = 500,
+            historyMessages = listOf(UIMessage.user("hello")),
+            contextPriority = ContextPriority.BALANCED,
+            episodeGroup = { "Older" },
+            memorySummary = summary,
+        )
+        assertTrue(plan.promptText.contains("## User Memory Baseline Profile"))
+        assertTrue(plan.promptText.contains(summary))
+        assertTrue(plan.promptTokens > 0)
+    }
 }

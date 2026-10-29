@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Edit
@@ -341,15 +342,15 @@ fun ChatDrawerContent(
                     val haptics = rememberPremiumHaptics()
                     LastChatDrawerQuickActionGroup {
                         LastChatDrawerQuickAction(
-                            label = stringResource(R.string.chat_drawer_imagine),
+                            label = stringResource(R.string.chat_drawer_studio),
                             onClick = {
-                                navController.navigate(Screen.ImageGen)
+                                navController.navigate(Screen.Studio)
                                 dismissDrawerAfterSelection()
                             },
                             onHaptic = { haptics.perform(HapticPattern.Tick) },
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Rounded.Image,
+                                    imageVector = Icons.Rounded.AutoAwesome,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -557,8 +558,8 @@ fun CollapsedChatSideRail(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 DrawerAction(
-                    icon = { Icon(Icons.Rounded.Image, null) },
-                    label = { Text(stringResource(R.string.chat_drawer_imagine)) },
+                    icon = { Icon(Icons.Rounded.AutoAwesome, null) },
+                    label = { Text(stringResource(R.string.chat_drawer_studio)) },
                     onClick = onOpenImageGen,
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = RoundedCornerShape(10.dp),

@@ -76,7 +76,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "lastchat.rikkafork.cocolal"
+        applicationId = "lastchat.rikkafork.velvet"
         minSdk = 28
         targetSdk = 36
         versionCode = 42
@@ -126,6 +126,15 @@ android {
     }
 
     signingConfigs {
+        getByName("debug") {
+            val customDebugKeystore = file("debug.keystore")
+            if (customDebugKeystore.exists()) {
+                storeFile = customDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")

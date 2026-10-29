@@ -35,6 +35,10 @@ import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
@@ -60,7 +64,6 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -78,7 +81,10 @@ import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Add
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -136,6 +142,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -275,6 +282,10 @@ fun MinimalChatInput(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
     val modelCatalog = koinInject<ModelCatalogService>()
+    val settingsStore = koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
+    val providerManager = koinInject<me.rerere.ai.provider.ProviderManager>()
+    val secretKeyManager = koinInject<me.rerere.rikkahub.data.datastore.SecretKeyManager>()
+    var showSmartMicProfiles by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val availableSkills = remember(settings.skills) {
@@ -396,13 +407,48 @@ fun MinimalChatInput(
                 ) {
                     val transcript = sttDraft.trim()
                     if (transcript.isNotBlank()) {
-                        state.setMessageText(
-                            mergeCommittedSttTranscript(
-                                existing = state.textContent.text.toString(),
-                                transcript = transcript,
+                        val activeProfile = settings.smartMicProfiles.firstOrNull { it.id == settings.selectedSmartMicProfileId }
+                        val postModel = activeProfile?.modelId?.let { settings.findModelById(it) }
+                        if (activeProfile != null && postModel != null && activeProfile.prompt.isNotBlank()) {
+                            scope.launch(Dispatchers.IO) {
+                                val processed = runCatching {
+                                    val rawProv = postModel.findProvider(settings.providers) ?: return@runCatching transcript
+                                    val prov = secretKeyManager.populateProviderSecrets(rawProv)
+                                    val handler = providerManager.getProviderByType(prov)
+                                    val resp = handler.generateText(
+                                        providerSetting = prov,
+                                        messages = listOf(
+                                            UIMessage.system(activeProfile.prompt),
+                                            UIMessage.user(transcript)
+                                        ),
+                                        params = TextGenerationParams(
+                                            model = postModel,
+                                            temperature = 0.2f,
+                                            maxTokens = 1000
+                                        )
+                                    )
+                                    resp.choices.firstOrNull()?.message?.toContentText()?.trim().orEmpty().ifBlank { transcript }
+                                }.getOrDefault(transcript)
+
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    state.setMessageText(
+                                        mergeCommittedSttTranscript(
+                                            existing = state.textContent.text.toString(),
+                                            transcript = processed,
+                                        )
+                                    )
+                                    runCatching { state.focusRequester.requestFocus() }
+                                }
+                            }
+                        } else {
+                            state.setMessageText(
+                                mergeCommittedSttTranscript(
+                                    existing = state.textContent.text.toString(),
+                                    transcript = transcript,
+                                )
                             )
-                        )
-                        runCatching { state.focusRequester.requestFocus() }
+                            runCatching { state.focusRequester.requestFocus() }
+                        }
                     }
                 }
             }
@@ -451,14 +497,15 @@ fun MinimalChatInput(
         toolApprovalTextState.setTextAndPlaceCursorAtEnd("")
     }
 
-    // Collapse picker when keyboard opens
-    val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(imeVisible) {
-        if (imeVisible) {
-            showPicker = false
-        } else {
+    LaunchedEffect(showPicker) {
+        if (showPicker) {
             focusManager.clearFocus()
+        }
+    }
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            showPicker = false
         }
     }
     LaunchedEffect(isQuestionnaireActive, isToolApprovalActive) {
@@ -773,6 +820,55 @@ fun MinimalChatInput(
                 }
             }
             
+            // Floating Smart Mic Profiles Pill Strip
+            AnimatedVisibility(
+                visible = showSmartMicProfiles && !sttRecording,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Surface(
+                    shape = AppShapes.ButtonPill,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        settings.smartMicProfiles.forEach { profile ->
+                            val isSelected = profile.id == settings.selectedSmartMicProfileId
+                            Surface(
+                                shape = AppShapes.ButtonPill,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.clickable {
+                                    haptics.perform(HapticPattern.Tick)
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(selectedSmartMicProfileId = profile.id)
+                                        }
+                                    }
+                                    showSmartMicProfiles = false
+                                    startSttRecording()
+                                }
+                            ) {
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Minimal input bar - plus button + text field with embedded action button
             LastChatComposerRow {
                 // Plus button - 48dp pill button
@@ -781,7 +877,7 @@ fun MinimalChatInput(
                         onLongClick = {
                             if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
                                 haptics.perform(HapticPattern.Pop)
-                                startSttRecording()
+                                showSmartMicProfiles = !showSmartMicProfiles
                             }
                         },
                         onClick = {
@@ -1924,6 +2020,7 @@ private fun MinimalPickerContent(
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
+    val settingsStore: SettingsStore = koinInject()
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
@@ -2180,16 +2277,22 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
+        // Tools picker (Web Search + In-World Visual Artifacts)
         val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null
+        val artifactsEnabled = settings.displaySetting.enableInWorldArtifacts
+        val isAnyToolActive = enableSearch || artifactsEnabled
+        val toolsSubtitle = when {
+            enableSearch && artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_all)
+            enableSearch -> stringResource(R.string.chat_tools_subtitle_search)
+            artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_artifacts)
+            else -> stringResource(R.string.chat_tools_subtitle_none)
+        }
         
-        // Show provider icon when search is enabled and a provider is configured
         MinimalPickerItem(
             icon = {
-                // Only show provider icon when search is actually enabled
                 if (enableSearch && searchProviderName != null) {
                     SearchProviderIcon(
                         name = searchProviderName,
@@ -2199,15 +2302,15 @@ private fun MinimalPickerContent(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Rounded.Search,
+                        imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
-                        tint = if (enableSearch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isAnyToolActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
-            title = if (enableSearch && searchProviderName != null) searchProviderName else stringResource(R.string.minimal_input_search),
-            subtitle = if (enableSearch) stringResource(R.string.web_search_enabled) else stringResource(R.string.minimal_input_search_desc),
+            title = stringResource(R.string.chat_tools_menu_title),
+            subtitle = toolsSubtitle,
             onClick = { 
                 showSearchPicker = true
             }
@@ -2432,14 +2535,62 @@ private fun MinimalPickerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.search_picker_title),
+                    text = stringResource(R.string.chat_tools_title),
                     style = MaterialTheme.typography.titleLarge
                 )
+
+                // In-World Visual Artifacts Quick Toggle
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                    shape = AppShapes.CardLarge,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (settings.displaySetting.enableInWorldArtifacts) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_title),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            HapticSwitch(
+                                checked = settings.displaySetting.enableInWorldArtifacts,
+                                onCheckedChange = { enabled ->
+                                    haptics.perform(HapticPattern.Pop)
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(
+                                                displaySetting = current.displaySetting.copy(
+                                                    enableInWorldArtifacts = enabled
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    )
+                }
                 
                 // Direct SearchPicker content
                 SearchPicker(

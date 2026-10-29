@@ -75,6 +75,9 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
+import me.rerere.rikkahub.ui.pages.studio.StudioPage
+import me.rerere.rikkahub.ui.pages.studio.StoryStudioPage
+import me.rerere.rikkahub.ui.pages.studio.VoiceMemosPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.onboarding.OnboardingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
@@ -95,6 +98,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingTTSProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
+import me.rerere.rikkahub.ui.pages.setting.SettingArtifactsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
@@ -899,6 +903,14 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.MemorySummary> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MemorySummary>()
+                        me.rerere.rikkahub.ui.pages.assistant.detail.MemorySummaryPage(
+                            assistantId = route.assistantId,
+                            navBackStack = navBackStack,
+                        )
+                    }
+
                     composable<Screen.Menu> {
                         MenuPage()
                     }
@@ -945,6 +957,18 @@ class RouteActivity : ComponentActivity() {
 
                     composable<Screen.ImageGen> {
                         ImageGenPage()
+                    }
+
+                    composable<Screen.Studio> {
+                        StudioPage()
+                    }
+
+                    composable<Screen.StoryStudio> {
+                        StoryStudioPage()
+                    }
+
+                    composable<Screen.VoiceMemos> {
+                        VoiceMemosPage()
                     }
 
                     composable<Screen.WebView> { backStackEntry ->
@@ -1171,6 +1195,12 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingArtifacts> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.RpOptimizations) {
+                            SettingArtifactsPage()
+                        }
+                    }
+
                     composable<Screen.SettingPromptInjections> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.PromptInjections) {
                             SettingPromptInjectionsPage()
@@ -1371,6 +1401,9 @@ sealed interface Screen {
     ) : Screen
 
     @Serializable
+    data class MemorySummary(val assistantId: String) : Screen
+
+    @Serializable
     data object Menu : Screen
 
     @Serializable
@@ -1387,6 +1420,15 @@ sealed interface Screen {
 
     @Serializable
     data object ImageGen : Screen
+
+    @Serializable
+    data object Studio : Screen
+
+    @Serializable
+    data object StoryStudio : Screen
+
+    @Serializable
+    data object VoiceMemos : Screen
 
     @Serializable
     data class WebView(val url: String = "", val content: String = "") : Screen
@@ -1429,6 +1471,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingRpOptimizations : Screen
+
+    @Serializable
+    data object SettingArtifacts : Screen
 
     @Serializable
     data object SettingPromptInjections : Screen

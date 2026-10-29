@@ -12,7 +12,9 @@ import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryType
+import me.rerere.rikkahub.data.memory.MemoryChangeType
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.utils.JsonInstant
 
@@ -34,6 +36,14 @@ class MemoryRepository(
     private val database: AppDatabase,
 ) {
     private val embeddingCache = java.util.concurrent.ConcurrentHashMap<String, List<FloatArray>>()
+
+    var onMemoryChange: ((assistantId: String, changeType: MemoryChangeType, content: String) -> Unit)? = null
+
+    fun getMemorySummaryFlow(assistantId: String): Flow<MemorySummaryEntity?> =
+        database.memorySummaryDao().getSummaryFlow(assistantId)
+
+    suspend fun getMemorySummary(assistantId: String): MemorySummaryEntity? =
+        database.memorySummaryDao().getSummary(assistantId)
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
@@ -313,7 +323,7 @@ class MemoryRepository(
                 embeddingResult.embeddings.map { it.toFloatArray() }
         }
 
-        return AssistantMemory(
+        val result = AssistantMemory(
             id = newMemory.id,
             content = newMemory.content,
             type = newMemory.type,
@@ -321,6 +331,8 @@ class MemoryRepository(
             embeddingModelId = embeddingResult?.modelId,
             timestamp = newMemory.createdAt,
         )
+        onMemoryChange?.invoke(memory.assistantId, MemoryChangeType.UPDATED, content)
+        return result
     }
 
     suspend fun updateEpisodeContent(id: Int, content: String): AssistantMemory {
@@ -414,7 +426,7 @@ class MemoryRepository(
                  embeddingResult.embeddings.map { it.toFloatArray() }
         }
 
-        return AssistantMemory(
+        val result = AssistantMemory(
             id = id.toInt(),
             content = content,
             type = MemoryType.CORE,
@@ -422,15 +434,21 @@ class MemoryRepository(
             embeddingModelId = embeddingResult?.modelId,
             timestamp = entity.createdAt,
         )
+        onMemoryChange?.invoke(assistantId, MemoryChangeType.CREATED, content)
+        return result
     }
 
     suspend fun deleteMemory(id: Int) {
         if (id < 0) error("Cannot delete episodic memories via tool — they are auto-managed")
+        val memory = memoryDAO.getMemoryById(id)
         database.withTransaction {
             memoryDAO.deleteMemory(id)
             embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
         }
         removeCachedEmbeddings(listOf(id), MemoryType.CORE)
+        if (memory != null) {
+            onMemoryChange?.invoke(memory.assistantId, MemoryChangeType.DELETED, memory.content)
+        }
     }
 
     /**

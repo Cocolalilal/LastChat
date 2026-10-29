@@ -1635,4 +1635,17 @@
   <string name="context_meter_exact">Exact</string>
   <string name="setting_ui_context_token_summary_title">Display context token summary</string>
   <string name="setting_ui_context_token_summary_desc">Show the context usage meter and its token breakdown in chat</string>
+  <string name="setting_ui_smooth_streaming_title">Smooth streaming animation</string>
+  <string name="setting_ui_smooth_streaming_desc">Gradually smooths and animates incoming text tokens. Turn off for instant streaming without slow-motion lag.</string>
+  <string name="setting_mcp_tab_mcp">MCP Tools</string>
+  <string name="setting_mcp_tab_python">Python Extensions</string>
+  <string name="python_plugins_subtitle">Client extensions, typing FX, custom emojis &amp; prompt hooks in sandboxed PRoot</string>
+  <string name="python_env_ready">Python 3 Active</string>
+  <string name="python_env_needs_setup">Linux PRoot &amp; Python 3 Required</string>
+  <string name="python_env_setup_desc">Python extensions execute in LastChat\'s bundled Linux PRoot workspace. Install the rootfs and Python runtime to begin.</string>
+  <string name="python_install_action">Install Environment &amp; Python</string>
+  <string name="python_installing">Installing runtime…</string>
+  <string name="python_no_plugins">No Python extensions installed</string>
+  <string name="python_create_sample">Create Starter Extension</string>
+  <string name="python_new_plugin">New Extension</string>
 </resources>

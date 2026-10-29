@@ -471,7 +471,8 @@ fun AssistantDetailPage(
                     embeddingStatus = embeddingStatus,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
-                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
+                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) },
+                    onNavigateToMemorySummary = { rootNavController.navigate(Screen.MemorySummary(assistant.id.toString())) },
                 )
             }
 
