@@ -38,7 +38,6 @@ object DatabaseSanitizer {
         "memory_source_v3_fts",
         "memory_ingest_state",
         "memory_projection",
-        "character_memory",
     )
 
     val CHAT_TABLES = setOf(
@@ -59,7 +58,6 @@ object DatabaseSanitizer {
         "memory_source_v3_fts",
         "memory_ingest_state",
         "memory_projection",
-        "character_memory",
     )
 
     val WORKSPACE_TABLES = setOf(
@@ -146,10 +144,6 @@ object DatabaseSanitizer {
                     LogUtil.e(TAG, "Failed to check/process table $table", e)
                 }
             }
-
-            // A sanitized restore is already on the current schema, so Room's upgrade callback
-            // will not run later. Retire old derived memories here as well; keep Core originals.
-            me.rerere.rikkahub.data.db.Migration_39_40().onPostMigrate(targetDbInfo)
 
         } catch (e: Exception) {
             LogUtil.e(TAG, "Critical error during sanitization", e)

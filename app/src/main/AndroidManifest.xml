@@ -167,7 +167,6 @@
         android:name="androidx.work.impl.foreground.SystemForegroundService"
         android:foregroundServiceType="dataSync"
         tools:node="merge" />
-    <receiver android:name=".data.memory.MemoryWorkActionReceiver" android:exported="false" />
 
     <service
         android:name=".service.AssistantNotificationListener"

@@ -1333,7 +1333,6 @@ class RouteActivity : ComponentActivity() {
                         WorkspaceTerminalPage(route.id)
                     }
                 }
-                me.rerere.rikkahub.ui.pages.assistant.detail.EmbeddingSetupGate(settings)
                 // Toast host must be last so it renders on top of all content
                 AppToasterHost(state = toastState)
                 }

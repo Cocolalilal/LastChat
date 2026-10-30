@@ -57,10 +57,6 @@ data class Assistant(
     val summarizerModelId: Uuid? = null, // Legacy import field; global summarizer lives in Settings
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
-    val memoryExperience: String? = null,
-    val memoryDreaming: Boolean = false,
-    val memoryProcessingModelId: Uuid? = null,
-    val memoryContext: String = "real",
     val enableMemorySearchTool: Boolean = false, // Allow the assistant to deliberately search memories and past chats
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
     val ragSimilarityThreshold: Float = 0.45f, // Similarity threshold for RAG (0.0 = include all, 1.0 = only perfect matches)

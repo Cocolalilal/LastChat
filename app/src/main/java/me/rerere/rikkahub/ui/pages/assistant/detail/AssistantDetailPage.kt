@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -339,7 +338,6 @@ fun AssistantDetailPage(
             startDestination = AssistantDetailRoutes.HOME,
             modifier = Modifier
                 .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
                 .fillMaxSize(),
             enterTransition = {
                 hierarchicalEnterTransition(
@@ -450,8 +448,31 @@ fun AssistantDetailPage(
 
             // Memory
             composable(AssistantDetailRoutes.MEMORY) {
-                CharacterMemoryPage(assistant = assistant, onUpdateAssistant = { onUpdate(it) })
-
+                val embeddingProgress by vm.embeddingProgress.collectAsStateWithLifecycle()
+                val estimatedMemoryCapacity by vm.estimatedMemoryCapacity.collectAsStateWithLifecycle()
+                val needsEmbeddingRegeneration by vm.needsEmbeddingRegeneration.collectAsStateWithLifecycle()
+                val embeddingStatus by vm.embeddingStatus.collectAsStateWithLifecycle()
+                val retrievalDebugState by vm.retrievalDebugState.collectAsStateWithLifecycle()
+                AssistantMemorySettings(
+                    assistant = assistant,
+                    hasSummarizerModelConfigured = settings.summarizerModelId != null,
+                    memories = memories,
+                    onUpdateAssistant = { onUpdate(it) },
+                    onDeleteMemory = { vm.deleteMemory(it) },
+                    onAddMemory = { vm.addMemory(it) },
+                    onUpdateMemory = { vm.updateMemory(it) },
+                    onRegenerateEmbeddings = { vm.regenerateEmbeddings() },
+                    embeddingProgress = embeddingProgress,
+                    onTestRetrieval = { vm.testRetrieval(it) },
+                    retrievalDebugState = retrievalDebugState,
+                    assistantDetailVM = vm,
+                    estimatedMemoryCapacity = estimatedMemoryCapacity,
+                    needsEmbeddingRegeneration = needsEmbeddingRegeneration,
+                    embeddingStatus = embeddingStatus,
+                    initialMemoryTab = initialMemoryTab,
+                    scrollToMemoryId = scrollToMemoryId,
+                    onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) }
+                )
             }
 
             // UI Customization

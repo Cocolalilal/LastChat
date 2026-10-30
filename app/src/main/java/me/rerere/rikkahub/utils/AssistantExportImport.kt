@@ -50,11 +50,9 @@ data class AssistantExportV1(
     val lorebooks: List<LorebookExportV2> = emptyList(),
     // Bundled Memories
     val memories: List<AssistantMemory> = emptyList(),
-    val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryPackage? = null,
 )
 
 object AssistantExportImport : KoinComponent {
-    private val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryRepository by inject()
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
@@ -71,7 +69,7 @@ object AssistantExportImport : KoinComponent {
      * Includes all settings, avatar image, and enabled lorebooks.
      */
     suspend fun exportToLastChatBundle(
-        assistant: Assistant, 
+        assistant: Assistant,
         context: Context,
         includeMemories: Boolean,
         includeLorebooks: Boolean
@@ -131,12 +129,29 @@ object AssistantExportImport : KoinComponent {
             emptyList()
         }
 
-        val memoryBundle = if (includeMemories) {
-            characterMemory.initialise(assistant.id.toString())
-            val view = characterMemory.view(assistant.id.toString())
-            me.rerere.rikkahub.data.memory.CharacterMemoryPackage(notes = view.notes, facts = view.facts,
-                nodes = view.nodes, rememberingRules = view.metadata.rules)
-        } else null
+        // 4. Process Memories
+        val bundledMemories: List<AssistantMemory> = if (includeMemories) {
+            // Fetch Core Memories (already returns AssistantMemory list)
+            val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+
+            // Fetch Episodic Memories
+            val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistant.id.toString())
+            val episodicConfigured = episodes.map {
+                AssistantMemory(
+                    id = -it.id, // Negative to distinguish
+                    content = it.content,
+                    type = 1, // EPISODIC
+                    hasEmbedding = !it.embedding.isNullOrBlank() || it.embeddingBlob != null,
+                    embeddingModelId = it.embeddingModelId,
+                    timestamp = it.startTime,
+                    significance = it.significance
+                )
+            }
+
+            coreConfigured + episodicConfigured
+        } else {
+            emptyList()
+        }
 
         val export = AssistantExportV1(
             assistant = assistant,
@@ -145,7 +160,7 @@ object AssistantExportImport : KoinComponent {
             backgroundContent = backgroundContent,
             backgroundMimeType = backgroundMime,
             lorebooks = bundledLorebooks,
-            characterMemory = memoryBundle,
+            memories = bundledMemories,
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -164,7 +179,7 @@ object AssistantExportImport : KoinComponent {
      * Restores files, memories, and lorebooks based on flags.
      */
     suspend fun finalizeLastChatImport(
-        export: AssistantExportV1, 
+        export: AssistantExportV1,
         context: Context,
         importMemories: Boolean,
         importLorebooks: Boolean
@@ -174,7 +189,7 @@ object AssistantExportImport : KoinComponent {
         // 1. Restore Avatar
         if (export.avatarContent != null && assistant.avatar is Avatar.Image) {
             val fileName = "avatar_${assistant.id}_${System.currentTimeMillis()}.png" // assume png or use mime
-            val file = File(context.filesDir, "avatars/$fileName") 
+            val file = File(context.filesDir, "avatars/$fileName")
             file.parentFile?.mkdirs()
             try {
                 val bytes = base64Decode(export.avatarContent)
@@ -209,12 +224,12 @@ object AssistantExportImport : KoinComponent {
         // 3. Restore Lorebooks
         val newLorebookIds = mutableSetOf<Uuid>()
         val importedLorebooks = mutableListOf<Lorebook>()
-        
+
         if (importLorebooks) {
             export.lorebooks.forEach { lbExport ->
                 var lorebook = lbExport.lorebook.copy(id = Uuid.random()) // New ID
                 val entryAttachments = lbExport.entryAttachments
-                
+
                 // Restore attachments for entries
                 val newEntries = lorebook.entries.map { entry ->
                     val attachments = entryAttachments[entry.id.toString()] ?: emptyList()
@@ -237,18 +252,18 @@ object AssistantExportImport : KoinComponent {
                     entry.copy(attachments = restoredAttachments)
                 }
                 lorebook = lorebook.copy(entries = newEntries)
-                
+
                 importedLorebooks.add(lorebook)
                 newLorebookIds.add(lorebook.id)
             }
-            
+
             // Update Settings with new lorebooks
             if (importedLorebooks.isNotEmpty()) {
                  settingsStore.update { current ->
                      current.copy(lorebooks = current.lorebooks + importedLorebooks)
                  }
             }
-            
+
             if (newLorebookIds.isNotEmpty()) {
                  assistant = assistant.copy(enabledLorebookIds = newLorebookIds)
             }
@@ -256,14 +271,29 @@ object AssistantExportImport : KoinComponent {
              assistant = assistant.copy(enabledLorebookIds = emptySet())
         }
 
+        // 4. Restore Memories
         if (importMemories) {
-            val bundle = export.characterMemory ?: me.rerere.rikkahub.data.memory.CharacterMemoryPackage(
-                notes = export.memories.filter { it.type == 0 }.map { memory ->
-                    me.rerere.rikkahub.data.memory.MemoryNote(Uuid.random().toString(), "Saved memory",
-                        paragraphs = listOf(me.rerere.rikkahub.data.memory.MemoryParagraph(Uuid.random().toString(), memory.content,
-                            evidence = listOf(me.rerere.rikkahub.data.memory.MemoryEvidence(origin = "imported note")))))
-                })
-            characterMemory.importPackage(assistant.id.toString(), bundle)
+            export.memories.forEach { memory ->
+                if (memory.type == 0) { // Core
+                     memoryRepository.addMemory(
+                         assistantId = assistant.id.toString(),
+                         content = memory.content
+                     )
+                } else if (memory.type == 1) { // Episodic
+                     val entity = me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity(
+                         id = 0, // Auto-generate
+                         assistantId = assistant.id.toString(),
+                         startTime = memory.timestamp,
+                         endTime = memory.timestamp, // approximate
+                         content = memory.content,
+                         lastAccessedAt = System.currentTimeMillis(),
+                         significance = memory.significance ?: 5,
+                         embedding = null, // Needs regeneration
+                         embeddingModelId = null
+                     )
+                     chatEpisodeDAO.insertEpisode(entity)
+                }
+            }
         }
 
         return assistant
@@ -278,12 +308,12 @@ object AssistantExportImport : KoinComponent {
         val enabledLorebooks = assistant.enabledLorebookIds.mapNotNull { id ->
             allLorebooks.find { it.id == id }
         }
-        
+
         val mergedTavernEntries = mutableListOf<TavernCharacterBookEntry>()
         enabledLorebooks.forEach { lb ->
             mergedTavernEntries.addAll(lb.toTavernCharacterBook().entries)
         }
-        
+
         val characterBook = if (mergedTavernEntries.isNotEmpty()) {
             TavernCharacterBook(
                 name = "Bundled Lore",
@@ -297,11 +327,11 @@ object AssistantExportImport : KoinComponent {
         val card = CharacterCardV2(
             data = CharacterCardV2Data(
                 name = assistant.name,
-                description = "", 
-                personality = assistant.systemPrompt, 
+                description = "",
+                personality = assistant.systemPrompt,
                 firstMes = assistant.presetMessages.firstOrNull()?.toContentText() ?: "",
-                mesExample = "", 
-                systemPrompt = assistant.systemPrompt, 
+                mesExample = "",
+                systemPrompt = assistant.systemPrompt,
                 characterBook = characterBook,
                 tags = assistant.tags.map { it.toString() },
                 alternateGreetings = assistant.alternateGreetings
@@ -310,7 +340,7 @@ object AssistantExportImport : KoinComponent {
 
         return json.encodeToString(CharacterCardV2.serializer(), card)
     }
-    
+
     // -- Private Helpers (Duplicated from LorebookExportImport roughly, should refactor later) --
 
     private fun readUriBytes(context: Context, url: String): ByteArray? {
@@ -335,7 +365,7 @@ object AssistantExportImport : KoinComponent {
             else -> null
         }
     }
-    
+
     private fun embedAttachment(context: Context, url: String, typeName: String, fileName: String, mime: String): EmbeddedAttachment? {
          val bytes = readUriBytes(context, url) ?: return null
          return EmbeddedAttachment(
@@ -345,7 +375,7 @@ object AssistantExportImport : KoinComponent {
              content = base64Encode(bytes)
          )
     }
-    
+
     fun getSuggestedFileName(assistant: Assistant, format: String): String {
         val baseName = assistant.name.ifEmpty { "character" }
             .replace(Regex("[^a-zA-Z0-9_-]"), "_")
@@ -356,7 +386,7 @@ object AssistantExportImport : KoinComponent {
             else -> "${baseName}_bundle.json" // LastChat format
         }
     }
-    
+
     /**
      * Export an Assistant to Character Card V2 PNG format.
      * The character data is embedded in a tEXt chunk with keyword "chara".
@@ -384,17 +414,17 @@ object AssistantExportImport : KoinComponent {
                 createPlaceholderPng(assistant.name)
             }
         }
-        
+
         // Generate the Character Card V2 JSON
         val cardJson = exportToCharacterCardV2(assistant, context)
-        
+
         // Base64 encode the JSON (as per spec)
         val base64Data = base64Encode(cardJson.toByteArray(Charsets.UTF_8))
-        
+
         // Embed the data into the PNG
         return embedTextChunkInPng(avatarBytes, "chara", base64Data)
     }
-    
+
     /**
      * Create a simple placeholder PNG image with the character's initial.
      */
@@ -402,14 +432,14 @@ object AssistantExportImport : KoinComponent {
         val size = 512
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
-        
+
         // Draw background with a gradient-like effect
         val bgPaint = android.graphics.Paint().apply {
             style = android.graphics.Paint.Style.FILL
             color = android.graphics.Color.rgb(100, 100, 150) // Soft purple-gray
         }
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), bgPaint)
-        
+
         // Draw initial letter
         val initial = name.firstOrNull()?.uppercaseChar() ?: 'C'
         val textPaint = android.graphics.Paint().apply {
@@ -419,19 +449,19 @@ object AssistantExportImport : KoinComponent {
             isAntiAlias = true
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         }
-        
+
         val textBounds = android.graphics.Rect()
         textPaint.getTextBounds(initial.toString(), 0, 1, textBounds)
         val yPos = (size / 2f) + (textBounds.height() / 2f)
         canvas.drawText(initial.toString(), size / 2f, yPos, textPaint)
-        
+
         // Compress to PNG
         val bytes = bitmap.toPngBytes()
         bitmap.recycle()
-        
+
         return bytes
     }
-    
+
     /**
      * Render an Android resource drawable to PNG.
      */
@@ -444,10 +474,10 @@ object AssistantExportImport : KoinComponent {
                 val canvas = android.graphics.Canvas(bitmap)
                 drawable.setBounds(0, 0, size, size)
                 drawable.draw(canvas)
-                
+
                 val bytes = bitmap.toPngBytes()
                 bitmap.recycle()
-                
+
                 return bytes
             }
         } catch (e: Exception) {
@@ -457,7 +487,7 @@ object AssistantExportImport : KoinComponent {
         // Fallback to placeholder if resource can't be rendered
         return createPlaceholderPng(fallbackName)
     }
-    
+
     /**
      * Create a PNG with an emoji as the content.
      */
@@ -465,29 +495,29 @@ object AssistantExportImport : KoinComponent {
         val size = 512
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
-        
+
         // Draw background
         val bgPaint = android.graphics.Paint().apply {
             style = android.graphics.Paint.Style.FILL
             color = android.graphics.Color.rgb(60, 60, 80) // Dark background
         }
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), bgPaint)
-        
+
         // Draw emoji
         val textPaint = android.graphics.Paint().apply {
             textSize = size * 0.6f
             textAlign = android.graphics.Paint.Align.CENTER
             isAntiAlias = true
         }
-        
+
         val textBounds = android.graphics.Rect()
         textPaint.getTextBounds(emoji, 0, emoji.length, textBounds)
         val yPos = (size / 2f) + (textBounds.height() / 2f)
         canvas.drawText(emoji, size / 2f, yPos, textPaint)
-        
+
         val bytes = bitmap.toPngBytes()
         bitmap.recycle()
-        
+
         return bytes
     }
 
@@ -498,7 +528,7 @@ object AssistantExportImport : KoinComponent {
         }
         return buffer.readByteArray()
     }
-    
+
     /**
      * Embed a tEXt chunk with the given keyword and text into a PNG image.
      * The chunk is inserted before the IEND chunk.
@@ -508,44 +538,44 @@ object AssistantExportImport : KoinComponent {
         if (pngBytes.size < 8 || !pngBytes.take(8).toByteArray().contentEquals(PNG_HEADER)) {
             return null
         }
-        
+
         // Find IEND chunk position
         var offset = 8
         var iendPosition = -1
-        
+
         while (offset < pngBytes.size) {
             if (offset + 8 > pngBytes.size) break
-            
+
             val length = ((pngBytes[offset].toInt() and 0xFF) shl 24) or
                          ((pngBytes[offset + 1].toInt() and 0xFF) shl 16) or
                          ((pngBytes[offset + 2].toInt() and 0xFF) shl 8) or
                          (pngBytes[offset + 3].toInt() and 0xFF)
-            
+
             val type = String(pngBytes, offset + 4, 4)
-            
+
             if (type == "IEND") {
                 iendPosition = offset
                 break
             }
-            
+
             offset += 4 + 4 + length + 4 // length + type + data + crc
         }
-        
+
         if (iendPosition == -1) return null
-        
+
         // Build tEXt chunk
         val keywordBytes = keyword.toByteArray(Charsets.ISO_8859_1)
         val textBytes = text.toByteArray(Charsets.ISO_8859_1)
         val chunkData = keywordBytes + byteArrayOf(0) + textBytes
         val chunkLength = chunkData.size
-        
+
         // Calculate CRC32 (of type + data)
         val typeBytes = "tEXt".toByteArray(Charsets.ISO_8859_1)
         val crc = java.util.zip.CRC32()
         crc.update(typeBytes)
         crc.update(chunkData)
         val crcValue = crc.value.toInt()
-        
+
         // Build the complete chunk
         val chunk = ByteArray(4 + 4 + chunkData.size + 4)
         // Length (big-endian)
@@ -562,11 +592,11 @@ object AssistantExportImport : KoinComponent {
         chunk[chunk.size - 3] = ((crcValue shr 16) and 0xFF).toByte()
         chunk[chunk.size - 2] = ((crcValue shr 8) and 0xFF).toByte()
         chunk[chunk.size - 1] = (crcValue and 0xFF).toByte()
-        
+
         // Assemble final PNG: [before IEND] + [tEXt chunk] + [IEND chunk]
         val beforeIend = pngBytes.copyOfRange(0, iendPosition)
         val iendChunk = pngBytes.copyOfRange(iendPosition, pngBytes.size)
-        
+
         return beforeIend + chunk + iendChunk
     }
 
@@ -575,7 +605,7 @@ object AssistantExportImport : KoinComponent {
     @Serializable
     sealed class ImportResult {
         data class Success(val assistant: Assistant) : ImportResult()
-        
+
         data class Configurable(
             val assistant: Assistant,
             val exportV1: AssistantExportV1?, // Null if not LastChat Bundle
@@ -583,7 +613,7 @@ object AssistantExportImport : KoinComponent {
             val hasLorebooks: Boolean,
             val missingModels: List<String> // List of missing model IDs (names for display)
         ) : ImportResult()
-        
+
         data class Error(val message: String) : ImportResult()
     }
 
@@ -595,7 +625,7 @@ object AssistantExportImport : KoinComponent {
         return try {
             val contentBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return ImportResult.Error("Failed to read file")
-            
+
             var jsonContent: String? = null
             var avatarBytes: ByteArray? = null
 
@@ -615,7 +645,7 @@ object AssistantExportImport : KoinComponent {
                         break
                     }
                 }
-                
+
                 // Fallback: search any chunk for base64 JSON or direct JSON containing name/data/spec
                 if (characterData == null) {
                     for ((_, value) in chunks) {
@@ -682,7 +712,7 @@ object AssistantExportImport : KoinComponent {
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
-                        hasMemories = export.memories.isNotEmpty() || export.characterMemory?.let { it.notes.isNotEmpty() || it.facts.isNotEmpty() } == true,
+                        hasMemories = export.memories.isNotEmpty(),
                         hasLorebooks = export.lorebooks.isNotEmpty(),
                         missingModels = checkMissingModels(export.assistant)
                     )
@@ -703,7 +733,7 @@ object AssistantExportImport : KoinComponent {
             } catch (e: Exception) {
                 return ImportResult.Error("JSON Parse Error: ${e.message ?: ""}")
             }
-            
+
         } catch (e: Exception) {
             e.printStackTrace()
             ImportResult.Error(e.message ?: "Unknown Parsing Error")
@@ -722,7 +752,7 @@ object AssistantExportImport : KoinComponent {
             if (offset + size > bytes.size) break
 
             val data = bytes.copyOfRange(offset, offset + size)
-            
+
             if (type == "EXIF" || type == "XMP ") {
                 val contentStr = String(data, Charsets.UTF_8)
                 val ccv3Match = Regex("(?i)(chara|ccv3|character|card|ccv2)\\0(.*)").find(contentStr)
@@ -731,7 +761,7 @@ object AssistantExportImport : KoinComponent {
                 }
                 val base64Match = Regex("(ey[a-zA-Z0-9\\+/\\r\\n\\s]+={0,2})").find(contentStr)
                 if (base64Match != null) {
-                    try { 
+                    try {
                         val b64clean = base64Match.groupValues[1].replace("\\s+".toRegex(), "")
                         val decoded = String(base64Decode(b64clean))
                         if (decoded.contains("name") || decoded.contains("data")) return decoded
@@ -742,18 +772,18 @@ object AssistantExportImport : KoinComponent {
             if (type.lowercase() in listOf("chara", "ccv3", "character", "card", "ccv2")) {
                 try { return String(base64Decode(String(data))) } catch(e: Exception) { return String(data) }
             }
-            
+
             offset += size + (size % 2) // padding
         }
-        
+
         // Brute force base64 search as last resort
         val contentStr = String(bytes, Charsets.UTF_8)
         val base64Match = Regex("(ey[a-zA-Z0-9\\+/\\r\\n\\s]{20,}={0,2})").findAll(contentStr)
         for (match in base64Match) {
-            try { 
+            try {
                 val b64clean = match.groupValues[1].replace("\\s+".toRegex(), "")
                 val decoded = String(base64Decode(b64clean))
-                if ((decoded.contains("\"name\"") || decoded.contains("\"char_name\"")) && 
+                if ((decoded.contains("\"name\"") || decoded.contains("\"char_name\"")) &&
                     (decoded.contains("\"description\"") || decoded.contains("\"personality\"") || decoded.contains("\"data\""))) {
                     return decoded
                 }
@@ -794,7 +824,7 @@ object AssistantExportImport : KoinComponent {
     private fun checkMissingModels(assistant: Assistant): List<String> {
         val settings = settingsStore.settingsFlow.value
         val missing = mutableListOf<String>()
-        
+
         fun check(id: Uuid?, name: String) {
             if (id != null) {
                  val exists = settings.findModelById(id) != null
@@ -803,17 +833,17 @@ object AssistantExportImport : KoinComponent {
                  }
             }
         }
-        
+
         check(assistant.chatModelId, "Chat Model")
         check(assistant.backgroundModelId, "Background Model")
         check(assistant.embeddingModelId, "Embedding Model")
         return missing
     }
-    
+
     // Function to clear missing models from assistant
     fun clearMissingModels(assistant: Assistant): Assistant {
         val settings = settingsStore.settingsFlow.value
-        
+
         fun checkAndClear(id: Uuid?): Uuid? {
              if (id != null) {
                  val exists = settings.findModelById(id) != null
@@ -821,7 +851,7 @@ object AssistantExportImport : KoinComponent {
              }
              return null
         }
-        
+
         return assistant.copy(
             chatModelId = checkAndClear(assistant.chatModelId),
             backgroundModelId = checkAndClear(assistant.backgroundModelId),
@@ -840,29 +870,29 @@ object AssistantExportImport : KoinComponent {
     private fun extractPngChunks(bytes: ByteArray): Map<String, String> {
         val result = mutableMapOf<String, String>()
         var offset = 8 // Skip PNG header
-        
+
         while (offset < bytes.size) {
             if (offset + 8 > bytes.size) break
-            
+
             // Read Length (4 bytes, big endian)
             val length = ((bytes[offset].toInt() and 0xFF) shl 24) or
                          ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
                          ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
                          (bytes[offset + 3].toInt() and 0xFF)
             offset += 4
-            
+
             // Read Type (4 bytes)
             val type = String(bytes, offset, 4)
             offset += 4
-            
+
             // Read Data
             if (offset + length > bytes.size) break
             val data = bytes.copyOfRange(offset, offset + length)
             offset += length
-            
+
             // Skip CRC (4 bytes)
             offset += 4
-            
+
             when (type) {
                 "tEXt" -> {
                     // tEXt: Keyword + Null + Text (uncompressed)
@@ -906,7 +936,7 @@ object AssistantExportImport : KoinComponent {
                         val keyword = String(data, 0, separator, Charsets.UTF_8)
                         val compressionFlag = data[separator + 1].toInt() and 0xFF
                         val compressionMethod = data[separator + 2].toInt() and 0xFF
-                        
+
                         // Find text start (skip language tag and translated keyword)
                         var textStart = separator + 3
                         // Skip language tag
@@ -915,7 +945,7 @@ object AssistantExportImport : KoinComponent {
                         // Skip translated keyword
                         while (textStart < data.size && data[textStart] != 0.toByte()) textStart++
                         textStart++ // Skip null
-                        
+
                         if (textStart < data.size) {
                             val textData = data.copyOfRange(textStart, data.size)
                             val text = if (compressionFlag == 1 && compressionMethod == 0) {
@@ -947,7 +977,7 @@ object AssistantExportImport : KoinComponent {
         }
         return result
     }
-    
+
     /**
      * Parse character card JSON (V1, V2, or V3 format, Chub wrappers, CharX, etc.).
      * Returns null if parsing fails.
@@ -998,11 +1028,11 @@ object AssistantExportImport : KoinComponent {
                 for (key in wrapperKeys) {
                     val child = currentObj[key]
                     if (child is JsonObject && (
-                        child.containsKey("data") || 
-                        child.containsKey("name") || 
-                        child.containsKey("char_name") || 
-                        child.containsKey("first_mes") || 
-                        child.containsKey("spec") || 
+                        child.containsKey("data") ||
+                        child.containsKey("name") ||
+                        child.containsKey("char_name") ||
+                        child.containsKey("first_mes") ||
+                        child.containsKey("spec") ||
                         child.containsKey("definition") ||
                         child.containsKey("description")
                     )) {
@@ -1210,21 +1240,21 @@ object AssistantExportImport : KoinComponent {
             val entriesArray = charBookObj["entries"] as? kotlinx.serialization.json.JsonArray ?: return null
             val entries = entriesArray.mapNotNull { elem ->
                 val entryObj = elem as? JsonObject ?: return@mapNotNull null
-                val content = entryObj["content"].asStringOrNull() 
-                    ?: entryObj["prompt"].asStringOrNull() 
+                val content = entryObj["content"].asStringOrNull()
+                    ?: entryObj["prompt"].asStringOrNull()
                     ?: ""
                 if (content.isBlank()) return@mapNotNull null
-                
+
                 val keys = when (val k = entryObj["keys"]) {
                     is kotlinx.serialization.json.JsonArray -> k.mapNotNull { it.asStringOrNull() }
                     is kotlinx.serialization.json.JsonPrimitive -> k.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
                     else -> emptyList()
                 }
-                
+
                 val enabled = (entryObj["enabled"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull() ?: true
                 val caseSensitive = (entryObj["case_sensitive"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull() ?: false
                 val position = entryObj["position"].asStringOrNull() ?: "after_char"
-                
+
                 me.rerere.rikkahub.data.model.LorebookEntry(
                     name = entryObj["name"].asStringOrNull() ?: keys.firstOrNull() ?: "Entry",
                     prompt = content,
@@ -1284,4 +1314,3 @@ internal fun decodeBase64OrNull(value: String): ByteArray? {
 
     return null
 }
-

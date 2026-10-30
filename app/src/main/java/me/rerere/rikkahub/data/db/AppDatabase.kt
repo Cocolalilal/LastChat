@@ -73,9 +73,8 @@ import kotlinx.serialization.json.put
         MemorySourceV3FtsEntity::class,
         MemoryIngestStateEntity::class,
         MemoryProjectionEntity::class,
-        me.rerere.rikkahub.data.memory.MemoryRecord::class,
     ],
-    version = 40,
+    version = 39,
     autoMigrations = [
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 1, to = 2),
@@ -112,12 +111,10 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 36, to = 37),
         AutoMigration(from = 37, to = 38, spec = Migration_37_38::class),
         AutoMigration(from = 38, to = 39),
-        AutoMigration(from = 39, to = 40, spec = Migration_39_40::class),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun characterMemoryDao(): me.rerere.rikkahub.data.memory.CharacterMemoryDao
     abstract fun conversationDao(): ConversationDAO
 
     abstract fun chatAttachmentDao(): ChatAttachmentDao
@@ -687,16 +684,3 @@ class Migration_34_35 : AutoMigrationSpec
 @DeleteTable(tableName = "memory_scope_messages")
 @DeleteTable(tableName = "graph_embedding_cache")
 class Migration_37_38 : AutoMigrationSpec
-
-/** Retire derived legacy memory globally. Original Core notes and conversations survive for import. */
-class Migration_39_40 : AutoMigrationSpec {
-    override fun onPostMigrate(db: SupportSQLiteDatabase) {
-        db.execSQL("DELETE FROM MemoryEntity WHERE type = 1")
-        db.execSQL("DELETE FROM ChatEpisodeEntity")
-        db.execSQL("DELETE FROM embedding_cache")
-        listOf("memory_claim_fts", "memory_episode_v3_fts", "memory_source_v3_fts", "memory_claim",
-            "memory_episode_v3", "memory_source_v3", "memory_ingest_state", "memory_projection").forEach {
-            db.execSQL("DELETE FROM $it")
-        }
-    }
-}

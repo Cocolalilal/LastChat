@@ -639,8 +639,6 @@ class GenerationHandler(
     private val providerManager: ProviderManager,
     private val json: Json,
     private val memoryRepo: MemoryRepository,
-    private val characterMemory: me.rerere.rikkahub.data.memory.CharacterMemoryRepository,
-    private val memoryProcessor: me.rerere.rikkahub.data.memory.MemoryProcessor,
     private val chatAttachmentRepository: ChatAttachmentRepository,
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
@@ -657,7 +655,6 @@ class GenerationHandler(
         outputTransformers: List<OutputMessageTransformer> = emptyList(),
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
-        allowMemory: Boolean = false,
         tools: List<Tool> = emptyList(),
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
@@ -670,7 +667,6 @@ class GenerationHandler(
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
     ): Flow<GenerationChunk> = channelFlow {
-        val assistant = if (allowMemory) assistant else assistant.copy(enableMemory = false, enableMemorySearchTool = false, enableRecentChatsReference = false)
         // Older app-created skills predate package storage. Materialize their
         // canonical SKILL.md before a workspace starts so resource paths in the
         // prompt always point to a real package.
@@ -702,9 +698,32 @@ class GenerationHandler(
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                if (assistant.enableMemory && allowMemory) {
-                    addAll(memoryProcessor.chatTools(assistant.id.toString(),
-                        messages.lastOrNull { it.role == me.rerere.ai.core.MessageRole.USER }?.toText().orEmpty()))
+                // Add memory tools if memory is enabled for this assistant
+                if (assistant.enableMemory) {
+                    buildMemoryTools(
+                        onCreation = { content ->
+                            memoryRepo.addMemory(assistant.id.toString(), content)
+                        },
+                        onUpdate = { id, content ->
+                            memoryRepo.updateContent(id, content)
+                        },
+                        onDelete = { id ->
+                            memoryRepo.deleteMemory(id)
+                        },
+                        onSearch = if (shouldRegisterMemorySearchTool(assistant)) {
+                            { query, limit, timeRange ->
+                                memorySearchService.searchMemory(
+                                    assistant = assistant,
+                                    activeConversationId = activeConversationId,
+                                    query = query,
+                                    limit = limit,
+                                    timeRange = timeRange,
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                    ).let(this::addAll)
                 }
                 createSkillManagementTool(
                     state = buildSkillToolState(
@@ -2092,6 +2111,155 @@ class GenerationHandler(
         }
     }
 
+    private fun buildMemoryTools(
+        onCreation: suspend (String) -> AssistantMemory,
+        onUpdate: suspend (Int, String) -> AssistantMemory,
+        onDelete: suspend (Int) -> Unit,
+        onSearch: (suspend (String, Int, String?) -> JsonElement)? = null,
+    ) = buildList {
+        add(Tool(
+            name = "create_memory",
+            description = "Create a new memory record.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("content", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Content of the memory.")
+                        })
+                    },
+                    required = listOf("content")
+                )
+            },
+            execute = {
+                val params = it.jsonObject
+                val content =
+                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
+            }
+        ))
+        add(Tool(
+            name = "edit_memory",
+            description = "Update an existing memory record.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("id", buildJsonObject {
+                            put("type", "integer")
+                            put("description", "ID of the memory to update.")
+                        })
+                        put("content", buildJsonObject {
+                            put("type", "string")
+                            put("description", "New content for the memory.")
+                        })
+                    },
+                    required = listOf("id", "content"),
+                )
+            },
+            execute = {
+                val params = it.jsonObject
+                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val content =
+                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                val before = memoryRepo.getMemoryById(id)
+                val updated = onUpdate(id, content)
+                buildJsonObject {
+                    put("id", JsonPrimitive(updated.id))
+                    put("content", JsonPrimitive(updated.content))
+                    put("type", JsonPrimitive(updated.type))
+                    put("hasEmbedding", JsonPrimitive(updated.hasEmbedding))
+                    updated.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                    put("timestamp", JsonPrimitive(updated.timestamp))
+                    updated.significance?.let { put("significance", JsonPrimitive(it)) }
+                    before?.let { previous ->
+                        put("before_content", JsonPrimitive(previous.content))
+                        put("before_timestamp", JsonPrimitive(previous.timestamp))
+                    }
+                }
+            }
+        ))
+        add(Tool(
+            name = "delete_memory",
+            description = "Delete a memory record.",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("id", buildJsonObject {
+                            put("type", "integer")
+                            put("description", "ID of the memory to delete.")
+                        })
+                    },
+                    required = listOf("id")
+                )
+            },
+            execute = {
+                val params = it.jsonObject
+                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val before = memoryRepo.getMemoryById(id)
+                onDelete(id)
+                buildJsonObject {
+                    put("deleted", JsonPrimitive(true))
+                    before?.let { memory ->
+                        put("id", JsonPrimitive(memory.id))
+                        put("content", JsonPrimitive(memory.content))
+                        put("type", JsonPrimitive(memory.type))
+                        put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
+                        memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
+                        put("timestamp", JsonPrimitive(memory.timestamp))
+                        memory.significance?.let { put("significance", JsonPrimitive(it)) }
+                    }
+                }
+            }
+        ))
+        if (onSearch != null) {
+            add(Tool(
+                name = MEMORY_SEARCH_TOOL_NAME,
+                description = "Search this character's core memories and actually used past chat messages for a remembered topic, scene, person, feeling, or detail. The memory subagent expands the query internally and searches multiple variants.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("query", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The remembered topic, keyword, person, preference, event, or question to search for.")
+                            })
+                            put("limit", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Maximum number of memory results to return. Defaults to 5.")
+                            })
+                            put("time_range", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Optional rough time span to filter recall, such as last week, this month, last month, 4 months ago, or yesterday.")
+                            })
+                        },
+                        required = listOf("query")
+                    )
+                },
+                systemPrompt = { _, _ ->
+                    """
+                    ## Memory search tool
+                    You may call `$MEMORY_SEARCH_TOOL_NAME` when you are deliberately trying to remember something from core memories or older chats.
+                    - Use it for genuine recall, not on every turn.
+                    - It searches only this character's memories and actually used chat timeline, not other characters or discarded reply versions.
+                    - You can pass `time_range` when the user asks about a rough time span, like "last day", "last 2 days", "yesterday", "last week", "this month", "last month", or "4 months ago".
+                    - Preserve the user's recall terms, including odd meta words; the memory subagent will expand the query internally across several variants.
+                    - If the returned summary says no clear memory was found and the user keeps pressing, you may try one more narrower query.
+                    - Treat returned memories as approximate, human-like recollections.
+                    - Time labels are fuzzy on purpose; do not expose exact timestamps unless the user asks.
+                    - If confidence is low or results disagree, answer with natural uncertainty.
+                    """.trimIndent()
+                },
+                execute = {
+                    val params = it.jsonObject
+                    val query = params["query"]?.jsonPrimitive?.contentOrNull ?: error("query is required")
+                    val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 5
+                    val timeRange = params["time_range"]?.jsonPrimitive?.contentOrNull
+                    onSearch(query, limit, timeRange)
+                }
+            ))
+        }
+    }
+
+
     fun translateText(
         settings: Settings,
         sourceText: String,
@@ -2168,6 +2336,10 @@ class GenerationHandler(
         }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * Attempts to sanitize malformed JSON from streamed tool call arguments.
+     * Handles cases where the model outputs content after a valid JSON object.
+     */
     private fun parseToolCallArguments(arguments: String): JsonElement {
         return parseJsonElementWithRecovery(arguments, json) ?: run {
             Log.w(TAG, "Failed to parse tool arguments after recovery: ${arguments.take(200)}")

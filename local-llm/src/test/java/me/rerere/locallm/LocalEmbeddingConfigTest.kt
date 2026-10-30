@@ -7,22 +7,22 @@ import org.junit.Test
 
 class LocalEmbeddingConfigTest {
     @Test
-    fun `only self-contained LiteRT bundles use the embedding engine`() {
+    fun `bundled embeddings and legacy tflite use different runtimes`() {
         assertTrue(usesLiteRtEmbeddingEngine("/models/embeddinggemma-2-text-270m.litertlm"))
         assertFalse(usesLiteRtEmbeddingEngine("/models/embeddinggemma-300m.tflite"))
     }
 
     @Test
-    fun `x86 devices can run text bundles but not retired tflite files`() {
+    fun `x86 devices can run new embedding bundles but not the legacy rag runtime`() {
         assertTrue(supportsLocalEmbedding("embedding.litertlm", listOf("x86_64", "x86")))
         assertFalse(supportsLocalEmbedding("embedding.tflite", listOf("x86_64", "x86")))
         assertFalse(supportsLocalEmbedding("embedding.litertlm", listOf("armeabi-v7a")))
     }
 
     @Test
-    fun `arm64 devices support text bundles and reject retired tflite files`() {
+    fun `arm64 devices support both embedding runtimes`() {
         assertTrue(supportsLocalEmbedding("embedding.litertlm", listOf("arm64-v8a")))
-        assertFalse(supportsLocalEmbedding("embedding.tflite", listOf("arm64-v8a")))
+        assertTrue(supportsLocalEmbedding("embedding.tflite", listOf("arm64-v8a")))
     }
 
     @Test

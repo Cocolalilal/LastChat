@@ -298,15 +298,26 @@ internal fun Settings.normalizeFontSettings(): Settings {
  */
 internal fun Settings.normalizeMemorySettings(): Settings = copy(
     assistants = assistants.map { assistant ->
-        assistant.copy(
-            memoryExperience = assistant.memoryExperience?.takeIf { it in setOf("BASIC", "ADVANCED") }
-                ?: if (assistant.enableMemoryConsolidation) "ADVANCED" else "BASIC",
-            enableMemoryConsolidation = false,
-            enableRecentChatsReference = false,
-            ragIncludeEpisodes = false,
-            ragLimit = assistant.ragLimit.coerceIn(1, 50),
-            ragSimilarityThreshold = assistant.ragSimilarityThreshold.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0.45f,
-        )
+        val finiteThreshold = assistant.ragSimilarityThreshold
+            .takeIf(Float::isFinite)
+            ?.coerceIn(0f, 1f)
+            ?: 0.45f
+        if (assistant.enableMemoryConsolidation) {
+            assistant.copy(
+                enableMemory = true,
+                useRagMemoryRetrieval = true,
+                enableRecentChatsReference = true,
+                ragIncludeCore = true,
+                ragIncludeEpisodes = true,
+                ragLimit = assistant.ragLimit.coerceAtLeast(1),
+                ragSimilarityThreshold = finiteThreshold,
+            )
+        } else {
+            assistant.copy(
+                ragLimit = assistant.ragLimit.coerceAtLeast(1),
+                ragSimilarityThreshold = finiteThreshold,
+            )
+        }
     },
 )
 
@@ -678,8 +689,7 @@ internal fun Settings.clearMissingModelReferences(): Settings {
         assistant.copy(
             chatModelId = assistant.chatModelId.ensureValidOrNull(),
             backgroundModelId = assistant.backgroundModelId.ensureValidOrNull(),
-            // An explicitly disabled local embedder must not inherit a global cloud selection.
-            embeddingModelId = assistant.embeddingModelId?.takeIf { it == DISABLED_MODEL_ID || it in allModelIds },
+            embeddingModelId = assistant.embeddingModelId.ensureValidOrNull(),
             summarizerModelId = assistant.summarizerModelId.ensureValidOrNull(),
         )
     }
