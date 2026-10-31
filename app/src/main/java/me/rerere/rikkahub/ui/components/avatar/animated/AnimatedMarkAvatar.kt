@@ -335,8 +335,8 @@ private fun DrawScope.drawMarkInner(
     val bodyKind = shape.solid.kind
 
     // Head look (gaze) is an euler add-on on body + eyes (desktop setGaze → Ou).
-    // Screen y (+down) → pitch (+down).
-    val look = WhSphereEyes.ou(bodyKind, f.headLookX, -f.headLookY)
+    // Screen y (+down) → pitch (+down). LOOK_TURN_GAIN lets glances read as visible body turns.
+    val look = WhSphereEyes.ou(bodyKind, f.headLookX * LOOK_TURN_GAIN, -f.headLookY * LOOK_TURN_GAIN)
     // Visual turn cap (engine10): total body + head turn is soft-limited per shape so the
     // silhouette stays recognisable (the heart's 3D projection lumps past ~14°) and the
     // eyes keep their inset. tanh keeps it springy instead of a hard stop.
@@ -600,11 +600,17 @@ private fun DrawScope.drawMarkInner(
 }
 
 
+/** Gain applied to head look so glancing around turns the 3D body ~15–20% more without breaking the silhouette. */
+private const val LOOK_TURN_GAIN = 1.2f
+
 /** Max visual (yaw, pitch) in degrees per shape. */
 internal fun turnCapFor(shapeId: String, bodyKind: String): Pair<Float, Float> = when {
+    // Heart's 3D projection lumps past ~14° and upper lobes narrow quickly; kept conservative.
     shapeId.contains("heart", ignoreCase = true) -> 13f to 10f
-    bodyKind == "sphere" -> 22f to 15f
-    else -> 17f to 12f
+    // Sphere allows more turn (+3° yaw / +2° pitch) without silhouette distortion.
+    bodyKind == "sphere" -> 25f to 17f
+    // Non-sphere shapes get modest headroom (+2.5° yaw / +2° pitch) so glances read as turns.
+    else -> 19.5f to 14f
 }
 
 internal fun softCap(v: Float, cap: Float): Float = cap * kotlin.math.tanh(v / cap)
