@@ -155,22 +155,22 @@ private val parser by lazy {
 private const val SYNC_PARSE_MAX_LENGTH = 200_000
 
 private const val MARKDOWN_AST_CACHE_SIZE = 64
+// Bound both source and preprocessed strings when expansion creates multiple prefixes.
+private const val MARKDOWN_AST_CACHE_CHAR_BUDGET = 512_000
+private const val MARKDOWN_AST_CACHE_MAX_ENTRY_LENGTH = 64_000
+private var markdownAstCacheChars = 0
 
 /**
  * Process-wide LRU cache of parsed markdown ASTs keyed by the raw (pre-`preProcess`) content.
  *
  * This lets [MarkdownBlock] parse a complete message synchronously on first composition (so the
- * item has its correct height immediately, avoiding a scroll-anchor "jump") while paying the parse
- * cost at most once per unique message — repeated compositions (e.g. scrolling a turn off screen
- * and back) reuse the cached AST instantly.
+ * item has its correct height immediately, avoiding a scroll-anchor "jump"). Repeated compositions
+ * reuse cached ASTs for bounded message content; very large expanded messages are excluded to keep
+ * them from displacing the previews of the rest of the conversation.
  */
-private val markdownAstCache = object : LinkedHashMap<String, Pair<String, ASTNode>>(
+private val markdownAstCache = LinkedHashMap<String, Pair<String, ASTNode>>(
     16, 0.75f, /* accessOrder = */ true
-) {
-    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, ASTNode>>): Boolean {
-        return size > MARKDOWN_AST_CACHE_SIZE
-    }
-}
+)
 
 private fun parseMarkdownCached(content: String): Pair<String, ASTNode> {
     synchronized(markdownAstCache) { markdownAstCache[content] }?.let { return it }
@@ -180,8 +180,21 @@ private fun parseMarkdownCached(content: String): Pair<String, ASTNode> {
     val astTree = MarkdownParser(GFMFlavourDescriptor(makeHttpsAutoLinks = true, useSafeLinks = true))
         .buildMarkdownTreeFromString(preprocessed)
     val result = preprocessed to astTree
+    if (content.length > MARKDOWN_AST_CACHE_MAX_ENTRY_LENGTH) return result
     return synchronized(markdownAstCache) {
-        markdownAstCache[content] ?: result.also { markdownAstCache[content] = it }
+        markdownAstCache[content] ?: result.also {
+            markdownAstCache[content] = it
+            markdownAstCacheChars += content.length + preprocessed.length
+            val entries = markdownAstCache.entries.iterator()
+            while (entries.hasNext() &&
+                (markdownAstCache.size > MARKDOWN_AST_CACHE_SIZE ||
+                    markdownAstCacheChars > MARKDOWN_AST_CACHE_CHAR_BUDGET)
+            ) {
+                val entry = entries.next()
+                markdownAstCacheChars -= entry.key.length + entry.value.first.length
+                entries.remove()
+            }
+        }
     }
 }
 

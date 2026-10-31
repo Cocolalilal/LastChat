@@ -50,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.LongTextPasteMode
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.datastore.TtsAutoplayMode
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSource
@@ -201,6 +202,20 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_basic_settings)
                 ) {
+                    SettingGroupItem(
+                        title = "Long pasted text",
+                        subtitle = "Choose what happens when you paste 8,000 characters or 120 lines.",
+                        trailing = {
+                            Select(
+                                options = LongTextPasteMode.entries,
+                                selectedOption = displaySetting.longTextPasteMode,
+                                onOptionSelected = {
+                                    updateDisplaySetting(displaySetting.copy(longTextPasteMode = it))
+                                },
+                                optionToString = { it.label },
+                            )
+                        },
+                    )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_create_new_conversation_on_start_title),
                         subtitle = stringResource(R.string.setting_display_page_create_new_conversation_on_start_desc),

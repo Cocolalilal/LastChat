@@ -1327,12 +1327,17 @@ private fun UserMessageTurn(
                                 visual = true,
                             )
                     }
-                    MarkdownBlock(
-                        workspaceId = assistant?.workspaceId?.toString(),
+                    ExpandableMessageContent(
                         content = displayContent,
-                        paragraphSpacing = 12.dp,
-                        onClickCitation = {}
-                    )
+                        fadeColor = MaterialTheme.colorScheme.primaryContainer,
+                    ) { visibleContent ->
+                        MarkdownBlock(
+                            workspaceId = assistant?.workspaceId?.toString(),
+                            content = visibleContent,
+                            paragraphSpacing = 12.dp,
+                            onClickCitation = {}
+                        )
+                    }
                 }
             }
         }
@@ -1630,17 +1635,23 @@ private fun AssistantMessageTurn(
                             visual = true,
                         )
                 }
-                MarkdownBlock(
-                    workspaceId = assistant?.workspaceId?.toString(),
+                ExpandableMessageContent(
                     content = displayContent,
-                    paragraphSpacing = 12.dp,
-                    streamingTextReveal = loading && index == allTextBubbles.lastIndex,
-                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                    onClickCitation = { id -> onCitationClick(id) },
-                    modifier = Modifier
-                        .clickable { handleBubbleClick() }
-                        .then(if (loading && index == allTextBubbles.lastIndex) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier)
-                )
+                    fadeColor = MaterialTheme.colorScheme.background,
+                    streaming = loading,
+                ) { visibleContent ->
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = visibleContent,
+                        paragraphSpacing = 12.dp,
+                        streamingTextReveal = loading && index == allTextBubbles.lastIndex,
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                        onClickCitation = { id -> onCitationClick(id) },
+                        modifier = Modifier
+                            .clickable { handleBubbleClick() }
+                            .then(if (loading && index == allTextBubbles.lastIndex) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier)
+                    )
+                }
             }
         }
         
@@ -1723,9 +1734,16 @@ private fun AssistantBubbleStack(
             fallbackAudioLabel = defaultAudioLabel,
         )
     }
-    val runCounts = slots.map { slot ->
+    val presentations = slots.map { slot ->
+        if (slot is AssistantStackSlot.Text) {
+            rememberExpandableMessagePresentation(slot.markdown, slot.streaming)
+        } else {
+            null
+        }
+    }
+    val runCounts = slots.mapIndexed { index, slot ->
         when (slot) {
-            is AssistantStackSlot.Text -> markdownBubbleRunCount(slot.markdown)
+            is AssistantStackSlot.Text -> markdownBubbleRunCount(presentations[index]?.visibleText.orEmpty())
             else -> 1
         }
     }
@@ -1734,23 +1752,32 @@ private fun AssistantBubbleStack(
     var cursor = 0
     slots.forEachIndexed { index, slot ->
         val count = runCounts[index]
+        val leadingCount = cursor
         when (slot) {
             is AssistantStackSlot.Text -> {
-                MarkdownBlock(
-                    workspaceId = assistant?.workspaceId?.toString(),
+                ExpandableMessageContent(
                     content = slot.markdown,
-                    paragraphSpacing = 12.dp,
-                    streamingTextReveal = slot.streaming,
-                    onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
-                    onClickCitation = onCitationClick,
-                    splitIntoMessageBubbles = true,
-                    bubbleLeadingCount = cursor,
-                    bubbleTotalCount = total,
-                    onBubbleClick = onBubbleClick,
-                    modifier = Modifier
-                        .widthIn(max = maxWidth)
-                        .then(if (slot.streaming) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier),
-                )
+                    fadeColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    streaming = slot.streaming,
+                    presentation = presentations[index],
+                    modifier = Modifier.widthIn(max = maxWidth),
+                ) { visibleContent ->
+                    MarkdownBlock(
+                        workspaceId = assistant?.workspaceId?.toString(),
+                        content = visibleContent,
+                        paragraphSpacing = 12.dp,
+                        streamingTextReveal = slot.streaming,
+                        onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
+                        onClickCitation = onCitationClick,
+                        splitIntoMessageBubbles = true,
+                        bubbleLeadingCount = leadingCount,
+                        bubbleTotalCount = total,
+                        onBubbleClick = onBubbleClick,
+                        modifier = Modifier
+                            .widthIn(max = maxWidth)
+                            .then(if (slot.streaming) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier),
+                    )
+                }
             }
             is AssistantStackSlot.Picture -> {
                 val archivedModifier = if (slot.attachment.archived) {

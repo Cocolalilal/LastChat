@@ -415,6 +415,16 @@ fun MinimalChatInput(
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
     var isExpandedFullScreen by remember { mutableStateOf(false) }
+    var restoreComposerFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(isExpandedFullScreen) {
+        if (isExpandedFullScreen) {
+            restoreComposerFocus = true
+        } else if (restoreComposerFocus) {
+            restoreComposerFocus = false
+            // The compact editor is recreated after closing fullscreen; restore its cursor/focus.
+            runCatching { state.focusRequester.requestFocus() }
+        }
+    }
     var imageToCrop by remember { mutableStateOf<PendingImageCrop?>(null) }
     var pendingAttachmentImports by remember { mutableIntStateOf(0) }
     val isImportingAttachments = pendingAttachmentImports > 0
@@ -422,6 +432,14 @@ fun MinimalChatInput(
     val onAttachmentImportFinished = {
         pendingAttachmentImports = (pendingAttachmentImports - 1).coerceAtLeast(0)
     }
+
+    val longTextPasteHandler = rememberLongTextPasteHandler(
+        state = state,
+        mode = settings.displaySetting.longTextPasteMode,
+        enabled = !isQuestionnaireActive && !isToolApprovalActive,
+        onImportStarted = onAttachmentImportStarted,
+        onImportFinished = onAttachmentImportFinished,
+    )
 
     LaunchedEffect(questionnaireToolCallId, questionnaire?.questions?.size) {
         if (questionnaire == null) {
@@ -953,73 +971,74 @@ fun MinimalChatInput(
                                 else -> state.textContent
                             }
                             var visualLineCount by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(1) }
-                            val lineCount = androidx.compose.runtime.derivedStateOf {
-                                maxOf(activeTextState.text.toString().lines().size, visualLineCount)
-                            }
-                            TextField(
-                                state = activeTextState,
-                                onTextLayout = { getResult ->
-                                    val result = getResult()
-                                    if (result != null) {
-                                        visualLineCount = result.lineCount
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
-                                    .focusRequester(state.focusRequester)
-                                    .then(
-                                        if (isQuestionnaireActive || isToolApprovalActive) {
-                                            Modifier
-                                        } else {
-                                            Modifier.contentReceiver(receiveContentListener)
+                            // Only one editor should measure the draft while fullscreen is open.
+                            if (!isExpandedFullScreen) {
+                                TextField(
+                                    state = activeTextState,
+                                    inputTransformation = longTextPasteHandler,
+                                    onTextLayout = { getResult ->
+                                        val result = getResult()
+                                        if (result != null) {
+                                            visualLineCount = result.lineCount
                                         }
-                                    )
-                                    .onFocusChanged {
-                                        isFocused = it.isFocused
-                                        onInputFocusChanged(it.isFocused)
                                     },
-                                placeholder = {
-                                    androidx.compose.animation.AnimatedVisibility(
-                                        visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),
-                                        enter = fadeIn(tween(220)),
-                                        exit = fadeOut(tween(140))
-                                    ) {
-                                        Text(
-                                            text = if (isQuestionnaireActive) {
-                                                stringResource(R.string.character_questions_custom_answer_placeholder)
-                                            } else if (isToolApprovalActive) {
-                                                stringResource(R.string.tool_approval_input_placeholder)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 1.dp)  // Override internal min height (56dp)
+                                        .focusRequester(state.focusRequester)
+                                        .then(
+                                            if (isQuestionnaireActive || isToolApprovalActive) {
+                                                Modifier
                                             } else {
-                                                stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
-                                            },
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = chatInputHintColor(),
+                                                Modifier.contentReceiver(receiveContentListener)
+                                            }
                                         )
-                                    }
-                                },
-                                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
-                                contentPadding = PaddingValues(
-                                    start = 16.dp,
-                                    top = 12.dp,
-                                    end = androidx.compose.animation.core.animateDpAsState(
-                                        targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 52.dp,
-                                        animationSpec = tween(220),
-                                        label = "input_padding"
-                                    ).value,
-                                    bottom = 12.dp,
-                                ),
-                                colors = TextFieldDefaults.colors().copy(
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
+                                        .onFocusChanged {
+                                            isFocused = it.isFocused
+                                            onInputFocusChanged(it.isFocused)
+                                        },
+                                    placeholder = {
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = !((sttRecording || sttFinalizing) && hasSelectedSttProvider),
+                                            enter = fadeIn(tween(220)),
+                                            exit = fadeOut(tween(140))
+                                        ) {
+                                            Text(
+                                                text = if (isQuestionnaireActive) {
+                                                    stringResource(R.string.character_questions_custom_answer_placeholder)
+                                                } else if (isToolApprovalActive) {
+                                                    stringResource(R.string.tool_approval_input_placeholder)
+                                                } else {
+                                                    stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
+                                                },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = chatInputHintColor(),
+                                            )
+                                        }
+                                    },
+                                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                                    contentPadding = PaddingValues(
+                                        start = 16.dp,
+                                        top = 12.dp,
+                                        end = androidx.compose.animation.core.animateDpAsState(
+                                            targetValue = if ((sttRecording || sttFinalizing) && hasSelectedSttProvider) 150.dp else 52.dp,
+                                            animationSpec = tween(220),
+                                            label = "input_padding"
+                                        ).value,
+                                        bottom = 12.dp,
+                                    ),
+                                    colors = TextFieldDefaults.colors().copy(
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                    )
                                 )
-                            )
+                            }
                             
                             ExpandButtonOverlay(
-                                isVisible = !isExpandedFullScreen && lineCount.value >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
+                                isVisible = !isExpandedFullScreen && visualLineCount >= 5 && !isQuestionnaireActive && !isToolApprovalActive,
                                 onExpand = {
                                     haptics.perform(HapticPattern.Pop)
                                     isExpandedFullScreen = true
@@ -1245,6 +1264,7 @@ fun MinimalChatInput(
                         ) {
                             TextField(
                                 state = activeTextState,
+                                inputTransformation = longTextPasteHandler,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .focusRequester(expandedFocusRequester),

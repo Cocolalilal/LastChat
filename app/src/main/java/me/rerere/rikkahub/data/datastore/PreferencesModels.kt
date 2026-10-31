@@ -228,6 +228,18 @@ internal fun FontSettings.normalize(): FontSettings {
 }
 
 @Serializable
+enum class LongTextPasteMode {
+    ASK, TEXT, ATTACHMENT;
+
+    val label: String
+        get() = when (this) {
+            ASK -> "Ask every time"
+            TEXT -> "Paste as text"
+            ATTACHMENT -> "Attach as file"
+        }
+}
+
+@Serializable
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
@@ -259,6 +271,7 @@ data class DisplaySetting(
     val newChatShowAvatar: Boolean = true,
     val chatToolbarAtBottom: Boolean = false,
     val sttReplaceModelIcon: Boolean = false,
+    val longTextPasteMode: LongTextPasteMode = LongTextPasteMode.ASK,
 )
 
 internal fun DisplaySetting.normalizeFontSettings(): DisplaySetting {
