@@ -46,14 +46,16 @@ sealed class Avatar {
         companion object {
             const val GENERICAL_BLUE_HEX = "#0078D7"
             const val GENERICAL_BLUE_PRESET = "generical"
-            /** Generical's Windows stop-screen blue, with white eyes. */
+            const val GENERICAL_LIGHT_BLUE_HEX = "#009FE0"
+            const val GENERICAL_LIGHT_BLUE_PRESET = "azure"
+            /** Generical's light blue (azure), with white eyes. */
             fun defaultGenerical(
                 shape: String = "blob",
             ) = Animated(
                 shape = shape,
                 eyeType = "generical",
-                colorHex = GENERICAL_BLUE_HEX,
-                colorPreset = GENERICAL_BLUE_PRESET,
+                colorHex = GENERICAL_LIGHT_BLUE_HEX,
+                colorPreset = GENERICAL_LIGHT_BLUE_PRESET,
                 eyeColorHex = null,
                 stockColorVersion = 1,
             )

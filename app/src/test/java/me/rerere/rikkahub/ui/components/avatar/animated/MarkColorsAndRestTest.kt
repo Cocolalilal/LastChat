@@ -35,17 +35,58 @@ class MarkColorsAndRestTest {
     private fun hex(c: Color) = MarkColors.colorToHex(c)
 
     @Test
-    fun genericalUsesStopScreenBlueAndMigratesOnlyTheOldStockMark() {
+    fun genericalUsesLightBlueAndMigratesOldStockMarks() {
         val stock = Avatar.Animated.defaultGenerical()
-        assertEquals("#0078D7", stock.colorHex)
+        assertEquals("#009FE0", stock.colorHex)
+        assertEquals("azure", stock.colorPreset)
         assertEquals(stock.colorHex, hex(MarkColors.bodyColor(stock.colorHex, stock.colorPreset)))
-        val old = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
-        val assistant = Assistant(id = me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID,
-            name = "Generical", avatar = old)
-        assertEquals(stock, Settings(assistants = listOf(assistant)).migrateGenericalDefaultAvatar().assistants.single().avatar)
-        val explicitIndigo = old.copy(stockColorVersion = 1)
-        assertEquals(explicitIndigo, Settings(assistants = listOf(assistant.copy(avatar = explicitIndigo)))
-            .migrateGenericalDefaultAvatar().assistants.single().avatar)
+
+        // Old indigo mark migrates to the new light blue default.
+        val oldIndigo = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
+        val assistantIndigo = Assistant(
+            id = me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID,
+            name = "Generical",
+            avatar = oldIndigo,
+        )
+        assertEquals(
+            stock,
+            Settings(assistants = listOf(assistantIndigo)).migrateGenericalDefaultAvatar().assistants.single().avatar,
+        )
+
+        // Old stock blue mark (#0078D7 / "generical") migrates to the new light blue default.
+        val oldBlue = Avatar.Animated(
+            colorHex = Avatar.Animated.GENERICAL_BLUE_HEX,
+            colorPreset = Avatar.Animated.GENERICAL_BLUE_PRESET,
+            stockColorVersion = 1,
+        )
+        val assistantBlue = Assistant(
+            id = me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID,
+            name = "Generical",
+            avatar = oldBlue,
+        )
+        val migratedSettings = Settings(assistants = listOf(assistantBlue)).migrateGenericalDefaultAvatar()
+        assertEquals(stock, migratedSettings.assistants.single().avatar)
+
+        // Running the migration twice is a no-op (idempotent).
+        assertEquals(migratedSettings, migratedSettings.migrateGenericalDefaultAvatar())
+
+        // Explicitly chosen colours are left alone.
+        val explicitIndigo = oldIndigo.copy(stockColorVersion = 1)
+        assertEquals(
+            explicitIndigo,
+            Settings(assistants = listOf(assistantIndigo.copy(avatar = explicitIndigo)))
+                .migrateGenericalDefaultAvatar().assistants.single().avatar,
+        )
+        val explicitRed = Avatar.Animated(colorHex = "#FF3E51", colorPreset = "red")
+        val assistantRed = Assistant(
+            id = me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID,
+            name = "Generical",
+            avatar = explicitRed,
+        )
+        assertEquals(
+            explicitRed,
+            Settings(assistants = listOf(assistantRed)).migrateGenericalDefaultAvatar().assistants.single().avatar,
+        )
     }
 
     @Test
@@ -57,12 +98,14 @@ class MarkColorsAndRestTest {
         }
         // The teal swatch is teal in Generical mode too (it used to render the Generical blue).
         assertEquals("#1CC3B0", hex(MarkColors.bodyColor("#1CC3B0", "cyan", "generical")))
-        // …and the Generical blue is its own swatch.
+        // …and the stock blue swatches (generical and azure) render their distinct colours.
+        assertEquals("#0078D7", hex(MarkColors.bodyColor("#0078D7", "generical", "generical")))
         assertEquals("#009FE0", hex(MarkColors.bodyColor("#009FE0", "azure", "generical")))
     }
 
     @Test
     fun legacyCyanPairKeepsWhatEachModeShowed() {
+        assertEquals("#009FE0" to "azure", MarkColors.canonicalBody(null, null, "generical"))
         assertEquals("#009FE0" to "azure", MarkColors.canonicalBody("#009FE0", "cyan", "generical"))
         assertEquals("#1CC3B0" to "cyan", MarkColors.canonicalBody("#009FE0", "cyan", "grok"))
         assertEquals("#7C5CFF" to "indigo", MarkColors.canonicalBody("#7c5cff", null, "generical"))

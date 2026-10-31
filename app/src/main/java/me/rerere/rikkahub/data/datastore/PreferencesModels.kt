@@ -461,17 +461,28 @@ internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
 
 /**
  * Generical's old default picture → its animated mark. Only touches the default
- * Generical character while it still has the untouched stock picture; any avatar the
- * user picked stays as it is.
+ * Generical character while it still has the untouched stock picture or an older stock
+ * animated mark; any avatar the user picked stays as it is.
  */
 internal fun Settings.migrateGenericalDefaultAvatar(): Settings {
     val stock = Avatar.Resource(R.drawable.default_generical_pfp)
     val oldMark = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
+    val oldStockBlue = Avatar.Animated(
+        colorHex = Avatar.Animated.GENERICAL_BLUE_HEX,
+        colorPreset = Avatar.Animated.GENERICAL_BLUE_PRESET,
+        stockColorVersion = 1,
+    )
+    val oldBlueMark = Avatar.Animated(
+        colorHex = Avatar.Animated.GENERICAL_BLUE_HEX,
+        colorPreset = Avatar.Animated.GENERICAL_BLUE_PRESET,
+    )
     var changed = false
     val updated = assistants.map { assistant ->
         val isGenerical = assistant.id == DEFAULT_ASSISTANT_ID || assistant.name == "Generical"
-        if (isGenerical && (assistant.avatar == stock ||
-            (assistant.id == DEFAULT_ASSISTANT_ID && assistant.avatar == oldMark))) {
+        val isOldStockMark = (assistant.id == DEFAULT_ASSISTANT_ID && assistant.avatar == oldMark) ||
+            assistant.avatar == oldStockBlue ||
+            assistant.avatar == oldBlueMark
+        if (isGenerical && (assistant.avatar == stock || isOldStockMark)) {
             changed = true
             assistant.copy(avatar = Avatar.Animated.defaultGenerical())
         } else {

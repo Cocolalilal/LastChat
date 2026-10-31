@@ -35,8 +35,8 @@ object MarkColors {
 
     const val GENERICAL_BLUE_HEX = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_HEX
     private const val LEGACY_AZURE_HEX = "#009FE0"
-    const val DEFAULT_GENERICAL_BODY_HEX = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_HEX
-    const val DEFAULT_GENERICAL_BODY_PRESET = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_PRESET
+    const val DEFAULT_GENERICAL_BODY_HEX = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_LIGHT_BLUE_HEX
+    const val DEFAULT_GENERICAL_BODY_PRESET = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_LIGHT_BLUE_PRESET
 
     /** Mode default eye colours (what `eyeColorHex == null` renders as). */
     const val DEFAULT_GENERICAL_EYE_HEX = "#FFFFFF"
