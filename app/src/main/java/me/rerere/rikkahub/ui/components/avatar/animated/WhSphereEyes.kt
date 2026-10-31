@@ -145,6 +145,21 @@ object WhSphereEyes {
     }
 
     /**
+     * Seats [short] so its bottom edge (lowest spine point minus cap radius [EyeState.wid])
+     * lines up with [open]'s bottom edge in eye-local space (+y = up): a half-closed eye
+     * reads as a lid coming down from above rather than a small shape floated to the top.
+     */
+    private fun bottomAligned(open: EyeState, short: EyeState): EyeState {
+        fun halfExtentDown(e: EyeState): Float {
+            val l = cos(e.tilt)
+            val d = sin(e.tilt)
+            val minSpineY = e.pts.minOfOrNull { -d * it[0] + l * it[1] * e.lidY } ?: 0f
+            return e.wid - minSpineY
+        }
+        return short.copy(offY = open.offY - (halfExtentDown(open) - halfExtentDown(short)))
+    }
+
+    /**
      * Engine21.2 Grok confused, explored in pill language (sheet: grok_confused_options.png).
      * [left, right] for "confused"; "confused left" is the mirror. All keep the eyes apart and
      * never lean both the same way.
@@ -159,13 +174,14 @@ object WhSphereEyes {
 
     internal fun confusedPair(v: Char): List<EyeState> {
         fun up(e: EyeState, dy: Float) = e.copy(offY = e.offY + dy)
+        fun pair(open: EyeState, short: EyeState) = listOf(open, bottomAligned(open, short))
         return when (v) {
             // The Engine21.1 o_O, kept only for the comparison sheet.
             'O' -> listOf(en(UR, 0.64f, 0f, 0f), up(en(UR, 0.4f, -24f, 0f), 0.12f))
-            'B' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.36f, 0f, 0f), -0.02f))
-            'C' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.5f, 14f, 0f), 0.04f))
-            'D' -> listOf(en(UR, 0.6f, 7f, 0f), up(en(UR, 0.46f, 7f, 0f), 0.05f))
-            else -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.46f, 0f, 0f), 0.1f))
+            'B' -> pair(en(UR, 0.57f, 0f, 0f), en(UR, 0.36f, 0f, 0f))
+            'C' -> pair(en(UR, 0.57f, 0f, 0f), en(UR, 0.5f, 14f, 0f))
+            'D' -> pair(en(UR, 0.6f, 7f, 0f), en(UR, 0.46f, 7f, 0f))
+            else -> pair(en(UR, 0.57f, 0f, 0f), en(UR, 0.46f, 0f, 0f))
         }
     }
 
@@ -220,10 +236,10 @@ object WhSphereEyes {
             }
             // Confused: same eyes as every other face, one lid tilted, both on one level.
             // Same-size pills (like Sad, mirrored on one side only): one tilts, neither shrinks.
-            "confused" -> listOf(
-                en(UR, 0.6f, 0f, 0f),
-                en(UR, 0.58f, -18f, 0f),
-            )
+            "confused" -> {
+                val open = en(UR, 0.6f, 0f, 0f)
+                listOf(open, bottomAligned(open, en(UR, 0.58f, -18f, 0f)))
+            }
             // Engine17.1: concentrated / focused — calm, restrained: shorter pills with a
             // slight inward tilt (half of angry's), clearly not the flat bored bars.
             // Engine21: concentrating = clearly shorter pills (a squint), no tilt — distinct
@@ -246,10 +262,10 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.
-            "playful" -> listOf(
-                en(UR, 0.6f, 0f, 0f),
-                en(UR, 0.5f, -10f, 0f),
-            )
+            "playful" -> {
+                val open = en(UR, 0.6f, 0f, 0f)
+                listOf(open, bottomAligned(open, en(UR, 0.5f, -10f, 0f)))
+            }
             // >< squeeze (dizzy).
             "dizzy" -> {
                 val e = pr(-0.1f, 0f, 0f, IU,
@@ -258,6 +274,8 @@ object WhSphereEyes {
             }
             // Playful wink: one soft closed arc, one open eye.
             // Engine21.1: the closed eye is the happy ^ pill (a cute squeeze), the other open.
+            // A wink's arc is a *closed* eye, not a half-lid: it stays centred on the open eye
+            // (a closed arc parked at the other eye's bottom edge read as a droop, not a wink).
             "wink" -> listOf(
                 pr(0f, 0.04f, 0f, HAPPY_W,
                     floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f)),
