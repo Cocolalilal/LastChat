@@ -1341,7 +1341,7 @@ sign above 3°. Found in Engine21.1:
   the other upright and open a touch wider (sy 1.04). One tilted + one upright.
 * **Grok confused** redesigned (`WhSphereEyes.confusedPair`, explored on
   `grok_confused_options.png`): A "brow up" (chosen) — one neutral pill, the other a little
-  shorter (0.46) and raised so its top clears the other's: one raised eyebrow in pill language, nothing tipped. B "one
+  shorter (0.46) and raised so its top clears the other's: one raised eyebrow in pill language, nothing tipped. (Engine21.3: the shorter eye is now bottom-aligned — see below.) B "one
   squint", C "tipped brow" (one pill tipped 14°), D "soft lopsided" (mirrored 7°) remain
   selectable via `confusedVariant`. "confused left" is now the exact mirror (`reversed()`).
 * **`TiltGuard`** (general enforcement for everything in between): measures both eyes and
@@ -1359,3 +1359,41 @@ mid-morphs at t = 0.25 / 0.5 / 0.75, Grok gaze (pitch ±14 × yaw ±18) and head
 
 Caveat: the Generical seat/gaze perspective is not guarded (the guard runs on the flat outline,
 before seating); it is small on the Generical seat.
+
+## Engine21.3 — half-lidded eyes rest on the bottom edge, no grin on a cross poke, Generical in light blue, turns that read
+
+### Grok half-lidded eyes are bottom-aligned (`WhSphereEyes.bottomAligned`)
+When one eye of a pair is shorter than its partner (a squint / half-closed lid), the shorter pill used
+to be nudged *up* so the two **tops** met. It read as a small shape floated toward the ceiling rather
+than as a lid coming down. Rule now: the half-closed eye's **bottom** edge sits on the open eye's
+bottom edge — the lid is what moved. One helper, in eye-local units (+y up), tilt included:
+`offY_short = offY_open − (halfExtentDown(open) − halfExtentDown(short))`.
+Applies to `confused` and to `confusedPair` variants B / C / D (A is the one in use) and `playful`.
+Rendered check on the 8× audit sheet: the confused face's shorter eye went from top −6 px / bottom
+−21 px against the open eye to top −15 px / **bottom 0 px** — on every shape (heart / star keep ≤2 px
+of projection residue). A *closed* eye is not this pattern: the wink's ^ arc stays centred on the
+open eye, because parking that arc at the other eye's bottom edge read as a droop, not a wink.
+
+### A poke never pulls a happy face while it is cross (`AvatarMotionState.crossNow`)
+`Appraisal.poke` decides `Amused` from mood valence alone, so a poke taken while the face was still
+`Angry` / `pouty` could land a `Glee` accent, a queued `"Happy"` reaction or a smile. A poke now
+checks `crossNow()` — the angry family on the face lane (face owner, current reaction, queued
+reaction, the expression pair, an `Annoyed` accent) plus a clearly negative mood — and while it holds
+the poke answers with a cross beat (a refreshed glare, a turn-away, a flat blink), never a happy one.
+Not cross: unchanged, the 40 % happy-after-startle and the amused Glee still happen. The forgiveness
+beat ("can't stay cross for long" → blink, small smile, mood lift) is deliberately untouched: it is
+the moment it stops being cross, not a reaction to a poke.
+
+### Generical's default body colour is the light blue (`#009FE0`)
+The stock Generical animated avatar is now the **azure** swatch — the light blue immediately right of
+the old stock blue in the editor grid — instead of `#0078D7`. `MarkColors.PRESETS` keeps all 14
+swatches and the old blue stays selectable; `Avatar.Animated.defaultGenerical()` and
+`MarkColors.DEFAULT_GENERICAL_BODY_*` point at the new pair. `migrateGenericalDefaultAvatar()` also
+treats the untouched old blue pair as stock and moves it over on next start (idempotent); any avatar
+that picked its own colour is left alone.
+
+### Turns that read (`AnimatedMarkAvatar.LOOK_TURN_GAIN`)
+"Looking around" now turns the 3D body about 20 % more: the head-look euler gets `LOOK_TURN_GAIN =
+1.2`, and the per-shape soft caps give it room (sphere 25° / 17°, other shapes 19.5° / 14°; the heart
+stays 13° / 10° because its projection lumps past ~14°). Eye seating and the silhouette stay
+enforced by `EyeSafeRegion` / `GrokEyeGap`; the spin paths are untouched.
