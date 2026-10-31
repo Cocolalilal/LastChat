@@ -854,6 +854,22 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         negativeName(expr.to) || negativeName(expr.from) || negativeName(expr.top) || negativeName(reaction) ||
             rig.accent in MindRules.NEGATIVE_ACCENTS || mood.valence < -0.25f || time - lastNegativeAt < 2f
 
+    private val crossFaces = setOf("Angry", "pouty")
+    private fun isCrossFace(name: String?): Boolean =
+        name != null && (name in crossFaces || ExpressionDirector.normalize(name) in crossFaces)
+
+    /**
+     * True when the face currently on screen or scheduled is in the angry family (Angry, pouty,
+     * Annoyed accent, cross reaction, or clearly negative mood from being annoyed).
+     */
+    internal fun crossNow(): Boolean =
+        isCrossFace(mind.owner) || isCrossFace(expr.to) || isCrossFace(expr.from) || isCrossFace(expr.top) ||
+            isCrossFace(reaction) || isCrossFace(reactionQueue?.first) ||
+            rig.accent == FaceAccent.Annoyed || mind.owner == "Annoyed" ||
+            forgiveIn > 0f || mood.valence < -0.25f
+
+    internal fun debugMoodNudge(dv: Float, da: Float = 0f) = mood.nudge(dv, da)
+
     // Smoothed pose knobs (never switch instantly with lifecycle).
     private var lidKnob = 1f
     private var gapKnob = 0.94f
@@ -2284,7 +2300,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         reactionQueue?.let { (e, sec) ->
             reactionQueueIn -= dt
             if (reactionQueueIn <= 0f) {
-                because("$rqWhy (follow-up)", rqPrio) { setReaction(e, sec) }
+                if (!(crossNow() && (e == "Happy" || ExpressionDirector.normalize(e) == "Happy"))) {
+                    because("$rqWhy (follow-up)", rqPrio) { setReaction(e, sec) }
+                }
                 reactionQueue = null
             }
         }
@@ -2680,6 +2698,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             meaning == Meaning.FedUp -> {
                 // Fine, you win: all is forgiven first; the spin comes only once the face is no
                 // longer cross (never spin while angry), or not at all.
+                if (reactionQueue?.first == "Happy") reactionQueue = null
                 pokeCount = 0
                 forgiveIn = 0.3f
                 if (lastSpinAgo > 30f) mind.propose(Intention(Lane.Spin, "spin", MindRules.P_USER, "poked a lot: fine, you win", mind.now, 6f) {
@@ -2691,9 +2710,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 blink.request(minGap = 0f)
             }
             meaning == Meaning.Amused && pokeCount == 1 -> {
-                accent(FaceAccent.Glee, 1.2f, force = true)
+                if (crossNow()) {
+                    blink.request(minGap = 0f)
+                    val crossFace = if (mind.owner == "Angry" || ExpressionDirector.normalize(expr.to) == "Angry") "Angry" else "pouty"
+                    setReaction(crossFace, 1.2f, cause = "poked while cross")
+                } else {
+                    accent(FaceAccent.Glee, 1.2f, force = true)
+                }
             }
             meaning == Meaning.Annoyed -> {
+                if (reactionQueue?.first == "Happy") reactionQueue = null
                 director.gesture(MotionDirector.Gesture.TurnAway)
                 setReaction("pouty", 1.6f, cause = "poked too much")
                 accent(FaceAccent.Annoyed, 1.8f, force = true)
@@ -2707,11 +2733,26 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             // First poke: not the same reaction every time.
             else -> when (r) {
                 Response.Startle -> {
-                        accent(FaceAccent.Startled, 0.45f, force = true)
-                    if (rng.nextFloat() < 0.4f) { reactionQueue = "Happy" to 1.2f; reactionQueueIn = 0.6f }
+                    accent(FaceAccent.Startled, 0.45f, force = true)
+                    if (crossNow()) {
+                        val crossFace = if (mind.owner == "Angry" || ExpressionDirector.normalize(expr.to) == "Angry") "Angry" else "pouty"
+                        setReaction(crossFace, 1.2f, cause = "poked while cross")
+                    } else if (rng.nextFloat() < 0.4f) {
+                        reactionQueue = "Happy" to 1.2f
+                        reactionQueueIn = 0.6f
+                    }
                 }
                 Response.Freeze -> perform(Response.Freeze, Stimulus("poke", 0f, 0f, 0.9f))
-                Response.Smile -> { blink.request(minGap = 0f); accent(FaceAccent.Glee, 1.2f, force = true) }
+                Response.Smile -> {
+                    blink.request(minGap = 0f)
+                    if (crossNow()) {
+                        director.gesture(MotionDirector.Gesture.TurnAway)
+                        val crossFace = if (mind.owner == "Angry" || ExpressionDirector.normalize(expr.to) == "Angry") "Angry" else "pouty"
+                        setReaction(crossFace, 1.2f, cause = "poked while cross")
+                    } else {
+                        accent(FaceAccent.Glee, 1.2f, force = true)
+                    }
+                }
                 Response.CuriousTilt -> { director.gesture(MotionDirector.Gesture.Tilt); accent(FaceAccent.Curious, 1.2f) }
                 Response.Acknowledge -> director.gesture(MotionDirector.Gesture.Nod)
                 // A startling poke: the body pop is already playing; the eyes widen only sometimes.
