@@ -277,6 +277,8 @@ internal const val GROK_SLIT = 0.12f
 /** Clear margin kept between the eyes and the silhouette edge (fraction of mark radius). */
 internal const val GROK_EDGE_MARGIN = 0.20f
 internal const val GEN_EDGE_MARGIN = 0.21f
+/** Smaller silhouette-clip guard margin for Generical nudge / per-eye horizontal squash. */
+internal const val GEN_CLIP_MARGIN = 0.05f
 
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
@@ -565,17 +567,20 @@ private fun DrawScope.drawMarkInner(
     var (le, re) = if (bodyKind == "sphere" || calm || spinning) seatGen(1f)
         else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
     if (!calm && !spinning) {
-        val (k, c) = EyeSafeRegion.shrink(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
-        if (k < 1f) {
-            fun sc(o: Offset) = c + (o - c) * k
-            fun sh(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(EyeSafeRegion.scalePath(it.path, k, c), sc(it.gradStart), sc(it.gradEnd)) }
-            le = sh(le); re = sh(re)
-        }
-        val n = EyeSafeRegion.nudge(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
+        val clipMargin = he * GEN_CLIP_MARGIN
+        val n = EyeSafeRegion.nudge(genBody, listOfNotNull(le?.path, re?.path), clipMargin)
         if (n != androidx.compose.ui.geometry.Offset.Zero) {
             fun mv(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(Path().apply { addPath(it.path, n) }, it.gradStart + n, it.gradEnd + n) }
             le = mv(le); re = mv(re)
         }
+        fun shX(e: GenericalSeat.SeatedEye?): GenericalSeat.SeatedEye? {
+            if (e == null) return null
+            val (kx, c) = EyeSafeRegion.shrinkX(genBody, e.path, clipMargin)
+            if (kx >= 1f) return e
+            fun scX(o: Offset) = Offset(c.x + (o.x - c.x) * kx, o.y)
+            return GenericalSeat.SeatedEye(EyeSafeRegion.scalePathX(e.path, kx, c), scX(e.gradStart), scX(e.gradEnd))
+        }
+        le = shX(le); re = shX(re)
     }
     if (AvatarDebugMetrics.enabled) {
         val ps = listOfNotNull(le?.path, re?.path)

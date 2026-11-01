@@ -107,6 +107,33 @@ internal object EyeSafeRegion {
         asAndroidPath().transform(android.graphics.Matrix().apply { setScale(k, k, c.x, c.y) })
     }
 
+    /**
+     * Per-eye horizontal foreshortening after [nudge]: scales a single eye along the
+     * turn direction only (sx in [minK..1], sy = 1) about its own centre so a yaw never
+     * squashes eye height or scales the pair as one object.
+     */
+    fun shrinkX(
+        body: Body,
+        eye: Path,
+        margin: Float,
+        minK: Float = 0.80f,
+    ): Pair<Float, androidx.compose.ui.geometry.Offset> {
+        if (eye.isEmpty) return 1f to androidx.compose.ui.geometry.Offset.Zero
+        val c = eye.getBounds().center
+        val single = listOf(eye)
+        if (inside(body, single, margin)) return 1f to c
+        fun scaled(kx: Float) = listOf(scalePathX(eye, kx, c))
+        if (!inside(body, scaled(minK), margin)) return minK to c
+        var lo = minK; var hi = 1f
+        repeat(6) { val mid = (lo + hi) / 2f; if (inside(body, scaled(mid), margin)) lo = mid else hi = mid }
+        return lo to c
+    }
+
+    fun scalePathX(p: Path, kx: Float, c: androidx.compose.ui.geometry.Offset): Path = Path().apply {
+        addPath(p)
+        asAndroidPath().transform(android.graphics.Matrix().apply { setScale(kx, 1f, c.x, c.y) })
+    }
+
     /** Smallest clear distance from the eye outlines to the body edge (debug metric). */
     fun inset(body: Body, eyes: List<Path>, maxM: Float): Float {
         if (!inside(body, eyes, 0f)) return -1f
