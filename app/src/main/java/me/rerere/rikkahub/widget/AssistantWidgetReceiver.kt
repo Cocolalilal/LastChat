@@ -31,8 +31,7 @@ class AssistantWidgetReceiver : GlanceAppWidgetReceiver() {
         appWidgetIds: IntArray
     ) {
         Log.d(TAG, "onUpdate called for widgets: ${appWidgetIds.joinToString()}")
-        // Advance each widget's stored variant by 1 (and pick a non-repeating face index)
-        // synchronously in WidgetPrefs before Glance redraws, at most once per widget per update.
+        // Legacy random widgets advance once per update. WidgetPrefs keeps user-picked presets fixed.
         val updatedVariants = LinkedHashMap<Int, Int>(appWidgetIds.size)
         for (appWidgetId in appWidgetIds) {
             if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID && !updatedVariants.containsKey(appWidgetId)) {

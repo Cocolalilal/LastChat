@@ -1430,10 +1430,12 @@ collapsing, the far eye never growing, and every eye inside the silhouette with 
 ### The character widget shows the animated mark
 A Glance widget can only show a static bitmap, so `WidgetAvatarRenderer` paints a real still frame
 with the mark engine (`drawMark` into a `CanvasDrawScope`, `calm = true`) at the widget's size:
-`render(context, avatar, seed, sizePx, variant)`. Each widget stores a seed and a variant; the face
-comes from a no-anger pool (Neutral, Happy, confused, Surprised, Bored, hurt or cute, Sleeping — Angry
-and pouty never) and the attitude from a few off-axis poses inside the shape's own turn cap, both
-picked by `Random(seed * 31 + variant)`, so two widgets on the same screen can never be clones.
-`AssistantWidgetReceiver.onUpdate` advances the variant once per system widget update and never
-repeats the current face, so it drifts instead of flickering. The mark's bounding size and the
-`createTextBitmap` fallback are unchanged for every other avatar type.
+`render(context, avatar, seed, sizePx, variant, presetId)`. When adding an animated character,
+`WidgetConfigActivity` shows eight still previews: Calm, Happy, Cheerful, Curious, Surprised, Cute,
+Unimpressed, and Sleepy. Each `WidgetAvatarPreset` pairs an expression with a handpicked angle,
+scaled to the shape's turn cap. Preview and widget use the same renderer. The stable preset ID is
+saved per widget in both WidgetPrefs and Glance state; refreshes and restarts preserve that look.
+
+Existing widgets without a preset keep their random seed/variant behavior: a no-anger expression
+and settled attitude, with the variant advanced once per system update. Unknown preset IDs also
+fall back to this behavior. Other avatar types retain their existing configuration flow.

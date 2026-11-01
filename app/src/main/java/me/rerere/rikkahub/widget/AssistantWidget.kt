@@ -62,6 +62,7 @@ class AssistantWidget : GlanceAppWidget() {
         val ASSISTANT_NAME_KEY = stringPreferencesKey("assistant_name")
         val AVATAR_TYPE_KEY = stringPreferencesKey("avatar_type")
         val AVATAR_DATA_KEY = stringPreferencesKey("avatar_data")
+        val AVATAR_PRESET_KEY = stringPreferencesKey("avatar_preset")
         val AVATAR_SEED_KEY = intPreferencesKey("avatar_seed")
         val AVATAR_VARIANT_KEY = intPreferencesKey("avatar_variant")
         
@@ -75,6 +76,7 @@ class AssistantWidget : GlanceAppWidget() {
             avatarData: String,
             seed: Int = 0,
             variant: Int = 0,
+            presetId: String? = null,
         ) {
             Log.d(TAG, "updateWidgetState: id=$assistantId, name=$assistantName, type=$avatarType")
             
@@ -87,6 +89,7 @@ class AssistantWidget : GlanceAppWidget() {
                     this[AVATAR_DATA_KEY] = avatarData
                     this[AVATAR_SEED_KEY] = seed
                     this[AVATAR_VARIANT_KEY] = variant
+                    if (presetId != null) this[AVATAR_PRESET_KEY] = presetId else remove(AVATAR_PRESET_KEY)
                 }
             }
             
@@ -124,6 +127,8 @@ class AssistantWidget : GlanceAppWidget() {
                 ?: if (hasValidWidgetId) WidgetPrefs.getAvatarType(context, appWidgetId) else "dummy"
             val avatarData = prefs[AVATAR_DATA_KEY]
                 ?: if (hasValidWidgetId) WidgetPrefs.getAvatarData(context, appWidgetId) else ""
+            val presetId = if (hasValidWidgetId) WidgetPrefs.getPresetId(context, appWidgetId)
+                else prefs[AVATAR_PRESET_KEY]
             val prefSeed = prefs[AVATAR_SEED_KEY]
             val prefVariant = prefs[AVATAR_VARIANT_KEY]
             val seed = if (hasValidWidgetId) WidgetPrefs.getSeed(context, appWidgetId) else (prefSeed ?: 0)
@@ -144,6 +149,7 @@ class AssistantWidget : GlanceAppWidget() {
                     avatarData = avatarData,
                     seed = seed,
                     variant = variant,
+                    presetId = presetId,
                 )
             }
         }
@@ -158,6 +164,7 @@ class AssistantWidget : GlanceAppWidget() {
         avatarData: String,
         seed: Int,
         variant: Int,
+        presetId: String?,
     ) {
         val intent = if (assistantId != null) {
             Intent(context, ShortcutHandlerActivity::class.java).apply {
@@ -189,6 +196,7 @@ class AssistantWidget : GlanceAppWidget() {
             seed = seed,
             variant = variant,
             sizePx = sizePx,
+            presetId = presetId,
         )
         
         Box(
@@ -215,6 +223,7 @@ class AssistantWidget : GlanceAppWidget() {
         seed: Int = 0,
         variant: Int = 0,
         sizePx: Int = WidgetAvatarRenderer.DEFAULT_BITMAP_PX,
+        presetId: String? = null,
     ): Bitmap {
         Log.d(TAG, "createAvatarBitmap: type=$avatarType, data=$avatarData")
         return when (avatarType) {
@@ -227,6 +236,7 @@ class AssistantWidget : GlanceAppWidget() {
                         seed = seed,
                         sizePx = sizePx,
                         variant = variant,
+                        presetId = presetId,
                     ) ?: createTextBitmap(fallbackName)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error rendering animated avatar", e)

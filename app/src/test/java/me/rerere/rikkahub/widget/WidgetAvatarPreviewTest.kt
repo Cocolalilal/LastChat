@@ -54,4 +54,24 @@ class WidgetAvatarPreviewTest {
             }
         }
     }
+
+    @Test
+    fun renderHandpickedWidgetOptions() {
+        val dir = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() } ?: return
+        val context = RuntimeEnvironment.getApplication()
+        File(dir).mkdirs()
+        for (eyeType in listOf("generical", "grok")) {
+            for (preset in WidgetAvatarPreset.entries) {
+                val avatar = Avatar.Animated.defaultGenerical().copy(eyeType = eyeType)
+                val bitmap = requireNotNull(WidgetAvatarRenderer.render(
+                    context, avatar, seed = 0, sizePx = 256, variant = 0, presetId = preset.id,
+                ))
+                File(dir, "widget_${eyeType}_${preset.id}.png").outputStream().use {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                bitmap.recycle()
+            }
+        }
+    }
+
 }

@@ -155,6 +155,7 @@ object WidgetAvatarRenderer {
         seed: Int,
         sizePx: Int,
         variant: Int,
+        presetId: String? = null,
     ): Bitmap? {
         if (sizePx <= 0) return null
         return runCatching {
@@ -168,8 +169,10 @@ object WidgetAvatarRenderer {
             val eye = MarkColors.eyeColor(avatar.eyeType, avatar.eyeColorHex, avatar.colorHex, avatar.colorPreset)
             val eyeFade = MarkColors.genericalEyeFade(body, eye, if (avatar.eyeShade) 1f else 0f)
 
-            val face = faceFor(seed, variant)
-            val bodyPose = attitudeFor(shapeId, shape.solid.kind, seed, variant)
+            val preset = WidgetAvatarPreset.fromId(presetId)
+            val face = preset?.expression ?: faceFor(seed, variant)
+            val bodyPose = preset?.bodyPose(shapeId, shape.solid.kind)
+                ?: attitudeFor(shapeId, shape.solid.kind, seed, variant)
             val frame = MotionFrame(
                 body = bodyPose,
                 exprFrom = face,

@@ -136,4 +136,71 @@ class WidgetAvatarRendererTest {
             prevFaceIdx = nextFaceIdx
         }
     }
+
+    @Test
+    fun pickedPresetRendersIdenticallyRegardlessOfSeedOrRefreshForBothEyeStyles() {
+        val context = RuntimeEnvironment.getApplication()
+        val avatars = listOf(
+            Avatar.Animated.defaultGenerical(),
+            Avatar.Animated(shape = "star", eyeType = "grok"),
+        )
+        for (avatar in avatars) {
+            val pixelsByPreset = WidgetAvatarPreset.entries.map { preset ->
+                val preview = requireNotNull(WidgetAvatarRenderer.render(
+                    context, avatar, seed = 0, sizePx = 128, variant = 0, presetId = preset.id,
+                ))
+                val refreshed = requireNotNull(WidgetAvatarRenderer.render(
+                    context, avatar, seed = 7919, sizePx = 128, variant = 12, presetId = preset.id,
+                ))
+                assertTrue("Preset must paint a visible mark", preview.nonTransparentPixelCount() > 500)
+                val pixels = preview.extractPixels()
+                assertTrue("Picked look must survive refresh: ${preset.id}",
+                    pixels.contentEquals(refreshed.extractPixels()))
+                preview.recycle()
+                refreshed.recycle()
+                pixels
+            }
+            for (i in pixelsByPreset.indices) {
+                for (j in 0 until i) {
+                    assertFalse("Each handpicked option must look different ($i, $j)",
+                        pixelsByPreset[i].contentEquals(pixelsByPreset[j]))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun presetPersistsPerWidgetAndIsRemovedOnDeletionOrReconfiguration() {
+        val context = RuntimeEnvironment.getApplication()
+        fun save(widgetId: Int, presetId: String?) = WidgetPrefs.saveConfig(
+            context, widgetId, "character-$widgetId", "Character", "animated", "{}",
+            seed = 17, presetId = presetId,
+        )
+        assertTrue(save(801, WidgetAvatarPreset.Curious.id))
+        assertTrue(save(802, WidgetAvatarPreset.Sleepy.id))
+        repeat(5) { assertEquals(0, WidgetPrefs.advanceVariant(context, 801)) }
+        assertEquals(WidgetAvatarPreset.Curious.id, WidgetPrefs.getPresetId(context, 801))
+        assertEquals(WidgetAvatarPreset.Sleepy.id, WidgetPrefs.getPresetId(context, 802))
+
+        WidgetPrefs.deleteConfig(context, 801)
+        assertEquals(null, WidgetPrefs.getPresetId(context, 801))
+        assertEquals(WidgetAvatarPreset.Sleepy.id, WidgetPrefs.getPresetId(context, 802))
+        assertTrue(save(802, null))
+        assertEquals(null, WidgetPrefs.getPresetId(context, 802))
+        assertEquals(1, WidgetPrefs.advanceVariant(context, 802))
+    }
+
+    @Test
+    fun unknownPresetFallsBackToLegacyRenderingAndRefresh() {
+        val context = RuntimeEnvironment.getApplication()
+        val avatar = Avatar.Animated.defaultGenerical()
+        val legacy = requireNotNull(WidgetAvatarRenderer.render(context, avatar, 123, 128, 2))
+        val unknown = requireNotNull(WidgetAvatarRenderer.render(context, avatar, 123, 128, 2, "unknown"))
+        assertTrue(legacy.extractPixels().contentEquals(unknown.extractPixels()))
+        legacy.recycle()
+        unknown.recycle()
+        WidgetPrefs.saveConfig(context, 803, "character", "Character", "animated", "{}", presetId = "unknown")
+        assertEquals(1, WidgetPrefs.advanceVariant(context, 803))
+    }
+
 }

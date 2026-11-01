@@ -37,6 +37,7 @@ object WidgetPrefs {
         seed: Int = generateSeed(widgetId),
         variant: Int = 0,
         faceIndex: Int = WidgetAvatarRenderer.faceIndexFor(seed, variant),
+        presetId: String? = null,
     ): Boolean {
         // Use commit() instead of apply() to ensure synchronous write
         // This is critical because the widget updates immediately after
@@ -47,6 +48,7 @@ object WidgetPrefs {
             .putString("widget_${widgetId}_avatar_data", avatarData)
             .putInt("widget_${widgetId}_seed", seed)
             .putInt("widget_${widgetId}_variant", variant)
+            .putString("widget_${widgetId}_preset", presetId)
             .putInt("widget_${widgetId}_face_index", faceIndex)
             .commit()
     }
@@ -65,6 +67,10 @@ object WidgetPrefs {
     
     fun getAvatarData(context: Context, widgetId: Int): String {
         return prefs(context).getString("widget_${widgetId}_avatar_data", null) ?: ""
+    }
+
+    fun getPresetId(context: Context, widgetId: Int): String? {
+        return prefs(context).getString("widget_${widgetId}_preset", null)
     }
 
     fun getSeed(context: Context, widgetId: Int): Int {
@@ -95,6 +101,8 @@ object WidgetPrefs {
         val p = prefs(context)
         val seed = getSeed(context, widgetId)
         val currentVariant = getVariant(context, widgetId)
+        // User-picked expressions stay fixed through launcher refreshes and app restarts.
+        if (WidgetAvatarPreset.fromId(getPresetId(context, widgetId)) != null) return currentVariant
         val currentFaceIndex = getFaceIndex(context, widgetId)
         val nextVariant = currentVariant + 1
         var nextFaceIndex = WidgetAvatarRenderer.faceIndexFor(seed, nextVariant)
@@ -115,6 +123,7 @@ object WidgetPrefs {
             .remove("widget_${widgetId}_name")
             .remove("widget_${widgetId}_avatar_type")
             .remove("widget_${widgetId}_avatar_data")
+            .remove("widget_${widgetId}_preset")
             .remove("widget_${widgetId}_seed")
             .remove("widget_${widgetId}_variant")
             .remove("widget_${widgetId}_face_index")
