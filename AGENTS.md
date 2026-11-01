@@ -6,6 +6,7 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this
 
 - Always work on the `lastchat_dev` branch in this workspace. Switch to it before making changes.
 - Always commit your completed changes to `lastchat_dev` before finishing a task.
+- Always use commit author and committer `Cocolalilal <109036699+Cocolalilal@users.noreply.github.com>`.
 
 ## Project
 
