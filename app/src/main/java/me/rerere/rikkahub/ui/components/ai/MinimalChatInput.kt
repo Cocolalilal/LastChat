@@ -1177,7 +1177,47 @@ fun MinimalChatInput(
         ) {
             val dialogView = LocalView.current
             val isDarkTheme = LocalDarkMode.current
-            val backgroundColor = MaterialTheme.colorScheme.background
+            // Invariant: The editor background and text colours are chosen together as a
+            // guaranteed contrast pair, never inherited separately from unrelated theme slots.
+            // The collapsed composer uses surfaceContainer; in light mode we ensure the pane is
+            // genuinely light even if an assistant or system theme resolves a dark canvas.
+            val editorBackgroundColor = if (isDarkTheme) {
+                MaterialTheme.colorScheme.surfaceContainer
+            } else {
+                val candidate = MaterialTheme.colorScheme.surfaceContainer
+                if (candidate.luminance() > 0.5f) {
+                    candidate
+                } else {
+                    val lightest = MaterialTheme.colorScheme.surfaceContainerLowest
+                    if (lightest.luminance() > 0.5f) lightest else Color.White
+                }
+            }
+            val isLightEditor = editorBackgroundColor.luminance() > 0.5f
+            val editorTextColor = MaterialTheme.colorScheme.onSurface.let { onSurface ->
+                if (isLightEditor) {
+                    if (onSurface.luminance() < 0.5f) onSurface else Color(0xFF1C1B1F)
+                } else {
+                    if (onSurface.luminance() > 0.5f) onSurface else Color(0xFFE6E1E5)
+                }
+            }
+            val editorCursorColor = if (isLightEditor) {
+                if (MaterialTheme.colorScheme.primary.luminance() < 0.65f) MaterialTheme.colorScheme.primary else editorTextColor
+            } else {
+                if (MaterialTheme.colorScheme.primary.luminance() > 0.35f) MaterialTheme.colorScheme.primary else editorTextColor
+            }
+            val editorPlaceholderColor = if (isLightEditor) {
+                if (MaterialTheme.colorScheme.onSurfaceVariant.luminance() < 0.5f) {
+                    chatInputHintColor()
+                } else {
+                    editorTextColor.copy(alpha = CHAT_INPUT_HINT_ALPHA)
+                }
+            } else {
+                if (MaterialTheme.colorScheme.onSurfaceVariant.luminance() > 0.5f) {
+                    chatInputHintColor()
+                } else {
+                    editorTextColor.copy(alpha = CHAT_INPUT_HINT_ALPHA)
+                }
+            }
 
             SideEffect {
                 val dialogWindow = findDialogWindow(dialogView)
@@ -1188,7 +1228,7 @@ fun MinimalChatInput(
                     @Suppress("DEPRECATION")
                     window.navigationBarColor = android.graphics.Color.TRANSPARENT
                     WindowCompat.getInsetsController(window, window.decorView).apply {
-                        isAppearanceLightStatusBars = backgroundColor.luminance() > 0.5f
+                        isAppearanceLightStatusBars = editorBackgroundColor.luminance() > 0.5f
                         isAppearanceLightNavigationBars = !isDarkTheme
                     }
                 }
@@ -1228,7 +1268,7 @@ fun MinimalChatInput(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(backgroundColor)
+                        .background(editorBackgroundColor)
                         .statusBarsPadding()
                         .imePadding()
                 ) {
@@ -1251,7 +1291,7 @@ fun MinimalChatInput(
                                 Icon(
                                     imageVector = Icons.Rounded.FullscreenExit,
                                     contentDescription = "Minimize",
-                                    tint = MaterialTheme.colorScheme.onBackground
+                                    tint = editorTextColor
                                 )
                             }
                         }
@@ -1277,7 +1317,7 @@ fun MinimalChatInput(
                                         } else {
                                             stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
                                         },
-                                        color = chatInputHintColor(),
+                                        color = editorPlaceholderColor,
                                     )
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 5),
@@ -1288,6 +1328,11 @@ fun MinimalChatInput(
                                     bottom = 80.dp, // Leave space for send button
                                 ),
                                 colors = TextFieldDefaults.colors().copy(
+                                    focusedTextColor = editorTextColor,
+                                    unfocusedTextColor = editorTextColor,
+                                    cursorColor = editorCursorColor,
+                                    focusedPlaceholderColor = editorPlaceholderColor,
+                                    unfocusedPlaceholderColor = editorPlaceholderColor,
                                     unfocusedIndicatorColor = Color.Transparent,
                                     focusedIndicatorColor = Color.Transparent,
                                     focusedContainerColor = Color.Transparent,
@@ -2387,6 +2432,7 @@ private fun MinimalPickerContent(
                     currentModel = assistant.chatModelId ?: settings.chatModelId,
                     providers = filteredProviders,
                     modelType = me.rerere.ai.provider.ModelType.CHAT,
+                    allowBackendModels = false,
                     onSelect = { selectedModel: Model ->
                         onUpdateChatModel(selectedModel)
                         scope.launch {
