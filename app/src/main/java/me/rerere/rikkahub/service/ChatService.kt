@@ -573,6 +573,13 @@ internal fun mergeLiveMessagesIfIncomingIsStale(
     )
 }
 
+internal fun shouldApplyGeneratedTitle(
+    currentTitle: String,
+    force: Boolean,
+): Boolean {
+    return force || currentTitle.isBlank()
+}
+
 internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
     return messageNodes.mapIndexed { index, node ->
         val toolCalls = node.currentMessage.getToolCalls()
@@ -1137,7 +1144,20 @@ class ChatService(
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
         val currentState = getConversationState(conversationId)?.value
-        return currentState ?: withContext(Dispatchers.IO) {
+        if (currentState != null) {
+            if (currentState.title.isBlank()) {
+                val persistedTitle = withContext(Dispatchers.IO) {
+                    conversationRepo.getConversationById(conversationId)?.title
+                }
+                if (!persistedTitle.isNullOrBlank()) {
+                    val updated = currentState.copy(title = persistedTitle)
+                    updateConversation(conversationId, updated)
+                    return updated
+                }
+            }
+            return currentState
+        }
+        return withContext(Dispatchers.IO) {
             conversationRepo.getConversationById(conversationId)
         }?.let(::normalizeConversation)
     }
@@ -2360,14 +2380,32 @@ class ChatService(
                 params = settings.buildTitleGenerationParams(model),
             )
 
-            // 生成完，conversation可能不是最新了，因此需要重新获取
-            getConversationSnapshot(conversationId)?.let {
-                saveConversation(
-                    conversationId = conversationId,
-                    conversation = it.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""),
-                    preserveConsolidation = true,
-                )
+            val generatedTitle = result.choices.firstOrNull()?.message?.toContentText()?.trim().orEmpty()
+            if (generatedTitle.isBlank()) {
+                LogUtil.d(TAG, "generateTitle: dropped blank generated title for conversation $conversationId")
+                return
             }
+
+            // 生成完，conversation可能不是最新了，因此需要重新获取
+            val snapshot = getConversationSnapshot(conversationId)
+            if (snapshot == null) {
+                Log.w(TAG, "generateTitle: conversation not found for $conversationId")
+                return
+            }
+
+            if (!shouldApplyGeneratedTitle(currentTitle = snapshot.title, force = force)) {
+                LogUtil.d(
+                    TAG,
+                    "generateTitle: dropped generated title '$generatedTitle' because title changed to '${snapshot.title}' (force=$force)"
+                )
+                return
+            }
+
+            saveConversation(
+                conversationId = conversationId,
+                conversation = snapshot.copy(title = generatedTitle),
+                preserveConsolidation = true,
+            )
         }.onFailure {
             Log.e(TAG, "generateTitle failed: ${it.message}", it)
         }

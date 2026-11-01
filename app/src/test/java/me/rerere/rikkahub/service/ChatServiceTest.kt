@@ -499,4 +499,21 @@ class ChatServiceTest {
         assertEquals("file:///tmp/image.png-copy", image.url)
     }
 
+    @Test
+    fun shouldApplyGeneratedTitle_allowsWhenCurrentTitleIsBlankAndNotForced() {
+        assertTrue(shouldApplyGeneratedTitle(currentTitle = "", force = false))
+        assertTrue(shouldApplyGeneratedTitle(currentTitle = "   ", force = false))
+    }
+
+    @Test
+    fun shouldApplyGeneratedTitle_rejectsWhenCurrentTitleIsManualAndNotForced() {
+        assertFalse(shouldApplyGeneratedTitle(currentTitle = "My Custom Title", force = false))
+        assertFalse(shouldApplyGeneratedTitle(currentTitle = "Renamed chat", force = false))
+    }
+
+    @Test
+    fun shouldApplyGeneratedTitle_allowsWhenForceIsTrueEvenIfCurrentTitleIsSet() {
+        assertTrue(shouldApplyGeneratedTitle(currentTitle = "My Custom Title", force = true))
+        assertTrue(shouldApplyGeneratedTitle(currentTitle = "", force = true))
+    }
 }
