@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,14 +13,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.getAppWidgetState
@@ -40,7 +44,9 @@ import kotlinx.coroutines.withContext
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.activity.ShortcutHandlerActivity
+import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.core.context.GlobalContext
 import kotlin.uuid.Uuid
 
@@ -56,6 +62,8 @@ class AssistantWidget : GlanceAppWidget() {
         val ASSISTANT_NAME_KEY = stringPreferencesKey("assistant_name")
         val AVATAR_TYPE_KEY = stringPreferencesKey("avatar_type")
         val AVATAR_DATA_KEY = stringPreferencesKey("avatar_data")
+        val AVATAR_SEED_KEY = intPreferencesKey("avatar_seed")
+        val AVATAR_VARIANT_KEY = intPreferencesKey("avatar_variant")
         
         // Helper to save widget state and trigger update
         suspend fun updateWidgetState(
@@ -64,7 +72,9 @@ class AssistantWidget : GlanceAppWidget() {
             assistantId: String,
             assistantName: String,
             avatarType: String,
-            avatarData: String
+            avatarData: String,
+            seed: Int = 0,
+            variant: Int = 0,
         ) {
             Log.d(TAG, "updateWidgetState: id=$assistantId, name=$assistantName, type=$avatarType")
             
@@ -75,6 +85,8 @@ class AssistantWidget : GlanceAppWidget() {
                     this[ASSISTANT_NAME_KEY] = assistantName
                     this[AVATAR_TYPE_KEY] = avatarType
                     this[AVATAR_DATA_KEY] = avatarData
+                    this[AVATAR_SEED_KEY] = seed
+                    this[AVATAR_VARIANT_KEY] = variant
                 }
             }
             
@@ -95,17 +107,29 @@ class AssistantWidget : GlanceAppWidget() {
     
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         Log.d(TAG, "provideGlance called for id: $id")
+        val appWidgetId = runCatching {
+            GlanceAppWidgetManager(context).getAppWidgetId(id)
+        }.getOrDefault(AppWidgetManager.INVALID_APPWIDGET_ID)
         
         provideContent {
             // Read state using Glance's currentState - this will be updated automatically
             val prefs = currentState<Preferences>()
-            
+            val hasValidWidgetId = appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID
+
             val assistantIdStr = prefs[ASSISTANT_ID_KEY]
-            val assistantName = prefs[ASSISTANT_NAME_KEY] ?: "Assistant"
-            val avatarType = prefs[AVATAR_TYPE_KEY] ?: "dummy"
-            val avatarData = prefs[AVATAR_DATA_KEY] ?: ""
+                ?: if (hasValidWidgetId) WidgetPrefs.getAssistantId(context, appWidgetId) else null
+            val assistantName = prefs[ASSISTANT_NAME_KEY]
+                ?: if (hasValidWidgetId) WidgetPrefs.getAssistantName(context, appWidgetId) else "Assistant"
+            val avatarType = prefs[AVATAR_TYPE_KEY]
+                ?: if (hasValidWidgetId) WidgetPrefs.getAvatarType(context, appWidgetId) else "dummy"
+            val avatarData = prefs[AVATAR_DATA_KEY]
+                ?: if (hasValidWidgetId) WidgetPrefs.getAvatarData(context, appWidgetId) else ""
+            val prefSeed = prefs[AVATAR_SEED_KEY]
+            val prefVariant = prefs[AVATAR_VARIANT_KEY]
+            val seed = if (hasValidWidgetId) WidgetPrefs.getSeed(context, appWidgetId) else (prefSeed ?: 0)
+            val variant = if (hasValidWidgetId) WidgetPrefs.getVariant(context, appWidgetId) else (prefVariant ?: 0)
             
-            Log.d(TAG, "State from prefs: id=$assistantIdStr, name=$assistantName, type=$avatarType")
+            Log.d(TAG, "State from prefs: id=$assistantIdStr, name=$assistantName, type=$avatarType, seed=$seed, variant=$variant")
             
             val assistantId = assistantIdStr?.let { 
                 try { Uuid.parse(it) } catch (e: Exception) { null }
@@ -117,7 +141,9 @@ class AssistantWidget : GlanceAppWidget() {
                     assistantId = assistantId,
                     assistantName = assistantName,
                     avatarType = avatarType,
-                    avatarData = avatarData
+                    avatarData = avatarData,
+                    seed = seed,
+                    variant = variant,
                 )
             }
         }
@@ -129,7 +155,9 @@ class AssistantWidget : GlanceAppWidget() {
         assistantId: Uuid?,
         assistantName: String,
         avatarType: String,
-        avatarData: String
+        avatarData: String,
+        seed: Int,
+        variant: Int,
     ) {
         val intent = if (assistantId != null) {
             Intent(context, ShortcutHandlerActivity::class.java).apply {
@@ -143,8 +171,25 @@ class AssistantWidget : GlanceAppWidget() {
             }
         }
         
+        val localSize = LocalSize.current
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val minDp = minOf(localSize.width.value, localSize.height.value)
+        val sizePx = if (minDp > 0f && minDp.isFinite()) {
+            (minDp * density).toInt().coerceIn(WidgetAvatarRenderer.DEFAULT_BITMAP_PX, WidgetAvatarRenderer.MAX_BITMAP_PX)
+        } else {
+            WidgetAvatarRenderer.DEFAULT_BITMAP_PX
+        }
+
         // Create avatar bitmap synchronously for display
-        val avatarBitmap = createAvatarBitmap(context, avatarType, avatarData, assistantName)
+        val avatarBitmap = createAvatarBitmap(
+            context = context,
+            avatarType = avatarType,
+            avatarData = avatarData,
+            fallbackName = assistantName,
+            seed = seed,
+            variant = variant,
+            sizePx = sizePx,
+        )
         
         Box(
             modifier = GlanceModifier
@@ -166,10 +211,28 @@ class AssistantWidget : GlanceAppWidget() {
         context: Context,
         avatarType: String,
         avatarData: String,
-        fallbackName: String
+        fallbackName: String,
+        seed: Int = 0,
+        variant: Int = 0,
+        sizePx: Int = WidgetAvatarRenderer.DEFAULT_BITMAP_PX,
     ): Bitmap {
         Log.d(TAG, "createAvatarBitmap: type=$avatarType, data=$avatarData")
         return when (avatarType) {
+            "animated" -> {
+                try {
+                    val animated = JsonInstant.decodeFromString(Avatar.Animated.serializer(), avatarData)
+                    WidgetAvatarRenderer.render(
+                        context = context,
+                        avatar = animated,
+                        seed = seed,
+                        sizePx = sizePx,
+                        variant = variant,
+                    ) ?: createTextBitmap(fallbackName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error rendering animated avatar", e)
+                    createTextBitmap(fallbackName)
+                }
+            }
             "emoji" -> createEmojiBitmap(avatarData)
             "image" -> loadImageBitmapSync(avatarData) ?: createTextBitmap(fallbackName)
             "resource" -> {

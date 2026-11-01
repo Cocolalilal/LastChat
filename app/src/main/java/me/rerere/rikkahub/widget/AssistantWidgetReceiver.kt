@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.state.PreferencesGlanceStateDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,15 +31,31 @@ class AssistantWidgetReceiver : GlanceAppWidgetReceiver() {
         appWidgetIds: IntArray
     ) {
         Log.d(TAG, "onUpdate called for widgets: ${appWidgetIds.joinToString()}")
+        // Advance each widget's stored variant by 1 (and pick a non-repeating face index)
+        // synchronously in WidgetPrefs before Glance redraws, at most once per widget per update.
+        val updatedVariants = LinkedHashMap<Int, Int>(appWidgetIds.size)
+        for (appWidgetId in appWidgetIds) {
+            if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID && !updatedVariants.containsKey(appWidgetId)) {
+                updatedVariants[appWidgetId] = WidgetPrefs.advanceVariant(context, appWidgetId)
+            }
+        }
+
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         
         // Explicitly update each widget
         scope.launch {
             val glanceManager = GlanceAppWidgetManager(context)
-            appWidgetIds.forEach { appWidgetId ->
+            updatedVariants.forEach { (appWidgetId, newVariant) ->
                 try {
-                    Log.d(TAG, "Updating widget $appWidgetId")
+                    Log.d(TAG, "Updating widget $appWidgetId (variant=$newVariant)")
                     val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
+                    val seed = WidgetPrefs.getSeed(context, appWidgetId)
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            this[AssistantWidget.AVATAR_SEED_KEY] = seed
+                            this[AssistantWidget.AVATAR_VARIANT_KEY] = newVariant
+                        }
+                    }
                     glanceAppWidget.update(context, glanceId)
                     Log.d(TAG, "Widget $appWidgetId updated")
                 } catch (e: Exception) {

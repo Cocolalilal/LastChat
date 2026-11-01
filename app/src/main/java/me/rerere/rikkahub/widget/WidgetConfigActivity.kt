@@ -44,6 +44,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
+import me.rerere.rikkahub.utils.JsonInstant
 import org.koin.android.ext.android.inject
 
 private const val TAG = "WidgetConfig"
@@ -122,11 +123,31 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Emoji -> "emoji" to avatar.content
             is Avatar.Image -> "image" to avatar.url
             is Avatar.Resource -> "resource" to avatar.id.toString()
-            is Avatar.Animated -> "dummy" to "" // Glance can't easily draw custom canvas, fallback to dummy
+            is Avatar.Animated -> "animated" to JsonInstant.encodeToString(
+                Avatar.Animated.serializer(),
+                avatar.copy(traits = null)
+            )
         }
-        
-        LogUtil.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, avatarData=$avatarData")
-        
+
+        val assistantName = assistant.name.ifEmpty { "Assistant" }
+        val seed = WidgetPrefs.generateSeed(appWidgetId)
+        val initialVariant = 0
+        val initialFaceIndex = WidgetAvatarRenderer.faceIndexFor(seed, initialVariant)
+
+        LogUtil.d(TAG, "Saving config: widgetId=$appWidgetId, avatarType=$avatarType, seed=$seed, variant=$initialVariant")
+
+        WidgetPrefs.saveConfig(
+            context = this,
+            widgetId = appWidgetId,
+            assistantId = assistant.id.toString(),
+            assistantName = assistantName,
+            avatarType = avatarType,
+            avatarData = avatarData,
+            seed = seed,
+            variant = initialVariant,
+            faceIndex = initialFaceIndex,
+        )
+
         // Update widget state using Glance's state management - this will trigger an update
         lifecycleScope.launch {
             try {
@@ -140,9 +161,11 @@ class WidgetConfigActivity : ComponentActivity() {
                     context = this@WidgetConfigActivity,
                     glanceId = glanceId,
                     assistantId = assistant.id.toString(),
-                    assistantName = assistant.name.ifEmpty { "Assistant" },
+                    assistantName = assistantName,
                     avatarType = avatarType,
-                    avatarData = avatarData
+                    avatarData = avatarData,
+                    seed = seed,
+                    variant = initialVariant,
                 )
                 
                 LogUtil.d(TAG, "Widget state updated successfully")

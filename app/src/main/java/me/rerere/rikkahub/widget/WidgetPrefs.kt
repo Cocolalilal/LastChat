@@ -16,13 +16,27 @@ object WidgetPrefs {
         return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
     
+    fun defaultSeedFor(widgetId: Int): Int {
+        val mixed = (widgetId * 1_103_515_245) xor 0x3C6EF35F
+        return if (mixed != 0) mixed else 0x5A5A5A5A
+    }
+
+    fun generateSeed(widgetId: Int): Int {
+        val salt = kotlin.random.Random.nextInt()
+        val mixed = (widgetId * 31) xor salt
+        return if (mixed != 0) mixed else defaultSeedFor(widgetId)
+    }
+
     fun saveConfig(
         context: Context,
         widgetId: Int,
         assistantId: String,
         assistantName: String,
-        avatarType: String,  // "dummy", "emoji", "image", "resource"
-        avatarData: String   // emoji content, image URL, or resource ID as string
+        avatarType: String,  // "dummy", "emoji", "image", "resource", "animated"
+        avatarData: String,  // emoji content, image URL, resource ID, or animated avatar JSON
+        seed: Int = generateSeed(widgetId),
+        variant: Int = 0,
+        faceIndex: Int = WidgetAvatarRenderer.faceIndexFor(seed, variant),
     ): Boolean {
         // Use commit() instead of apply() to ensure synchronous write
         // This is critical because the widget updates immediately after
@@ -31,6 +45,9 @@ object WidgetPrefs {
             .putString("widget_${widgetId}_name", assistantName)
             .putString("widget_${widgetId}_avatar_type", avatarType)
             .putString("widget_${widgetId}_avatar_data", avatarData)
+            .putInt("widget_${widgetId}_seed", seed)
+            .putInt("widget_${widgetId}_variant", variant)
+            .putInt("widget_${widgetId}_face_index", faceIndex)
             .commit()
     }
     
@@ -49,6 +66,48 @@ object WidgetPrefs {
     fun getAvatarData(context: Context, widgetId: Int): String {
         return prefs(context).getString("widget_${widgetId}_avatar_data", null) ?: ""
     }
+
+    fun getSeed(context: Context, widgetId: Int): Int {
+        val p = prefs(context)
+        val key = "widget_${widgetId}_seed"
+        return if (p.contains(key)) p.getInt(key, defaultSeedFor(widgetId)) else defaultSeedFor(widgetId)
+    }
+
+    fun getVariant(context: Context, widgetId: Int): Int {
+        return prefs(context).getInt("widget_${widgetId}_variant", 0)
+    }
+
+    fun getFaceIndex(context: Context, widgetId: Int): Int {
+        val p = prefs(context)
+        val key = "widget_${widgetId}_face_index"
+        return if (p.contains(key)) {
+            p.getInt(key, 0)
+        } else {
+            WidgetAvatarRenderer.faceIndexFor(getSeed(context, widgetId), getVariant(context, widgetId))
+        }
+    }
+
+    /**
+     * Advances the stored `variant` for [widgetId] by 1 (synchronously via `commit()`)
+     * and updates the stored `faceIndex` so it is never equal to the previously stored face index.
+     */
+    fun advanceVariant(context: Context, widgetId: Int): Int {
+        val p = prefs(context)
+        val seed = getSeed(context, widgetId)
+        val currentVariant = getVariant(context, widgetId)
+        val currentFaceIndex = getFaceIndex(context, widgetId)
+        val nextVariant = currentVariant + 1
+        var nextFaceIndex = WidgetAvatarRenderer.faceIndexFor(seed, nextVariant)
+        if (nextFaceIndex == currentFaceIndex) {
+            nextFaceIndex = (currentFaceIndex + 1) % WidgetAvatarRenderer.NO_ANGER_FACES.size
+        }
+        p.edit()
+            .putInt("widget_${widgetId}_seed", seed)
+            .putInt("widget_${widgetId}_variant", nextVariant)
+            .putInt("widget_${widgetId}_face_index", nextFaceIndex)
+            .commit()
+        return nextVariant
+    }
     
     fun deleteConfig(context: Context, widgetId: Int) {
         prefs(context).edit()
@@ -56,6 +115,9 @@ object WidgetPrefs {
             .remove("widget_${widgetId}_name")
             .remove("widget_${widgetId}_avatar_type")
             .remove("widget_${widgetId}_avatar_data")
+            .remove("widget_${widgetId}_seed")
+            .remove("widget_${widgetId}_variant")
+            .remove("widget_${widgetId}_face_index")
             .apply()
     }
 }
