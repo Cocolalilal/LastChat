@@ -118,6 +118,21 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.height
 
 
+/**
+ * Determines whether a model should be shown in a model selector/picker.
+ *
+ * Backend models (marked as [Model.backend]) are background/helper models and must be hidden
+ * from chat model pickers unless explicitly allowed via [allowBackendModels].
+ * Non-chat models (such as STT, image, embedding) are not subject to the backend filter because
+ * they are chosen from their respective dedicated feature settings.
+ */
+fun isModelSelectable(
+    model: Model,
+    targetType: ModelType,
+    allowBackendModels: Boolean = false,
+    modelFilter: (Model) -> Boolean = { true }
+): Boolean = (targetType != ModelType.CHAT || allowBackendModels || !model.backend) && modelFilter(model)
+
 @Composable
 fun ModelSelector(
     modelId: Uuid?,
@@ -137,7 +152,7 @@ fun ModelSelector(
     // Backend visibility only applies to chat models. Embedding, STT, and image models are chosen
     // from feature-specific settings rather than the chat picker.
     val effectiveModelFilter: (Model) -> Boolean = { m ->
-        (type != ModelType.CHAT || allowBackendModels || !m.backend) && modelFilter(m)
+        isModelSelectable(m, type, allowBackendModels, modelFilter)
     }
 
     if (!onlyIcon) {
@@ -249,7 +264,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     currentModel = modelId,
                     providers = filteredProviderSettings,
                     modelType = type,
-                    modelFilter = effectiveModelFilter,
+                    allowBackendModels = allowBackendModels,
+                    modelFilter = modelFilter,
                     onSelect = {
                         onSelect(it)
                         scope.launch {
@@ -275,6 +291,7 @@ internal fun ColumnScope.ModelList(
     currentModel: Uuid? = null,
     providers: List<ProviderSetting>,
     modelType: ModelType,
+    allowBackendModels: Boolean = false,
     modelFilter: (Model) -> Boolean = { true },
     onSelect: (Model) -> Unit,
     onDismiss: () -> Unit
@@ -289,9 +306,13 @@ internal fun ColumnScope.ModelList(
     
     // activeProviderId is null initially and is set upon explicit user click
 
+    val effectiveModelFilter: (Model) -> Boolean = remember(modelType, allowBackendModels, modelFilter) {
+        { m -> isModelSelectable(m, modelType, allowBackendModels, modelFilter) }
+    }
+
     // Resolve/filter once, then reorder the visible rows. Hidden model types retain their
     // positions in the stored favorites and catalog lookups stay out of the drag loop.
-    val availableFavorites = remember(settings.value.favoriteModels, providers, modelType, modelFilter) {
+    val availableFavorites = remember(settings.value.favoriteModels, providers, modelType, effectiveModelFilter) {
         settings.value.favoriteModels.mapNotNull { modelId ->
             val model = providers.findModelById(modelId) ?: return@mapNotNull null
             val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
@@ -301,7 +322,7 @@ internal fun ColumnScope.ModelList(
             } else {
                 model.type == modelType
             }
-            if (!isTypeMatch || !modelFilter(model)) return@mapNotNull null
+            if (!isTypeMatch || !effectiveModelFilter(model)) return@mapNotNull null
             model to provider
         }
     }
@@ -325,7 +346,7 @@ internal fun ColumnScope.ModelList(
     // Build a flat list of items for the LazyColumn - this enables precise scrolling to any model
     // Structure: [provider header, model, model, ...] for each provider
     
-    val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels, modelFilter) {
+    val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels, effectiveModelFilter) {
         buildList {
             providers.forEach { providerSetting ->
                 val filteredModels = providerSetting.models.fastFilter { model ->
@@ -336,21 +357,23 @@ internal fun ColumnScope.ModelList(
                         model.type == modelType
                     }
                     isTypeMatch &&
-                        modelFilter(model) &&
+                        effectiveModelFilter(model) &&
                         model.displayName.contains(searchKeywords, true)
                 }
                 
-                // Add provider header
-                add(ProviderListItem.Header(providerSetting))
-                
-                // Add each model as individual item
-                filteredModels.forEachIndexed { index, model ->
-                    add(ProviderListItem.ModelEntry(
-                        model = model,
-                        provider = providerSetting,
-                        position = groupItemPosition(index = index, groupSize = filteredModels.size),
-                        isFavorite = settings.value.favoriteModels.contains(model.id)
-                    ))
+                // Add provider header and its model entries only if it contains visible models
+                if (filteredModels.isNotEmpty()) {
+                    add(ProviderListItem.Header(providerSetting))
+                    
+                    // Add each model as individual item
+                    filteredModels.forEachIndexed { index, model ->
+                        add(ProviderListItem.ModelEntry(
+                            model = model,
+                            provider = providerSetting,
+                            position = groupItemPosition(index = index, groupSize = filteredModels.size),
+                            isFavorite = settings.value.favoriteModels.contains(model.id)
+                        ))
+                    }
                 }
             }
         }
@@ -363,7 +386,7 @@ internal fun ColumnScope.ModelList(
         var position = 0
 
         // Skip no-providers placeholder
-        if (providers.isEmpty()) {
+        if (providers.isEmpty() || (favoriteModels.isEmpty() && providerListItems.isEmpty())) {
             position += 1
         }
 
@@ -418,7 +441,7 @@ internal fun ColumnScope.ModelList(
     // Calculate the LazyColumn item index for each provider header
     val providerPositions = remember(providers, favoriteModels, providerListItems) {
         var baseIndex = 0
-        if (providers.isEmpty()) {
+        if (providers.isEmpty() || (favoriteModels.isEmpty() && providerListItems.isEmpty())) {
             baseIndex = 1 // no providers item takes index 0
         }
         if (favoriteModels.isNotEmpty()) {
@@ -437,6 +460,10 @@ internal fun ColumnScope.ModelList(
         }.toMap()
     }
 
+    val visibleProviders = remember(providers, providerPositions) {
+        providers.fastFilter { it.id in providerPositions }
+    }
+
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
     // 供应商Badge行
@@ -453,7 +480,7 @@ internal fun ColumnScope.ModelList(
                     }
                     val currentProviderId = currentProvider?.key
                     
-                    val badgeIndex = providers.indexOfFirst { it.id == currentProviderId }
+                    val badgeIndex = visibleProviders.indexOfFirst { it.id == currentProviderId }
                     if (badgeIndex >= 0) {
                         providerBadgeListState.animateScrollToItem(badgeIndex)
                     } else {
@@ -486,7 +513,7 @@ internal fun ColumnScope.ModelList(
                         viewportHeight = coordinates.size.height
                     },
             ) {
-                if (providers.isEmpty()) {
+                if (providers.isEmpty() || (favoriteModels.isEmpty() && providerListItems.isEmpty())) {
                     item {
                         EmptyStateCard(
                             icon = Icons.Rounded.Cloud,
@@ -775,7 +802,7 @@ internal fun ColumnScope.ModelList(
             }
 
             // 4. Bottom floating provider options row
-            if (providers.isNotEmpty()) {
+            if (visibleProviders.isNotEmpty()) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -788,7 +815,7 @@ internal fun ColumnScope.ModelList(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         state = providerBadgeListState
                     ) {
-                        items(providers) { provider ->
+                        items(visibleProviders) { provider ->
                             val interactionSource = remember { MutableInteractionSource() }
                             val isPressed by interactionSource.collectIsPressedAsState()
                             val scale by animateFloatAsState(
