@@ -244,11 +244,6 @@ See `docs/ios-portability.md` for the full plan.
 - **Don't simplify the Qwen 3.5 reasoning-OFF trick** (`<think></think>\n` prefill + `chat_template_kwargs.enable_thinking=false`).
 - **Don't rename `applicationId` or namespace** — Room DB path `me.rerere.rikkahub.data.db.AppDatabase` is locked in schema files.
 
-## Repository workflow preferences
-
-- Always work on `LastChat_dev` unless the user explicitly requests another branch.
-- Author and commit changes as `Cocolalilal <109036699+Cocolalilal@users.noreply.github.com>`.
-
 ## Conventional Commits
 
 Use `feat:`, `fix:`, `chore:`, etc. (Conventional Commits spec).
