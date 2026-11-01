@@ -38,15 +38,32 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
       - name: Prepare build files
+        env:
+          KEY_BASE64: ${{ secrets.KEY_BASE64 }}
+          SIGNING_CONFIG: ${{ secrets.SIGNING_CONFIG }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          # 解码base64编码的keystore文件
-          echo "${{ secrets.KEY_BASE64 }}" | base64 -d > app/app.key
-          
-          # 写入签名配置到local.properties
-          echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
-          
-          # 写入Google Services配置
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          if os.environ['KEY_BASE64'].strip() and os.environ['SIGNING_CONFIG'].strip():
+              Path('app/app.key').write_bytes(base64.b64decode(os.environ['KEY_BASE64'], validate=True))
+              Path('local.properties').write_text(os.environ['SIGNING_CONFIG'])
+              print('Release signing configuration prepared.')
+          else:
+              print('::warning::Release signing secrets are absent; using the Gradle debug-signing fallback.')
+
+          config = os.environ['GOOGLE_SERVICES_JSON'].strip()
+          if config:
+              json.loads(config)
+              Path('app/google-services.json').write_text(config)
+              print('Firebase configuration prepared.')
+          else:
+              print('::warning::Firebase configuration is absent; building without Firebase integration.')
+          PY
 
       - name: Gradle Build
         run: |
