@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -777,7 +778,7 @@ private fun AnimatedSinglePill(
                 }
             )
             .then(
-                if (fullyCollapsed) Modifier.defaultMinSize(minHeight = PILL_HEIGHT) else Modifier
+                if (fullyCollapsed) Modifier.height(PILL_HEIGHT) else Modifier
             )
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         shape = pillShape,
@@ -864,7 +865,7 @@ private fun AnimatedSinglePill(
             }
             PillMorphLayer(
                 id = "compact",
-                modifier = Modifier.defaultMinSize(minHeight = PILL_HEIGHT),
+                modifier = Modifier.height(PILL_HEIGHT),
                 // The waiting dots are shorter than the 36dp pill. Top-start left them high.
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -949,10 +950,12 @@ private fun AnimatedSinglePill(
                             }
                         } else {
                             Row(
-                                modifier = Modifier.padding(
-                                    horizontal = ACTIVITY_HEADER_HORIZONTAL,
-                                    vertical = COMPACT_HEADER_VERTICAL,
-                                ),
+                                modifier = Modifier
+                                    .height(PILL_HEIGHT)
+                                    .padding(
+                                        horizontal = ACTIVITY_HEADER_HORIZONTAL,
+                                        vertical = COMPACT_HEADER_VERTICAL,
+                                    ),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -986,6 +989,9 @@ private fun AnimatedSinglePill(
                                             text = stringResource(R.string.activity_pill_replying),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.shimmer(isLoading = true)
                                         )
                                     }
@@ -997,10 +1003,16 @@ private fun AnimatedSinglePill(
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Text(
-                                            text = targetState.modelName?.let { "Loading $it..." } ?: "Loading model...",
+                                            text = (targetState.modelName?.let { "Loading $it..." } ?: "Loading model...")
+                                                .replace("\n", " ").replace("\r", " "),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.shimmer(isLoading = true)
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .weight(1f, fill = false)
+                                                .shimmer(isLoading = true)
                                         )
                                     }
                                     is ActivityState.CompletedSingle -> {
@@ -1679,7 +1691,7 @@ private fun ReasoningPreviewCard(
  * Content for reasoning pill (live timer).
  */
 @Composable
-private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
+private fun RowScope.ReasoningContent(startTimeMs: Long, title: String? = null, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
 
     if (isLive) {
@@ -1698,7 +1710,10 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     // Crossfade in place so the label baseline never slides.
-    val displayTitle = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.activity_timeline_reasoning)
+    val displayTitle = title?.takeIf { it.isNotBlank() }
+        ?.replace("\n", " ")
+        ?.replace("\r", " ")
+        ?: stringResource(R.string.activity_timeline_reasoning)
     AnimatedContent(
         targetState = displayTitle,
         transitionSpec = {
@@ -1706,27 +1721,34 @@ private fun ReasoningContent(startTimeMs: Long, title: String? = null, isLive: B
                 .using(SizeTransform(clip = false) { _, _ -> snap() })
         },
         contentAlignment = Alignment.CenterStart,
-        label = "reasoning_title"
+        label = "reasoning_title",
+        modifier = Modifier.weight(1f, fill = false)
     ) { text ->
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
     }
-    Text(
-        text = formatDuration(elapsedMs),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
-    )
+    val formattedDuration = formatDuration(elapsedMs)
+    if (formattedDuration.isNotBlank()) {
+        Text(
+            text = formattedDuration,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        )
+    }
 }
 
 @Composable
-private fun OcrContent(isLive: Boolean) {
+private fun RowScope.OcrContent(isLive: Boolean) {
     Icon(
         imageVector = Icons.Rounded.Image,
         contentDescription = null,
@@ -1737,7 +1759,11 @@ private fun OcrContent(isLive: Boolean) {
         text = stringResource(R.string.activity_pill_ocr_live),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = (if (isLive) Modifier.shimmer(true) else Modifier)
+            .weight(1f, fill = false)
     )
 }
 
@@ -1745,7 +1771,7 @@ private fun OcrContent(isLive: Boolean) {
  * Content for tool use pill.
  */
 @Composable
-private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolean) {
+private fun RowScope.ToolUseContent(toolName: String, displayName: String, isLive: Boolean) {
     val type = categorizeToolName(toolName)
 
     Icon(
@@ -1755,10 +1781,14 @@ private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolea
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
-        text = displayName,
+        text = displayName.replace("\n", " ").replace("\r", " "),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = if (isLive) Modifier.shimmer(true) else Modifier
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = (if (isLive) Modifier.shimmer(true) else Modifier)
+            .weight(1f, fill = false)
     )
 }
 
@@ -1766,7 +1796,7 @@ private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolea
  * Content for expanded single activity (after completion).
  */
 @Composable
-private fun ExpandedActivityContent(item: ActivityItem) {
+private fun RowScope.ExpandedActivityContent(item: ActivityItem) {
     Icon(
         imageVector = item.type.getIcon(),
         contentDescription = null,
@@ -1774,12 +1804,16 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    val text = expandedActivityLabel(item)
+    val text = expandedActivityLabel(item).replace("\n", " ").replace("\r", " ")
 
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f, fill = false)
     )
 }
 
@@ -1966,12 +2000,17 @@ private fun ReasoningPill(
             text = stringResource(R.string.activity_timeline_reasoning),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
         Text(
             text = formatDuration(elapsedMs),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
     }
@@ -2005,9 +2044,12 @@ private fun ToolUsePill(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = displayName,
+            text = displayName.replace("\n", " ").replace("\r", " "),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             modifier = if (isLive) Modifier.shimmer(true) else Modifier
         )
     }
