@@ -1397,3 +1397,43 @@ that picked its own colour is left alone.
 1.2`, and the per-shape soft caps give it room (sphere 25° / 17°, other shapes 19.5° / 14°; the heart
 stays 13° / 10° because its projection lumps past ~14°). Eye seating and the silhouette stay
 enforced by `EyeSafeRegion` / `GrokEyeGap`; the spin paths are untouched.
+
+## Engine21.4 — a turn foreshortens, it never scales the eyes down
+
+Reported: "when generical turns his head a little too much the eyes seem to become smaller — not a
+natural head turn, it just looks like they scale down from a certain point", and it happened on the
+circle too, sometimes.
+
+The seat was never the problem; the guard after it was. `EyeSafeRegion.shrink` inflated each eye
+outline by `GEN_EDGE_MARGIN` (21 % of the mark radius) and, if any of it fell outside the projected
+silhouette, applied ONE scalar to BOTH eyes about their common centroid. So a threshold angle turned
+into a pair-wide, uniform downscale — vertical included. Measured with `TurnSquashAuditTest` (eye
+height at yaw 24° vs 0°): heart 88.9 %, star 90.2 %, sparkle 93.9 %; and on the sphere, wide faces with
+a tilted head tripped it too — Surprised 91.0 %, Happy 90.7 % (which is why it looked
+shape-independent "sometimes").
+
+Now:
+* the clip guard has its own small margin, `GEN_CLIP_MARGIN = 0.05` (the 21 % margin stays what it was
+  for the turn cap — "stay well inside", not "we are about to clip");
+* `nudge` (slide the pair toward the body centre) runs FIRST — continuous, and it keeps the size the
+  perspective produced;
+* only then does each eye get `EyeSafeRegion.shrinkX`: a horizontal squash about its own centre
+  (floor 0.80), i.e. foreshortening along the turn axis. A yaw can no longer shorten an eye, and the
+  pair can never scale as one object. The Grok capsules keep the old path — measured, they never
+  trip it.
+
+After: 100 % eye height at every yaw on every shape (heart, star, sparkle included), 100 % for
+Surprised/Happy on the circle at yaw 24° with pitch ±10°. `TurnSquashAuditTest` is the gate: per-shape
+yaw sweep plus expression × yaw × pitch on blob/cloud, asserting eye height ≥ 97 %, the near eye never
+collapsing, the far eye never growing, and every eye inside the silhouette with the clip margin.
+
+### The character widget shows the animated mark
+A Glance widget can only show a static bitmap, so `WidgetAvatarRenderer` paints a real still frame
+with the mark engine (`drawMark` into a `CanvasDrawScope`, `calm = true`) at the widget's size:
+`render(context, avatar, seed, sizePx, variant)`. Each widget stores a seed and a variant; the face
+comes from a no-anger pool (Neutral, Happy, confused, Surprised, Bored, hurt or cute, Sleeping — Angry
+and pouty never) and the attitude from a few off-axis poses inside the shape's own turn cap, both
+picked by `Random(seed * 31 + variant)`, so two widgets on the same screen can never be clones.
+`AssistantWidgetReceiver.onUpdate` advances the variant once per system widget update and never
+repeats the current face, so it drifts instead of flickering. The mark's bounding size and the
+`createTextBitmap` fallback are unchanged for every other avatar type.
