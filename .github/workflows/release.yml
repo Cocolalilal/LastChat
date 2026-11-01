@@ -68,7 +68,10 @@ jobs:
       - name: Gradle Build
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          # Keep Kotlin compilation and Gradle in one bounded JVM on the runner.
+          ./gradlew assembleRelease --no-parallel --max-workers=2 \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
