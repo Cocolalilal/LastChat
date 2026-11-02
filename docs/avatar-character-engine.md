@@ -1457,8 +1457,10 @@ unrelated orientation. Grok uses the silhouette clip throughout.
 Side leans use a shared continuous attention/body phrase. Intermediate poses have
 through-velocity, eyes lead by only a small amount, and the body retains spring
 momentum. TiltChain, HmmLean and Peek no longer schedule independent gaze, head,
-lean and straighten steps. Busy turns/tilts also use continuous attention phrases.
-Outside attention can interrupt a phrase; its body motion settles instead of snapping.
+lean and straighten steps. Busy turns/tilts use a prompt ~240 ms target arrival, a quiet focus and a softer release.
+A new look starts from the currently visible gaze and body target, so handover does not
+first pull toward centre. Busy reading and surveying use a single fixation instead of
+several independent little head steps. Outside attention can interrupt a phrase; its body motion settles instead of snapping.
 
 Auxiliary body channels use exact damped oscillators. Slower frames no longer discard
 elapsed time or destabilize the bob. Nod/recoil curves have matching velocity at their
@@ -1480,3 +1482,14 @@ The existing channel metrics, gaze audit and context tests cover longer sessions
 
 Behavior rules about up-right gaze and the currently unapplied squash/stretch channel
 are unchanged; changes to those were proposed separately for user review.
+
+### Quiet ownership during busy motion
+
+While busy, the body director supplies the attention targets; the independent idle gaze
+planner does not insert competing looks. Head drift is removed, and eye drift/micro
+saccades fade out during an intentional look. Facial jitter and posture fidgets are
+reserved for quiet rest, and incidental eye-seat motion fades with the same ownership.
+Breathing, blinks, expression changes and genuine attention events remain active.
+
+`BusyFocusTest` checks prompt arrival and a stable fixation. Native rendering checks
+that advancing time alone cannot move the eyes while a quiet focus owns the pose.

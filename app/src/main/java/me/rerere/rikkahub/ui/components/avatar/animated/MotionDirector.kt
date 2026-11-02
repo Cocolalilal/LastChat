@@ -135,14 +135,15 @@ class ClipSource(
 
 private class AttentionLeanSource(
     override val name: String,
-    private val phrase: LeanPhrase,
-    private val pitch: Float,
+    private val look: FocusedLook,
+    private val initialPitch: Float,
+    private val goalPitch: Float,
 ) : MotionSource {
-    override val duration = phrase.duration
-    override fun pose(t: Float): BodyPose = phrase.sample(t).let {
-        BodyPose(roll = it.roll, yaw = it.yaw, pitch = pitch * kotlin.math.sin(Math.PI.toFloat() * (t / duration).coerceIn(0f, 1f)))
+    override val duration = look.duration
+    override fun pose(t: Float): BodyPose = look.sample(t).let {
+        BodyPose(roll = it.roll, yaw = it.yaw, pitch = look.channel(initialPitch, goalPitch, 0f, t))
     }
-    fun look(t: Float) = phrase.sample(t + 0.065f).let { MotionDirector.GazeCue(it.gazeX, it.gazeY, 0.3f, "lean") }
+    fun look(t: Float) = look.sample(t + 0.045f).let { MotionDirector.GazeCue(it.gazeX, it.gazeY, 0.3f, "lean") }
 }
 
 class HoldSource(override val name: String, private val p: BodyPose, override val duration: Float) : MotionSource {
@@ -711,6 +712,9 @@ class MotionDirector(
         private set
     var trackingGaze: GazeCue? = null
         private set
+    /** Visible gaze at the start of this frame, used when a new look takes ownership. */
+    var lookOriginX = 0f
+    var lookOriginY = 0.02f
 
     fun takeGazeCue(): GazeCue? = gazeCue.also { gazeCue = null }
 
@@ -759,20 +763,7 @@ class MotionDirector(
         val side = pickSide()
         val layer = when (kind) {
             "turn" -> attentionLean("turn", side * range(7f, 12f), -side * range(1f, 3f), range(2.8f, 4.2f), fade)
-            "lookAround" -> keyframed("lookAround", fade) {
-                // 2–4 stops at irregular places and irregular times.
-                // 2–3 stops; consecutive stops never more than ~16° apart (no head shake).
-                val stops = 2 + rng.nextInt(2)
-                var y = side * range(6f, 14f)
-                List(stops) { k ->
-                    if (k > 0) {
-                        val step = range(7f, 14f)
-                        y = if (rng.nextFloat() < 0.55f) y - kotlin.math.sign(y) * step else y + kotlin.math.sign(y) * step * 0.5f
-                        y = y.coerceIn(-16f, 16f)
-                    }
-                    BodyPose(pitch = range(0f, 5f), yaw = y, roll = gauss(2f)) to logRange(0.55f, 1.2f)
-                }
-            }
+            "lookAround" -> attentionLean("lookAround", side * range(8f, 12f), side * range(1f, 3f), range(2.8f, 4f), fade)
             "ponder" -> {
                 // Thoughtful: head a little up and to one side, eyes away (either side).
                 val ps = if (rng.nextBoolean()) 1f else -1f
@@ -788,16 +779,10 @@ class MotionDirector(
                 hold("pill", p, logRange(0.7f, 1.5f), range(0.6f, 0.95f), kind = "pill")
             }
             "read" -> {
-                // Following the text as it arrives: down, drifting along a line or two.
-                val y0 = range(6f, 10f)
-                gazeCue = GazeCue(range(-0.1f, 0.35f), range(0.35f, 0.55f), range(0.6f, 1.3f), "read")
-                keyframed("read", range(0.5f, 0.8f)) {
-                    var x = range(-6f, -1f)
-                    List(1 + rng.nextInt(3)) {
-                        x += range(3f, 9f)
-                        BodyPose(pitch = y0 + gauss(1f), yaw = x, roll = gauss(1.5f)) to logRange(0.4f, 1.0f)
-                    }
-                }
+                // One reading fixation; no independent head steps while the eyes follow text.
+                val p = BodyPose(pitch = range(5f, 8f), yaw = range(-3f, 3f))
+                gazeCue = GazeCue(range(-0.1f, 0.25f), range(0.35f, 0.5f), range(1.4f, 2.2f), "read")
+                hold("read", p, range(0.8f, 1.3f), 0.4f, kind = "read")
             }
             "nod" -> {
                 // Nodding along: one or two smooth nods (the second smaller), eyes leading —
@@ -830,14 +815,13 @@ class MotionDirector(
     }
 
     private fun attentionLean(name: String, yaw: Float, roll: Float, duration: Float, fade: Float): Layer {
+        val current = poseOf(tgt)
         val gx = (yaw / 32f).coerceIn(-0.4f, 0.4f)
-        val p = LeanPhrase(listOf(
-            LeanPhrase.Knot(0f, 0f, 0f, 0f, 0.02f),
-            LeanPhrase.Knot(duration * 0.35f, roll, yaw, gx, 0.08f),
-            LeanPhrase.Knot(duration * 0.6f, roll * 0.7f, yaw * 0.82f, gx * 0.75f, 0.12f),
-            LeanPhrase.Knot(duration, 0f, 0f, 0f, 0.02f),
-        ))
-        return Layer(AttentionLeanSource(name, p, range(0f, 2f)), 0f, duration, 1f, fade, if (name == "tiltB") "tilt" else name)
+        val start = LeanPhrase.Knot(0f, current.roll, current.yaw,
+            lookOriginX, lookOriginY)
+        val look = FocusedLook(start, LeanPhrase.Knot(0f, roll, yaw, gx, 0.08f), duration)
+        return Layer(AttentionLeanSource(name, look, current.pitch, range(0f, 2f)), 0f, duration,
+            1f, minOf(fade, 0.35f), if (name == "tiltB") "tilt" else name)
     }
 
     /** Prefer the other side, but not always (a run of same-side beats is natural too). */

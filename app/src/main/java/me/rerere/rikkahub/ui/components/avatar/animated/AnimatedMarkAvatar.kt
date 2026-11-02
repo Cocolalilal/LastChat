@@ -454,7 +454,7 @@ private fun DrawScope.drawMarkInner(
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
-            awake = if (calm) 0f else 1f,
+            awake = if (calm) 0f else f.incidentalMotion,
             yawDeg = yawOverride ?: (MarkClipEngine.wrap180(yaw) * k),
             pitchDeg = MarkClipEngine.wrap180(pitch) * k,
             rollDeg = roll,

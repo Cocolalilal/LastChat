@@ -75,6 +75,8 @@ data class MotionFrame(
     /** Engine16: spin about other axes (deg): forward flip / cartwheel / tilted-axis paths. */
     val spinPitch: Float = 0f,
     val spinRoll: Float = 0f,
+    /** Quiet incidental eye-seat motion while an intentional movement owns the pose. */
+    val incidentalMotion: Float = 1f,
 )
 
 /**
@@ -113,8 +115,7 @@ internal class GazeDirector(
     private var microLeft = 2f
     private var mx = 0f
     private var my = 0f
-    // Engine17: fixational drift — slow, smooth, never-repeating wander (incommensurate
-    // sines with random phases), so a hold is alive instead of a dead plateau.
+    // Tiny eye-only drift belongs to quiet rest; a purposeful look owns its pose.
     private var driftClock = 0f
     private val driftPh = FloatArray(6) { rng.nextFloat() * 6.2832f }
     // Smooth pursuit.
@@ -166,8 +167,14 @@ internal class GazeDirector(
     /** Engine19: an eyes-only look (poke reflex): the head never joins, however far. */
     private var eyesOnly = false
 
+    private var tracked = false
+    private val noise = DampedMotion(1f)
+    val incidentalMotion get() = noise.value.coerceIn(0f, 1f)
+    val moving get() = hypot(hvx, hvy) > 0.08f || hypot(evx, evy) > 0.2f
+
     fun track(gx: Float, gy: Float, priority: Int = 2): Boolean {
         if (focusLeft > 0f && focusPriority > priority) return false
+        tracked = true
         focusPriority = priority; focusLeft = 0.3f; holdLeft = 0.3f
         pending = false; pursuitT = 1f; headDelay = 0f; returnToCenter = false
         tx = gx.coerceIn(-1f, 1f); ty = gy.coerceIn(-1f, 1f)
@@ -269,12 +276,16 @@ internal class GazeDirector(
             headDelay -= dt
             if (headDelay <= 0f) { htx = pendingHx; hty = pendingHy }
         }
+        // A look owns its pose. Incidental motion belongs only to a quiet rest fixation.
+        val intentional = tracked || moving || focused || MotionDirector.isBusy(life)
+        noise.advance(if (intentional) 0f else 0.15f, dt, 12f)
+        tracked = false
+        val nk = incidentalMotion
         driftClock += dt
         val dc = driftClock; val dk = if (drowsy) 0.5f else 1f
-        val dex = dk * (0.006f * sin(0.83f * dc + driftPh[0]) + 0.004f * sin(1.97f * dc + driftPh[1]))
-        val dey = dk * (0.005f * sin(0.61f * dc + driftPh[2]) + 0.003f * sin(1.43f * dc + driftPh[3]))
-        val dhx = 0.014f * sin(0.37f * dc + driftPh[4]) + 0.006f * sin(0.89f * dc + driftPh[5])
-        val dhy = 0.010f * sin(0.29f * dc + driftPh[5]) + 0.005f * sin(0.73f * dc + driftPh[0])
+        val dex = nk * dk * (0.006f * sin(0.83f * dc + driftPh[0]) + 0.004f * sin(1.97f * dc + driftPh[1]))
+        val dey = nk * dk * (0.005f * sin(0.61f * dc + driftPh[2]) + 0.003f * sin(1.43f * dc + driftPh[3]))
+        // Head drift used to move the target continuously even after a look had settled.
         val sacc = MotionVocab[Action.Saccade]
         val headSpec = MotionVocab[if (playful) Action.HeadTurnPlayful else Action.HeadTurn]
         val eyeW = if (drowsy) 12f else sacc.omega
@@ -284,12 +295,12 @@ internal class GazeDirector(
         while (rem > 1e-6f) {
             val h = min(rem, 1f / 120f)
             // Engine20: ζ 0.8 — fast start, eased landing with a ~1.5 % overshoot-and-settle.
-            val ax = eyeW * eyeW * (tx + mx + dex - eyeX) - 1.6f * eyeW * evx
-            val ay = eyeW * eyeW * (ty + my + dey - eyeY) - 1.6f * eyeW * evy
+            val ax = eyeW * eyeW * (tx + mx * nk + dex - eyeX) - 1.6f * eyeW * evx
+            val ay = eyeW * eyeW * (ty + my * nk + dey - eyeY) - 1.6f * eyeW * evy
             evx += ax * h; evy += ay * h
             eyeX += evx * h; eyeY += evy * h
-            val bx = headW * headW * (htx + dhx - headX) - 2f * headZ * headW * hvx
-            val by = headW * headW * (hty + dhy - headY) - 2f * headZ * headW * hvy
+            val bx = headW * headW * (htx - headX) - 2f * headZ * headW * hvx
+            val by = headW * headW * (hty - headY) - 2f * headZ * headW * hvy
             hvx += bx * h; hvy += by * h
             headX += hvx * h; headY += hvy * h
             rem -= h
@@ -1124,6 +1135,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
 
         // ---- body ----
+        director.lookOriginX = gaze.eyeX; director.lookOriginY = gaze.eyeY
         val body = director.update(dt)
         if (director.clipBlink) blink.request()
         director.takeGazeCue()?.let { c ->
@@ -1152,7 +1164,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         director.trackingGaze?.let { c ->
             if (live && leanPhrase == null && spT < 0f && social == null) gaze.track(c.x, c.y, priority = 1)
         }
-        gaze.update(dt, director.lifecycle, drowsy, allowIdle = spT < 0f)
+        gaze.update(dt, director.lifecycle, drowsy, allowIdle = spT < 0f && !MotionDirector.isBusy(director.lifecycle))
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift) blink.saccade()
         gaze.takeEvent()?.let { ev -> if (live) attentionEvent(ev) }
@@ -1309,7 +1321,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             blink.closed,
             valence = if (live) mood.valence * (if (busyNow) 0.5f else 1f) else 0f,
             arousal = if (live) mood.arousal else 0.5f,
-            still = live && !gaze.bigShift && social == null,
+            still = live && !busyNow && !gaze.moving && !gaze.focused && social == null,
         )
 
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)
@@ -1412,6 +1424,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             spinYaw = spinAngles().first * keep,
             spinPitch = spinAngles().second * keep,
             spinRoll = spinAngles().third * keep,
+            incidentalMotion = gaze.incidentalMotion * keep,
         )
         frame = built
         withFollow(keep)
@@ -1814,7 +1827,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
         }
         fidgetIn -= dt
-        if (fidgetIn <= 0f) {
+        if (busy || gaze.moving || gaze.focused) {
+            fidgetYawT = 0f; fidgetRollT = 0f
+        } else if (fidgetIn <= 0f) {
             fidgetIn = (10f + rng.nextFloat() * 18f) / (0.4f + temper.activity)
             val a = temper.amplitude
             fidgetYawT = (rng.nextFloat() * 2f - 1f) * 3.5f * a
