@@ -2,9 +2,16 @@ name: Release Build
 
 on:
   workflow_dispatch:
+    inputs:
+      existing_run_id:
+        description: 'Export ARM64 APKs from an existing successful release run (skip rebuilding)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
+    if: inputs.existing_run_id == ''
     runs-on: ubuntu-latest
     
     steps:
@@ -79,3 +86,32 @@ jobs:
         with:
           name: artifacts
           path: app/build/outputs/apk/**/*.apk
+
+      - name: Upload ARM64 APKs separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-release-apks
+          path: app/build/outputs/apk/**/*arm64-v8a*.apk
+          if-no-files-found: error
+
+  export-arm64:
+    if: inputs.existing_run_id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Download existing release APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          run-id: ${{ inputs.existing_run_id }}
+          github-token: ${{ github.token }}
+          path: release-apks
+
+      - name: Upload ARM64 APKs separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-release-apks
+          path: release-apks/**/*arm64-v8a*.apk
+          if-no-files-found: error
