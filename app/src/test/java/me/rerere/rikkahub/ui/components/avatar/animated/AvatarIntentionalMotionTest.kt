@@ -77,7 +77,10 @@ class AvatarIntentionalMotionTest {
         s.debugReact("Happy", 1.2f)
         var last = s.frame
         var masks = 0; var hiddenSwaps = 0
-        repeat(600) {
+        repeat(960) { i ->
+            // Own both endpoints: the busy planner may legitimately choose Happy again
+            // after the first reaction expires. Test the transition, not that random choice.
+            if (i == 240) s.debugReact("Neutral", 20f)
             s.tick(1f / 120f, hints, 1_800_000_000_000L)
             val f = s.frame
             if (f.maskBlink > 0.85f) masks++

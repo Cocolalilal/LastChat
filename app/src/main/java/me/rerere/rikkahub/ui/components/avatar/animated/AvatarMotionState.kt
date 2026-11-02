@@ -112,12 +112,8 @@ internal class GazeDirector(
     private var focusLeft = 0f
     private var focusPriority = 0
     private var returnToCenter = false
-    private var microLeft = 2f
-    private var mx = 0f
-    private var my = 0f
-    // Tiny eye-only drift belongs to quiet rest; a purposeful look owns its pose.
-    private var driftClock = 0f
-    private val driftPh = FloatArray(6) { rng.nextFloat() * 6.2832f }
+    private val refixation = IntentionalRefixation(Random(rng.nextLong()))
+    internal val refixationSequence get() = refixation.sequence
     // Smooth pursuit.
     private var pursuitT = 1f
     private var pursuitDur = 0f
@@ -168,8 +164,8 @@ internal class GazeDirector(
     private var eyesOnly = false
 
     private var tracked = false
-    private val noise = DampedMotion(1f)
-    val incidentalMotion get() = noise.value.coerceIn(0f, 1f)
+    // Secondary eye movement is now owned here, rather than by independent renderer noise.
+    val incidentalMotion get() = 0f
     val moving get() = hypot(hvx, hvy) > 0.08f || hypot(evx, evy) > 0.2f
 
     fun track(gx: Float, gy: Float, priority: Int = 2): Boolean {
@@ -239,7 +235,10 @@ internal class GazeDirector(
         }
     }
 
-    fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean, allowIdle: Boolean = true) {
+    fun update(
+        dt: Float, life: MarkLifecycle, drowsy: Boolean,
+        allowIdle: Boolean = true, allowRefixation: Boolean = true, quietEyes: Boolean = true,
+    ) {
         bigShift = false
         sinceShift += dt
         if (pending && sinceShift >= SHIFT_REFRACTORY && pursuitT >= 1f) setTarget(pendX, pendY, pendHead)
@@ -264,27 +263,18 @@ internal class GazeDirector(
             tx = p0x + (p1x - p0x) * e; ty = p0y + (p1y - p0y) * e
             htx = tx * 0.75f; hty = ty * 0.7f
         }
-        // Micro-saccades: small, irregular (1.2–4 s), eyes only.
-        microLeft -= dt
-        if (microLeft <= 0f) {
-            microLeft = 1.2f + rng.nextFloat() * 2.8f
-            val amp = if (drowsy) 0.008f else 0.022f
-            mx = (rng.nextFloat() - 0.5f) * 2f * amp
-            my = (rng.nextFloat() - 0.5f) * 2f * amp * 0.7f
-        }
         if (headDelay > 0f) {
             headDelay -= dt
             if (headDelay <= 0f) { htx = pendingHx; hty = pendingHy }
         }
-        // A look owns its pose. Incidental motion belongs only to a quiet rest fixation.
-        val intentional = tracked || moving || focused || MotionDirector.isBusy(life)
-        noise.advance(if (intentional) 0f else 0.15f, dt, 12f)
+        // A quiet look occasionally reinspects one nearby point, then holds it. Tracking,
+        // important attention and active gestures own the pose without competing adjustments.
+        val offset = refixation.update(
+            dt, tx, ty, settled = quietEyes && !moving && headDelay <= 0f,
+            allowed = allowRefixation && !tracked && !drowsy && focusPriority <= 2 &&
+                pursuitT >= 1f && !pending,
+        )
         tracked = false
-        val nk = incidentalMotion
-        driftClock += dt
-        val dc = driftClock; val dk = if (drowsy) 0.5f else 1f
-        val dex = nk * dk * (0.006f * sin(0.83f * dc + driftPh[0]) + 0.004f * sin(1.97f * dc + driftPh[1]))
-        val dey = nk * dk * (0.005f * sin(0.61f * dc + driftPh[2]) + 0.003f * sin(1.43f * dc + driftPh[3]))
         // Head drift used to move the target continuously even after a look had settled.
         val sacc = MotionVocab[Action.Saccade]
         val headSpec = MotionVocab[if (playful) Action.HeadTurnPlayful else Action.HeadTurn]
@@ -295,12 +285,14 @@ internal class GazeDirector(
         while (rem > 1e-6f) {
             val h = min(rem, 1f / 120f)
             // Engine20: ζ 0.8 — fast start, eased landing with a ~1.5 % overshoot-and-settle.
-            val ax = eyeW * eyeW * (tx + mx * nk + dex - eyeX) - 1.6f * eyeW * evx
-            val ay = eyeW * eyeW * (ty + my * nk + dey - eyeY) - 1.6f * eyeW * evy
+            val ax = eyeW * eyeW * (tx + offset.x - eyeX) - 1.6f * eyeW * evx
+            val ay = eyeW * eyeW * (ty + offset.y - eyeY) - 1.6f * eyeW * evy
             evx += ax * h; evy += ay * h
             eyeX += evx * h; eyeY += evy * h
-            val bx = headW * headW * (htx - headX) - 2f * headZ * headW * hvx
-            val by = headW * headW * (hty - headY) - 2f * headZ * headW * hvy
+            // The same small destination brings a little head follow-through. Its slower
+            // spring follows the eyes; it never invents a separate correcting movement.
+            val bx = headW * headW * (htx + offset.x * 0.55f - headX) - 2f * headZ * headW * hvx
+            val by = headW * headW * (hty + offset.y * 0.45f - headY) - 2f * headZ * headW * hvy
             hvx += bx * h; hvy += by * h
             headX += hvx * h; headY += hvy * h
             rem -= h
@@ -1164,7 +1156,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         director.trackingGaze?.let { c ->
             if (live && leanPhrase == null && spT < 0f && social == null) gaze.track(c.x, c.y, priority = 1)
         }
-        gaze.update(dt, director.lifecycle, drowsy, allowIdle = spT < 0f && !MotionDirector.isBusy(director.lifecycle))
+        gaze.update(
+            dt, director.lifecycle, drowsy,
+            allowIdle = spT < 0f && !MotionDirector.isBusy(director.lifecycle),
+            allowRefixation = live && spT < 0f && leanPhrase == null && social == null,
+            quietEyes = !blink.busy && !expr.morphing && !grokTransition.maskActive,
+        )
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift) blink.saccade()
         gaze.takeEvent()?.let { ev -> if (live) attentionEvent(ev) }
@@ -1231,6 +1228,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                         !animate -> ExpressionDirector.Style.Soft
                         isReaction -> reactionStyle.also { reactionStyle = null }
                         time < briskUntil -> ExpressionDirector.Style.Soft
+                        TransitionRules.promptRelease(expr.to, normalizedTarget) -> ExpressionDirector.Style.Soft
                         relax || baseline -> ExpressionDirector.Style.Settle
                         drowsy || temper.state == Temperament.State.Tired -> ExpressionDirector.Style.Gradual
                         else -> null
@@ -1321,7 +1319,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             blink.closed,
             valence = if (live) mood.valence * (if (busyNow) 0.5f else 1f) else 0f,
             arousal = if (live) mood.arousal else 0.5f,
-            still = live && !busyNow && !gaze.moving && !gaze.focused && social == null,
+            still = false, // Quiet eye movement belongs to the single refixation target above.
         )
 
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)

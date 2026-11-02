@@ -101,6 +101,11 @@ object ChannelMetrics {
     /** Visible turn: body yaw plus the head-look turn (as the renderer composes it). */
     fun visYaw(r: TraceRow) = r.yaw + 18f * r.headX
 
+    // Recentring must measure the displayed turn, not an authored angle beyond the
+    // renderer's soft cap. 25° is the largest current shape cap, so this conservatively
+    // retains more turn than the tighter heart/other-shape caps.
+    private fun reactionYaw(r: TraceRow) = 25f * kotlin.math.tanh(visYaw(r) / 25f)
+
     fun exprSpeed(a: TraceRow, b: TraceRow): Float {
         val dt = (b.t - a.t).coerceAtLeast(1e-4f)
         var s = 0f
@@ -358,7 +363,7 @@ object ChannelMetrics {
             if (i0 < 1) continue
             nP++
             var gReact = Float.NaN; var fReact = Float.NaN
-            val y0 = visYaw(rows[i0 - 1])
+            val y0 = reactionYaw(rows[i0 - 1])
             var minAbs = abs(y0)
             for (i in i0 until rows.size) {
                 val r = rows[i]; val dtp = r.t - p
@@ -368,12 +373,12 @@ object ChannelMetrics {
                 val blinked = blinks.any { it.first > a.t && it.first <= r.t + 1e-4f }
                 if (fReact.isNaN() && (r.target != a.target || r.accent != a.accent && r.accent.isNotEmpty() || exprSpeed(a, r) > 0.3f || blinked ||
                     r.beat.contains("+pop") && !a.beat.contains("+pop"))) fReact = dtp // the body bounce is a visible reaction too
-                if (dtp <= 0.3f) minAbs = minOf(minAbs, abs(visYaw(r)))
+                if (dtp <= 0.3f) minAbs = minOf(minAbs, abs(reactionYaw(r)))
             }
             // Recenter = the poke itself starts a turn toward centre (motion already heading
             // there before the poke is the pan carrying on, not a recenter).
             val iPre = rows.indexOfFirst { it.t >= p - 0.1f }.coerceAtLeast(0)
-            val vPre = (abs(y0) - abs(visYaw(rows[iPre]))) / (rows[i0 - 1].t - rows[iPre].t).coerceAtLeast(1e-3f)
+            val vPre = (abs(y0) - abs(reactionYaw(rows[iPre]))) / (rows[i0 - 1].t - rows[iPre].t).coerceAtLeast(1e-3f)
             if (abs(y0) > 8f && abs(y0) - minAbs > 2.5f && vPre > -1f) rec++
             gz = max(gz, if (gReact.isNaN()) 9f else gReact)
             fc = max(fc, if (fReact.isNaN()) 9f else fReact)

@@ -147,6 +147,10 @@ internal object TransitionRules {
     const val OMEGA_SMALL = 15f
     const val OMEGA_BIG = 8.5f
 
+    /** A question resolves promptly; a slow return makes the two lids appear to lag apart. */
+    fun promptRelease(from: String, to: String): Boolean =
+        to == "Neutral" && from in setOf("confused", "confused left")
+
     /** Spring ω for a default (Soft) change of emotional size [d]. */
     fun softOmega(d: Float): Float {
         val u = ((d - 0.3f) / 1.0f).coerceIn(0f, 1f)

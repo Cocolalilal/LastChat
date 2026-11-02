@@ -785,17 +785,15 @@ class MotionDirector(
                 hold("read", p, range(0.8f, 1.3f), 0.4f, kind = "read")
             }
             "nod" -> {
-                // Nodding along: one or two smooth nods (the second smaller), eyes leading —
-                // added on top of wherever the head is (never back to a rest pose first).
+                // One acknowledgement, then rest. A ringing spring and pitch-linked yaw
+                // made this small busy beat look like an involuntary head shake.
                 val d = range(0.6f, 0.78f)
                 val deep = range(4f, 7f)
-                val twice = rng.nextFloat() < 0.35f
-                val total = d * if (twice) 1.85f else 1f
+                rng.nextFloat() // Keep the existing seeded behaviour schedule independent of this curve change.
+                val total = d
                 gazeCue = GazeCue(0f, 0.25f, total * 0.5f, "nod")
                 adds += Add("nodB", total) { u, _ ->
-                    val p = if (!twice) springNodPose(u, deep)
-                    else if (u < 0.5f) springNodPose(u * 2f, deep) else springNodPose(u * 2f - 1f, deep * 0.6f)
-                    p.copy(yaw = side * 1.5f * kotlin.math.abs(p.pitch / deep))
+                    busyNodPose(u, deep)
                 }
                 holdHere("nodHold", total + 0.2f, "nod")
             }
@@ -1074,6 +1072,12 @@ class MotionDirector(
                 squashX = 1f + 0.05f * k,
                 squashY = 1f - 0.065f * k,
             )
+        }
+
+        /** A single dip with a small follow-through; no repeated oscillation or sideways flick. */
+        internal fun busyNodPose(u: Float, deep: Float): BodyPose {
+            val k = nodCurve(u, 0.04f)
+            return BodyPose(pitch = deep * k, posY = 0.012f * k)
         }
 
         /** Startle pop: stretch up and back fast, squash on landing, springy settle. */

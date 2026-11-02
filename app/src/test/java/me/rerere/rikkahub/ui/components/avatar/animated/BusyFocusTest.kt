@@ -38,4 +38,29 @@ class BusyFocusTest {
         assertTrue("eye y keeps correcting itself", ys.max() - ys.min() < 0.0001f)
         assertTrue("incidental seating motion still active", gaze.incidentalMotion < 0.0001f)
     }
+
+    @Test fun aLongHeldLookReinspectsOnceThenHoldsAndYieldsPromptly() {
+        val r = Random(41)
+        val gaze = GazeDirector(r, IdlePlanner(r), Temperament(r))
+        gaze.focus(0.3f, 0.1f, 60f, 2, force = true)
+        var ticks = 0
+        while (gaze.refixationSequence == 0 && ticks < 120 * 45) {
+            gaze.update(1f / 120f, MarkLifecycle.Idle, false, allowIdle = false)
+            ticks++
+        }
+        assertTrue("adjusted before a quiet hold", ticks >= 120 * 5)
+        assertTrue("held look has no occasional life", gaze.refixationSequence > 0)
+        repeat(120) { gaze.update(1f / 120f, MarkLifecycle.Idle, false, allowIdle = false) }
+        val heldX = gaze.eyeX; val heldY = gaze.eyeY
+        repeat(120) {
+            gaze.update(1f / 120f, MarkLifecycle.Idle, false, allowIdle = false, quietEyes = false)
+            assertEquals("eye keeps adjusting after arrival", heldX, gaze.eyeX, 0.0001f)
+            assertEquals("blink pause pulls the look back", heldY, gaze.eyeY, 0.0001f)
+        }
+        val before = gaze.eyeX
+        gaze.focus(-0.4f, 0.1f, 2f, 6, withHead = false, force = true)
+        assertEquals("new attention teleported the eye", before, gaze.eyeX, 0f)
+        repeat(36) { gaze.update(1f / 120f, MarkLifecycle.Idle, false, allowIdle = false) }
+        assertEquals("old adjustment obstructed attention", -0.4f, gaze.eyeX, 0.003f)
+    }
 }
