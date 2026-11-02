@@ -29,42 +29,39 @@ class MotionDynamicsTest {
         assertTrue("lean settles near rest", abs(reference.value) < 0.05f)
     }
 
-    private fun spin() = SpinTrajectory(0.4f, 1.7f, 11f, 0.03f, 8f, 0.1f, 0.26f, 0.78f)
+    private fun spin() = SpinTrajectory(0.4f, 1.7f, 11f, 8f, 0.1f)
 
     @Test
-    fun spinHasAnticipationOvershootAndDelayedEyeSettle() {
+    fun spinCarriesMomentumThroughItsWindupAndBraking() {
         val s = spin()
         s.sample(s.windup)
-        assertEquals(-11f, s.angle, 0.001f)
-        assertTrue("eyes anticipate", s.eyeLead < 0f)
-        s.sample(s.turnEnd)
-        assertEquals(368f, s.angle, 0.001f)
-        val leadAtStop = s.eyeLead
-        s.sample(s.turnEnd + s.followOut)
-        assertTrue("eyes carry on after body brakes", s.eyeLead > leadAtStop)
+        assertTrue("wind-up is visible", s.angle < -5f)
+        assertTrue("wind-up never locks at a keyframe", s.velocity < -1f)
+        var peak = 0f; var positiveLead = 0f; var peakSpeed = 0f
+        repeat(600) { i ->
+            s.sample(i / 120f)
+            peak = maxOf(peak, s.angle)
+            positiveLead = maxOf(positiveLead, s.eyeLead)
+            peakSpeed = maxOf(peakSpeed, abs(s.velocity))
+        }
+        assertTrue("physical overshoot", peak > 362f && peak < 380f)
+        assertTrue("eyes continue in the braking direction", positiveLead > 0.015f)
+        assertTrue("decisive but controlled turn", peakSpeed in 300f..700f)
         s.sample(s.duration)
-        assertEquals(360f, s.angle, 0.0001f)
-        assertEquals(0f, s.compression, 0f)
+        assertEquals(360f, s.angle, 0f)
         assertEquals(0f, s.eyeLead, 0f)
     }
 
     @Test
-    fun spinJoinsPreservePositionAndVelocity() {
+    fun spinVelocityAndEyeLeadRemainContinuousAtLaunchAndFinish() {
         val s = spin()
         val h = 0.001f
-        fun values(t: Float): FloatArray {
-            s.sample(t)
-            return floatArrayOf(s.angle, s.compression, s.eyeLead)
-        }
-        for (join in listOf(s.windup, s.windup + 0.18f, s.windup + 0.48f,
-            s.turnEnd, s.turnEnd + s.followOut, s.duration)) {
-            val a = values(join - h); val b = values(join); val c = values(join + h)
-            for (i in a.indices) {
-                val incoming = (b[i] - a[i]) / h
-                val outgoing = (c[i] - b[i]) / h
-                val limit = if (i == 0) 4f else 0.015f
-                assertTrue("velocity jump at $join channel $i: $incoming → $outgoing", abs(incoming - outgoing) < limit)
-            }
+        for (join in listOf(s.windup, s.duration)) {
+            s.sample(join - h); val a = s.angle; val ea = s.eyeLead
+            s.sample(join); val b = s.angle; val eb = s.eyeLead
+            s.sample(join + h); val c = s.angle; val ec = s.eyeLead
+            assertTrue("angle cut at $join", abs(b - a) < 0.1f && abs(c - b) < 0.1f)
+            assertTrue("eye cut at $join", abs(eb - ea) < 0.002f && abs(ec - eb) < 0.002f)
         }
     }
 

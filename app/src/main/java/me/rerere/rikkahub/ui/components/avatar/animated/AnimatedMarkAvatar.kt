@@ -135,6 +135,7 @@ fun AnimatedMarkAvatar(
         motionState.stage = stage
         motionState.stageId = stageId
         motionState.personality = personality ?: Personality.defaultFor(eyeType)
+        motionState.isGrok = isGrok
         DisposableEffect(stageId) {
             onDispose { stage.remove(stageId) }
         }
@@ -416,9 +417,14 @@ private fun DrawScope.drawMarkInner(
         val popG = 1f + f.eyePop * (1f - closedW.coerceIn(0f, 1f))
         val lidForPair = (if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG) * popG
         val symFace = f.face.grokSymmetric()
-        val pair = (if (ws != null) WhSphereEyes.morphWeighted(ws, lidForPair)
+        val ordinaryPair = (if (ws != null) WhSphereEyes.morphWeighted(ws, lidForPair)
             else WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair, f.exprTop, f.exprTopT))
             .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, symFace.eye(i)) }
+        // Both expressions meet at exactly the same closed shape before the hidden swap.
+        val maskK = MotionDirector.smootherstep(f.maskBlink / 0.85f)
+        val pair = if (maskK <= 0f) ordinaryPair else WhSphereEyes.blendPairs(
+            ordinaryPair, WhSphereEyes.expressionPair("neutral", GROK_SLIT), maskK,
+        )
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
         // them inside the silhouette (body turn itself is untouched).
@@ -437,13 +443,14 @@ private fun DrawScope.drawMarkInner(
             val (dl, dr) = GrokEyeGap.separation(l0, r0, he, WhEyeSeat.grokGapFix(shapeId))
             ((dr.x - dl.x) / 2f / he).coerceAtLeast(0f)
         }
+        val seatingLid = lidOpenG + (GROK_SLIT - lidOpenG) * maskK
         fun seatGrok(k: Float, yawOverride: Float? = null, extra: Float = neutralExtra) = WhEyeSeat.buildSeatedGrokEyes(
             pickerId = shapeId,
             solidKind = bodyKind,
             he = he,
             gazeX = 0f,
             gazeY = 0f,
-            lid = lidOpenG,
+            lid = seatingLid,
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,

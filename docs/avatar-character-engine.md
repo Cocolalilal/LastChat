@@ -1440,29 +1440,43 @@ Existing widgets without a preset keep their random seed/variant behavior: a no-
 and settled attitude, with the variant advanced once per system update. Unknown preset IDs also
 fall back to this behavior. Other avatar types retain their existing configuration flow.
 
-## Motion continuity pass
+## Motion continuity and intentional movement
 
-Spins now add a wind-up, accelerated turn, small body overshoot and damped settle to
-all the live motion channels. The body, gaze, lids and face are no longer latched at
-spin entry or blended back from a held pose afterward. Idle fixation planning pauses
-through the spin, while an existing look keeps moving and outside stimuli still work.
-The eyes anticipate the turn, continue drifting during braking, then settle after the
-body. Whole-turn angles are rebased only once their motion has finished.
+Spins keep the live face and gaze instead of capturing a pose at entry. An angular
+oscillator winds against a small counter-turn, then follows one full-turn goal with
+its existing velocity intact. Damping supplies braking and overshoot; eye inertia
+responds to acceleration and continues through the body's settle. There are no
+separate eased spin/follow-through phases. Direction usually follows current attention.
+Only the causal character engine schedules spins; the duplicate busy-body spin route
+has been removed. Authored camera zoom no longer changes the avatar's uniform scale.
 
-Eye surface constraints fade with angular distance from the front over 35 degrees,
-replacing the binary spin threshold. Seating uses wrapped angles so a safety fit
-cannot scale a 360-degree turn into an unrelated orientation. Grok uses the silhouette
-clip throughout, keeping the rendering transform consistent at entry and exit.
+Eye surface constraints fade with angular distance from the front over 35 degrees.
+Seating uses wrapped angles so a safety fit cannot scale a 360-degree turn into an
+unrelated orientation. Grok uses the silhouette clip throughout.
 
-Peek/episode leans, posture fidgets and the secondary bob use exact damped oscillators;
-retargets preserve position and velocity, and slower frames no longer discard elapsed
-time or destabilize the bob. Leans have a small overshoot. Tilt/droop gesture returns
-also pass gently beyond rest. Nod, recoil and anticipation curves have matching
-velocity at their joins and end with zero velocity. Beat handovers no longer count
-source playback speed twice when calculating incoming velocity. A surprised pause
-brakes the base motion instead of capturing and releasing the entire visible pose.
+Side leans use a shared continuous attention/body phrase. Intermediate poses have
+through-velocity, eyes lead by only a small amount, and the body retains spring
+momentum. TiltChain, HmmLean and Peek no longer schedule independent gaze, head,
+lean and straighten steps. Busy turns/tilts also use continuous attention phrases.
+Outside attention can interrupt a phrase; its body motion settles instead of snapping.
 
-`MotionDynamicsTest` covers spring frame-rate invariance, spin anticipation and
-follow-through, velocity continuity at phase boundaries, smooth surface-guard weights,
-and live gaze during each spin path. Expression morphs, held-lid springs, breathing,
-blink timing and the behavior/rarity rules retain their existing continuous mechanisms.
+Auxiliary body channels use exact damped oscillators. Slower frames no longer discard
+elapsed time or destabilize the bob. Nod/recoil curves have matching velocity at their
+joins, and beat handovers do not count source playback speed twice.
+
+Random blinks have a 5.8-second median before context scaling, a 3.5–12-second interval,
+and sparse gaze coupling with a shared 3-second minimum gap. Spontaneous doubles are
+rarer; purposeful requests remain available through the same scheduler. Generic face
+masking is occasional. Grok Happy-to-open transitions use a dedicated coordinator:
+wait for a confirmed full blink, meet at a canonical closed-eye shape (including its
+seating width), swap only behind that closure, and retain the mask during reopening.
+Generical continues to use its existing outline morphs.
+
+`MotionDynamicsTest`, `AvatarIntentionalMotionTest` and
+`GrokTransitionCoordinatorTest` cover momentum, fixed uniform scale, moving lean goals,
+blink frequency and safe hidden swaps. `GrokBlinkRenderTest` checks identical rendered
+pixels on both sides of a fully closed Happy/Neutral swap for every picker shape.
+The existing channel metrics, gaze audit and context tests cover longer sessions.
+
+Behavior rules about up-right gaze and the currently unapplied squash/stretch channel
+are unchanged; changes to those were proposed separately for user review.

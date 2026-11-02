@@ -178,8 +178,8 @@ internal object TransitionRules {
     }
 
     /** A masking blink may follow the last blink this soon (s): it reads as part of the change. */
-    const val MASK_MIN_GAP = 0.6f
+    const val MASK_MIN_GAP = 3.5f
 
     /** Chance a Blink-eligible change really uses a blink (a few stay plain morphs for variety). */
-    fun maskChance(d: Float): Float = if (d >= 0.8f) 0.85f else 0.72f
+    fun maskChance(d: Float): Float = if (d >= 0.8f) 0.22f else 0.12f
 }

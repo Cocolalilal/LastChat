@@ -26,6 +26,8 @@ class TraceRow(
     val saccade: Boolean = false,
     /** Body: current base beat + active additive gestures (debug). */
     val beat: String = "",
+    /** A context rule required the latest face change (e.g. eyes open when streaming starts). */
+    val contextForced: Boolean = false,
 )
 
 class ChannelTrace {
@@ -36,12 +38,15 @@ class ChannelTrace {
     /** Face target changes: (time, target, cause, priority). */
     val targets = ArrayList<Triple<Float, String, String>>()
     val targetPrio = ArrayList<Int>()
+    val targetForced = ArrayList<Boolean>()
 
     fun poke(t: Float) { pokes += t }
     fun blink(t: Float, chained: Boolean, lidHeld: Float) { blinks += Triple(t, chained, lidHeld) }
     fun add(r: TraceRow) {
         val last = rows.lastOrNull()
-        if (last == null || last.target != r.target) { targets += Triple(r.t, r.target, r.cause); targetPrio += r.ownerPrio }
+        if (last == null || last.target != r.target) {
+            targets += Triple(r.t, r.target, r.cause); targetPrio += r.ownerPrio; targetForced += r.contextForced
+        }
         rows += r
     }
 
@@ -388,7 +393,8 @@ object ChannelMetrics {
             val nPrio = tr.targetPrio.getOrNull(i + 1) ?: -1
             val dwell = nx.first - t0
             val poked = tr.pokes.any { it in t0..nx.first + 0.05f }
-            if (prio < MindRules.P_EVENT && nPrio <= prio && !poked && !MindRules.hasEventCause(nPrio, nx.third) &&
+            val forced = tr.targetForced.getOrNull(i + 1) == true
+            if (!forced && prio < MindRules.P_EVENT && nPrio <= prio && !poked && !MindRules.hasEventCause(nPrio, nx.third) &&
                 dwell < 0.85f * MindRules.minDwell(face)) short++
         }
         m["emo_short"] = short.toFloat()

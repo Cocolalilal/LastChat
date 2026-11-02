@@ -109,9 +109,8 @@ class ClipSource(
             posY = s.position[1] * amp,
             squashX = 1f + (s.squash[0] - 1f) * squashAmp * amp,
             squashY = 1f + (s.squash[1] - 1f) * squashAmp * amp,
-            // Desktop zoom swings (Working_B dips to 0.42) read as the avatar changing
-            // size. Keep only a whisper of it.
-            scale = 1f + (s.scale / MarkClipEngine.DEFAULT_ZOOM - 1f) * 0.12f,
+            // Authored camera zoom is not character motion: keep the avatar's size fixed.
+            scale = 1f,
             lidOpen = s.lids,
         )
     }
@@ -132,6 +131,18 @@ class ClipSource(
     /** First calm time ≥ [t] (or null). */
     fun nextCalm(t: Float): Float? = calmTimes.firstOrNull { it >= t }
     fun calmStarts(maxT: Float): List<Float> = calmTimes.filter { it <= maxT }
+}
+
+private class AttentionLeanSource(
+    override val name: String,
+    private val phrase: LeanPhrase,
+    private val pitch: Float,
+) : MotionSource {
+    override val duration = phrase.duration
+    override fun pose(t: Float): BodyPose = phrase.sample(t).let {
+        BodyPose(roll = it.roll, yaw = it.yaw, pitch = pitch * kotlin.math.sin(Math.PI.toFloat() * (t / duration).coerceIn(0f, 1f)))
+    }
+    fun look(t: Float) = phrase.sample(t + 0.065f).let { MotionDirector.GazeCue(it.gazeX, it.gazeY, 0.3f, "lean") }
 }
 
 class HoldSource(override val name: String, private val p: BodyPose, override val duration: Float) : MotionSource {
@@ -346,7 +357,13 @@ class MotionDirector(
                 val side = if (abs(cur) > 3f) kotlin.math.sign(cur) else if (rng.nextBoolean()) 1f else -1f
                 val d = range(1.2f, 1.6f) + 0.45f
                 val roll = side * range(6f, 9f); val yaw = side * range(2f, 5f)
-                adds += Add(name, d) { _, t -> envPose(t, d, 0.3f, 0.45f, BodyPose(roll = roll, yaw = yaw, pitch = 1f)) }
+                val phrase = LeanPhrase(listOf(
+                    LeanPhrase.Knot(0f, 0f, 0f, 0f, 0f),
+                    LeanPhrase.Knot(d * 0.38f, roll, yaw, 0f, 0f),
+                    LeanPhrase.Knot(d * 0.65f, roll * 0.62f, yaw * 0.8f, 0f, 0f),
+                    LeanPhrase.Knot(d, 0f, 0f, 0f, 0f),
+                ))
+                adds += Add(name, d) { _, t -> phrase.sample(t).let { BodyPose(roll = it.roll, yaw = it.yaw) } }
             }
             Gesture.Attend -> {
                 // Settle the idle sway so a look at something reads as a deliberate look.
@@ -433,6 +450,7 @@ class MotionDirector(
             if (fw > 1e-3f) pose = pose.lerpTo(fp, fw) else if (freezeLeft <= 0f) frozenPose = null
         }
         clipExpression = top.source.expression(top.t)
+        trackingGaze = (top.source as? AttentionLeanSource)?.look(top.t)
         rawPose = pose
 
         // Spins ride the base target (the output spring caps the turn speed); everything else
@@ -691,6 +709,8 @@ class MotionDirector(
     /** Set when a beat starts that wants the eyes somewhere; cleared on read. */
     var gazeCue: GazeCue? = null
         private set
+    var trackingGaze: GazeCue? = null
+        private set
 
     fun takeGazeCue(): GazeCue? = gazeCue.also { gazeCue = null }
 
@@ -716,16 +736,15 @@ class MotionDirector(
             )
             else -> listOf(
                 "turn" to 0.26f, "lookAround" to 0.2f, "pause" to 0.15f, "ponder" to 0.05f,
-                "tilt" to 0.1f, "nod" to 0.07f, "pill" to 0.1f, "bob" to 0.06f, "spin" to 0.02f,
+                "tilt" to 0.1f, "nod" to 0.07f, "pill" to 0.1f, "bob" to 0.06f,
             )
         }
         val cool = mapOf(
             "turn" to 3f, "lookAround" to 7f, "ponder" to 9f, "pause" to 2f, "tilt" to 6f,
-            "nod" to 8f, "pill" to 14f, "read" to 3f, "bob" to 12f, "spin" to 45f,
+            "nod" to 8f, "pill" to 14f, "read" to 3f, "bob" to 12f,
         )
         val opts = base.mapNotNull { (k, w) ->
             if (k == last && k != "pause") return@mapNotNull null
-            if (k == "spin" && (busyFor < 6f || ago("spin") < 45f)) return@mapNotNull null
             // The activity pill only gets attention once the work has run a while.
             if (k == "pill" && busyFor < 5f) return@mapNotNull null
             val c = cool[k] ?: 3f
@@ -739,13 +758,7 @@ class MotionDirector(
         lastUsed[kind] = clock
         val side = pickSide()
         val layer = when (kind) {
-            "turn" -> {
-                // A real turn: ease to an angle, settle there a moment.
-                val yaw = side * range(10f, 20f)
-                val p = BodyPose(pitch = range(-1f, 4f), yaw = yaw, roll = -side * range(0f, 4f))
-                gazeCue = GazeCue(side * range(0.3f, 0.7f), range(-0.05f, 0.25f), range(0.5f, 1.2f), "turn")
-                hold("turn", p, logRange(0.6f, 1.8f), range(0.55f, 1.1f), kind = "turn")
-            }
+            "turn" -> attentionLean("turn", side * range(7f, 12f), -side * range(1f, 3f), range(2.8f, 4.2f), fade)
             "lookAround" -> keyframed("lookAround", fade) {
                 // 2–4 stops at irregular places and irregular times.
                 // 2–3 stops; consecutive stops never more than ~16° apart (no head shake).
@@ -767,8 +780,7 @@ class MotionDirector(
                 gazeCue = GazeCue(ps * range(0.35f, 0.65f), -range(0.05f, 0.25f), range(0.7f, 1.4f), "ponder")
                 hold("ponder", p, logRange(0.8f, 1.8f), range(0.8f, 1.3f), kind = "ponder")
             }
-            "tilt" -> hold("tiltB", BodyPose(pitch = range(0f, 3f), yaw = side * range(2f, 8f), roll = side * range(5f, 10f)),
-                logRange(0.6f, 1.5f), range(0.6f, 1f), kind = "tilt")
+            "tilt" -> attentionLean("tiltB", side * range(2f, 5f), side * range(5f, 8f), range(2.7f, 3.8f), fade)
             "pill" -> {
                 // Glance down-right at the activity pill / timeline, as if checking on it.
                 val p = BodyPose(pitch = range(6f, 11f), yaw = range(4f, 12f), roll = -range(0f, 3f))
@@ -811,18 +823,21 @@ class MotionDirector(
                 }
                 holdHere("bobHold", d + 0.2f, "bob")
             }
-            "spin" -> {
-                val d = range(1.4f, 1.9f)
-                adds += Add("spinB", d) { u, _ ->
-                    val e = easeInOutCubic(u)
-                    BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = side * 360f * e, roll = -side * sin(PI.toFloat() * u) * 4f)
-                }
-                holdHere("spinHold", d + 0.2f, "spin")
-            }
             else -> hold("pause", BodyPose(pitch = range(0f, 4f), yaw = gauss(3f).coerceIn(-6f, 6f), roll = gauss(2f).coerceIn(-4f, 4f)),
                 logRange(0.5f, 1.8f), range(0.7f, 1.3f), kind = "pause")
         }
         return layer
+    }
+
+    private fun attentionLean(name: String, yaw: Float, roll: Float, duration: Float, fade: Float): Layer {
+        val gx = (yaw / 32f).coerceIn(-0.4f, 0.4f)
+        val p = LeanPhrase(listOf(
+            LeanPhrase.Knot(0f, 0f, 0f, 0f, 0.02f),
+            LeanPhrase.Knot(duration * 0.35f, roll, yaw, gx, 0.08f),
+            LeanPhrase.Knot(duration * 0.6f, roll * 0.7f, yaw * 0.82f, gx * 0.75f, 0.12f),
+            LeanPhrase.Knot(duration, 0f, 0f, 0f, 0.02f),
+        ))
+        return Layer(AttentionLeanSource(name, p, range(0f, 2f)), 0f, duration, 1f, fade, if (name == "tiltB") "tilt" else name)
     }
 
     /** Prefer the other side, but not always (a run of same-side beats is natural too). */
@@ -992,8 +1007,8 @@ class MotionDirector(
             posY = fx[3],
             squashX = fx[4] * (1f - stretch * 0.6f),
             squashY = fx[5] * (1f + stretch),
-            // Size never jumps: clamp the rest-relative scale to a narrow band.
-            scale = fx[6].coerceIn(0.95f, 1.04f),
+            // Camera zoom is excluded from live character motion.
+            scale = 1f,
             lidOpen = fx[7].coerceIn(0f, 1f),
         )
     }

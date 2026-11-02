@@ -65,6 +65,8 @@ data class MotionFrame(
     val eyeScale: Float = 1f,
     /** Engine21.1: microscopic reopen settle (fraction of eye height, ±~1.5 %), 0 at rest. */
     val eyePop: Float = 0f,
+    /** Full masking blink uses an expression-independent closed shape for Grok. */
+    val maskBlink: Float = 0f,
     val timeSec: Float = 0f,
     /** Parametric per-eye shaping on top of the expression (see [FaceRig]). */
     val face: FaceParams = FaceParams.ID,
@@ -163,6 +165,15 @@ internal class GazeDirector(
     }
     /** Engine19: an eyes-only look (poke reflex): the head never joins, however far. */
     private var eyesOnly = false
+
+    fun track(gx: Float, gy: Float, priority: Int = 2): Boolean {
+        if (focusLeft > 0f && focusPriority > priority) return false
+        focusPriority = priority; focusLeft = 0.3f; holdLeft = 0.3f
+        pending = false; pursuitT = 1f; headDelay = 0f; returnToCenter = false
+        tx = gx.coerceIn(-1f, 1f); ty = gy.coerceIn(-1f, 1f)
+        htx = tx * 0.7f; hty = ty * 0.65f
+        return true
+    }
 
     fun releaseFocus(awayX: Float? = null) {
         focusLeft = 0f
@@ -546,7 +557,7 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
 }
 
 /**
- * Procedural blink, deliberately irregular: log-normal gaps (mostly 2–6 s, sometimes a
+ * Procedural blink, deliberately irregular: log-normal gaps (mostly 4–9 s, sometimes a
  * long stare), each blink with its own speed and depth (some don't close fully),
  * occasional double / rare triple blinks, fewer blinks while concentrating, and blinks
  * that ride gaze shifts, turns and expression changes. After any blink the next
@@ -570,7 +581,7 @@ internal class Blinker(private val rng: Random) {
     private var holdT = 0.03f
     private var openT = 0.12f
     private var depth = 1f
-    private var next = 0.8f + rng.nextFloat() * 3f
+    private var next = 3.5f + rng.nextFloat() * 3f
     private var repeats = 0
     private var gapLeft = -1f
     private var sinceLast = 10f
@@ -601,6 +612,7 @@ internal class Blinker(private val rng: Random) {
     /** Start a blink right now if one may start (no deferral). True when it started. */
     /** Engine21: a full blink is closing right now — a face change can ride it. */
     val closingFull: Boolean get() = phase >= 0f && phase < closeT && depth >= 0.99f
+    val fullBlinkActive: Boolean get() = phase >= 0f && depth >= 0.99f
 
     fun tryNow(minGap: Float = 1.2f): Boolean {
         if (quiet > 0f || phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP) || !allow()) return false
@@ -621,7 +633,7 @@ internal class Blinker(private val rng: Random) {
     /** A big saccade is starting: blink with it most of the time (p [SACCADE_P]). */
     fun saccade() {
         if (quiet > 0f || rng.nextFloat() >= SACCADE_P) return
-        if (phase >= 0f || gapLeft >= 0f || sinceLast < 0.35f) return
+        if (phase >= 0f || gapLeft >= 0f || sinceLast < SACCADE_GAP) return
         if (!allow()) return
         begin(0, drowsy = false)
     }
@@ -664,7 +676,7 @@ internal class Blinker(private val rng: Random) {
                 next -= dt
                 if (next <= 0f && !allow()) next = 0.12f // lids are held by something else
                 if (next <= 0f && life != MarkLifecycle.Sleeping) {
-                    // Doubles are rare (~4 %), after a longer look, never two within 6 s.
+                    // Doubles are rare (~2 %), after a longer look, never two within 12 s.
                     val extra = if (!drowsy && sinceLast > 3f && sinceDouble >= DOUBLE_GAP && rng.nextFloat() < DOUBLE_P) 1 else 0
                     begin(extra, drowsy = drowsy)
                 }
@@ -702,11 +714,11 @@ internal class Blinker(private val rng: Random) {
     }
 
     private fun nextInterval(life: MarkLifecycle, drowsy: Boolean): Float {
-        // Log-normal, median ~3.4 s; Box–Muller from two uniforms (no java.util.Random).
+        // Log-normal, median ~5.8 s; Box–Muller from two uniforms (no java.util.Random).
         val u1 = rng.nextFloat().coerceAtLeast(1e-4f)
         val u2 = rng.nextFloat()
         val n = kotlin.math.sqrt(-2f * kotlin.math.ln(u1)) * kotlin.math.cos(2f * PI_F * u2)
-        var base = 3.0f * kotlin.math.exp(0.65f * n)
+        var base = 5.8f * kotlin.math.exp(0.5f * n)
         if (rng.nextFloat() < 0.08f) base += 1.5f + rng.nextFloat() * 2f // a longer look now and then
         base = when {
             drowsy -> base * 1.4f
@@ -720,12 +732,13 @@ internal class Blinker(private val rng: Random) {
 
     companion object {
         const val PI_F = 3.1415927f
-        const val REFRACTORY = 1.8f
-        const val MAX_INTERVAL = 7f
-        const val MIN_REQUEST_GAP = 0.9f
-        const val DOUBLE_P = 0.04f
-        const val DOUBLE_GAP = 6f
-        const val SACCADE_P = 0.75f
+        const val REFRACTORY = 3.5f
+        const val MAX_INTERVAL = 12f
+        const val MIN_REQUEST_GAP = 1.4f
+        const val DOUBLE_P = 0.02f
+        const val DOUBLE_GAP = 12f
+        const val SACCADE_P = 0.22f
+        const val SACCADE_GAP = 3f
         const val REQUEST_DOUBLE_GAP = 40f
         /** Reopen settle: amplitude (peak ≈ 0.57 × this) and length. */
         const val SETTLE_AMP = 0.028f
@@ -766,6 +779,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         animate = false
         settle = 1f
     }
+
+    var isGrok: Boolean = false
+    private val grokTransition = GrokTransitionCoordinator()
 
     val lifecycle: MarkLifecycle get() = director.lifecycle
 
@@ -1133,6 +1149,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
 
         // ---- gaze ----
+        director.trackingGaze?.let { c ->
+            if (live && leanPhrase == null && spT < 0f && social == null) gaze.track(c.x, c.y, priority = 1)
+        }
         gaze.update(dt, director.lifecycle, drowsy, allowIdle = spT < 0f)
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift) blink.saccade()
@@ -1150,7 +1169,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // Never swap faces mid-nod (a morph under a nod reads as a size pop).
         // Engine17.1: the face keeps living through a spin (a frozen mid-morph read as a
         // stall); changes that start during a turn use the soft blend, never a blink swap.
-        val spinFace = abs(spinYaw) > 0.5f || abs(spinV) > 1f
+        val spinFace = spT >= 0f
         if (spinFace && !spinningFace) {
             if (negativeNow()) spinsWhileNegative++
             if (director.lifecycle == MarkLifecycle.Idle && whyPrio < MindRules.P_EVENT && time - stm.lastPokeAt > 20f && !recently("nice", 30f)) idleSpinsStarted++
@@ -1158,6 +1177,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         spinningFace = spinFace
         run {
             val target = faceTarget()
+            val normalizedTarget = ExpressionDirector.normalize(target)
+            if (!isGrok || !animate || normalizedTarget == expr.to) grokTransition.cancel()
             if (target != lastShownTarget) {
                 // Every face change is logged with its cause (reactions log their own).
                 if (reaction == null || reaction != target) log("face ${lastShownTarget}→$target cause=" + when {
@@ -1210,13 +1231,18 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     val tgtN = ExpressionDirector.normalize(target)
                     val dEmo = TransitionRules.distance(expr.to, tgtN)
                     val maskKind = TransitionRules.mask(expr.to, tgtN, expr.hint == ExpressionDirector.Style.Snap, prio >= MindRules.P_USER)
-                    val hide = animate && maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
+                    val topologyMask = isGrok && animate && grokTransition.request(
+                        expr.weights, expr.to, tgtN,
+                        urgent = expr.hint == ExpressionDirector.Style.Snap || prio >= MindRules.P_USER || ctxForced,
+                    )
+                    val hide = !topologyMask && animate && maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
                         rng.nextFloat() < TransitionRules.maskChance(dEmo) && (blink.closingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))
-                    if (hide) { expr.wantBehindBlink(target); log("face change behind a blink → $target") } else {
-                        if (animate) log("face morph direct → $target (${maskKind.name.lowercase()}, d=${"%.2f".format(dEmo)})")
-                        expr.want(target)
+                    when {
+                        topologyMask -> log("Grok topology change waits for blink → $target")
+                        hide -> { expr.wantBehindBlink(target); log("face change behind a blink → $target") }
+                        else -> expr.want(target)
                     }
-                    shownAt = time; shownPrio = prio
+                    shownAt = time; shownPrio = prio; shownContextForced = ctxForced
                     faceCause = cause
                     mind.landFace(target, prio, cause, MindRules.hold(mood.arousal, knobs), countBudget = !(baseline || relax))
                 }
@@ -1232,11 +1258,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         mind.pump(Lane.Spin) { !negativeNow() && spT < 0f && !drowsy }
         if (negativeName(expr.to) || negativeName(expr.from) || rig.accent in MindRules.NEGATIVE_ACCENTS) lastNegativeAt = time
         if (MotionDirector.isBusy(director.lifecycle)) busySec += dt
+        if (isGrok && animate && grokTransition.awaitingBlink && spT < 0f &&
+            (blink.fullBlinkActive || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))) {
+            grokTransition.beginMask()
+        }
         expr.update(dt, blink.closed)
         director.exprMorphing = expr.morphing
 
         // ---- blink + lids ----
         blink.update(dt, director.lifecycle, drowsy)
+        grokTransition.update(blink.closed, blink.busy)?.let { expr.jump(it) }
         val pose = MarkLifecycleMapper.pose(director.lifecycle)
         val k = 1f - exp(-dt / 0.35f)
         lidKnob += (pose.lid - lidKnob) * k
@@ -1331,9 +1362,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
         val lifeK = lifeMotion.value * keep
         var bodyOut = bodyBase.copy(
-            posY = bodyBase.posY + 0.3f * lifeK - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep + 0.4f * spinCrouchK * keep - 0.02f * yawnK() * keep + 0.012f * restK * keep,
-            squashX = bodyBase.squashX * (1f + 0.5f * lifeK - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep + 0.6f * spinCrouchK * keep - 0.04f * yawnK() * keep + 0.012f * restK * keep),
-            squashY = bodyBase.squashY * (1f - 0.8f * lifeK + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep - spinCrouchK * keep + 0.07f * yawnK() * keep - 0.015f * restK * keep),
+            posY = bodyBase.posY + 0.3f * lifeK - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep - 0.02f * yawnK() * keep + 0.012f * restK * keep,
+            squashX = bodyBase.squashX * (1f + 0.5f * lifeK - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep - 0.04f * yawnK() * keep + 0.012f * restK * keep),
+            squashY = bodyBase.squashY * (1f - 0.8f * lifeK + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep + 0.07f * yawnK() * keep - 0.015f * restK * keep),
         )
         momentLid = (1f - 0.75f * stK.coerceAtLeast(0f) - 0.45f * drK - 0.85f * yawnK()).coerceIn(0f, 1f)
         val hx = (gaze.headX * keep).coerceIn(-1f, 1f)
@@ -1375,6 +1406,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
             eyePop = if (Blinker.settleEnabled && live) blink.settle * keep else 0f,
+            maskBlink = if (isGrok && grokTransition.maskActive) blink.closed * keep else 0f,
             timeSec = time,
             face = lerpFace(faceLive, w),
             spinYaw = spinAngles().first * keep,
@@ -1391,6 +1423,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 weights = expr.weights.toMap(), target = expr.to, spin = f.spinYaw,
                 owner = mind.owner, ownerPrio = mind.ownerPriority, cause = faceCause,
                 accent = if (rig.active) rig.accent.name else "", saccade = gaze.bigShift, beat = director.traceName,
+                contextForced = shownContextForced,
             ))
         }
     }
@@ -1437,13 +1470,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
     private var spT = -1f; private var spDir = 1f
-    private var spRun = 0f; private var spRunDeg = 0f; private var spCrouch = 0f
+    private var spRun = 0f; private var spRunDeg = 0f
     private var spMain = 1.2f
-    private var spFollow = 0f; private var spFollowOut = 0.2f; private var spFollowBack = 0.5f
+    private var spFollow = 0f
     private var spShake = false; private var spShakeDelay = 0.15f; private var spShakeAmp = 5f
     private var spLastRun = false; private var spLastShake = false
     private var spDirRun = 0
-    private var spinCrouchK = 0f
     private var spinFollowX = 0f
     private var spinTrajectory: SpinTrajectory? = null
     private var shakeYaw = 0f
@@ -1471,22 +1503,21 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun startSpin(playful: Boolean) {
         fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
         // Direction: random, but never three the same way in a row.
-        var dir = if (rng.nextBoolean()) 1f else -1f
+        val attentionSide = 0.7f * gaze.headX + 0.3f * gaze.eyeX
+        var dir = if (abs(attentionSide) > 0.18f && rng.nextFloat() < 0.8f) kotlin.math.sign(attentionSide)
+            else if (rng.nextBoolean()) 1f else -1f
         if (abs(spDirRun) >= 2 && kotlin.math.sign(dir) == kotlin.math.sign(spDirRun.toFloat())) dir = -dir
         spDirRun = if (dir > 0f) (if (spDirRun > 0) spDirRun + 1 else 1) else (if (spDirRun < 0) spDirRun - 1 else -1)
         spDir = dir
         // History-aware variant choice: what happened last time is less likely now.
         val pRun = (if (playful) 0.6f else 0.45f) * (if (spLastRun) 0.55f else 1.25f)
-        // Engine20: every spin winds up — a small counter-turn and crouch (anticipation), then a
-        // springy launch. Only its size varies (bigger when it is a deliberate run-up).
+        // A small counter-turn loads momentum; the same oscillator carries through launch.
         var run = forceRun ?: (rng.nextFloat() < pRun)
         spRun = if (run) rr(0.36f, 0.46f) else rr(0.3f, 0.36f)
         spRunDeg = if (run) rr(9f, 13f) else rr(6f, 9f)
-        spCrouch = if (run) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
-        // A readable wind-up, then a decisive turn with a long braking arc.
+        // Personality sets the oscillator's tempo, rather than a fixed spin curve.
         spMain = if (playful) rr(1.55f, 1.7f) else rr(1.7f, 1.85f)
         spFollow = rr(0.075f, 0.11f) * (1.6f - 0.3f * spMain) // eyes carry on past the stop (faster spin → more)
-        spFollowOut = rr(0.22f, 0.3f); spFollowBack = rr(0.65f, 0.85f)
         val pShake = (0.18f + 0.22f * (if (playful) 1f else 0f) + 0.15f * (1f - temper.energy)) * (if (spLastShake) 0.45f else 1.2f)
         spShake = forceShake ?: (rng.nextFloat() < pShake)
         spShakeDelay = rr(0.05f, 0.25f); spShakeAmp = rr(3.5f, 6.5f)
@@ -1496,7 +1527,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 run = !run
                 spRun = if (run) rr(0.36f, 0.46f) else rr(0.3f, 0.36f)
                 spRunDeg = if (run) rr(9f, 13f) else rr(6f, 9f)
-                spCrouch = if (run) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
             }
         }
         // Engine16: the axis / path varies (never the same path twice in a row).
@@ -1511,7 +1541,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (spPath == SpinPath.Flip) spMain *= rr(0.94f, 1.0f).let { 1f / it }.coerceAtMost(1.06f)
         spLastRun = run; spLastShake = spShake
         forceRun = null; forceShake = null
-        spinTrajectory = SpinTrajectory(spRun, spMain, spRunDeg, spCrouch, rr(6f, 10f), spFollow, spFollowOut, spFollowBack)
+        spinTrajectory = SpinTrajectory(spRun, spMain, spRunDeg, rr(6f, 10f), spFollow)
+        director.holdBeats(spinTrajectory?.duration ?: 4f)
         spT = 0f
         log("spin path=$spPath dir=${dir.toInt()} runUp=${spRun > 0f} shake=$spShake main=${"%.2f".format(spMain)}")
     }
@@ -1519,13 +1550,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     /** The trajectory runs through its settle before the whole-turn angle is rebased. */
     private fun spinUpdate(dt: Float) {
         val prev = spinYaw
-        spinCrouchK = 0f; spinFollowX = 0f; shakeYaw = 0f
+        spinFollowX = 0f; shakeYaw = 0f
         val trajectory = spinTrajectory
         if (spT >= 0f && trajectory != null) {
             spT += dt
             trajectory.sample(spT)
             spinYaw = spDir * trajectory.angle
-            spinCrouchK = trajectory.compression
             spinFollowX = spDir * trajectory.eyeLead
             if (spT >= trajectory.duration + (if (spShake) spShakeDelay else 0f)) {
                 spinYaw = 0f // exact whole turn, after all displacement and velocity have settled
@@ -1546,7 +1576,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private val peekYaw get() = peekYawMotion.value
     private var peekYawT = 0f
     private var peekLeft = 0f
-    private var peekDelay = 0f; private var peekPendRoll = 0f; private var peekPendYaw = 0f
     private var pillTiltIn = -1f
     private val scan = ArrayList<FloatArray>() // [startAt, x, y, hold]
     private var scanT = 0f
@@ -1554,6 +1583,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var upRamp = 0f
     private var shownAt = -99f
     private var shownPrio = -1
+    private var shownContextForced = false
     private val lifeMotion = DampedMotion()
     private var upRightPause = 0f
     private var upK = 0f
@@ -1592,11 +1622,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 }
             }
             Moment.Peek -> {
-                // Eyes go first; the lean follows ~150 ms later (critically damped, no bounce).
-                peekPendRoll = -side * rr(5f, 8f); peekPendYaw = side * rr(5f, 8f); peekDelay = rr(0.12f, 0.22f)
-                peekLeft = rr(1.2f, 2f) + peekDelay
-                gaze.focus(side * rr(0.55f, 0.75f), rr(0f, 0.25f), peekLeft, priority = 2)
-                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, peekLeft)
+                val r = -side * rr(5f, 8f); val y = side * rr(4f, 6f)
+                startLean(listOf(
+                    LeanPhrase.Knot(0.9f, r, y, side * 0.5f, 0.12f),
+                    LeanPhrase.Knot(1.65f, r * 0.8f, y * 1.1f, side * 0.42f, 0.16f),
+                    LeanPhrase.Knot(3.1f, 0f, 0f, 0f, 0.02f),
+                ))
+                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, 1.8f)
             }
             Moment.Stretch -> {
                 stretchU = 0f; stretchDur = rr(2.3f, 3f)
@@ -1633,13 +1665,23 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         moments.update(dt, temper, personality, false, quietSec, false)
         spinUpdate(dt)
         channelsUpdate(dt)
-        // A lean carries its velocity through retargets, with a small, weighty overshoot.
-        if (peekDelay > 0f) { peekDelay -= dt; if (peekDelay <= 0f) { peekRollT = peekPendRoll; peekYawT = peekPendYaw } }
+        // One moving attention/body goal: no delayed gear changes or locked holds.
+        leanPhrase?.let { phrase ->
+            leanClock += dt
+            val goal = phrase.sample(leanClock)
+            val eyes = phrase.sample(leanClock + 0.065f)
+            if (gaze.track(eyes.gazeX, eyes.gazeY)) {
+                peekRollT = goal.roll; peekYawT = goal.yaw
+            } else {
+                // A real attention event wins; existing motion gently runs out.
+                leanPhrase = null; peekRollT = 0f; peekYawT = 0f
+            }
+            if (leanClock >= phrase.duration + 0.7f) leanPhrase = null
+        }
         if (peekLeft > 0f) { peekLeft -= dt; if (peekLeft <= 0f) { peekRollT = 0f; peekYawT = 0f } }
         if (pillTiltIn > 0f) { pillTiltIn -= dt; if (pillTiltIn <= 0f) director.gesture(MotionDirector.Gesture.Tilt) }
-        val om = 7f
-        peekRollMotion.advance(peekRollT, dt, om, 0.78f)
-        peekYawMotion.advance(peekYawT, dt, om, 0.82f)
+        peekRollMotion.advance(peekRollT, dt, 6f, 0.7f)
+        peekYawMotion.advance(peekYawT, dt, 5.5f, 0.76f)
         // Scan timeline.
         if (scan.isNotEmpty()) {
             val t0 = scanT; scanT += dt
@@ -2897,7 +2939,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     /** Eye closure during a head shake (1 = open). */
     private var shakeLid = 1f
 
-    private fun lean(roll: Float, yaw: Float) { peekRollT = roll; peekYawT = yaw }
+    private var leanPhrase: LeanPhrase? = null
+    private var leanClock = 0f
+    private fun startLean(points: List<LeanPhrase.Knot>) {
+        leanPhrase = LeanPhrase(listOf(LeanPhrase.Knot(0f, peekRoll, peekYaw, gaze.eyeX, gaze.eyeY)) + points)
+        leanClock = 0f
+        peekLeft = points.last().t + 0.8f
+        director.holdBeats(peekLeft)
+    }
 
     /** Runs every frame (idle or not): yawn / slow blink / wake shake / rest / busy-spin timers. */
     private fun channelsUpdate(dt: Float) {
@@ -3012,14 +3061,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 { if (mood.valence > 0.25f) accent(FaceAccent.Glee, rr(1f, 1.5f)) else blink.request(minGap = 0.3f) },
             ))
             Episode.TiltChain -> {
-                val r1 = s * rr(5f, 7f); val r2 = -s * rr(4f, 6f)
-                tell("tilt-chain", 0f to "eyes to it", 0.25f to "tilt", 0.45f to "curious", 1.6f to "tilt other way", 2.8f to "straighten", acts = listOf(
-                    { gaze.focus(s * rr(0.25f, 0.35f), rr(0f, 0.12f), 3.6f, priority = 2) },
-                    { lean(r1, s * 2f) },
-                    { if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, 2f) },
-                    { lean(r2, -s * 1.5f) },
-                    { lean(0f, 0f) },
+                val r = s * rr(5f, 7f)
+                startLean(listOf(
+                    LeanPhrase.Knot(0.9f, r, s * 2f, s * 0.28f, 0.08f),
+                    LeanPhrase.Knot(1.55f, r * 0.75f, s * 1.4f, s * 0.12f, 0.1f),
+                    LeanPhrase.Knot(2.35f, -r * 0.7f, -s * 1.8f, -s * 0.24f, 0.06f),
+                    LeanPhrase.Knot(3.15f, -r * 0.28f, -s * 0.7f, -s * 0.08f, 0.04f),
+                    LeanPhrase.Knot(4.2f, 0f, 0f, 0f, 0.02f),
                 ))
+                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, 2.5f)
             }
             Episode.SkepticalLR -> {
                 val a = rr(1.6f, 1.9f)
@@ -3034,14 +3084,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 ))
             }
             Episode.HmmLean -> {
-                val nod = rng.nextFloat() < 0.5f
-                tell("hmm", 0f to "look down-side", 0.3f to "lean", 0.5f to "puzzled", 2.3f to "straighten", 2.45f to if (nod) "got it: nod" else "blink", acts = listOf(
-                    { gaze.focus(s * rr(0.28f, 0.4f), rr(0.18f, 0.3f), 2.4f, priority = 2) },
-                    { lean(s * rr(2.5f, 3.5f), s * rr(3f, 4.5f)) },
-                    { accent(FaceAccent.Puzzled, 1.7f) },
-                    { lean(0f, 0f) },
-                    { if (nod) director.gesture(MotionDirector.Gesture.Nod) else blink.request(minGap = 0.2f) },
+                val r = s * rr(3f, 4.5f); val y = s * rr(3f, 4.5f)
+                startLean(listOf(
+                    LeanPhrase.Knot(0.95f, r, y, s * 0.28f, 0.22f),
+                    LeanPhrase.Knot(1.8f, r * 0.78f, y * 1.1f, s * 0.23f, 0.3f),
+                    LeanPhrase.Knot(2.65f, r * 0.3f, y * 0.4f, s * 0.1f, 0.12f),
+                    LeanPhrase.Knot(3.7f, 0f, 0f, 0f, 0.02f),
                 ))
+                accent(FaceAccent.Puzzled, 2f)
             }
             Episode.DoubleTake -> perform(Response.DoubleTake, Stimulus("idle-flicker", s * rr(0.6f, 0.75f), rr(0f, 0.15f), 0.6f))
             Episode.Peek -> playMoment(Moment.Peek)
