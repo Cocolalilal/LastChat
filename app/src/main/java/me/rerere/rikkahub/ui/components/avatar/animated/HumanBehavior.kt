@@ -34,7 +34,7 @@ internal enum class Curve {
     CritSpring,
     /** Underdamped spring: a little overshoot — reserved for playful / happy beats and startle. */
     UnderSpring,
-    /** Instant snap then rigid hold: dumbfounded freeze. */
+    /** Brief surprised pause, executed with inertial deceleration. */
     SnapHold,
 }
 
@@ -73,7 +73,7 @@ internal object MotionVocab {
         Action.DoubleBlink to MotionSpec(Curve.EaseOut, 0.45f, 0f, 1f,
             "Rare (~5%): surprise, refocusing or catching oneself drifting off."),
         Action.DumbfoundedFreeze to MotionSpec(Curve.SnapHold, 1.4f, 0f, 1f,
-            "Stylistic stiffness: snap to wide eyes, everything rigid, then a slow blink to thaw."),
+            "Surprised pause: body brakes gently, gaze stays alive, then a blink to thaw."),
         Action.Sigh to MotionSpec(Curve.EaseInOut, 2.2f, 0f, 1f,
             "Bored/tired: one slow deep breath (squash) with the head dropping a few degrees."),
         Action.Fidget to MotionSpec(Curve.CritSpring, 0.6f, 6f, 1f,

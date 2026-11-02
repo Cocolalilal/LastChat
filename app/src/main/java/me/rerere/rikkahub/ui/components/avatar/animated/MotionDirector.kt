@@ -512,7 +512,7 @@ class MotionDirector(
             val T = switchFade.coerceIn(0.22f, 2.6f)
             for (i in 0 until 8) {
                 val dq = if (i < 3) MarkClipEngine.wrap180(raw[i] - q[i]) else raw[i] - q[i]
-                val bv = if (top.t > h * top.speed) dq / h * top.speed * tScale.coerceIn(0f, 1f) else 0f
+                val bv = if (top.t > h * top.speed) dq / h * tScale.coerceIn(0f, 1f) else 0f
                 val pred = tgt[i] + tgtV[i] * dt
                 inDurC[i] = setQuintic(inC[i], pred - base[i], tgtV[i] - bv, tgtA[i].coerceIn(-4000f, 4000f), T)
             }
@@ -582,7 +582,11 @@ class MotionDirector(
     }
 
     private fun envPose(t: Float, dur: Float, rise: Float, fall: Float, p: BodyPose): BodyPose {
-        val w = smootherstep(t / rise) * smootherstep((dur - t) / fall)
+        val release = ((t - (dur - fall)) / fall).coerceIn(0f, 1f)
+        // Let a tilt/droop travel a little past rest before its weight settles.
+        val tail = if (release < 0.72f) 1f - 1.045f * smootherstep(release / 0.72f)
+            else -0.045f * (1f - smootherstep((release - 0.72f) / 0.28f))
+        val w = smootherstep(t / rise) * tail
         return BodyPose(pitch = p.pitch * w, yaw = p.yaw * w, roll = p.roll * w, posY = p.posY * w,
             squashX = 1f + (p.squashX - 1f) * w, squashY = 1f + (p.squashY - 1f) * w)
     }
@@ -1022,14 +1026,16 @@ class MotionDirector(
          */
         fun snapCurve(u: Float, antic: Float, rebound: Float): Float {
             val a = 0.15f
-            if (antic > 0f && u < a) return -antic * sin(PI.toFloat() * u / a)
+            if (antic > 0f && u < a) return -antic * sin(PI.toFloat() * u / a).let { it * it }
             val v = if (antic > 0f) (u - a) / (1f - a) else u
             // Fast ease-out attack to 1 …
-            if (v < 0.3f) return sin(PI.toFloat() * (v / 0.3f) / 2f)
+            if (v < 0.3f) return smootherstep(v / 0.3f)
             // … then a damped swing through −rebound, ending exactly at 0.
             val x = (v - 0.3f) / 0.7f
             val k = -kotlin.math.ln(rebound.coerceIn(0.02f, 0.9f)) / 0.667f
-            return kotlin.math.exp(-k * x) * kotlin.math.cos(1.5f * PI.toFloat() * x)
+            val wd = 1.5f * PI.toFloat()
+            return exp(-k * x) * (kotlin.math.cos(wd * x) + k / wd * sin(wd * x)) *
+                (1f - smootherstep((x - 0.7f) / 0.3f))
         }
 
         /**
@@ -1056,7 +1062,9 @@ class MotionDirector(
             val a = 0.26f
             if (x < a) return sin(PI.toFloat() * 0.5f * x / a).let { it * it }
             val v = (x - a) / (1f - a)
-            return kotlin.math.exp(-3.2f * v) * kotlin.math.cos(2.6f * PI.toFloat() * v) * (1f - v * v)
+            val wd = 2.6f * PI.toFloat()
+            return exp(-3.2f * v) * (kotlin.math.cos(wd * v) + 3.2f / wd * sin(wd * v)) *
+                (1f - smootherstep((v - 0.65f) / 0.35f))
         }
 
         fun springNodPose(u: Float, deep: Float): BodyPose {
@@ -1071,10 +1079,7 @@ class MotionDirector(
 
         /** Startle pop: stretch up and back fast, squash on landing, springy settle. */
         fun startlePose(u: Float): BodyPose {
-            val x = u.coerceIn(0f, 1f)
-            // Pop channel: rises in ~70 ms, then a damped spring that ends at 0.
-            val pop = if (x < 0.09f) sin(PI.toFloat() * 0.5f * x / 0.09f)
-                else { val v = (x - 0.09f) / 0.91f; kotlin.math.exp(-3.6f * v) * kotlin.math.cos(2.4f * PI.toFloat() * v) * (1f - v * v) }
+            val pop = startlePop(u)
             return BodyPose(
                 pitch = -15f * pop,
                 posY = -0.06f * pop,
@@ -1086,8 +1091,11 @@ class MotionDirector(
         /** Startle pop channel alone (0 at both ends). */
         fun startlePop(u: Float): Float {
             val x = u.coerceIn(0f, 1f)
-            return if (x < 0.09f) sin(PI.toFloat() * 0.5f * x / 0.09f)
-                else { val v = (x - 0.09f) / 0.91f; kotlin.math.exp(-3.6f * v) * kotlin.math.cos(2.4f * PI.toFloat() * v) * (1f - v * v) }
+            if (x < 0.09f) return sin(PI.toFloat() * 0.5f * x / 0.09f).let { it * it }
+            val v = (x - 0.09f) / 0.91f
+            val wd = 2.4f * PI.toFloat()
+            return exp(-3.6f * v) * (kotlin.math.cos(wd * v) + 3.6f / wd * sin(wd * v)) *
+                (1f - smootherstep((v - 0.65f) / 0.35f))
         }
 
         /** 0 → 1 → 0 window on u with smootherstep edges of [a] and [b] (fractions of the span). */

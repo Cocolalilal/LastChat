@@ -193,10 +193,6 @@ internal class GazeDirector(
         if (!eyesOnly && hypot(hvx, hvy) > 0.3f && hypot(x - tx, y - ty) > 0.4f && (x - tx) * hvx + (y - ty) * hvy < 0f) {
             pendX = x; pendY = y; pendHead = withHead; pending = true; return
         }
-        // Engine21.1: a smaller look against a head turn still running does not wait, but the
-        // head's momentum is braked (velocity only — position stays continuous) so it cannot
-        // drag the look backwards first.
-        if (!eyesOnly && hypot(hvx, hvy) > 0.3f && hypot(x - tx, y - ty) > 0.06f && (x - tx) * hvx + (y - ty) * hvy < 0f) { hvx *= 0.3f; hvy *= 0.3f }
         pending = false
         sinceShift = 0f
         val gx = x.coerceIn(-1f, 1f)
@@ -225,7 +221,7 @@ internal class GazeDirector(
         }
     }
 
-    fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
+    fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean, allowIdle: Boolean = true) {
         bigShift = false
         sinceShift += dt
         if (pending && sinceShift >= SHIFT_REFRACTORY && pursuitT >= 1f) setTarget(pendX, pendY, pendHead)
@@ -237,7 +233,7 @@ internal class GazeDirector(
             }
         } else {
             holdLeft -= dt
-            if (holdLeft <= 0f) chooseFixation(life, drowsy)
+            if (holdLeft <= 0f && allowIdle) chooseFixation(life, drowsy)
         }
         // Smooth pursuit: target glides with an ease-in-out.
         if (returning) {
@@ -313,17 +309,6 @@ internal class GazeDirector(
         tx = REST_X; ty = REST_Y; eyeX = REST_X; eyeY = REST_Y; evx = 0f; evy = 0f
         htx = 0f; hty = 0f; pendingHx = 0f; pendingHy = 0f; headDelay = 0f
         headX = 0f; headY = 0f; hvx = 0f; hvy = 0f
-        pending = false; returning = false; pursuitT = 1f
-    }
-
-    /**
-     * Engine21.1: take over a look that was held on screen (spin hold): the gaze resumes from
-     * what is visible, not from where it wandered unseen (that came back as a look one way,
-     * then the other, during the hand-back blend).
-     */
-    fun adoptVisible(hx: Float, hy: Float, ex: Float, ey: Float) {
-        headX = hx; headY = hy; htx = hx; hty = hy; pendingHx = hx; pendingHy = hy; headDelay = 0f; hvx = 0f; hvy = 0f
-        eyeX = ex; eyeY = ey; tx = ex; ty = ey; evx = 0f; evy = 0f
         pending = false; returning = false; pursuitT = 1f
     }
 
@@ -1148,7 +1133,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
 
         // ---- gaze ----
-        gaze.update(dt, director.lifecycle, drowsy)
+        gaze.update(dt, director.lifecycle, drowsy, allowIdle = spT < 0f)
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift) blink.saccade()
         gaze.takeEvent()?.let { ev -> if (live) attentionEvent(ev) }
@@ -1309,12 +1294,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val br = sin(breathPh) * keep * awakeLife
         // Sigh: one slow deep breath with the head sinking a little (ease-in-out bump).
         val sighK = if (sighU < 1f) sin(PI.toFloat() * MotionVocab.easeInOutSine(sighU)) * keep else 0f
-        // Fidget: occasional small posture shift (critically damped).
+        // Fidget: a small posture shift with gentle follow-through.
         run {
             val om = MotionVocab[Action.Fidget].omega
-            val h = dt.coerceAtMost(1f / 30f)
-            fidgetYawV += (om * om * (fidgetYawT - fidgetYaw) - 2f * om * fidgetYawV) * h; fidgetYaw += fidgetYawV * h
-            fidgetRollV += (om * om * (fidgetRollT - fidgetRoll) - 2f * om * fidgetRollV) * h; fidgetRoll += fidgetRollV * h
+            fidgetYawMotion.advance(fidgetYawT, dt, om, 0.88f)
+            fidgetRollMotion.advance(fidgetRollT, dt, om, 0.88f)
         }
         val bodyBase0 = body.lerpTo(BodyPose.REST, w)
         // Moment channels: wiggle (damped roll oscillation), stretch (rise + hold + settle),
@@ -1340,30 +1324,23 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // closing give it a tiny squash, a big look gives it a small bob — so blinks and
         // glances carry through the figure instead of living only in the eyes.
         run {
-            if (gaze.bigShift && live) lifeV += 0.12f
+            if (gaze.bigShift && live) lifeMotion.velocity += 0.12f
             val om = 24f; val z = 0.42f
             val tgt = if (live) 0.010f * blink.closed else 0f
-            val h = dt.coerceAtMost(1f / 30f)
-            lifeV += (om * om * (tgt - lifeX) - 2f * z * om * lifeV) * h; lifeX += lifeV * h
+            lifeMotion.advance(tgt, dt, om, z)
         }
-        val lifeK = lifeX * keep
+        val lifeK = lifeMotion.value * keep
         var bodyOut = bodyBase.copy(
-            posY = bodyBase.posY + 0.3f * lifeK - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep + 0.4f * spinCrouchK - 0.02f * yawnK() * keep + 0.012f * restK * keep,
-            squashX = bodyBase.squashX * (1f + 0.5f * lifeK - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep + 0.6f * spinCrouchK - 0.04f * yawnK() * keep + 0.012f * restK * keep),
-            squashY = bodyBase.squashY * (1f - 0.8f * lifeK + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep - spinCrouchK + 0.07f * yawnK() * keep - 0.015f * restK * keep),
+            posY = bodyBase.posY + 0.3f * lifeK - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep + 0.4f * spinCrouchK * keep - 0.02f * yawnK() * keep + 0.012f * restK * keep,
+            squashX = bodyBase.squashX * (1f + 0.5f * lifeK - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep + 0.6f * spinCrouchK * keep - 0.04f * yawnK() * keep + 0.012f * restK * keep),
+            squashY = bodyBase.squashY * (1f - 0.8f * lifeK + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep - spinCrouchK * keep + 0.07f * yawnK() * keep - 0.015f * restK * keep),
         )
         momentLid = (1f - 0.75f * stK.coerceAtLeast(0f) - 0.45f * drK - 0.85f * yawnK()).coerceIn(0f, 1f)
-        var hx = (gaze.headX * keep).coerceIn(-1f, 1f)
+        val hx = (gaze.headX * keep).coerceIn(-1f, 1f)
         var hy = (gaze.headY * keep).coerceIn(-1f, 1f)
         // Eyes lag a head shake a touch (secondary motion) and lag a wiggle.
-        var lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep - (shakeYaw * 0.004f + wig * 0.003f) * keep
+        val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep - (shakeYaw * 0.004f + wig * 0.003f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
-        // Dumbfounded freeze: snap, then rigid (stylistic stiffness) — the whole look holds.
-        if (freezeLeft > 0f) {
-            val fz = frozen
-            if (fz == null) frozen = FrozenLook(bodyOut, hx, hy, lx, ly)
-            else { bodyOut = fz.body.copy(squashX = fz.body.squashX, squashY = fz.body.squashY); hx = fz.hx; hy = fz.hy; lx = fz.lx; ly = fz.ly }
-        } else frozen = null
         // Up-right is a glance, never a rest: after ~0.75 s the up component eases out.
         val upNow = bodyOut.yaw + 18f * hx > 3f && bodyOut.pitch + 14f * hy < -2f
         upRightPause -= dt
@@ -1381,7 +1358,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             if (bodyOut.yaw > 0f) bodyOut = bodyOut.copy(yaw = bodyOut.yaw * (1f - 0.5f * upK))
         }
         val bodyRc = bodyOut
-        val pitchOut = bodyRc.pitch
         val built = MotionFrame(
             body = bodyRc,
             headLookX = hx,
@@ -1405,51 +1381,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             spinPitch = spinAngles().second * keep,
             spinRoll = spinAngles().third * keep,
         )
-        // During a spin the face is rigid: gaze, head look, lead, lids and expression hold the
-        // values they had when the spin began, so the eyes ride the surface with no drift.
-        val spinningNow = abs(spinYaw) > 0.5f || abs(spinV) > 1f
-        if (spinningNow) {
-            var held = spinHeld ?: frame.also { spinHeld = it }
-            // A blink that was under way when the spin began finishes opening (never spin
-            // with shut eyes); after that the lid holds.
-            if (built.lid > held.lid) { held = held.copy(lid = built.lid); spinHeld = held }
-            frame = built.copy(
-                // No other layer adds or fights rotation while it spins.
-                body = built.body.copy(yaw = held.body.yaw, pitch = held.body.pitch, roll = held.body.roll),
-                headLookX = held.headLookX, headLookY = held.headLookY,
-                leadX = held.leadX, leadY = held.leadY, lid = held.lid,
-                face = held.face, eyeGap = held.eyeGap, eyeScale = held.eyeScale,
-                timeSec = held.timeSec,
-            )
-            spinRelease = 0f
-        } else {
-            val held = spinHeld
-            if (held != null && spinRelease == 0f && keep > 0.5f) {
-                // Invert the composition above (hx = headX·keep, lead from eye − head) so the live
-                // gaze continues exactly from the held look.
-                val ghx = held.headLookX / keep; val ghy = held.headLookY / keep
-                val ex = (held.leadX / keep + 0.07f * ghx) / 0.1f
-                val ey = (held.leadY / keep + 0.06f * ghy) / 0.085f
-                gaze.adoptVisible(ghx, ghy, ex.coerceIn(-1f, 1f), ey.coerceIn(-1f, 1f))
-            }
-            if (held != null && spinRelease < 1f) {
-                // Hand back to the live layers smoothly (no pop after the spin).
-                spinRelease = (spinRelease + dt / 0.35f).coerceAtMost(1f)
-                val k = MotionVocab.easeInOutSine(spinRelease)
-                fun l(a: Float, b: Float) = a + (b - a) * k
-                frame = built.copy(
-                    body = built.body.copy(yaw = l(held.body.yaw, built.body.yaw), pitch = l(held.body.pitch, built.body.pitch), roll = l(held.body.roll, built.body.roll)),
-                    headLookX = l(held.headLookX, built.headLookX), headLookY = l(held.headLookY, built.headLookY),
-                    leadX = l(held.leadX, built.leadX), leadY = l(held.leadY, built.leadY), lid = l(held.lid, built.lid),
-                    face = lerpFaceParams(held.face, built.face, k),
-                )
-                if (spinRelease >= 1f) spinHeld = null
-            } else {
-                spinHeld = null
-                frame = built
-            }
-        }
-        withFollow()
+        frame = built
+        withFollow(keep)
         trace?.let { tr ->
             val f = frame
             tr.add(TraceRow(
@@ -1461,17 +1394,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             ))
         }
     }
-    private var spinHeld: MotionFrame? = null
-    private fun withFollow() {
+    private fun withFollow(keep: Float) {
         if (spinFollowX == 0f) return
         // The face keeps sliding a touch along the spin direction (vertical for a flip).
-        frame = if (spPath == SpinPath.Flip) frame.copy(leadY = frame.leadY + spinFollowX * 0.8f)
-            else frame.copy(leadX = frame.leadX + spinFollowX)
+        frame = if (spPath == SpinPath.Flip) frame.copy(leadY = frame.leadY + spinFollowX * 0.8f * keep)
+            else frame.copy(leadX = frame.leadX + spinFollowX * keep)
     }
     private fun spinAngles(): Triple<Float, Float, Float> =
         if (abs(spinYaw) < 1e-4f) ZERO3 else spPath.angles(spinYaw / (360f * spDir), spDir)
     private val ZERO3 = Triple(0f, 0f, 0f)
-    private var spinRelease = 1f
 
     private var breathPh = 0f
     private var startleHoldT = 0f
@@ -1483,16 +1414,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     // ---- character moments (engine12) ----
     private val moments = MomentPlanner(rng)
     private var spinYaw = 0f; private var spinV = 0f
-    /**
-     * Spin (engine13), one timeline per spin:
-     *  run-up (optional): a small counter-turn of a few degrees with a slight crouch, eased;
-     *  turn: from the wind-up through 360°, velocity rising from rest and then a long, friction-
-     *        like deceleration to a dead stop (no body overshoot);
-     *  follow-through: the body has stopped, the face keeps sliding a little further along the
-     *        surface in the spin direction (ease-out), then glides back (ease-in-out, no wobble);
-     *  shake-off (optional, mood-dependent): a few small decaying head shakes, eyes lagging.
-     * Variants (run-up, shake, direction, speed, sizes) are randomised and history-aware.
-     */
+    // A spin adds continuous motion to the live pose; no layer is latched or handed back.
     /** After a spin (and any shake-off): a short "recovering" pause. No new glances or
      *  moments, eyes rest near centre with only micro-saccades; real stimuli still win. */
     private var recoverT = 0f
@@ -1519,12 +1441,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var spMain = 1.2f
     private var spFollow = 0f; private var spFollowOut = 0.2f; private var spFollowBack = 0.5f
     private var spShake = false; private var spShakeDelay = 0.15f; private var spShakeAmp = 5f
-    private var spShakeHz = 4.5f; private var spShakeCycles = 2.5f
     private var spLastRun = false; private var spLastShake = false
     private var spDirRun = 0
     private var spinCrouchK = 0f
     private var spinFollowX = 0f
-    private val FOLLOW_PRE = 0.5f
+    private var spinTrajectory: SpinTrajectory? = null
     private var shakeYaw = 0f
     private var forceRun: Boolean? = null; private var forceShake: Boolean? = null
     private var forcePath: SpinPath? = null
@@ -1558,25 +1479,26 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val pRun = (if (playful) 0.6f else 0.45f) * (if (spLastRun) 0.55f else 1.25f)
         // Engine20: every spin winds up — a small counter-turn and crouch (anticipation), then a
         // springy launch. Only its size varies (bigger when it is a deliberate run-up).
-        val run = forceRun ?: (rng.nextFloat() < pRun)
-        spRun = if (run) rr(0.3f, 0.42f) else rr(0.22f, 0.3f)
-        spRunDeg = if (run) rr(4f, 7f) else rr(2.5f, 4f)
+        var run = forceRun ?: (rng.nextFloat() < pRun)
+        spRun = if (run) rr(0.36f, 0.46f) else rr(0.3f, 0.36f)
+        spRunDeg = if (run) rr(9f, 13f) else rr(6f, 9f)
         spCrouch = if (run) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
-        // engine14.1: weighty spin, 360° in ~1.8–1.98s, peak ~280–320°/s.
-        spMain = if (playful) rr(2.05f, 2.15f) else rr(2.1f, 2.3f) // engine17: longer glide, same weight
+        // A readable wind-up, then a decisive turn with a long braking arc.
+        spMain = if (playful) rr(1.55f, 1.7f) else rr(1.7f, 1.85f)
         spFollow = rr(0.075f, 0.11f) * (1.6f - 0.3f * spMain) // eyes carry on past the stop (faster spin → more)
-        spFollowOut = rr(0.2f, 0.3f); spFollowBack = rr(0.5f, 0.75f)
+        spFollowOut = rr(0.22f, 0.3f); spFollowBack = rr(0.65f, 0.85f)
         val pShake = (0.18f + 0.22f * (if (playful) 1f else 0f) + 0.15f * (1f - temper.energy)) * (if (spLastShake) 0.45f else 1.2f)
         spShake = forceShake ?: (rng.nextFloat() < pShake)
-        spShakeDelay = rr(0.05f, 0.25f); spShakeAmp = rr(3.5f, 6.5f); spShakeHz = rr(4f, 5.2f); spShakeCycles = rr(2f, 3f)
+        spShakeDelay = rr(0.05f, 0.25f); spShakeAmp = rr(3.5f, 6.5f)
         // Never the same way twice in a row: if the variant would repeat, change one thing.
         if (forceRun == null && forceShake == null && run == spLastRun && spShake == spLastShake && rng.nextFloat() < 0.8f) {
             if (rng.nextBoolean()) { spShake = !spShake } else {
-                val r2 = !run
-                spRun = if (r2) rr(0.3f, 0.42f) else rr(0.22f, 0.3f); spRunDeg = if (r2) rr(4f, 7f) else rr(2.5f, 4f); spCrouch = if (r2) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
+                run = !run
+                spRun = if (run) rr(0.36f, 0.46f) else rr(0.3f, 0.36f)
+                spRunDeg = if (run) rr(9f, 13f) else rr(6f, 9f)
+                spCrouch = if (run) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
             }
         }
-        spPeakAt = rr(0.24f, 0.36f)
         // Engine16: the axis / path varies (never the same path twice in a row).
         spPath = forcePath ?: run {
             val opts = SpinPath.entries.map { it to it.weight * (if (it == spLastPath) 0.1f else if (it in spPathHist) 0.6f else 1f) }
@@ -1587,94 +1509,42 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         forcePath = null
         // Flips and cartwheels carry more visible mass: a touch slower.
         if (spPath == SpinPath.Flip) spMain *= rr(0.94f, 1.0f).let { 1f / it }.coerceAtMost(1.06f)
-        spLastRun = spRun > 0f; spLastShake = spShake
+        spLastRun = run; spLastShake = spShake
         forceRun = null; forceShake = null
+        spinTrajectory = SpinTrajectory(spRun, spMain, spRunDeg, spCrouch, rr(6f, 10f), spFollow, spFollowOut, spFollowBack)
         spT = 0f
         log("spin path=$spPath dir=${dir.toInt()} runUp=${spRun > 0f} shake=$spShake main=${"%.2f".format(spMain)}")
     }
 
-    private var spPeakAt = 0.3f
-    private val SPIN_RISE = 0.22f
-    private val SPIN_GLIDE = 0.4f
-
-    /**
-     * Engine17: normalised turn progress with mass. Velocity follows a smooth asymmetric
-     * bump v(u) ∝ u^1.5·(1-u)^3.2 — eases out of rest, peaks around a third of the way,
-     * then a long frictional glide to a dead stop. No constant-speed (linear) plateau.
-     */
-    private fun spinCurve(u: Float, @Suppress("UNUSED_PARAMETER") a0: Float): Float {
-        if (u <= 0f) return 0f
-        if (u >= 1f) return 1f
-        val x = u * (SPIN_CDF.size - 1)
-        val i = x.toInt().coerceAtMost(SPIN_CDF.size - 2)
-        val f = x - i
-        return SPIN_CDF[i] + (SPIN_CDF[i + 1] - SPIN_CDF[i]) * f
-    }
-
-    private val SPIN_CDF: FloatArray = run {
-        val n = 512
-        val v = DoubleArray(n + 1) { k -> val u = k / n.toDouble(); Math.pow(u, 1.5) * Math.pow(1 - u, 3.2) }
-        val c = FloatArray(n + 1); var acc = 0.0
-        for (k in 1..n) { acc += (v[k] + v[k - 1]) * 0.5; c[k] = acc.toFloat() }
-        for (k in 0..n) c[k] /= acc.toFloat()
-        c
-    }
-
-    /** Advances the spin timeline. */
+    /** The trajectory runs through its settle before the whole-turn angle is rebased. */
     private fun spinUpdate(dt: Float) {
-        var prev = spinYaw
+        val prev = spinYaw
         spinCrouchK = 0f; spinFollowX = 0f; shakeYaw = 0f
-        if (spT >= 0f) {
+        val trajectory = spinTrajectory
+        if (spT >= 0f && trajectory != null) {
             spT += dt
-            val tRun = spRun; val tMain = tRun + spMain
-            val tFol = tMain + spFollowOut + spFollowBack
-            val tShake = tFol + spShakeDelay
-            val shakeDur = spShakeCycles / spShakeHz
-            when {
-                spT < tRun -> {
-                    val u = MotionVocab.easeInOutSine(spT / tRun)
-                    spinYaw = -spDir * spRunDeg * u
-                    spinCrouchK = spCrouch * u
-                }
-                spT < tMain -> {
-                    val u = ((spT - tRun) / spMain).coerceIn(0f, 1f)
-                    // Starts from rest, peaks early, long smooth deceleration to a dead stop.
-                    val c = spinCurve(u, spPeakAt)
-                    val from = -spDir * spRunDeg
-                    spinYaw = from + (spDir * 360f - from) * c
-                    // Crouch releases quickly as the turn begins.
-                    // Launch: the crouch springs out into a brief stretch (the bounce), then settles.
-                    val lk = ((spT - tRun) / 0.32f).coerceIn(0f, 1f)
-                    spinCrouchK = spCrouch * (1f - MotionVocab.easeOutCubic((lk / 0.45f).coerceAtMost(1f))) -
-                        spCrouch * 0.7f * sin(PI.toFloat() * lk) * (1f - lk)
-                    // Engine20 follow-through: as the body brakes, the eyes carry on (inertia) —
-                    // the lead builds through the deceleration and continues past the stop.
-                    val q = ((u - 0.55f) / 0.45f).coerceIn(0f, 1f)
-                    spinFollowX = spDir * spFollow * FOLLOW_PRE * q * q * (1.5f - 0.5f * q) // still rising at the stop (no flat spot)
-                }
-                else -> {
-                    if (abs(spinYaw) > 1f) { spinYaw = 0f; prev = 0f; log("spin stop") } // 360° ≡ rest pose
-                    val ft = spT - tMain
-                    spinFollowX = spDir * spFollow * when {
-                        ft < spFollowOut -> FOLLOW_PRE + (1f - FOLLOW_PRE) * sin(0.5f * PI.toFloat() * (ft / spFollowOut))
-                        // Back with a soft spring: a hair past rest, then home.
-                        ft < spFollowOut + spFollowBack -> ((ft - spFollowOut) / spFollowBack).let { q ->
-                            1f - MotionVocab.easeInOutSine(q) - 0.12f * sin(PI.toFloat() * q) * q }
-                        else -> 0f
-                    }
-                    // Engine17.1: the shake-off is the one shared head shake.
-                    if (spShake && spT >= tShake) { wakeShake(spShakeAmp, cause = "spin shake-off"); spT = -1f }
-                    else if (!spShake && spT >= tFol) { spT = -1f; beginRecover() }
-                }
+            trajectory.sample(spT)
+            spinYaw = spDir * trajectory.angle
+            spinCrouchK = trajectory.compression
+            spinFollowX = spDir * trajectory.eyeLead
+            if (spT >= trajectory.duration + (if (spShake) spShakeDelay else 0f)) {
+                spinYaw = 0f // exact whole turn, after all displacement and velocity have settled
+                spT = -1f
+                spinTrajectory = null
+                if (spShake) wakeShake(spShakeAmp, cause = "spin shake-off") else beginRecover()
             }
         }
-        spinV = if (dt > 0f) (spinYaw - prev) / dt else 0f
+        spinV = if (dt > 0f) MarkClipEngine.wrap180(spinYaw - prev) / dt else 0f
     }
     private var wiggleU = 1f; private var wiggleA = 0f; private var wiggleDur = 0.9f
     private var stretchU = 1f; private var stretchDur = 2.6f
     private var driftU = 1f; private var driftDur = 4f; private var driftDepth = 9f
-    private var peekRoll = 0f; private var peekRollV = 0f; private var peekRollT = 0f
-    private var peekYaw = 0f; private var peekYawV = 0f; private var peekYawT = 0f
+    private val peekRollMotion = DampedMotion()
+    private val peekRoll get() = peekRollMotion.value
+    private var peekRollT = 0f
+    private val peekYawMotion = DampedMotion()
+    private val peekYaw get() = peekYawMotion.value
+    private var peekYawT = 0f
     private var peekLeft = 0f
     private var peekDelay = 0f; private var peekPendRoll = 0f; private var peekPendYaw = 0f
     private var pillTiltIn = -1f
@@ -1684,8 +1554,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var upRamp = 0f
     private var shownAt = -99f
     private var shownPrio = -1
-    private var lifeX = 0f
-    private var lifeV = 0f
+    private val lifeMotion = DampedMotion()
     private var upRightPause = 0f
     private var upK = 0f
 
@@ -1762,16 +1631,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         recoverT = (recoverT - dt).coerceAtLeast(0f)
         // Engine16: spontaneous idle beats come from the episode planner (see aliveUpdate).
         moments.update(dt, temper, personality, false, quietSec, false)
-        val h = dt.coerceAtMost(1f / 30f)
         spinUpdate(dt)
         channelsUpdate(dt)
-        // Peek channel (critically damped lean).
+        // A lean carries its velocity through retargets, with a small, weighty overshoot.
         if (peekDelay > 0f) { peekDelay -= dt; if (peekDelay <= 0f) { peekRollT = peekPendRoll; peekYawT = peekPendYaw } }
         if (peekLeft > 0f) { peekLeft -= dt; if (peekLeft <= 0f) { peekRollT = 0f; peekYawT = 0f } }
         if (pillTiltIn > 0f) { pillTiltIn -= dt; if (pillTiltIn <= 0f) director.gesture(MotionDirector.Gesture.Tilt) }
         val om = 7f
-        peekRollV += (om * om * (peekRollT - peekRoll) - 2f * om * peekRollV) * h; peekRoll += peekRollV * h
-        peekYawV += (om * om * (peekYawT - peekYaw) - 2f * om * peekYawV) * h; peekYaw += peekYawV * h
+        peekRollMotion.advance(peekRollT, dt, om, 0.78f)
+        peekYawMotion.advance(peekYawT, dt, om, 0.82f)
         // Scan timeline.
         if (scan.isNotEmpty()) {
             val t0 = scanT; scanT += dt
@@ -1801,14 +1669,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
 
-    private class FrozenLook(val body: BodyPose, val hx: Float, val hy: Float, val lx: Float, val ly: Float)
-    private var frozen: FrozenLook? = null
     private var freezeLeft = 0f
     private var sighU = 1f
     private var sighIn = 40f
     private var fidgetIn = 12f
-    private var fidgetYaw = 0f; private var fidgetYawV = 0f; private var fidgetYawT = 0f
-    private var fidgetRoll = 0f; private var fidgetRollV = 0f; private var fidgetRollT = 0f
+    private val fidgetYawMotion = DampedMotion()
+    private val fidgetYaw get() = fidgetYawMotion.value
+    private var fidgetYawT = 0f
+    private val fidgetRollMotion = DampedMotion()
+    private val fidgetRoll get() = fidgetRollMotion.value
+    private var fidgetRollT = 0f
     private class Pending(var left: Float, val pc: Percept, val handler: ((Response) -> Unit)?, val allowNone: Boolean)
     private val pending = ArrayList<Pending>()
     private var takeT = -1f
@@ -1939,6 +1809,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
             Response.Freeze -> {
                 freezeLeft = hold(1.1f, 1.7f)
+                director.freezeBase(freezeLeft)
                 accent(FaceAccent.Startled, freezeLeft + 0.2f, force = true)
             }
             Response.DoubleTake -> {
@@ -1949,15 +1820,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             Response.SlowBlink -> blink.request(minGap = 0.4f)
             Response.Sigh -> if (sighU >= 1f) sighU = 0f
         }
-    }
-
-    private fun lerpFaceParams(a: FaceParams, b: FaceParams, k: Float): FaceParams {
-        fun l(x: Float, y: Float) = x + (y - x) * k
-        fun e(p: EyeShape, q: EyeShape) = EyeShape(
-            sx = l(p.sx, q.sx), sy = l(p.sy, q.sy), dx = l(p.dx, q.dx), dy = l(p.dy, q.dy), rot = l(p.rot, q.rot),
-            upper = l(p.upper, q.upper), lower = l(p.lower, q.lower), slant = l(p.slant, q.slant),
-        )
-        return FaceParams(e(a.left, b.left), e(a.right, b.right))
     }
 
     private fun lerpFace(f: FaceParams, w: Float): FaceParams {

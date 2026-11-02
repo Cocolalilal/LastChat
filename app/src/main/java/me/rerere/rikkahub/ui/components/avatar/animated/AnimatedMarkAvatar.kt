@@ -299,8 +299,8 @@ private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
 /**
  * Character-moment spins (engine12b) are real soft-3D rotations: the spin is added to the
  * solid's yaw after the per-shape turn cap, the ring mesh is projected at that angle, and the
- * eyes are seated rigidly on the rotated surface (same mesh projection, no safe-region squeeze,
- * no drift); an eye disappears when its surface point turns past the limb, and the silhouette
+ * eyes keep their live gaze and follow-through on the rotated surface. Surface constraints fade
+ * around the front-facing pose; an eye disappears past the limb, and the silhouette
  * clip occludes any part beyond the edge. The body stays one flat fill.
  */
 internal fun DrawScope.drawMark(
@@ -344,7 +344,9 @@ private fun DrawScope.drawMarkInner(
     // eyes keep their inset. tanh keeps it springy instead of a hard stop.
     val (yawCap, pitchCap) = turnCapFor(shape.id, bodyKind)
     val pitch = softCap(f.body.pitch + look.pitchDeg, pitchCap) + f.spinPitch
-    val spinning = kotlin.math.abs(f.spinYaw) >= 0.5f || kotlin.math.abs(f.spinPitch) >= 0.5f || kotlin.math.abs(f.spinRoll) >= 0.5f
+    // Surface guards fade away over the first 35° and return as the turn settles.
+    // A binary "spinning" flag used to change eye seating at 0.5° in a single frame.
+    val safety = spinSafetyWeight(f.spinYaw, f.spinPitch, f.spinRoll)
     val yaw = softCap(f.body.yaw + look.yawDeg, yawCap) + f.spinYaw
     val roll = f.body.roll + f.spinRoll
     val clip = ClipSample(
@@ -445,9 +447,9 @@ private fun DrawScope.drawMarkInner(
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
-            awake = if (calm || spinning) 0f else 1f,
-            yawDeg = yawOverride ?: (yaw * k),
-            pitchDeg = pitch * k,
+            awake = if (calm) 0f else 1f,
+            yawDeg = yawOverride ?: (MarkClipEngine.wrap180(yaw) * k),
+            pitchDeg = MarkClipEngine.wrap180(pitch) * k,
             rollDeg = roll,
             shape = shape,
             bodyPath = bodyCentered,
@@ -458,15 +460,9 @@ private fun DrawScope.drawMarkInner(
             leadY = f.leadY * k,
             extraHalfGap = extra,
         )
-        // Rigid spin: take the spacing the gap pass gives the un-spun face and bake it into the
-        // surface seating, so the eyes stay on fixed surface points for the whole turn.
-        fun seatSpin(): Pair<Path, Path> {
-            if (bodyKind == "sphere") return seatGrok(1f)
-            // The face is frozen during a spin, so the baked spacing is computed once per spin.
-            return seatGrok(1f)
-        }
-        var (left, right) = if (spinning) seatSpin() else if (bodyKind == "sphere") seatGrok(1f)
-            else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok) { listOf(it.first, it.second) }
+        var (left, right) = if (bodyKind == "sphere" || safety <= 0f) seatGrok(1f)
+            else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok,
+                { listOf(it.first, it.second) }, strength = safety)
         // Reject only empty / degenerate seating, never valid capsules.
         fun ok(p: Path): Boolean {
             if (p.isEmpty) return false
@@ -478,39 +474,38 @@ private fun DrawScope.drawMarkInner(
             left = ss.first; right = ss.second
         }
         // Never let the eyes touch or overlap (Sad ^ ^, closed arcs, mid-morph, turned).
-        // A spin is a rigid rotation of the face: the projected gap narrows with the surface, so
-        // the gap pass (which would push the eyes off their surface points) is skipped then.
+        // Let perspective narrow the gap during a turn; restore surface constraints gradually.
         // Engine21.2: never two eyes leaning the same way (// or \\) — blends, accents on a face
-        // and a diagonal gaze's perspective included (head roll is kept). Rigid while spinning.
-        if (ok(left) && ok(right) && !spinning) TiltGuard.grok(left, right, roll).let { left = it.first; right = it.second }
-        if (ok(left) && ok(right) && !spinning) {
-            GrokEyeGap.shrinkInPlace(left, right, he, 1f, GrokEyeGap.TOUCH_GAP).let { left = it.first; right = it.second }
-            val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP)
+        // and a diagonal gaze's perspective included (head roll is kept).
+        if (ok(left) && ok(right) && safety > 0f) TiltGuard.grok(left, right, roll, strength = safety).let { left = it.first; right = it.second }
+        if (ok(left) && ok(right) && safety > 0f) {
+            GrokEyeGap.shrinkInPlace(left, right, he, 1f, GrokEyeGap.TOUCH_GAP * safety, minK = 1f - 0.28f * safety).let { left = it.first; right = it.second }
+            val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP * safety)
             if (dl != androidx.compose.ui.geometry.Offset.Zero) {
-                left = Path().apply { addPath(left, dl) }
-                right = Path().apply { addPath(right, dr) }
+                left = Path().apply { addPath(left, dl * safety) }
+                right = Path().apply { addPath(right, dr * safety) }
             }
         }
-        if (ok(left) && ok(right) && !spinning) {
+        if (ok(left) && ok(right) && safety > 0f) {
             val (k, c) = EyeSafeRegion.shrink(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
             if (k < 1f) {
                 // Shrinking about the pair centre narrows the gap a little, so the gap
                 // constraint runs again afterwards.
-                left = EyeSafeRegion.scalePath(left, k, c)
-                right = EyeSafeRegion.scalePath(right, k, c)
-                val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP)
+                left = EyeSafeRegion.scalePath(left, 1f + (k - 1f) * safety, c)
+                right = EyeSafeRegion.scalePath(right, 1f + (k - 1f) * safety, c)
+                val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP * safety)
                 if (dl != androidx.compose.ui.geometry.Offset.Zero) {
-                    left = Path().apply { addPath(left, dl) }
-                    right = Path().apply { addPath(right, dr) }
+                    left = Path().apply { addPath(left, dl * safety) }
+                    right = Path().apply { addPath(right, dr * safety) }
                 }
             }
         }
         // Shrink first (keeps the pair centre, so gaze motion survives), then slide in.
-        if (ok(left) && ok(right) && !spinning) {
+        if (ok(left) && ok(right) && safety > 0f) {
             val n = EyeSafeRegion.nudge(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
             if (n != androidx.compose.ui.geometry.Offset.Zero) {
-                left = Path().apply { addPath(left, n) }
-                right = Path().apply { addPath(right, n) }
+                left = Path().apply { addPath(left, n * safety) }
+                right = Path().apply { addPath(right, n * safety) }
             }
         }
         if (AvatarDebugMetrics.enabled && ok(left) && ok(right)) {
@@ -525,11 +520,8 @@ private fun DrawScope.drawMarkInner(
             }
             return
         }
-        // While spinning, clip to the rotated silhouette so an eye rolling over the edge wraps away.
-        if (spinning) Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false) {
-            if (ok(left)) { drawPath(left, eye); with(ContrastGuard) { eyeOutline(left, he) } }
-            if (ok(right)) { drawPath(right, eye); with(ContrastGuard) { eyeOutline(right, he) } }
-        } else Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
+        // One clipping path throughout: no transform-mode switch at spin entry/exit.
+        Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false) {
             if (ok(left)) { drawPath(left, eye); with(ContrastGuard) { eyeOutline(left, he) } }
             if (ok(right)) { drawPath(right, eye); with(ContrastGuard) { eyeOutline(right, he) } }
         }
@@ -559,23 +551,25 @@ private fun DrawScope.drawMarkInner(
         fit = fit,
         leadX = f.leadX * k,
         leadY = f.leadY * k,
-        pitchDeg = pitch * k,
-        yawDeg = yaw * k,
+        pitchDeg = MarkClipEngine.wrap180(pitch) * k,
+        yawDeg = MarkClipEngine.wrap180(yaw) * k,
         rollDeg = roll,
     )
     val genBody = EyeSafeRegion.Body(projected)
-    var (le, re) = if (bodyKind == "sphere" || calm || spinning) seatGen(1f)
-        else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
-    if (!calm && !spinning) {
+    var (le, re) = if (bodyKind == "sphere" || calm || safety <= 0f) seatGen(1f)
+        else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen,
+            { listOfNotNull(it.first?.path, it.second?.path) }, strength = safety)
+    if (!calm && safety > 0f) {
         val clipMargin = he * GEN_CLIP_MARGIN
         val n = EyeSafeRegion.nudge(genBody, listOfNotNull(le?.path, re?.path), clipMargin)
         if (n != androidx.compose.ui.geometry.Offset.Zero) {
-            fun mv(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(Path().apply { addPath(it.path, n) }, it.gradStart + n, it.gradEnd + n) }
+            fun mv(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(Path().apply { addPath(it.path, n * safety) }, it.gradStart + n * safety, it.gradEnd + n * safety) }
             le = mv(le); re = mv(re)
         }
         fun shX(e: GenericalSeat.SeatedEye?): GenericalSeat.SeatedEye? {
             if (e == null) return null
-            val (kx, c) = EyeSafeRegion.shrinkX(genBody, e.path, clipMargin)
+            val (rawK, c) = EyeSafeRegion.shrinkX(genBody, e.path, clipMargin)
+            val kx = 1f + (rawK - 1f) * safety
             if (kx >= 1f) return e
             fun scX(o: Offset) = Offset(c.x + (o.x - c.x) * kx, o.y)
             return GenericalSeat.SeatedEye(EyeSafeRegion.scalePathX(e.path, kx, c), scX(e.gradStart), scX(e.gradEnd))

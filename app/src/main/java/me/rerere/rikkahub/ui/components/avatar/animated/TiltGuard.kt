@@ -150,12 +150,12 @@ object TiltGuard {
      * Grok: turns both pills about their own centres so they no longer share a lean (roll kept).
      * Returns the inputs unchanged when there is nothing to remove.
      */
-    fun grok(left: Path, right: Path, rollDeg: Float = 0f): Pair<Path, Path> {
+    fun grok(left: Path, right: Path, rollDeg: Float = 0f, strength: Float = 1f): Pair<Path, Path> {
         if (left.isEmpty || right.isEmpty) return left to right
         val nl = sample(left, lxs, lys, rollDeg); val nr = sample(right, rxs, rys, rollDeg)
         if (nl == 0 || nr == 0) return left to right
         val (tl, ul) = axis(lxs, lys, nl); val (tr, ur) = axis(rxs, rys, nr)
-        val m = common(tl, tr)
+        val m = common(tl, tr) * strength
         if (m == 0f) return left to right
         fun turn(p: Path, upright: Boolean): Path {
             val b = p.getBounds()

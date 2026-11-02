@@ -1439,3 +1439,30 @@ saved per widget in both WidgetPrefs and Glance state; refreshes and restarts pr
 Existing widgets without a preset keep their random seed/variant behavior: a no-anger expression
 and settled attitude, with the variant advanced once per system update. Unknown preset IDs also
 fall back to this behavior. Other avatar types retain their existing configuration flow.
+
+## Motion continuity pass
+
+Spins now add a wind-up, accelerated turn, small body overshoot and damped settle to
+all the live motion channels. The body, gaze, lids and face are no longer latched at
+spin entry or blended back from a held pose afterward. Idle fixation planning pauses
+through the spin, while an existing look keeps moving and outside stimuli still work.
+The eyes anticipate the turn, continue drifting during braking, then settle after the
+body. Whole-turn angles are rebased only once their motion has finished.
+
+Eye surface constraints fade with angular distance from the front over 35 degrees,
+replacing the binary spin threshold. Seating uses wrapped angles so a safety fit
+cannot scale a 360-degree turn into an unrelated orientation. Grok uses the silhouette
+clip throughout, keeping the rendering transform consistent at entry and exit.
+
+Peek/episode leans, posture fidgets and the secondary bob use exact damped oscillators;
+retargets preserve position and velocity, and slower frames no longer discard elapsed
+time or destabilize the bob. Leans have a small overshoot. Tilt/droop gesture returns
+also pass gently beyond rest. Nod, recoil and anticipation curves have matching
+velocity at their joins and end with zero velocity. Beat handovers no longer count
+source playback speed twice when calculating incoming velocity. A surprised pause
+brakes the base motion instead of capturing and releasing the entire visible pose.
+
+`MotionDynamicsTest` covers spring frame-rate invariance, spin anticipation and
+follow-through, velocity continuity at phase boundaries, smooth surface-guard weights,
+and live gaze during each spin path. Expression morphs, held-lid springs, breathing,
+blink timing and the behavior/rarity rules retain their existing continuous mechanisms.

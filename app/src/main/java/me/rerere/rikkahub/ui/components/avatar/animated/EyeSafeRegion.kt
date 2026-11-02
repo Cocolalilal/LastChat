@@ -48,20 +48,20 @@ internal object EyeSafeRegion {
     }
 
     /** Largest k in 0..1 (k = 1 first) for which [seat](k) keeps the eyes inside. */
-    fun <T> fit(body: Body, margin: Float, seat: (Float) -> T, paths: (T) -> List<Path>): T {
+    fun <T> fit(body: Body, margin: Float, seat: (Float) -> T, paths: (T) -> List<Path>, strength: Float = 1f): T {
         val full = seat(1f)
         if (inside(body, paths(full), margin)) return full
         // Keep at least KMIN of the turn so gaze motion never dies on tight shapes; any
         // remaining overlap is fixed by nudge / shrink.
         var lo = KMIN; var hi = 1f
         var best = seat(KMIN)
-        if (!inside(body, paths(best), margin)) return best
+        if (!inside(body, paths(best), margin)) return seat(1f + (KMIN - 1f) * strength)
         repeat(5) {
             val mid = (lo + hi) / 2f
             val r = seat(mid)
             if (inside(body, paths(r), margin)) { lo = mid; best = r } else hi = mid
         }
-        return best
+        return if (strength >= 1f) best else seat(1f + (lo - 1f) * strength)
     }
 
     /**
