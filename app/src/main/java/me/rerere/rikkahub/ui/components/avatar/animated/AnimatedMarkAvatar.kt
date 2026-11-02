@@ -538,8 +538,22 @@ private fun DrawScope.drawMarkInner(
     // Generical: morph → seat on the surface → eye-colour fill fading into the surface tint.
     val closure = (1f - lid).coerceIn(0f, 1f)
     val wsG = f.exprWeights
-    val lo = (if (wsG != null) GenericalFace.outlineWeighted(0, wsG, closure) else GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
-    val ro = (if (wsG != null) GenericalFace.outlineWeighted(1, wsG, closure) else GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
+    // Ordinary Generical blinks retain each expression's centre. A hidden Happy swap
+    // needs one shared closed endpoint, otherwise its closed bars jump at the swap.
+    val genMask = MotionDirector.smootherstep(f.maskBlink / 0.85f)
+    fun maskedOutline(side: Int): GenericalFace.Outline? {
+        val ordinary = (if (wsG != null) GenericalFace.outlineWeighted(side, wsG, closure)
+            else GenericalFace.outline(side, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return null
+        if (genMask <= 0f) return ordinary
+        val closed = GenericalFace.outlineWeighted(side, listOf("Neutral" to 1f), 1f) ?: return ordinary
+        if (genMask >= 1f) return closed
+        return GenericalFace.Outline(
+            FloatArray(GenericalFace.N) { ordinary.x[it] + (closed.x[it] - ordinary.x[it]) * genMask },
+            FloatArray(GenericalFace.N) { ordinary.y[it] + (closed.y[it] - ordinary.y[it]) * genMask },
+        )
+    }
+    val lo = maskedOutline(0) ?: return
+    val ro = maskedOutline(1) ?: return
     // Engine21.1: the reopen settle — a hair taller (from the bottom, like the lid) and wider.
     fun popped(e: EyeShape) = if (f.eyePop == 0f) e else e.copy(sx = e.sx * (1f + 0.4f * f.eyePop), sy = e.sy * (1f + f.eyePop))
     FaceRig.shapeOutline(lo.x, lo.y, 0, popped(f.face.left))

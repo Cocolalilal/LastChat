@@ -71,26 +71,28 @@ class AvatarIntentionalMotionTest {
         }
     }
 
-    @Test fun grokHappyReturnWaitsForAClosedMask() {
-        val s = AvatarMotionState(Random(4)).apply { isGrok = true }
-        val hints = AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
-        s.debugReact("Happy", 1.2f)
-        var last = s.frame
-        var masks = 0; var hiddenSwaps = 0
-        repeat(960) { i ->
-            // Own both endpoints: the busy planner may legitimately choose Happy again
-            // after the first reaction expires. Test the transition, not that random choice.
-            if (i == 240) s.debugReact("Neutral", 20f)
-            s.tick(1f / 120f, hints, 1_800_000_000_000L)
-            val f = s.frame
-            if (f.maskBlink > 0.85f) masks++
-            if (last.exprTo == "Happy" && f.exprTo != "Happy") {
-                assertTrue("Happy changed with visible open geometry", f.maskBlink >= 0.98f)
-                hiddenSwaps++
+    @Test fun bothEyeStylesHideHappyReturnBehindAClosedMask() {
+        for (grok in listOf(false, true)) {
+            val s = AvatarMotionState(Random(4)).apply { isGrok = grok }
+            val hints = AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
+            s.debugReact("Happy", 1.2f)
+            var last = s.frame
+            var masks = 0; var hiddenSwaps = 0
+            repeat(960) { i ->
+                // Own both endpoints: the busy planner may legitimately choose Happy again
+                // after the first reaction expires. Test the transition, not that random choice.
+                if (i == 240) s.debugReact("Neutral", 20f)
+                s.tick(1f / 120f, hints, 1_800_000_000_000L)
+                val f = s.frame
+                if (f.maskBlink > 0.85f) masks++
+                if (last.exprTo == "Happy" && f.exprTo != "Happy") {
+                    assertTrue("Happy changed with visible open geometry", f.maskBlink >= 0.98f)
+                    hiddenSwaps++
+                }
+                last = f
             }
-            last = f
+            assertTrue("no masking blink", masks > 0)
+            assertTrue("Happy never returned (grok=$grok)", hiddenSwaps > 0)
         }
-        assertTrue("no masking blink", masks > 0)
-        assertTrue("Happy never returned", hiddenSwaps > 0)
     }
 }

@@ -1,8 +1,9 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
 /**
- * Keeps a Happy-to-open Grok change behind one full blink instead of exposing the
- * arc-to-pill morph. Expression names supplied here are already normalized.
+ * Keeps a Happy-to-open change behind one full blink instead of exposing the
+ * eye-shape morph. Shared by Grok transitions and Generical Happy-to-Neutral.
+ * Expression names supplied here are already normalized.
  *
  * [request] returns true when the caller should keep its current expression. Once a
  * full blink can start (or an existing full blink can be reused), call [beginMask].
@@ -13,7 +14,7 @@ package me.rerere.rikkahub.ui.components.avatar.animated
  * reaching it before [COMMIT_CLOSURE]. A Happy arc ordinarily ignores blink lids;
  * the normal lid lane alone cannot hide this transition.
  */
-internal class GrokTransitionCoordinator {
+internal class HappyTransitionCoordinator {
     var pendingTarget: String? = null
         private set
 

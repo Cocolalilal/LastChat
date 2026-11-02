@@ -65,7 +65,7 @@ data class MotionFrame(
     val eyeScale: Float = 1f,
     /** Engine21.1: microscopic reopen settle (fraction of eye height, ±~1.5 %), 0 at rest. */
     val eyePop: Float = 0f,
-    /** Full masking blink uses an expression-independent closed shape for Grok. */
+    /** Full masking blink uses an expression-independent closed shape for either eye style. */
     val maskBlink: Float = 0f,
     val timeSec: Float = 0f,
     /** Parametric per-eye shaping on top of the expression (see [FaceRig]). */
@@ -784,7 +784,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     var isGrok: Boolean = false
-    private val grokTransition = GrokTransitionCoordinator()
+    private val happyTransition = HappyTransitionCoordinator()
 
     val lifecycle: MarkLifecycle get() = director.lifecycle
 
@@ -1160,7 +1160,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             dt, director.lifecycle, drowsy,
             allowIdle = spT < 0f && !MotionDirector.isBusy(director.lifecycle),
             allowRefixation = live && spT < 0f && leanPhrase == null && social == null,
-            quietEyes = !blink.busy && !expr.morphing && !grokTransition.maskActive,
+            quietEyes = !blink.busy && !expr.morphing && !happyTransition.maskActive,
         )
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift) blink.saccade()
@@ -1187,7 +1187,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         run {
             val target = faceTarget()
             val normalizedTarget = ExpressionDirector.normalize(target)
-            if (!isGrok || !animate || normalizedTarget == expr.to) grokTransition.cancel()
+            if (!animate || normalizedTarget == expr.to || (!isGrok && normalizedTarget != "Neutral")) happyTransition.cancel()
             if (target != lastShownTarget) {
                 // Every face change is logged with its cause (reactions log their own).
                 if (reaction == null || reaction != target) log("face ${lastShownTarget}→$target cause=" + when {
@@ -1241,14 +1241,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     val tgtN = ExpressionDirector.normalize(target)
                     val dEmo = TransitionRules.distance(expr.to, tgtN)
                     val maskKind = TransitionRules.mask(expr.to, tgtN, expr.hint == ExpressionDirector.Style.Snap, prio >= MindRules.P_USER)
-                    val topologyMask = isGrok && animate && grokTransition.request(
+                    val topologyMask = animate && (isGrok || tgtN == "Neutral") && happyTransition.request(
                         expr.weights, expr.to, tgtN,
                         urgent = expr.hint == ExpressionDirector.Style.Snap || prio >= MindRules.P_USER || ctxForced,
                     )
                     val hide = !topologyMask && animate && maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
                         rng.nextFloat() < TransitionRules.maskChance(dEmo) && (blink.closingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))
                     when {
-                        topologyMask -> log("Grok topology change waits for blink → $target")
+                        topologyMask -> log("Happy transition waits for blink → $target")
                         hide -> { expr.wantBehindBlink(target); log("face change behind a blink → $target") }
                         else -> expr.want(target)
                     }
@@ -1268,16 +1268,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         mind.pump(Lane.Spin) { !negativeNow() && spT < 0f && !drowsy }
         if (negativeName(expr.to) || negativeName(expr.from) || rig.accent in MindRules.NEGATIVE_ACCENTS) lastNegativeAt = time
         if (MotionDirector.isBusy(director.lifecycle)) busySec += dt
-        if (isGrok && animate && grokTransition.awaitingBlink && spT < 0f &&
+        if (animate && happyTransition.awaitingBlink && spT < 0f &&
             (blink.fullBlinkActive || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))) {
-            grokTransition.beginMask()
+            happyTransition.beginMask()
         }
         expr.update(dt, blink.closed)
         director.exprMorphing = expr.morphing
 
         // ---- blink + lids ----
         blink.update(dt, director.lifecycle, drowsy)
-        grokTransition.update(blink.closed, blink.busy)?.let { expr.jump(it) }
+        happyTransition.update(blink.closed, blink.busy)?.let { expr.jump(it) }
         val pose = MarkLifecycleMapper.pose(director.lifecycle)
         val k = 1f - exp(-dt / 0.35f)
         lidKnob += (pose.lid - lidKnob) * k
@@ -1416,7 +1416,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
             eyePop = if (Blinker.settleEnabled && live) blink.settle * keep else 0f,
-            maskBlink = if (isGrok && grokTransition.maskActive) blink.closed * keep else 0f,
+            maskBlink = if (happyTransition.maskActive) blink.closed * keep else 0f,
             timeSec = time,
             face = lerpFace(faceLive, w),
             spinYaw = spinAngles().first * keep,

@@ -6,12 +6,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class GrokTransitionCoordinatorTest {
+class HappyTransitionCoordinatorTest {
     private val happy = listOf("Happy" to 1f)
 
     @Test
     fun happyToNeutralWaitsForAFullBlinkAndCommitsExactlyOnce() {
-        val c = GrokTransitionCoordinator()
+        val c = HappyTransitionCoordinator()
         assertTrue(c.request(happy, "Happy", "Neutral"))
         assertTrue(c.awaitingBlink)
         assertNull(c.update(1f, true)) // no confirmed mask blink yet
@@ -30,7 +30,7 @@ class GrokTransitionCoordinatorTest {
 
     @Test
     fun newestIntentReplacesTheHiddenSwapWithoutAnotherBlink() {
-        val c = GrokTransitionCoordinator()
+        val c = HappyTransitionCoordinator()
         c.request(happy, "Happy", "Neutral")
         c.beginMask()
         assertTrue(c.request(happy, "Happy", "Surprised"))
@@ -41,7 +41,7 @@ class GrokTransitionCoordinatorTest {
     @Test
     fun cancelledAndUrgentChangesDoNotAbruptlyDropAnInFlightMask() {
         for (urgent in listOf(false, true)) {
-            val c = GrokTransitionCoordinator()
+            val c = HappyTransitionCoordinator()
             c.request(happy, "Happy", "Neutral")
             c.beginMask()
             assertFalse(c.request(happy, "Happy", if (urgent) "Surprised" else "Happy", urgent))
@@ -55,7 +55,7 @@ class GrokTransitionCoordinatorTest {
 
     @Test
     fun missedClosureRetainsTheRequestInsteadOfExposingTheMorph() {
-        val c = GrokTransitionCoordinator()
+        val c = HappyTransitionCoordinator()
         c.request(happy, "Happy", "Neutral")
         c.beginMask()
         c.update(0.7f, true)
@@ -68,7 +68,7 @@ class GrokTransitionCoordinatorTest {
 
     @Test
     fun ordinaryFacesAndClosedTargetsDoNotAddBlinkRequests() {
-        val c = GrokTransitionCoordinator()
+        val c = HappyTransitionCoordinator()
         for (target in listOf("Happy", "Eyes closed", "Sleeping", "hurt or cute")) {
             assertFalse(c.request(happy, "Happy", target))
         }

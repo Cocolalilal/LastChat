@@ -22,20 +22,20 @@ import org.robolectric.annotation.GraphicsMode
 class GrokBlinkRenderTest {
     @Test fun fullyClosedMaskHasTheSamePixelsOnHappyAndNeutral() {
         AvatarPackData.ensureLoaded(RuntimeEnvironment.getApplication())
-        fun render(shapeId: String, expression: String): Bitmap {
+        fun render(shapeId: String, expression: String, grok: Boolean, closure: Float): Bitmap {
             val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
             val shape = requireNotNull(MarkShapes.resolve(shapeId))
             CanvasDrawScope().draw(Density(2f), LayoutDirection.Ltr, Canvas(android.graphics.Canvas(bitmap)), Size(240f, 240f)) {
-                drawMark(shape, shapeId, true, MotionFrame(
+                drawMark(shape, shapeId, grok, MotionFrame(
                     exprFrom = expression, exprTo = expression, exprWeights = listOf(expression to 1f),
-                    lid = 0f, maskBlink = 1f,
+                    lid = 1f - closure, maskBlink = closure,
                 ), false, 1f, Color(0xFF2A92FE), Color.White, Color.White)
             }
             return bitmap
         }
-        for (shape in MarkShapes.PICKER_IDS) {
-            val a = render(shape, "Happy"); val b = render(shape, "Neutral")
-            assertTrue("$shape: hidden expression swap changed the visible closed shape", a.sameAs(b))
+        for (grok in listOf(false, true)) for (shape in MarkShapes.PICKER_IDS) for (closure in listOf(0.98f, 1f)) {
+            val a = render(shape, "Happy", grok, closure); val b = render(shape, "Neutral", grok, closure)
+            assertTrue("$shape grok=$grok closure=$closure: hidden expression swap changed the visible closed shape", a.sameAs(b))
             a.recycle(); b.recycle()
         }
     }
