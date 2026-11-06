@@ -73,7 +73,7 @@ fun LastChatComposerRow(
 @Composable
 fun LastChatComposerAddButton(
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier.size(AppSize.ChromePill),
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     border: BorderStroke = BorderStroke(
@@ -92,7 +92,13 @@ fun LastChatComposerAddButton(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxSize()
-                .combinedClickable(onLongClick = onLongClick, onClick = onClick),
+                .then(
+                    if (onLongClick != null) {
+                        Modifier.combinedClickable(onLongClick = onLongClick, onClick = onClick)
+                    } else {
+                        Modifier.combinedClickable(onClick = onClick)
+                    }
+                ),
         ) {
             content()
         }

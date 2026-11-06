@@ -402,8 +402,6 @@ class StoryStudioRepository(
 
         result
     }
-        }
-    }
 
     private suspend fun syncToWorkspace(project: StoryProject) = withContext(Dispatchers.IO) {
         runCatching {
