@@ -495,8 +495,8 @@ class StoryStudioRepository(
 
         val systemPrompt = buildString {
             appendLine("You are ${assistant.name}, the user's creative partner, editor, and story director.")
-            if (assistant.prompt.isNotBlank()) {
-                appendLine(assistant.prompt)
+            if (assistant.systemPrompt.isNotBlank()) {
+                appendLine(assistant.systemPrompt)
             }
             if (memories.isNotEmpty()) {
                 appendLine("\n### Your Memories & Shared Context with the User:")
