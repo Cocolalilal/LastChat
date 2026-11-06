@@ -47,6 +47,20 @@ class VoiceMemoRepository(
         return publicDir
     }
 
+    fun getMetadataDir(): File {
+        val dir = File(context.filesDir, "voice_memos_meta")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    private fun getMetadataFile(id: String): File {
+        val internalFile = File(getMetadataDir(), "$id.json")
+        if (internalFile.exists()) return internalFile
+        val legacyFile = File(getRecordingsDir(), "$id.json")
+        if (legacyFile.exists()) return legacyFile
+        return internalFile
+    }
+
     fun refresh() {
         scope.launch {
             _recordingsFlow.value = scanRecordings()
@@ -68,7 +82,7 @@ class VoiceMemoRepository(
 
         audioFiles.map { audioFile ->
             val id = audioFile.nameWithoutExtension
-            val metaFile = File(dir, "$id.json")
+            val metaFile = getMetadataFile(id)
             val meta = if (metaFile.exists()) {
                 runCatching {
                     JsonInstant.decodeFromString<VoiceMemoMetadata>(metaFile.readText())
@@ -105,7 +119,7 @@ class VoiceMemoRepository(
         segments: List<VoiceTranscriptSegment> = emptyList(),
     ) = withContext(Dispatchers.IO) {
         val dir = getRecordingsDir()
-        val metaFile = File(dir, "$id.json")
+        val metaFile = getMetadataFile(id)
         val existing = if (metaFile.exists()) {
             runCatching { JsonInstant.decodeFromString<VoiceMemoMetadata>(metaFile.readText()) }.getOrNull()
         } else null
@@ -126,7 +140,15 @@ class VoiceMemoRepository(
             transcriptSegments = segments,
         )
 
-        metaFile.writeText(JsonInstant.encodeToString(updated))
+        val jsonStr = JsonInstant.encodeToString(updated)
+        // Primary write to internal app storage (guaranteed permission and zero EPERM)
+        File(getMetadataDir(), "$id.json").writeText(jsonStr)
+
+        // Best-effort mirror to public storage for legacy compatibility
+        runCatching {
+            File(dir, "$id.json").writeText(jsonStr)
+        }
+
         refresh()
 
         // Sync to workspace
@@ -144,7 +166,7 @@ class VoiceMemoRepository(
         actionItems: List<String>? = null,
     ) = withContext(Dispatchers.IO) {
         val dir = getRecordingsDir()
-        val metaFile = File(dir, "$id.json")
+        val metaFile = getMetadataFile(id)
         val existing = if (metaFile.exists()) {
             runCatching { JsonInstant.decodeFromString<VoiceMemoMetadata>(metaFile.readText()) }.getOrNull()
         } else null
@@ -165,7 +187,15 @@ class VoiceMemoRepository(
             transcriptSegments = existing?.transcriptSegments ?: emptyList(),
         )
 
-        metaFile.writeText(JsonInstant.encodeToString(updated))
+        val jsonStr = JsonInstant.encodeToString(updated)
+        // Primary write to internal app storage (guaranteed permission and zero EPERM)
+        File(getMetadataDir(), "$id.json").writeText(jsonStr)
+
+        // Best-effort mirror to public storage
+        runCatching {
+            File(dir, "$id.json").writeText(jsonStr)
+        }
+
         refresh()
 
         // Sync to workspace
@@ -185,9 +215,12 @@ class VoiceMemoRepository(
 
     suspend fun deleteRecording(item: VoiceMemoItem): Boolean = withContext(Dispatchers.IO) {
         val dir = getRecordingsDir()
-        val metaFile = File(dir, "${item.id}.json")
+        val internalMeta = File(getMetadataDir(), "${item.id}.json")
+        if (internalMeta.exists()) internalMeta.delete()
+
+        // Best effort delete from public directory
+        runCatching { File(dir, "${item.id}.json").delete() }
         val audioDeleted = item.audioFile.delete()
-        if (metaFile.exists()) metaFile.delete()
 
         // Also clean up from workspace if present
         runCatching {

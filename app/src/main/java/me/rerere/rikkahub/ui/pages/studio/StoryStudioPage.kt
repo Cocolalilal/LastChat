@@ -65,6 +65,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,6 +109,7 @@ fun StoryStudioPage() {
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var isGenerating by remember { mutableStateOf(false) }
+    var isGeneratingBible by remember { mutableStateOf(false) }
     var activeProseChunk by remember { mutableStateOf("") }
     var steerText by remember { mutableStateOf("") }
 
@@ -148,6 +150,26 @@ fun StoryStudioPage() {
         bottomBar = {
             if (currentProject != null && selectedTabIndex == 0) {
                 val currentBeat = currentProject.bible?.beats?.getOrNull(currentProject.currentBeatIndex)
+                val isAllDone = currentProject.bible?.let { b ->
+                    b.beats.isNotEmpty() && currentProject.currentBeatIndex >= b.beats.size
+                } ?: false
+
+                val statusTitle = when {
+                    isGeneratingBible -> "Generating Story Bible..."
+                    currentProject.bible == null -> "Story Bible Not Built"
+                    isAllDone -> "Novel Completed"
+                    currentBeat != null -> "Beat ${currentBeat.index + 1}: ${currentBeat.title}"
+                    else -> "Outlining"
+                }
+
+                val statusSubtitle = when {
+                    isGeneratingBible -> "Architect drafting characters & outline..."
+                    isGenerating -> "Writing prose chunk • ${currentProject.totalWords} words total"
+                    !currentProject.lastError.isNullOrBlank() -> "Error: ${currentProject.lastError}"
+                    isAllDone -> "All beats written • ${currentProject.totalWords} words total"
+                    else -> "Ready • ${currentProject.totalWords} words total"
+                }
+
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     tonalElevation = 6.dp,
@@ -176,23 +198,32 @@ fun StoryStudioPage() {
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (isGenerating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                                        .background(
+                                            when {
+                                                isGenerating || isGeneratingBible -> MaterialTheme.colorScheme.primary
+                                                !currentProject.lastError.isNullOrBlank() -> MaterialTheme.colorScheme.error
+                                                isAllDone -> MaterialTheme.colorScheme.tertiary
+                                                else -> MaterialTheme.colorScheme.outline
+                                            }
+                                        )
                                 )
                                 Column {
                                     Text(
-                                        text = currentBeat?.let { "Beat ${it.index + 1}: ${it.title}" } ?: "Novel Completed",
+                                        text = statusTitle,
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = if (!currentProject.lastError.isNullOrBlank() && !isGenerating && !isGeneratingBible) {
+                                            MaterialTheme.colorScheme.error
+                                        } else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (isGenerating) {
-                                            "Writing prose chunk • ${currentProject.totalWords} words total"
-                                        } else {
-                                            "Ready • ${currentProject.totalWords} words total"
-                                        },
+                                        text = statusSubtitle,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (!currentProject.lastError.isNullOrBlank() && !isGenerating && !isGeneratingBible) {
+                                            MaterialTheme.colorScheme.error
+                                        } else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -436,11 +467,69 @@ fun StoryStudioPage() {
 
                                     val beats = currentProject.bible?.beats ?: emptyList()
                                     if (beats.isEmpty()) {
-                                        Text(
-                                            text = "Story Bible not generated yet. Go to the Story Bible tab to generate character sheets and beats outline.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Column(
+                                            modifier = Modifier.padding(vertical = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Premise: ${currentProject.premise}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+
+                                            if (!currentProject.lastError.isNullOrBlank()) {
+                                                Surface(
+                                                    shape = AppShapes.CardSmall,
+                                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp)) {
+                                                        Text(
+                                                            text = "Generation Error",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.error
+                                                        )
+                                                        Text(
+                                                            text = currentProject.lastError ?: "",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Button(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Pop)
+                                                    scope.launch {
+                                                        isGeneratingBible = true
+                                                        toaster.show("Architect model building Story Bible & Beats...")
+                                                        storyRepo.generateStoryBible(currentProject.id).onSuccess {
+                                                            toaster.show("Story Bible generated successfully!")
+                                                        }.onFailure {
+                                                            toaster.show("Error: ${it.message}")
+                                                        }
+                                                        isGeneratingBible = false
+                                                    }
+                                                },
+                                                enabled = !isGeneratingBible,
+                                                shape = AppShapes.ButtonPill
+                                            ) {
+                                                if (isGeneratingBible) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text("Architect Generating...")
+                                                } else {
+                                                    Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible & Beats")
+                                                }
+                                            }
+                                        }
                                     } else {
                                         beats.forEach { beat ->
                                             if (beat.content.isNotBlank()) {
@@ -523,7 +612,7 @@ fun StoryStudioPage() {
                                         verticalArrangement = Arrangement.spacedBy(14.dp)
                                     ) {
                                         Text(
-                                            text = "Story Bible Not Built Yet",
+                                            text = if (isGeneratingBible) "Generating Story Bible..." else "Story Bible Not Built Yet",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -532,21 +621,58 @@ fun StoryStudioPage() {
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+
+                                        if (!currentProject.lastError.isNullOrBlank()) {
+                                            Surface(
+                                                shape = AppShapes.CardSmall,
+                                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Text(
+                                                        text = "Generation Error",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                    Text(
+                                                        text = currentProject.lastError ?: "",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                                    )
+                                                }
+                                            }
+                                        }
+
                                         Button(
                                             onClick = {
                                                 haptics.perform(HapticPattern.Pop)
                                                 scope.launch {
+                                                    isGeneratingBible = true
                                                     toaster.show("Architect model building Story Bible & Beats...")
                                                     storyRepo.generateStoryBible(currentProject.id).onSuccess {
                                                         toaster.show("Story Bible generated!")
                                                     }.onFailure {
                                                         toaster.show("Error: ${it.message}")
                                                     }
+                                                    isGeneratingBible = false
                                                 }
                                             },
+                                            enabled = !isGeneratingBible,
                                             shape = AppShapes.ButtonPill
                                         ) {
-                                            Text("Generate Story Bible & Beats")
+                                            if (isGeneratingBible) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(16.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Architect Generating...")
+                                            } else {
+                                                Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible & Beats")
+                                            }
                                         }
                                     }
                                 }
@@ -759,7 +885,13 @@ fun StoryStudioPage() {
                                 selectedProjectId = p.id
                                 showNewStoryDialog = false
                                 toaster.show("Story created! Generating Story Bible...")
-                                storyRepo.generateStoryBible(p.id)
+                                isGeneratingBible = true
+                                storyRepo.generateStoryBible(p.id).onSuccess {
+                                    toaster.show("Story Bible generated successfully!")
+                                }.onFailure { err ->
+                                    toaster.show("Story Bible generation failed: ${err.message}")
+                                }
+                                isGeneratingBible = false
                             }
                         }
                     }

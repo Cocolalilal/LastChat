@@ -15,7 +15,8 @@ enum class StoryStatus {
 enum class BeatStatus {
     Queued,
     Writing,
-    Done
+    Done,
+    Failed,
 }
 
 @Serializable
@@ -37,6 +38,7 @@ data class StoryBeat(
     val steerNote: String? = null,
     val content: String = "",
     val summary: String = "",
+    val errorMessage: String? = null,
 )
 
 @Serializable
@@ -67,4 +69,5 @@ data class StoryProject(
     val architectModelId: Uuid? = null,
     val proseModelId: Uuid? = null,
     val bible: StoryBible? = null,
+    val lastError: String? = null,
 )

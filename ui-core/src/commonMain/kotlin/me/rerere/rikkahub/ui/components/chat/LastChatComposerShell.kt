@@ -127,6 +127,7 @@ fun LastChatComposerActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier.size(AppSize.ComposerAction),
     containerColorOverride: Color? = null,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable (LastChatComposerAction) -> Unit,
 ) {
     val containerColor by animateColorAsState(
@@ -135,12 +136,25 @@ fun LastChatComposerActionButton(
         label = "ActionContainerColor",
     )
     Surface(
-        onClick = onClick,
         shape = CircleShape,
         color = containerColor,
         modifier = modifier,
     ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (onLongClick != null) {
+                        Modifier.combinedClickable(
+                            onClick = onClick,
+                            onLongClick = onLongClick
+                        )
+                    } else {
+                        Modifier.combinedClickable(onClick = onClick)
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             AnimatedContent(
                 targetState = action,
                 transitionSpec = {

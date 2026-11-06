@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.extractJsonPayload
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -140,13 +141,16 @@ class StoryStudioRepository(
         val project = _projectsFlow.value.firstOrNull { it.id == projectId }
             ?: return@withContext Result.failure(IllegalStateException("Story $projectId not found"))
 
-        runCatching {
+        // Set status to Outlining and clear old error
+        saveProject(project.copy(status = StoryStatus.Outlining, lastError = null))
+
+        val result = runCatching {
             val settings = settingsStore.settingsFlow.value
             val modelId = project.architectModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId)
-                ?: return@withContext Result.failure(IllegalStateException("No valid architect model found"))
+                ?: throw IllegalStateException("No valid architect model found. Please select a model.")
             val rawProv = model.findProvider(settings.providers)
-                ?: return@withContext Result.failure(IllegalStateException("Provider not found for architect model"))
+                ?: throw IllegalStateException("Provider not found for architect model ${model.displayName}")
             val provider = secretKeyManager.populateProviderSecrets(rawProv)
             val handler = providerManager.getProviderByType(provider)
 
@@ -184,23 +188,27 @@ class StoryStudioRepository(
                 params = TextGenerationParams(
                     model = model,
                     temperature = 0.5f,
-                    maxTokens = 2000
+                    maxTokens = 3000
                 )
             )
 
             val text = resp.choices.firstOrNull()?.message?.toContentText().orEmpty()
-            val cleanJson = text.substringAfter("{").substringBeforeLast("}")
-            val json = JSONObject("{$cleanJson}")
+            if (text.isBlank()) {
+                throw IllegalStateException("Architect model returned empty response")
+            }
+
+            val cleanJson = extractJsonPayload(text)
+            val json = JSONObject(cleanJson)
 
             val style = json.optString("style_guidelines", "Visceral narrative with high momentum.")
             val charsArray = json.optJSONArray("characters") ?: JSONArray()
             val characters = (0 until charsArray.length()).map { i ->
                 val c = charsArray.getJSONObject(i)
                 StoryCharacter(
-                    name = c.optString("name"),
-                    role = c.optString("role"),
-                    description = c.optString("description"),
-                    motive = c.optString("motive")
+                    name = c.optString("name", "Character ${i + 1}"),
+                    role = c.optString("role", "Protagonist"),
+                    description = c.optString("description", ""),
+                    motive = c.optString("motive", "")
                 )
             }
 
@@ -208,12 +216,15 @@ class StoryStudioRepository(
             val rules = (0 until rulesArray.length()).map { rulesArray.getString(it) }
 
             val beatsArray = json.optJSONArray("beats") ?: JSONArray()
+            if (beatsArray.length() == 0) {
+                throw IllegalStateException("Architect model generated 0 beats in outline")
+            }
             val beats = (0 until beatsArray.length()).map { i ->
                 val b = beatsArray.getJSONObject(i)
                 StoryBeat(
                     index = i,
-                    title = b.optString("title"),
-                    objective = b.optString("objective"),
+                    title = b.optString("title", "Beat ${i + 1}"),
+                    objective = b.optString("objective", "Advance the plot"),
                     targetWords = b.optInt("target_words", 1000),
                     status = if (i == 0) BeatStatus.Writing else BeatStatus.Queued
                 )
@@ -233,11 +244,22 @@ class StoryStudioRepository(
             val updatedProject = project.copy(
                 status = StoryStatus.Writing,
                 bible = bible,
+                lastError = null,
                 updatedAt = System.currentTimeMillis()
             )
             saveProject(updatedProject)
             updatedProject
         }
+
+        result.onFailure { err ->
+            val failedProject = project.copy(
+                lastError = err.message ?: "Failed to generate Story Bible",
+                updatedAt = System.currentTimeMillis()
+            )
+            saveProject(failedProject)
+        }
+
+        result
     }
 
     suspend fun generateBeatProse(
@@ -253,13 +275,18 @@ class StoryStudioRepository(
         val beat = bible.beats.getOrNull(beatIndex)
             ?: return@withContext Result.failure(IllegalStateException("Beat $beatIndex not found"))
 
-        runCatching {
+        // Set beat to Writing and clear error
+        val writingBeat = beat.copy(status = BeatStatus.Writing, errorMessage = null)
+        val writingBeats = bible.beats.map { if (it.index == beatIndex) writingBeat else it }
+        saveProject(project.copy(bible = bible.copy(beats = writingBeats), lastError = null))
+
+        val result = runCatching {
             val settings = settingsStore.settingsFlow.value
             val modelId = project.proseModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId)
-                ?: return@withContext Result.failure(IllegalStateException("No valid prose model found"))
+                ?: throw IllegalStateException("No valid prose model found")
             val rawProv = model.findProvider(settings.providers)
-                ?: return@withContext Result.failure(IllegalStateException("Provider not found for prose model"))
+                ?: throw IllegalStateException("Provider not found for prose model ${model.displayName}")
             val provider = secretKeyManager.populateProviderSecrets(rawProv)
             val handler = providerManager.getProviderByType(provider)
 
@@ -329,12 +356,16 @@ class StoryStudioRepository(
             }
 
             val fullText = proseBuilder.toString()
+            if (fullText.isBlank()) {
+                throw IllegalStateException("Model returned empty prose for beat ${beatIndex + 1}")
+            }
             val wordCount = fullText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
 
             val updatedBeat = beat.copy(
                 content = fullText,
                 wordsWritten = wordCount,
                 status = BeatStatus.Done,
+                errorMessage = null,
                 summary = "Completed scene: ${beat.title}. (${wordCount} words)"
             )
 
@@ -348,11 +379,29 @@ class StoryStudioRepository(
                 currentBeatIndex = nextIndex,
                 totalWords = updatedBeats.sumOf { it.wordsWritten },
                 status = if (isAllDone) StoryStatus.Completed else StoryStatus.Writing,
+                lastError = null,
                 updatedAt = System.currentTimeMillis()
             )
 
             saveProject(updatedProject)
             updatedBeat
+        }
+
+        result.onFailure { err ->
+            val failedBeat = beat.copy(
+                status = BeatStatus.Failed,
+                errorMessage = err.message ?: "Beat generation failed"
+            )
+            val updatedBeats = bible.beats.map { if (it.index == beatIndex) failedBeat else it }
+            val failedProject = project.copy(
+                bible = bible.copy(beats = updatedBeats),
+                lastError = "Beat ${beatIndex + 1} failed: ${err.message}"
+            )
+            saveProject(failedProject)
+        }
+
+        result
+    }
         }
     }
 

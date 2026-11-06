@@ -408,7 +408,7 @@ fun MinimalChatInput(
                     val transcript = sttDraft.trim()
                     if (transcript.isNotBlank()) {
                         val activeProfile = settings.smartMicProfiles.firstOrNull { it.id == settings.selectedSmartMicProfileId }
-                        val postModel = activeProfile?.modelId?.let { settings.findModelById(it) }
+                        val postModel = (activeProfile?.modelId ?: settings.chatModelId)?.let { settings.findModelById(it) }
                         if (activeProfile != null && postModel != null && activeProfile.prompt.isNotBlank()) {
                             scope.launch(Dispatchers.IO) {
                                 val processed = runCatching {
@@ -874,12 +874,6 @@ fun MinimalChatInput(
                 // Plus button - 48dp pill button
                 if (!isQuestionnaireActive && !isToolApprovalActive) {
                     LastChatComposerAddButton(
-                        onLongClick = {
-                            if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
-                                haptics.perform(HapticPattern.Pop)
-                                showSmartMicProfiles = !showSmartMicProfiles
-                            }
-                        },
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
                             if (sttRecording) {
@@ -1151,6 +1145,14 @@ fun MinimalChatInput(
                                 }
                                 LastChatComposerActionButton(
                                     action = currentAction,
+                                    onLongClick = if (currentAction == LastChatComposerAction.Stt) {
+                                        {
+                                            if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
+                                                haptics.perform(HapticPattern.Pop)
+                                                showSmartMicProfiles = !showSmartMicProfiles
+                                            }
+                                        }
+                                    } else null,
                                     onClick = {
                                         when (currentAction) {
                                             LastChatComposerAction.Send,

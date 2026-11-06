@@ -113,6 +113,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.utils.extractJsonPayload
 import me.rerere.rikkahub.utils.plus
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -933,9 +934,9 @@ private suspend fun transcribeAudio(
     secretKeyManager: SecretKeyManager
 ): String = withContext(Dispatchers.IO) {
     val model = settings.findModelById(settings.sttModelId)
-        ?: return@withContext "Error: No STT model selected in Default Models settings."
+        ?: throw IllegalStateException("No STT model selected. Please select an STT model in Settings -> Models.")
     val rawProvider = model.findProvider(settings.providers)
-        ?: return@withContext "Error: Provider not found for STT model ${model.displayName}."
+        ?: throw IllegalStateException("Provider not found for STT model ${model.displayName}.")
     val provider = secretKeyManager.populateProviderSecrets(rawProvider)
 
     val (baseUrl, apiKey) = when (val p = provider) {
@@ -946,7 +947,7 @@ private suspend fun transcribeAudio(
     }
 
     if (baseUrl.isBlank() || apiKey.isBlank()) {
-        return@withContext "Error: Provider baseUrl or apiKey is missing."
+        throw IllegalStateException("Provider baseUrl or apiKey is missing for ${model.displayName}.")
     }
 
     val url = if (baseUrl.endsWith("/audio/transcriptions")) baseUrl else "${baseUrl.trimEnd('/')}/audio/transcriptions"
@@ -969,14 +970,18 @@ private suspend fun transcribeAudio(
 
     val response = httpClient.newCall(request).execute()
     if (!response.isSuccessful) {
-        throw IllegalStateException("STT API returned HTTP ${response.code}: ${response.body?.string()}")
+        val errBody = response.body?.string().orEmpty()
+        throw IllegalStateException("STT API returned HTTP ${response.code}: $errBody")
     }
 
-    val bodyStr = response.body?.string() ?: ""
-    val json = JSONObject(bodyStr)
-    json.optString("text").ifBlank {
-        json.optString("transcript", bodyStr)
+    val bodyStr = response.body?.string().orEmpty()
+    val cleanJson = extractJsonPayload(bodyStr)
+    val json = runCatching { JSONObject(cleanJson) }.getOrNull()
+    val text = json?.optString("text")?.ifBlank { json.optString("transcript") } ?: bodyStr
+    if (text.isBlank()) {
+        throw IllegalStateException("STT API returned empty transcription")
     }
+    text
 }
 
 /**
@@ -990,9 +995,9 @@ private suspend fun analyzeTranscript(
 ): Quadruple<String?, String?, List<String>, List<String>> = withContext(Dispatchers.IO) {
     val model = settings.findModelById(settings.summarizerModelId)
         ?: settings.findModelById(settings.chatModelId)
-        ?: return@withContext Quadruple(null, null, emptyList(), emptyList())
+        ?: throw IllegalStateException("No Summarizer or Chat model configured in Settings -> Models.")
     val rawProvider = model.findProvider(settings.providers)
-        ?: return@withContext Quadruple(null, null, emptyList(), emptyList())
+        ?: throw IllegalStateException("Provider not found for model ${model.displayName}.")
     val provider = secretKeyManager.populateProviderSecrets(rawProvider)
     val handler = providerManager.getProviderByType(provider)
 
@@ -1021,11 +1026,11 @@ private suspend fun analyzeTranscript(
     )
 
     val text = resp.choices.firstOrNull()?.message?.toContentText().orEmpty()
-    val cleanJson = text.substringAfter("{").substringBeforeLast("}")
-    val json = runCatching { JSONObject("{$cleanJson}") }.getOrNull()
+    val cleanJson = extractJsonPayload(text)
+    val json = runCatching { JSONObject(cleanJson) }.getOrNull()
 
     val title = json?.optString("title")
-    val summary = json?.optString("summary")
+    val summary = json?.optString("summary") ?: if (json == null && text.isNotBlank()) text.take(300) else null
     val bullets = json?.optJSONArray("bullet_points")?.let { arr ->
         (0 until arr.length()).map { arr.getString(it) }
     } ?: emptyList()
