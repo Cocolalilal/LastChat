@@ -273,6 +273,8 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 | `40198900827` | `:app:compileStableReleaseKotlin` | Missing `FontWeight` import in `MinimalChatInput.kt` | Added explicit `androidx.compose.ui.text.font.FontWeight` import |
 | `40202942117` | `:app:compileStableReleaseKotlin` | Scope collision between `android.webkit.WebSettings` and `LocalSettings` in `AndroidView` factory | Wrapped in `with(this.settings) { ... }` to disambiguate receiver |
 | `40221883406` | `:app:compileStableReleaseKotlin` | Mismatch in `Tool.execute` returning `String` vs `JsonElement`, `ToolApprovalMode` referenced as `Always`/`Never`, misplaced `McpConfig` package imports, and missing Compose imports (`FontWeight`, `LaunchedEffect`) | Unwrapped `rawArgs.jsonObject` and returned `buildJsonObject`, used `ToolApprovalMode.RequiresApproval`/`Auto`, imported `me.rerere.rikkahub.data.ai.mcp.*`, imported Compose primitives and applied safe-calls. Run `40222980421` succeeded with 66.39 MB minified stable release APK |
+| `42202252048` | `:app:compileStableReleaseKotlin` | Syntax error in `StoryStudioRepository.kt`, missing `BorderStroke`/`width` imports, and `LastChatComposerAddButton` mandatory `onLongClick` | Fixed bracket nesting, added Compose imports, made `onLongClick` optional on add button |
+| `42237769378` | `:app:compileStableReleaseKotlin` | Unresolved reference `assistant.prompt` in `StoryStudioRepository.kt` | Replaced with `assistant.systemPrompt`. Run `42246384103` succeeded with 66.50 MB minified stable release APK |
 | `[PENDING]` | Provider model fetch UI hang | Under investigation (suspect network timeout in `listModels` or recomposition storm in provider settings) | Next session diagnostic checklist documented in Section 9 |
 
 ---
@@ -413,3 +415,43 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 3. `python_server_list`: Returns all active background servers, ports, uptimes, and log paths.
 4. `mcp_add_local_connection`: Registers a local MCP connection in app settings, immediately exposing its tools to the assistant.
 5. `python_extension_manage`: Lists, enables, disables, reads, or writes Python extensions directly in `/workspace/plugins/`.
+
+---
+
+## 15. Architecture: Story Studio Engine, Assistant Director Chat, Memory Bridge & Auto-Healing JSON
+
+### 1. Stack-Based Auto-Healing JSON Parser (`Json.kt` & `MemorySummaryModels.kt`)
+- **The Problem:** When LLMs reach output token limits or emit long structured JSON (e.g. Story Bible characters, beats, or memory summary sections), outputs get severed mid-string or mid-array. Standard `JSONObject` and KotlinX serializers abort with `Unterminated array at character X` or `Unexpected end of input`.
+- **The Solution:** A universal stack-based repair engine in `me.rerere.rikkahub.utils.extractJsonPayload`:
+  - Strips thinking/reasoning blocks (`<think>...</think>`).
+  - Unwraps markdown code fences (````json { ... } ````).
+  - Escapes literal unescaped newlines/tabs inside string literals.
+  - Automatically heals severed outputs: closes unterminated strings, cleans trailing commas or dangling colons, and pops open arrays/objects from a tracking stack in reverse order to produce valid, parsable JSON.
+  - Unified across Story Studio, Voice Notes analysis, and the Assistant Memory Summary engine.
+
+### 2. Voice Memos Scoped Storage EPERM Extermination (`VoiceMemoRepository.kt`)
+- **Android Scoped Storage Lockdown:** On Android 11+ / 13, writing non-media files (`.json`) into public media folders (`/sdcard/Recordings/LastChat/`) triggers `open failed: EPERM (Operation not permitted)`.
+- **Architectural Solution:**
+  - Authoritative metadata (`$id.json`) is written exclusively to sandboxed app private storage (`context.filesDir/voice_memos_meta/`), making permission failure physically impossible.
+  - Added `READ_MEDIA_AUDIO` and `MANAGE_EXTERNAL_STORAGE` (`tools:ignore="ScopedStorage"`) to `AndroidManifest.xml`.
+  - Added best-effort legacy mirroring to public storage wrapped in `runCatching` so public files are maintained when permissions allow, but never crash the app.
+
+### 3. STT Pooled Key & Keystore Secret Hydration (`STT.kt`, `OpenAICompatibleASRController.kt`)
+- **Root Cause of STT 401:** Speech-to-text controllers accessed raw `provider.apiKey` without resolving pooled keys or decrypting secrets from `SecretKeyManager`. When providers used key pools or encrypted keystores, an empty `Authorization: Bearer ` header was sent, triggering HTTP 401.
+- **The Fix:**
+  - `rememberCustomSttState` in `STT.kt` now calls `secretKeyManager.populateProviderSecrets(rawProvider)`.
+  - Controllers fall back to `provider.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key`.
+
+### 4. Dynamic Studio Hub & Story Library (`StudioPage.kt`, `StoryStudioPage.kt`)
+- Replaced all hardcoded placeholder data ("The Neon Syndicate", "Cyberpunk Story Opening") with reactive `StateFlow` bindings from `StoryStudioRepository` and `VoiceMemoRepository`.
+- **Live Generation Indicator:** Studio Hub features an animated pulsing status badge (*"Generating..."*) when a background story beat is running, with real-time progress fraction and a direct "View Story" jump action.
+- **Creations Library:** Story Studio provides a clean top-level library view showing all persistent stories, word counts, and status pills, with single-tap entry to continue writing or editing.
+
+### 5. Assistant Director Chat with Live Memory Injection (`StoryStudioRepository.kt`, `StoryStudioPage.kt`)
+- **Tab 3: Director Chat:** Direct co-writing chatroom embedded inside the story workspace.
+- Seamlessly resolves the active assistant (e.g. Velvet) and injects their system prompt along with their real-time memories from `MemoryRepository`.
+- **Live Story Bible Sync:** If the user asks the assistant to revise lore, add characters, or steer beats, the assistant can emit an ````updated_bible { ... } ```` block. The repository parses and updates the live Story Bible in real-time.
+
+### 6. Interactive Generation Lifecycle & Cancellation
+- Story generation and Bible drafting feature cancellation buttons (`Icons.Rounded.Stop`) that cancel the active coroutine `Job` and gracefully roll back the beat status to `Queued` or `Paused`.
+
