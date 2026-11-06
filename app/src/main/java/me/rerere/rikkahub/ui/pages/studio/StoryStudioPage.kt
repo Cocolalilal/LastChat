@@ -696,15 +696,16 @@ fun StoryStudioPage(
                                 shape = AppShapes.CardLarge,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(20.dp),
-                                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                SelectionContainer {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        verticalArrangement = Arrangement.spacedBy(16.dp)
                                     ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                         Text(
                                             text = currentProject.title,
                                             style = MaterialTheme.typography.headlineSmall,
@@ -904,6 +905,7 @@ fun StoryStudioPage(
                                     }
 
                                     Spacer(modifier = Modifier.height(80.dp))
+                                    }
                                 }
                             }
                         }
@@ -1082,54 +1084,56 @@ fun StoryStudioPage(
                                     shape = AppShapes.CardLarge,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(18.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Text(
-                                            text = "Characters (${bible.characters.size})",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                    SelectionContainer {
+                                        Column(
+                                            modifier = Modifier.padding(18.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Characters (${bible.characters.size})",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
 
-                                        bible.characters.forEach { char ->
-                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = char.name,
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                    Surface(
-                                                        shape = AppShapes.ButtonPill,
-                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                            bible.characters.forEach { char ->
+                                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         Text(
-                                                            text = char.role,
+                                                            text = char.name,
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                        Surface(
+                                                            shape = AppShapes.ButtonPill,
+                                                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                        ) {
+                                                            Text(
+                                                                text = char.role,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = char.description,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (char.motive.isNotBlank()) {
+                                                        Text(
+                                                            text = "Motive: ${char.motive}",
                                                             style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
                                                     }
                                                 }
-                                                Text(
-                                                    text = char.description,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                if (char.motive.isNotBlank()) {
-                                                    Text(
-                                                        text = "Motive: ${char.motive}",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
+                                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                                             }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                                         }
                                     }
                                 }
@@ -1144,35 +1148,37 @@ fun StoryStudioPage(
                                     shape = AppShapes.CardLarge,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(18.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Text(
-                                            text = "Setting & Narrative Rules",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                    SelectionContainer {
+                                        Column(
+                                            modifier = Modifier.padding(18.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Setting & Narrative Rules",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
 
-                                        Text(
-                                            text = bible.styleGuidelines,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
+                                            Text(
+                                                text = bible.styleGuidelines,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
 
-                                        if (bible.worldRules.isNotEmpty()) {
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                                            bible.worldRules.forEach { rule ->
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    verticalAlignment = Alignment.Top
-                                                ) {
-                                                    Text("•", color = MaterialTheme.colorScheme.primary)
-                                                    Text(
-                                                        text = rule,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
+                                            if (bible.worldRules.isNotEmpty()) {
+                                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                                                bible.worldRules.forEach { rule ->
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.Top
+                                                    ) {
+                                                        Text("•", color = MaterialTheme.colorScheme.primary)
+                                                        Text(
+                                                            text = rule,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1189,70 +1195,72 @@ fun StoryStudioPage(
                                     shape = AppShapes.CardLarge,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(18.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Text(
-                                            text = "Milestone Beat Outline (${bible.beats.size})",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                    SelectionContainer {
+                                        Column(
+                                            modifier = Modifier.padding(18.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Milestone Beat Outline (${bible.beats.size})",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
 
-                                        bible.beats.forEach { beat ->
-                                            Surface(
-                                                shape = AppShapes.CardSmall,
-                                                color = if (beat.index == currentProject.currentBeatIndex) {
-                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                                } else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(12.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
+                                            bible.beats.forEach { beat ->
+                                                Surface(
+                                                    shape = AppShapes.CardSmall,
+                                                    color = if (beat.index == currentProject.currentBeatIndex) {
+                                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                                    } else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                                    modifier = Modifier.fillMaxWidth()
                                                 ) {
-                                                    Surface(
-                                                        shape = CircleShape,
-                                                        color = when (beat.status) {
-                                                            BeatStatus.Done -> MaterialTheme.colorScheme.primary
-                                                            BeatStatus.Writing -> MaterialTheme.colorScheme.secondary
-                                                            BeatStatus.Queued -> MaterialTheme.colorScheme.surfaceContainerHigh
-                                                            BeatStatus.Failed -> MaterialTheme.colorScheme.error
-                                                        },
-                                                        modifier = Modifier.size(24.dp)
+                                                    Row(
+                                                        modifier = Modifier.padding(12.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Box(contentAlignment = Alignment.Center) {
+                                                        Surface(
+                                                            shape = CircleShape,
+                                                            color = when (beat.status) {
+                                                                BeatStatus.Done -> MaterialTheme.colorScheme.primary
+                                                                BeatStatus.Writing -> MaterialTheme.colorScheme.secondary
+                                                                BeatStatus.Queued -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                BeatStatus.Failed -> MaterialTheme.colorScheme.error
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Text(
+                                                                    text = "${beat.index + 1}",
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = when (beat.status) {
+                                                                        BeatStatus.Done, BeatStatus.Writing, BeatStatus.Failed -> MaterialTheme.colorScheme.onPrimary
+                                                                        BeatStatus.Queued -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    }
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Column(modifier = Modifier.weight(1f)) {
                                                             Text(
-                                                                text = "${beat.index + 1}",
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = when (beat.status) {
-                                                                    BeatStatus.Done, BeatStatus.Writing, BeatStatus.Failed -> MaterialTheme.colorScheme.onPrimary
-                                                                    BeatStatus.Queued -> MaterialTheme.colorScheme.onSurfaceVariant
-                                                                }
+                                                                text = beat.title,
+                                                                style = MaterialTheme.typography.titleSmall,
+                                                                fontWeight = FontWeight.SemiBold
+                                                            )
+                                                            Text(
+                                                                text = beat.objective,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                                             )
                                                         }
-                                                    }
 
-                                                    Column(modifier = Modifier.weight(1f)) {
                                                         Text(
-                                                            text = beat.title,
-                                                            style = MaterialTheme.typography.titleSmall,
-                                                            fontWeight = FontWeight.SemiBold
-                                                        )
-                                                        Text(
-                                                            text = beat.objective,
-                                                            style = MaterialTheme.typography.bodySmall,
+                                                            text = "${beat.targetWords}w",
+                                                            style = MaterialTheme.typography.labelSmall,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
                                                     }
-
-                                                    Text(
-                                                        text = "${beat.targetWords}w",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
                                                 }
                                             }
                                         }

@@ -85,6 +85,11 @@ import me.rerere.rikkahub.data.memory.DiveDeeperAction
 import me.rerere.rikkahub.data.memory.MemorySummaryData
 import me.rerere.rikkahub.data.memory.MemorySummarySection
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
+import me.rerere.rikkahub.data.memory.renderMemorySummaryToMarkdown
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import androidx.compose.ui.platform.LocalContext
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.base64Encode
 import org.koin.androidx.compose.koinViewModel
@@ -97,6 +102,9 @@ fun MemorySummaryPage(
     navBackStack: NavHostController,
     vm: AssistantDetailVM = koinViewModel(parameters = { parametersOf(assistantId) }),
 ) {
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
     val memorySummary: MemorySummaryEntity? by vm.memorySummary.collectAsStateWithLifecycle(null)
     val isGenerating: Boolean by vm.isSummaryGenerating.collectAsStateWithLifecycle(false)
     val summaryError: String? by vm.summaryError.collectAsStateWithLifecycle(null)
@@ -467,52 +475,54 @@ fun MemorySummaryPage(
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        // Header: Avatar / "Your Summary"
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    SelectionContainer {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center,
+                            // Header: Avatar / "Your Summary"
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
-                                Icon(
-                                    Icons.Rounded.Person,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = summaryData.title.ifBlank { "Your Summary" },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                if (summaryData.subtitle.isNotBlank()) {
-                                    Text(
-                                        text = summaryData.subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Person,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 }
+                                Column {
+                                    Text(
+                                        text = summaryData.title.ifBlank { "Your Summary" },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    if (summaryData.subtitle.isNotBlank()) {
+                                        Text(
+                                            text = summaryData.subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
-                        }
 
-                        // Dynamic sections with tinted icon tags
-                        summaryData.sections.forEachIndexed { index, section ->
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                thickness = 0.5.dp,
-                            )
-                            MemorySummarySectionItem(section = section, index = index)
+                            // Dynamic sections with tinted icon tags
+                            summaryData.sections.forEachIndexed { index, section ->
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    thickness = 0.5.dp,
+                                )
+                                MemorySummarySectionItem(section = section, index = index)
+                            }
                         }
                     }
                 }
@@ -555,8 +565,8 @@ fun MemorySummaryPage(
 }
 
 @Composable
-private fun MemorySummarySectionView(
-    section: MemorySection,
+private fun MemorySummarySectionItem(
+    section: MemorySummarySection,
     index: Int,
 ) {
     val icon = remember(section.icon) { resolveSectionIcon(section.icon) }

@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.library
 
 import android.net.Uri
-import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -118,13 +117,13 @@ import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.repository.SavedArtifact
 import me.rerere.rikkahub.data.repository.StoryProject
 import me.rerere.rikkahub.data.repository.StoryStudioRepository
-import me.rerere.rikkahub.data.repository.VoiceMemoRecord
+import me.rerere.rikkahub.data.repository.VoiceMemoItem
 import me.rerere.rikkahub.data.repository.VoiceMemoRepository
-import me.rerere.rikkahub.service.voice.VoicePlaybackManager
+import me.rerere.rikkahub.data.repository.VoicePlaybackManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.ArtifactZoomDialog
-import me.rerere.rikkahub.ui.components.toast.LocalToaster
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -191,7 +190,7 @@ sealed class LibraryItem {
     }
 
     data class Recording(
-        val memo: VoiceMemoRecord,
+        val memo: VoiceMemoItem,
     ) : LibraryItem() {
         override val id: String = memo.id
         override val title: String = memo.title
@@ -206,7 +205,7 @@ sealed class LibraryItem {
     ) : LibraryItem() {
         override val id: String = entity.assistantId
         override val title: String = "$assistantName's Memory Summary"
-        override val subtitle: String = "${entity.tokenCount} tokens • ${DateUtils.getRelativeTimeSpanString(entity.updatedAt)}"
+        override val subtitle: String = "${entity.tokenCount} tokens • ${formatRelativeAgo(entity.updatedAt)}"
         override val timestamp: Long = entity.updatedAt
         override val category: LibraryCategory = LibraryCategory.SUMMARIES
     }
@@ -257,7 +256,7 @@ fun LibraryPage() {
     var previewImage by remember { mutableStateOf<LibraryItem.Photo?>(null) }
     var previewArtifact by remember { mutableStateOf<SavedArtifact?>(null) }
     var previewStory by remember { mutableStateOf<StoryProject?>(null) }
-    var previewMemo by remember { mutableStateOf<VoiceMemoRecord?>(null) }
+    var previewMemo by remember { mutableStateOf<VoiceMemoItem?>(null) }
     var previewSummary by remember { mutableStateOf<Pair<MemorySummaryEntity, String>?>(null) }
     var pendingDeleteItem by remember { mutableStateOf<LibraryItem?>(null) }
 
@@ -646,6 +645,7 @@ fun LibraryPage() {
         }
         ArtifactZoomDialog(
             code = code,
+            cachedBitmap = null,
             onDismissRequest = { previewArtifact = null }
         )
     }
@@ -780,7 +780,7 @@ fun LibraryPage() {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${memo.durationMs / 1000}s recording • ${DateUtils.getRelativeTimeSpanString(memo.createdAt)}",
+                                text = "${memo.durationMs / 1000}s recording • ${formatRelativeAgo(memo.createdAt)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -896,7 +896,7 @@ fun LibraryPage() {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${entity.tokenCount} tokens • ${DateUtils.getRelativeTimeSpanString(entity.updatedAt)}",
+                                text = "${entity.tokenCount} tokens • ${formatRelativeAgo(entity.updatedAt)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -972,7 +972,7 @@ fun LibraryPage() {
                                         storyRepo.deleteProject(item.project.id)
                                     }
                                     is LibraryItem.Recording -> {
-                                        memoRepo.deleteMemo(item.memo.id)
+                                        memoRepo.deleteRecording(item.memo)
                                     }
                                     is LibraryItem.Summary -> {
                                         summaryDao.delete(item.entity.assistantId)
@@ -1050,7 +1050,7 @@ private fun LibraryItemCard(
                 }
 
                 Text(
-                    text = DateUtils.getRelativeTimeSpanString(item.timestamp).toString(),
+                    text = formatRelativeAgo(item.timestamp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1256,3 +1256,18 @@ private fun LibraryItemCard(
         }
     }
 }
+
+private fun formatRelativeAgo(timestamp: Long): String {
+    val diff = System.currentTimeMillis() - timestamp
+    val seconds = (diff / 1000).coerceAtLeast(0)
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    return when {
+        minutes < 1 -> "Just now"
+        minutes < 60 -> "${minutes}m ago"
+        hours < 24 -> "${hours}h ago"
+        else -> "${days}d ago"
+    }
+}
+
