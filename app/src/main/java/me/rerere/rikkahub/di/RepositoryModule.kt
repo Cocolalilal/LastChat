@@ -146,6 +146,7 @@ val repositoryModule = module {
             settingsStore = get(),
             providerManager = get(),
             secretKeyManager = get(),
+            memoryRepository = get(),
         )
     }
 }

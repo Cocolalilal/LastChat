@@ -24,6 +24,7 @@ import me.rerere.asr.local.SherpaModelStore
 import me.rerere.asr.local.SherpaSttRuntime
 import me.rerere.asr.providers.SherpaASRController
 import me.rerere.common.inference.LocalInferenceManager
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
@@ -33,6 +34,7 @@ import me.rerere.ai.provider.ModelType
 fun rememberCustomSttState(): CustomSttState {
     val context = LocalContext.current
     val settingsStore = koinInject<SettingsStore>()
+    val secretKeyManager = koinInject<SecretKeyManager>()
     val httpClient = koinInject<OkHttpClient>()
     val sherpaStore = koinInject<SherpaModelStore>()
     val sherpaRuntime = koinInject<SherpaSttRuntime>()
@@ -50,13 +52,16 @@ fun rememberCustomSttState(): CustomSttState {
     }
 
     val sttModelId = settings.sttModelId
-    val provider = remember(sttModelId, settings.providers) {
+    val rawProvider = remember(sttModelId, settings.providers) {
         if (sttModelId != null) {
             settings.providers.firstOrNull { it.models.any { model -> model.id == sttModelId } }
         } else null
     }
-    val model = remember(sttModelId, provider) {
-        provider?.models?.firstOrNull { it.id == sttModelId }
+    val provider = remember(rawProvider, secretKeyManager) {
+        rawProvider?.let { secretKeyManager.populateProviderSecrets(it) }
+    }
+    val model = remember(sttModelId, rawProvider) {
+        rawProvider?.models?.firstOrNull { it.id == sttModelId }
     }
 
     DisposableEffect(provider, model) {

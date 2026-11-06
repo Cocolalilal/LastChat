@@ -940,9 +940,24 @@ private suspend fun transcribeAudio(
     val provider = secretKeyManager.populateProviderSecrets(rawProvider)
 
     val (baseUrl, apiKey) = when (val p = provider) {
-        is me.rerere.ai.provider.ProviderSetting.OpenAI -> p.baseUrl to p.apiKey
-        is me.rerere.ai.provider.ProviderSetting.Claude -> "https://api.anthropic.com" to p.apiKey
-        is me.rerere.ai.provider.ProviderSetting.Google -> "https://generativelanguage.googleapis.com" to p.apiKey
+        is me.rerere.ai.provider.ProviderSetting.OpenAI -> {
+            val key = p.apiKey.ifBlank {
+                p.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key.orEmpty()
+            }
+            p.baseUrl to key
+        }
+        is me.rerere.ai.provider.ProviderSetting.Claude -> {
+            val key = p.apiKey.ifBlank {
+                p.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key.orEmpty()
+            }
+            "https://api.anthropic.com" to key
+        }
+        is me.rerere.ai.provider.ProviderSetting.Google -> {
+            val key = p.apiKey.ifBlank {
+                p.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key.orEmpty()
+            }
+            "https://generativelanguage.googleapis.com" to key
+        }
         else -> "" to ""
     }
 

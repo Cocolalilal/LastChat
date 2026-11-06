@@ -20,16 +20,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,20 +80,26 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.repository.BeatStatus
 import me.rerere.rikkahub.data.repository.StoryBeat
+import me.rerere.rikkahub.data.repository.StoryDirectorMessage
 import me.rerere.rikkahub.data.repository.StoryProject
 import me.rerere.rikkahub.data.repository.StoryStatus
 import me.rerere.rikkahub.data.repository.StoryStudioRepository
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +110,7 @@ fun StoryStudioPage() {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
+    val directorChatListState = rememberLazyListState()
 
     val storyRepo = koinInject<StoryStudioRepository>()
     val settingsStore = koinInject<SettingsStore>()
@@ -106,8 +118,12 @@ fun StoryStudioPage() {
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
     val projects by storyRepo.projectsFlow.collectAsStateWithLifecycle()
 
+    val activeAssistant = remember(settings.assistantId, settings.assistants) {
+        settings.getAssistantById(settings.assistantId) ?: settings.assistants.firstOrNull()
+    }
+
     var selectedProjectId by remember { mutableStateOf<String?>(null) }
-    val currentProject = projects.firstOrNull { it.id == selectedProjectId } ?: projects.firstOrNull()
+    val currentProject = projects.firstOrNull { it.id == selectedProjectId }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var isGenerating by remember { mutableStateOf(false) }
@@ -115,17 +131,26 @@ fun StoryStudioPage() {
     var activeProseChunk by remember { mutableStateOf("") }
     var steerText by remember { mutableStateOf("") }
 
+    // Director chat state
+    var directorInputText by remember { mutableStateOf("") }
+    var isDirectorStreaming by remember { mutableStateOf(false) }
+    var activeDirectorChunk by remember { mutableStateOf("") }
+
+    // Dialog state
     var showNewStoryDialog by remember { mutableStateOf(false) }
     var newTitle by remember { mutableStateOf("") }
     var newPremise by remember { mutableStateOf("") }
-    var newGenre by remember { mutableStateOf("Cyberpunk") }
-    var newTone by remember { mutableStateOf("Gritty") }
+    var newGenre by remember { mutableStateOf("") }
+    var newTone by remember { mutableStateOf("") }
     var newArchitectModelId by remember { mutableStateOf<Uuid?>(null) }
     var newProseModelId by remember { mutableStateOf<Uuid?>(null) }
 
-    LaunchedEffect(projects) {
-        if (selectedProjectId == null && projects.isNotEmpty()) {
-            selectedProjectId = projects.first().id
+    var projectToDelete by remember { mutableStateOf<StoryProject?>(null) }
+
+    // Auto-scroll director chat when new messages or chunks arrive
+    LaunchedEffect(currentProject?.directorChat?.size, activeDirectorChunk) {
+        if (selectedTabIndex == 2 && currentProject != null && currentProject.directorChat.isNotEmpty()) {
+            directorChatListState.animateScrollToItem(currentProject.directorChat.size)
         }
     }
 
@@ -135,16 +160,42 @@ fun StoryStudioPage() {
                 title = currentProject?.title ?: stringResource(R.string.studio_story_title),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
-                    BackButton()
+                    if (currentProject != null) {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                selectedProjectId = null
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Stories")
+                        }
+                    } else {
+                        BackButton()
+                    }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Tick)
-                            showNewStoryDialog = true
+                    if (currentProject != null) {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                projectToDelete = currentProject
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Delete, contentDescription = "Delete Story", tint = MaterialTheme.colorScheme.error)
                         }
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = "New Story")
+                    } else {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                newTitle = ""
+                                newPremise = ""
+                                newGenre = ""
+                                newTone = ""
+                                showNewStoryDialog = true
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = "New Story")
+                        }
                     }
                 }
             )
@@ -231,13 +282,27 @@ fun StoryStudioPage() {
                             }
 
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                IconButton(
-                                    onClick = {
-                                        haptics.perform(HapticPattern.Tick)
-                                        if (isGenerating) {
+                                if (isGenerating || isGeneratingBible) {
+                                    // Cancel Button
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Pop)
+                                            storyRepo.cancelGeneration(currentProject.id)
                                             isGenerating = false
-                                            toaster.show("Generation paused")
-                                        } else {
+                                            isGeneratingBible = false
+                                            toaster.show("Generation cancelled")
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Stop,
+                                            contentDescription = "Cancel Generation",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Tick)
                                             val beatIdx = currentProject.currentBeatIndex
                                             if (currentProject.bible == null) {
                                                 toaster.show("Story Bible not generated yet!")
@@ -257,7 +322,7 @@ fun StoryStudioPage() {
                                                         activeProseChunk += delta
                                                     }
                                                 ).onSuccess {
-                                                    toaster.show("Beat ${beatIdx + 1} finished & saved to workspace!")
+                                                    toaster.show("Beat ${beatIdx + 1} finished & saved!")
                                                     activeProseChunk = ""
                                                     steerText = ""
                                                 }.onFailure {
@@ -266,30 +331,30 @@ fun StoryStudioPage() {
                                                 isGenerating = false
                                             }
                                         }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.PlayArrow,
+                                            contentDescription = "Start Beat",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = if (isGenerating) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
 
-                                IconButton(
-                                    onClick = {
-                                        haptics.perform(HapticPattern.Pop)
-                                        val nextIdx = currentProject.currentBeatIndex + 1
-                                        scope.launch {
-                                            storyRepo.saveProject(currentProject.copy(currentBeatIndex = nextIdx))
-                                            toaster.show("Advanced to Beat ${nextIdx + 1}")
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Pop)
+                                            val nextIdx = currentProject.currentBeatIndex + 1
+                                            scope.launch {
+                                                storyRepo.saveProject(currentProject.copy(currentBeatIndex = nextIdx))
+                                                toaster.show("Advanced to Beat ${nextIdx + 1}")
+                                            }
                                         }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.FastForward,
+                                            contentDescription = "Advance Beat",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.FastForward,
-                                        contentDescription = "Advance Beat",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
                             }
                         }
@@ -319,7 +384,7 @@ fun StoryStudioPage() {
                                 onValueChange = { steerText = it },
                                 placeholder = {
                                     Text(
-                                        text = "Steer next beat: e.g. 'Maya hesitates before shooting'...",
+                                        text = "Steer next beat: e.g. 'Focus on dialogue and sensory details'...",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 },
@@ -340,7 +405,7 @@ fun StoryStudioPage() {
                                 onClick = {
                                     if (steerText.isNotBlank()) {
                                         haptics.perform(HapticPattern.Tick)
-                                        toaster.show("Director steer instruction queued!")
+                                        toaster.show("Director steer note applied!")
                                     }
                                 },
                                 shape = AppShapes.ButtonPill,
@@ -366,36 +431,204 @@ fun StoryStudioPage() {
                 .padding(top = contentPadding.calculateTopPadding())
         ) {
             if (currentProject == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
+                // ========================================================
+                // FRESH STORY LIBRARY & CREATIONS BROWSER
+                // ========================================================
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = lazyListState,
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "No Story Manuscript Found",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Tap below to create a new persistent novel. The Architect model will build a Story Bible and sequential beats.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Button(
-                            onClick = { showNewStoryDialog = true },
-                            shape = AppShapes.ButtonPill
+                    // Hero New Story Action Card
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                            ),
+                            shape = AppShapes.CardLarge,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Create Story")
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "Start a New Story",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Craft multi-beat novels with an AI Story Bible and real-time assistant director steering.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Button(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Tick)
+                                        newTitle = ""
+                                        newPremise = ""
+                                        newGenre = ""
+                                        newTone = ""
+                                        showNewStoryDialog = true
+                                    },
+                                    shape = AppShapes.ButtonPill
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp))
+                                        Text("Create Story", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Text(
+                            text = "Your Stories (${projects.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+
+                    if (projects.isEmpty()) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                shape = AppShapes.CardLarge,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(32.dp).fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No stories created yet. Tap 'Create Story' above to start.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(projects, key = { it.id }) { project ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                shape = AppShapes.CardLarge,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        selectedProjectId = project.id
+                                    }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = project.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        Surface(
+                                            shape = AppShapes.ButtonPill,
+                                            color = when (project.status) {
+                                                StoryStatus.Completed -> MaterialTheme.colorScheme.tertiaryContainer
+                                                StoryStatus.Writing -> MaterialTheme.colorScheme.primaryContainer
+                                                StoryStatus.Outlining -> MaterialTheme.colorScheme.secondaryContainer
+                                                StoryStatus.Paused -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                            }
+                                        ) {
+                                            Text(
+                                                text = project.status.name,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    val genreTone = listOfNotNull(
+                                        project.genre.takeIf { it.isNotBlank() },
+                                        project.tone.takeIf { it.isNotBlank() }
+                                    ).joinToString(" • ")
+
+                                    if (genreTone.isNotBlank()) {
+                                        Text(
+                                            text = genreTone,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Text(
+                                        text = project.premise,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val beatsCount = project.bible?.beats?.size ?: 0
+                                        val completed = project.bible?.beats?.count { it.status == BeatStatus.Done } ?: 0
+                                        Text(
+                                            text = if (beatsCount > 0) "Beat $completed/$beatsCount • ${project.totalWords} words" else "${project.totalWords} words",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                haptics.perform(HapticPattern.Pop)
+                                                projectToDelete = project
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Delete,
+                                                contentDescription = "Delete Story",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             } else {
+                // ========================================================
+                // FULL STORY WORKSPACE TABS
+                // ========================================================
                 SecondaryTabRow(
                     selectedTabIndex = selectedTabIndex,
                     containerColor = Color.Transparent,
@@ -411,11 +644,7 @@ fun StoryStudioPage() {
                         },
                         text = { Text("Manuscript", style = MaterialTheme.typography.titleSmall) },
                         icon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.MenuBook,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                     )
                     Tab(
@@ -426,18 +655,25 @@ fun StoryStudioPage() {
                         },
                         text = { Text("Story Bible & Beats", style = MaterialTheme.typography.titleSmall) },
                         icon = {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                    )
+                    Tab(
+                        selected = selectedTabIndex == 2,
+                        onClick = {
+                            haptics.perform(HapticPattern.Tick)
+                            selectedTabIndex = 2
+                        },
+                        text = { Text("Director Chat", style = MaterialTheme.typography.titleSmall) },
+                        icon = {
+                            Icon(Icons.Rounded.Chat, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                     )
                 }
 
                 if (selectedTabIndex == 0) {
                     // ========================================================
-                    // MANUSCRIPT READER VIEW
+                    // TAB 0: MANUSCRIPT READER VIEW
                     // ========================================================
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -454,17 +690,14 @@ fun StoryStudioPage() {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(22.dp),
+                                    modifier = Modifier.padding(20.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                                     Text(
                                         text = currentProject.title,
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Serif,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        fontFamily = FontFamily.Serif
                                     )
 
                                     val beats = currentProject.bible?.beats ?: emptyList()
@@ -502,33 +735,53 @@ fun StoryStudioPage() {
                                                 }
                                             }
 
-                                            Button(
-                                                onClick = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                    scope.launch {
-                                                        isGeneratingBible = true
-                                                        toaster.show("Architect model building Story Bible & Beats...")
-                                                        storyRepo.generateStoryBible(currentProject.id).onSuccess {
-                                                            toaster.show("Story Bible generated successfully!")
-                                                        }.onFailure {
-                                                            toaster.show("Error: ${it.message}")
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(
+                                                    onClick = {
+                                                        haptics.perform(HapticPattern.Pop)
+                                                        scope.launch {
+                                                            isGeneratingBible = true
+                                                            toaster.show("Architect model building Story Bible & Beats...")
+                                                            storyRepo.generateStoryBible(currentProject.id).onSuccess {
+                                                                toaster.show("Story Bible generated successfully!")
+                                                            }.onFailure {
+                                                                toaster.show("Error: ${it.message}")
+                                                            }
+                                                            isGeneratingBible = false
                                                         }
-                                                        isGeneratingBible = false
+                                                    },
+                                                    enabled = !isGeneratingBible,
+                                                    shape = AppShapes.ButtonPill
+                                                ) {
+                                                    if (isGeneratingBible) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(16.dp),
+                                                            strokeWidth = 2.dp,
+                                                            color = MaterialTheme.colorScheme.onPrimary
+                                                        )
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text("Generating...")
+                                                    } else {
+                                                        Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible")
                                                     }
-                                                },
-                                                enabled = !isGeneratingBible,
-                                                shape = AppShapes.ButtonPill
-                                            ) {
+                                                }
+
                                                 if (isGeneratingBible) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(16.dp),
-                                                        strokeWidth = 2.dp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                    Spacer(Modifier.width(8.dp))
-                                                    Text("Architect Generating...")
-                                                } else {
-                                                    Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible & Beats")
+                                                    Button(
+                                                        onClick = {
+                                                            haptics.perform(HapticPattern.Pop)
+                                                            storyRepo.cancelGeneration(currentProject.id)
+                                                            isGeneratingBible = false
+                                                            toaster.show("Generation cancelled")
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                                        ),
+                                                        shape = AppShapes.ButtonPill
+                                                    ) {
+                                                        Text("Cancel")
+                                                    }
                                                 }
                                             }
                                         }
@@ -588,9 +841,9 @@ fun StoryStudioPage() {
                             }
                         }
                     }
-                } else {
+                } else if (selectedTabIndex == 1) {
                     // ========================================================
-                    // STORY BIBLE & BEATS TAB
+                    // TAB 1: STORY BIBLE & BEATS TAB
                     // ========================================================
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -647,33 +900,53 @@ fun StoryStudioPage() {
                                             }
                                         }
 
-                                        Button(
-                                            onClick = {
-                                                haptics.perform(HapticPattern.Pop)
-                                                scope.launch {
-                                                    isGeneratingBible = true
-                                                    toaster.show("Architect model building Story Bible & Beats...")
-                                                    storyRepo.generateStoryBible(currentProject.id).onSuccess {
-                                                        toaster.show("Story Bible generated!")
-                                                    }.onFailure {
-                                                        toaster.show("Error: ${it.message}")
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Pop)
+                                                    scope.launch {
+                                                        isGeneratingBible = true
+                                                        toaster.show("Architect model building Story Bible & Beats...")
+                                                        storyRepo.generateStoryBible(currentProject.id).onSuccess {
+                                                            toaster.show("Story Bible generated successfully!")
+                                                        }.onFailure {
+                                                            toaster.show("Error: ${it.message}")
+                                                        }
+                                                        isGeneratingBible = false
                                                     }
-                                                    isGeneratingBible = false
+                                                },
+                                                enabled = !isGeneratingBible,
+                                                shape = AppShapes.ButtonPill
+                                            ) {
+                                                if (isGeneratingBible) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text("Architect Generating...")
+                                                } else {
+                                                    Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible & Beats")
                                                 }
-                                            },
-                                            enabled = !isGeneratingBible,
-                                            shape = AppShapes.ButtonPill
-                                        ) {
+                                            }
+
                                             if (isGeneratingBible) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(16.dp),
-                                                    strokeWidth = 2.dp,
-                                                    color = MaterialTheme.colorScheme.onPrimary
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text("Architect Generating...")
-                                            } else {
-                                                Text(if (currentProject.lastError != null) "Retry Generating Story Bible" else "Generate Story Bible & Beats")
+                                                Button(
+                                                    onClick = {
+                                                        haptics.perform(HapticPattern.Pop)
+                                                        storyRepo.cancelGeneration(currentProject.id)
+                                                        isGeneratingBible = false
+                                                        toaster.show("Generation cancelled")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                                    ),
+                                                    shape = AppShapes.ButtonPill
+                                                ) {
+                                                    Text("Cancel")
+                                                }
                                             }
                                         }
                                     }
@@ -694,42 +967,55 @@ fun StoryStudioPage() {
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
                                         Text(
-                                            text = "Story Bible • Characters & Lore",
+                                            text = "Characters (${bible.characters.size})",
                                             style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            fontWeight = FontWeight.Bold
                                         )
 
                                         bible.characters.forEach { char ->
-                                            Column {
-                                                Text(
-                                                    text = "${char.name} (${char.role})",
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = char.name,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Surface(
+                                                        shape = AppShapes.ButtonPill,
+                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                    ) {
+                                                        Text(
+                                                            text = char.role,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
                                                 Text(
                                                     text = char.description,
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = MaterialTheme.colorScheme.onSurface
                                                 )
+                                                if (char.motive.isNotBlank()) {
+                                                    Text(
+                                                        text = "Motive: ${char.motive}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                                         }
                                     }
                                 }
                             }
 
-                            // Milestone Beats Outline
-                            item {
-                                Text(
-                                    text = "Milestone Beats (Autonomous Chain)",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 8.dp)
-                                )
-                            }
-
+                            // Setting & Lore Rules Card
                             item {
                                 Card(
                                     colors = CardDefaults.cardColors(
@@ -739,74 +1025,353 @@ fun StoryStudioPage() {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(14.dp),
+                                        modifier = Modifier.padding(18.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        bible.beats.forEach { beat ->
-                                            val isDone = beat.status == BeatStatus.Done || beat.content.isNotBlank()
-                                            val isActive = currentProject.currentBeatIndex == beat.index && !isDone
+                                        Text(
+                                            text = "Setting & Narrative Rules",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
 
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(AppShapes.CardSmall)
-                                                    .background(
-                                                        if (isActive) {
-                                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                                        } else {
-                                                            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
-                                                        }
-                                                    )
-                                                    .padding(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                            ) {
-                                                Surface(
-                                                    shape = CircleShape,
-                                                    color = if (isDone) MaterialTheme.colorScheme.primary else if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                    modifier = Modifier.size(24.dp)
+                                        Text(
+                                            text = bible.styleGuidelines,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+
+                                        if (bible.worldRules.isNotEmpty()) {
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                                            bible.worldRules.forEach { rule ->
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.Top
                                                 ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        if (isDone) {
-                                                            Icon(
-                                                                imageVector = Icons.Rounded.Check,
-                                                                contentDescription = null,
-                                                                tint = MaterialTheme.colorScheme.onPrimary,
-                                                                modifier = Modifier.size(16.dp)
-                                                            )
-                                                        } else {
-                                                            Text(
-                                                                text = "${beat.index + 1}",
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text("•", color = MaterialTheme.colorScheme.primary)
                                                     Text(
-                                                        text = "Beat ${beat.index + 1}: ${beat.title}",
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Text(
-                                                        text = beat.objective,
+                                                        text = rule,
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
+                            // Milestone Beats Outline Card
+                            item {
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                    ),
+                                    shape = AppShapes.CardLarge,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(18.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "Milestone Beat Outline (${bible.beats.size})",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        bible.beats.forEach { beat ->
+                                            Surface(
+                                                shape = AppShapes.CardSmall,
+                                                color = if (beat.index == currentProject.currentBeatIndex) {
+                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                                } else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(12.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = when (beat.status) {
+                                                            BeatStatus.Done -> MaterialTheme.colorScheme.primary
+                                                            BeatStatus.Writing -> MaterialTheme.colorScheme.secondary
+                                                            BeatStatus.Queued -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                            BeatStatus.Failed -> MaterialTheme.colorScheme.error
+                                                        },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Text(
+                                                                text = "${beat.index + 1}",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = when (beat.status) {
+                                                                    BeatStatus.Done, BeatStatus.Writing, BeatStatus.Failed -> MaterialTheme.colorScheme.onPrimary
+                                                                    BeatStatus.Queued -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = beat.title,
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.SemiBold
+                                                        )
+                                                        Text(
+                                                            text = beat.objective,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+
+                                                    Text(
+                                                        text = "${beat.targetWords}w",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ========================================================
+                    // TAB 2: DIRECTOR CHAT WITH ASSISTANT
+                    // ========================================================
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .imePadding()
+                    ) {
+                        // Director Chat Top Context Bar
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Chat,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "${activeAssistant?.name ?: "Assistant"} • Director & Co-writer",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (isDirectorStreaming) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
+                        // Message List
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            state = directorChatListState,
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (currentProject.directorChat.isEmpty()) {
+                                item {
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                        ),
+                                        shape = AppShapes.CardLarge,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(20.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Talk to ${activeAssistant?.name ?: "your assistant"}",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Brainstorm characters, change world rules, suggest plot twists, or steer future beats. Any requested changes to the Story Bible are updated automatically!",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(currentProject.directorChat, key = { it.id }) { msg ->
+                                    val isUser = msg.role == "user"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                                    ) {
+                                        Surface(
+                                            shape = if (isUser) {
+                                                AppShapes.CardMedium.copy(bottomEnd = androidx.compose.foundation.shape.CornerSize(4.dp))
+                                            } else {
+                                                AppShapes.CardMedium.copy(bottomStart = androidx.compose.foundation.shape.CornerSize(4.dp))
+                                            },
+                                            color = if (isUser) {
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceContainerHigh
+                                            },
+                                            modifier = Modifier.fillMaxWidth(0.85f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
                                                 Text(
-                                                    text = "${beat.targetWords}w",
+                                                    text = if (isUser) "You" else activeAssistant?.name ?: "Director",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+                                                )
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    text = msg.content,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
                                         }
                                     }
+                                }
+                            }
+
+                            // Active streaming bubble
+                            if (isDirectorStreaming && activeDirectorChunk.isNotBlank()) {
+                                item {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.Start
+                                    ) {
+                                        Surface(
+                                            shape = AppShapes.CardMedium.copy(bottomStart = androidx.compose.foundation.shape.CornerSize(4.dp)),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.fillMaxWidth(0.85f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Text(
+                                                    text = activeAssistant?.name ?: "Director",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    text = activeDirectorChunk,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom Input Bar
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = directorInputText,
+                                    onValueChange = { directorInputText = it },
+                                    placeholder = {
+                                        Text(
+                                            text = "Talk to ${activeAssistant?.name ?: "assistant"} about the story...",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    },
+                                    shape = AppShapes.ButtonPill,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 3
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        val text = directorInputText.trim()
+                                        if (text.isNotBlank() && !isDirectorStreaming) {
+                                            haptics.perform(HapticPattern.Pop)
+                                            directorInputText = ""
+                                            isDirectorStreaming = true
+                                            activeDirectorChunk = ""
+                                            scope.launch {
+                                                storyRepo.sendDirectorMessage(
+                                                    projectId = currentProject.id,
+                                                    userMessage = text,
+                                                    onChunk = { delta ->
+                                                        activeDirectorChunk += delta
+                                                    }
+                                                ).onSuccess {
+                                                    activeDirectorChunk = ""
+                                                }.onFailure { err ->
+                                                    toaster.show("Director Chat error: ${err.message}")
+                                                }
+                                                isDirectorStreaming = false
+                                            }
+                                        }
+                                    },
+                                    enabled = directorInputText.isNotBlank() && !isDirectorStreaming,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (directorInputText.isNotBlank() && !isDirectorStreaming) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else MaterialTheme.colorScheme.surfaceContainerHighest
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.Send,
+                                        contentDescription = "Send",
+                                        tint = if (directorInputText.isNotBlank() && !isDirectorStreaming) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
                         }
@@ -840,6 +1405,24 @@ fun StoryStudioPage() {
                         label = { Text("Premise / Core Idea") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 4
+                    )
+
+                    OutlinedTextField(
+                        value = newGenre,
+                        onValueChange = { newGenre = it },
+                        label = { Text("Genre") },
+                        placeholder = { Text("e.g. Fantasy, Sci-Fi, Romance") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = newTone,
+                        onValueChange = { newTone = it },
+                        label = { Text("Tone") },
+                        placeholder = { Text("e.g. Dark, Humorous, Epic, Playful") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
                     )
 
                     Row(
@@ -879,8 +1462,8 @@ fun StoryStudioPage() {
                                 val p = storyRepo.createProject(
                                     title = newTitle.ifBlank { "Untitled Story" },
                                     premise = newPremise,
-                                    genre = newGenre,
-                                    tone = newTone,
+                                    genre = newGenre.ifBlank { "Fiction" },
+                                    tone = newTone.ifBlank { "Engaging" },
                                     architectModelId = newArchitectModelId ?: settings.chatModelId,
                                     proseModelId = newProseModelId ?: settings.chatModelId,
                                 )
@@ -904,6 +1487,27 @@ fun StoryStudioPage() {
             dismissButton = {
                 TextButton(onClick = { showNewStoryDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete Story Confirmation Dialog
+    projectToDelete?.let { proj ->
+        LastChatDestructiveConfirmDialog(
+            title = "Delete Story",
+            consequence = "Are you sure you want to permanently delete \"${proj.title}\"? The entire manuscript, Story Bible, and director chat will be removed.",
+            confirmLabel = "Delete",
+            cancelLabel = "Cancel",
+            onDismiss = { projectToDelete = null },
+            onConfirm = {
+                scope.launch {
+                    storyRepo.deleteProject(proj.id)
+                    if (selectedProjectId == proj.id) {
+                        selectedProjectId = null
+                    }
+                    toaster.show("Story deleted")
+                    projectToDelete = null
                 }
             }
         )

@@ -606,34 +606,92 @@ fun stripThinkingTags(text: String): String {
 }
 
 /**
- * Extracts JSON substring if surrounded by markdown code fences or arbitrary text.
+ * Extracts JSON substring if surrounded by markdown code fences or arbitrary text,
+ * and auto-heals unterminated strings, trailing commas, and unclosed arrays/objects.
  */
 fun extractJsonPayload(text: String): String {
-    val clean = stripThinkingTags(text).trim()
-    val fenceStart = clean.indexOf("```json")
-    if (fenceStart != -1) {
-        val jsonStart = fenceStart + 7
-        val fenceEnd = clean.indexOf("```", jsonStart)
-        if (fenceEnd != -1) {
-            return clean.substring(jsonStart, fenceEnd).trim()
-        }
+    if (text.isBlank()) return ""
+    var clean = stripThinkingTags(text).trim()
+
+    val fenceMatch = Regex("(?s)```(?:json)?\\s*([\\{\\[].*?)(?:```|$)").find(clean)
+    if (fenceMatch != null) {
+        clean = fenceMatch.groupValues[1].trim()
     }
-    val genericFenceStart = clean.indexOf("```")
-    if (genericFenceStart != -1) {
-        val nextNewline = clean.indexOf('\n', genericFenceStart)
-        if (nextNewline != -1) {
-            val fenceEnd = clean.indexOf("```", nextNewline)
-            if (fenceEnd != -1) {
-                return clean.substring(nextNewline, fenceEnd).trim()
+
+    val firstBrace = clean.indexOf('{')
+    val firstBracket = clean.indexOf('[')
+    val start = when {
+        firstBrace != -1 && firstBracket != -1 -> minOf(firstBrace, firstBracket)
+        firstBrace != -1 -> firstBrace
+        firstBracket != -1 -> firstBracket
+        else -> return clean
+    }
+    clean = clean.substring(start).trim()
+
+    val sb = StringBuilder(clean.length + 32)
+    val stack = ArrayDeque<Char>()
+    var inString = false
+    var escape = false
+
+    for (i in clean.indices) {
+        val ch = clean[i]
+        if (ch == '"' && !escape) {
+            inString = !inString
+            sb.append(ch)
+        } else if (inString) {
+            when (ch) {
+                '\n' -> sb.append("\\n")
+                '\r' -> { /* drop */ }
+                '\t' -> sb.append("\\t")
+                else -> sb.append(ch)
+            }
+        } else {
+            when (ch) {
+                '{' -> {
+                    stack.addLast('}')
+                    sb.append(ch)
+                }
+                '[' -> {
+                    stack.addLast(']')
+                    sb.append(ch)
+                }
+                '}', ']' -> {
+                    if (stack.isNotEmpty() && stack.last() == ch) {
+                        stack.removeLast()
+                    }
+                    sb.append(ch)
+                }
+                else -> sb.append(ch)
             }
         }
+
+        if (ch == '\\' && !escape) {
+            escape = true
+        } else {
+            escape = false
+        }
     }
-    val firstBrace = clean.indexOf('{')
-    val lastBrace = clean.lastIndexOf('}')
-    if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
-        return clean.substring(firstBrace, lastBrace + 1).trim()
+
+    if (inString) {
+        if (sb.isNotEmpty() && sb.last() == '\\') {
+            sb.deleteCharAt(sb.length - 1)
+        }
+        sb.append('"')
     }
-    return clean
+
+    var result = sb.toString().trim()
+    while (stack.isNotEmpty()) {
+        result = result.trim()
+        if (result.endsWith(',')) {
+            result = result.substring(0, result.length - 1).trim()
+        } else if (result.endsWith(':')) {
+            result = "$result null"
+        }
+        val closer = stack.removeLast()
+        result += closer
+    }
+
+    return result
 }
 
 /**

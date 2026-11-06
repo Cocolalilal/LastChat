@@ -54,6 +54,14 @@ data class StoryBible(
 )
 
 @Serializable
+data class StoryDirectorMessage(
+    val id: String = kotlin.uuid.Uuid.random().toString(),
+    val role: String, // "user" or "assistant"
+    val content: String,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Serializable
 data class StoryProject(
     val id: String,
     val title: String,
@@ -70,4 +78,5 @@ data class StoryProject(
     val proseModelId: Uuid? = null,
     val bible: StoryBible? = null,
     val lastError: String? = null,
+    val directorChat: List<StoryDirectorMessage> = emptyList(),
 )

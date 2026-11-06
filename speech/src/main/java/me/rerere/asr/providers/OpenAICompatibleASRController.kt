@@ -282,9 +282,13 @@ class OpenAICompatibleASRController(
         }
         multipartBuilder.addFormDataPart("temperature", temperature.toString())
 
+        val effectiveKey = provider.apiKey.ifBlank {
+            provider.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key.orEmpty()
+        }
+
         val request = Request.Builder()
             .url("${provider.baseUrl.trimEnd('/')}/audio/transcriptions")
-            .addHeader("Authorization", "Bearer ${provider.apiKey}")
+            .addHeader("Authorization", "Bearer $effectiveKey")
             .post(multipartBuilder.build())
             .build()
 
@@ -302,9 +306,13 @@ class OpenAICompatibleASRController(
             body.put("language", language)
         }
 
+        val effectiveKey = provider.apiKey.ifBlank {
+            provider.apiKeyPool.firstOrNull { it.enabled && it.key.isNotBlank() }?.key.orEmpty()
+        }
+
         val request = Request.Builder()
             .url("${provider.baseUrl.trimEnd('/')}/audio/transcriptions")
-            .addHeader("Authorization", "Bearer ${provider.apiKey}")
+            .addHeader("Authorization", "Bearer $effectiveKey")
             .addHeader("Content-Type", "application/json")
             .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
