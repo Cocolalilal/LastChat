@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
@@ -30,6 +31,11 @@ import kotlinx.coroutines.Job
 import kotlin.uuid.Uuid
 
 private const val TAG = "StoryStudioRepository"
+
+private fun UIMessage.toStreamDeltaText(): String {
+    return parts.filterIsInstance<UIMessagePart.Text>()
+        .joinToString("") { it.text }
+}
 
 class StoryStudioRepository(
     private val context: Context,
@@ -405,7 +411,7 @@ class StoryStudioRepository(
                         maxTokens = 3500
                     )
                 ).collect { chunk ->
-                    val delta = chunk.choices.firstOrNull()?.delta?.toContentText().orEmpty()
+                    val delta = chunk.choices.firstOrNull()?.delta?.toStreamDeltaText().orEmpty()
                     if (delta.isNotEmpty()) {
                         proseBuilder.append(delta)
                         onChunk(delta)
@@ -541,7 +547,7 @@ class StoryStudioRepository(
                     maxTokens = 3000
                 )
             ).collect { chunk ->
-                val delta = chunk.choices.firstOrNull()?.delta?.toContentText().orEmpty()
+                val delta = chunk.choices.firstOrNull()?.delta?.toStreamDeltaText().orEmpty()
                 if (delta.isNotEmpty()) {
                     responseBuilder.append(delta)
                     onChunk(delta)

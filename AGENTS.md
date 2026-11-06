@@ -459,14 +459,24 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 
 ## 16. Architecture: Stream Delta Spacing Fix, Copy Everywhere, Voice Memo Refinement & Unified Library (`Screen.Library`)
 
-### 1. The Stream Delta Spacing Incident (`StoryStudioRepository.kt`)
-- **Symptom:** Words were concatenated without spaces in Story Studio beat generation and Director Chat (e.g. `stormhittheSunnylikea debtcollectorwith agrudge`, `Honestly?Halfofit'shotandhalfof it'sfightingitself`).
-- **Root Cause:**
-  - Token streams emitted by LLMs often deliver whitespace or punctuation as isolated chunk deltas (e.g. `" "`, `"\n"`).
-  - In `StoryStudioRepository.kt`, chunk filtering used `if (delta.isNotBlank())`.
-  - In Kotlin, `" ".isNotBlank()` evaluates to `false`. Every standalone space token was silently discarded.
-- **Permanent Resolution:**
-  - Replaced `delta.isNotBlank()` with `delta.isNotEmpty()` across beat prose generation and Director chat collectors.
+### 1. The Stream Delta Spacing Incident & Post-Mortem (`StoryStudioRepository.kt`)
+- **Symptom:** Words were concatenated without spaces in Story Studio beat generation and Director Chat (e.g. `stormhittheSunnylikea debtcollectorwith agrudge`, `Honestly?Halfofit'shotandhalfof it'sfightingitself`, `supposeto??babythatsentencecameoutthewombpremature`).
+- **Root Cause Analysis:**
+  - `toContentText()` on `UIMessage` executes:
+    ```kotlin
+    return text.replace(Regex("<think(?:ing)?>([\\s\\S]*?)(?:</think(?:ing)?>|$)"), "").trim()
+    ```
+  - While `.trim()` is appropriate for a finalized, completed message, calling it on **individual streaming chunk deltas** (where tokens are emitted as `" the"`, `" and"`, `" to"`, `" was"`, `" from"`, `" a"`, `" of"`) amputates the leading whitespace from every single token.
+  - When concatenated, `"quite"` + `" dried"` became `"quitedried"`, `"what"` + `" are"` + `" you"` became `"whatareyou"`.
+- **Permanent Architectural Resolution:**
+  - Created `toStreamDeltaText()` extension:
+    ```kotlin
+    private fun UIMessage.toStreamDeltaText(): String {
+        return parts.filterIsInstance<UIMessagePart.Text>()
+            .joinToString("") { it.text }
+    }
+    ```
+  - Directly extracts raw text parts joined by `""` without calling `.trim()`. All token-level leading/trailing whitespace, tabs, and newlines are preserved verbatim.
 
 ### 2. Voice Memos Workflow Refinement (`VoiceMemosPage.kt`)
 - Removed the redundant "Story Studio" export chip.
