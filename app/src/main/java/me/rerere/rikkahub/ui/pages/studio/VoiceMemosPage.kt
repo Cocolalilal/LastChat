@@ -31,6 +31,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.foundation.text.selection.SelectionContainer
+import me.rerere.rikkahub.utils.writeClipboardText
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -667,16 +670,43 @@ fun VoiceMemosPage() {
                                     }
                                 )
 
-                                // Send to Story Studio
+                                // Copy Full Memo
                                 AssistChip(
                                     onClick = {
                                         haptics.perform(HapticPattern.Tick)
-                                        toaster.show("Exporting transcript into Story Studio Outline...")
-                                        navController.navigate(Screen.StoryStudio)
+                                        val memoContent = buildString {
+                                            appendLine("Voice Memo: ${activeMemo.title}")
+                                            if (!activeMemo.summary.isNullOrBlank()) {
+                                                appendLine()
+                                                appendLine("Executive Summary:")
+                                                appendLine(activeMemo.summary)
+                                            }
+                                            if (activeMemo.bulletPoints.isNotEmpty()) {
+                                                appendLine()
+                                                appendLine("Key Takeaways:")
+                                                activeMemo.bulletPoints.forEach { appendLine("• $it") }
+                                            }
+                                            if (activeMemo.actionItems.isNotEmpty()) {
+                                                appendLine()
+                                                appendLine("Action Items:")
+                                                activeMemo.actionItems.forEach { appendLine("- [ ] $it") }
+                                            }
+                                            if (!activeMemo.transcript.isNullOrBlank()) {
+                                                appendLine()
+                                                appendLine("Transcript:")
+                                                appendLine(activeMemo.transcript)
+                                            }
+                                        }.trim()
+                                        if (memoContent.isNotBlank()) {
+                                            context.writeClipboardText(memoContent)
+                                            toaster.show("Voice memo copied to clipboard")
+                                        } else {
+                                            toaster.show("No content to copy")
+                                        }
                                     },
-                                    label = { Text("Story Studio") },
+                                    label = { Text("Copy Memo") },
                                     leadingIcon = {
-                                        Icon(Icons.AutoMirrored.Rounded.MenuBook, null, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp))
                                     }
                                 )
                             }
@@ -692,33 +722,70 @@ fun VoiceMemosPage() {
                                         modifier = Modifier.padding(14.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        if (!activeMemo.summary.isNullOrBlank()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             Text(
-                                                text = "Executive Summary",
+                                                text = "Executive Summary & Bullets",
                                                 style = MaterialTheme.typography.labelMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
-                                            Text(
-                                                text = activeMemo.summary,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Tick)
+                                                    val textToCopy = buildString {
+                                                        if (!activeMemo.summary.isNullOrBlank()) {
+                                                            appendLine("Executive Summary:")
+                                                            appendLine(activeMemo.summary)
+                                                            appendLine()
+                                                        }
+                                                        if (activeMemo.bulletPoints.isNotEmpty()) {
+                                                            appendLine("Key Takeaways:")
+                                                            activeMemo.bulletPoints.forEach { appendLine("• $it") }
+                                                        }
+                                                    }.trim()
+                                                    context.writeClipboardText(textToCopy)
+                                                    toaster.show("Summary and bullets copied!")
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.ContentCopy,
+                                                    contentDescription = "Copy summary and bullets",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                         }
 
-                                        if (activeMemo.bulletPoints.isNotEmpty()) {
-                                            Text(
-                                                text = "Key Takeaways",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            activeMemo.bulletPoints.forEach { pt ->
-                                                Text(
-                                                    text = "• $pt",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                                        SelectionContainer {
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (!activeMemo.summary.isNullOrBlank()) {
+                                                    Text(
+                                                        text = activeMemo.summary,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+
+                                                if (activeMemo.bulletPoints.isNotEmpty()) {
+                                                    Text(
+                                                        text = "Key Takeaways",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    activeMemo.bulletPoints.forEach { pt ->
+                                                        Text(
+                                                            text = "• $pt",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -736,18 +803,41 @@ fun VoiceMemosPage() {
                                         modifier = Modifier.padding(14.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Text(
-                                            text = "Transcript",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = activeMemo.transcript,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            lineHeight = 20.sp,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Transcript",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Tick)
+                                                    context.writeClipboardText(activeMemo.transcript)
+                                                    toaster.show("Transcript copied to clipboard!")
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.ContentCopy,
+                                                    contentDescription = "Copy transcript",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                        SelectionContainer {
+                                            Text(
+                                                text = activeMemo.transcript,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                lineHeight = 20.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Button
@@ -225,7 +226,7 @@ fun StudioPage() {
                                 Button(
                                     onClick = {
                                         haptics.perform(HapticPattern.Tick)
-                                        navController.navigate(Screen.StoryStudio)
+                                        navController.navigate(Screen.StoryStudio())
                                     },
                                     shape = AppShapes.ButtonPill,
                                     colors = ButtonDefaults.buttonColors(
@@ -274,7 +275,7 @@ fun StudioPage() {
                             Button(
                                 onClick = {
                                     haptics.perform(HapticPattern.Tick)
-                                    navController.navigate(Screen.StoryStudio)
+                                    navController.navigate(Screen.StoryStudio())
                                 },
                                 shape = AppShapes.ButtonPill,
                                 colors = ButtonDefaults.buttonColors(
@@ -406,7 +407,7 @@ fun StudioPage() {
                             },
                             modifier = Modifier.clickable {
                                 haptics.perform(HapticPattern.Tick)
-                                navController.navigate(Screen.StoryStudio)
+                                navController.navigate(Screen.StoryStudio())
                             }
                         )
 
@@ -458,6 +459,57 @@ fun StudioPage() {
                             modifier = Modifier.clickable {
                                 haptics.perform(HapticPattern.Tick)
                                 navController.navigate(Screen.VoiceMemos)
+                            }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        )
+
+                        // 4. Unified Library
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = {
+                                Text(
+                                    text = "Creations Library",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = "Unified catalog for all photos, artifacts, stories, recordings & files",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            leadingContent = {
+                                Surface(
+                                    shape = AppShapes.CardSmall,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Collections,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            trailingContent = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                haptics.perform(HapticPattern.Tick)
+                                navController.navigate(Screen.Library)
                             }
                         )
                     }
@@ -571,7 +623,7 @@ fun StudioPage() {
                                     },
                                     modifier = Modifier.clickable {
                                         haptics.perform(HapticPattern.Tick)
-                                        navController.navigate(Screen.StoryStudio)
+                                        navController.navigate(Screen.StoryStudio(latestStory.id))
                                     }
                                 )
                             }

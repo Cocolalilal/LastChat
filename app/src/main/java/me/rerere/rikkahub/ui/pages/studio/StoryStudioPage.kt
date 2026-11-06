@@ -35,6 +35,10 @@ import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalContext
+import me.rerere.rikkahub.utils.writeClipboardText
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -104,10 +108,13 @@ import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StoryStudioPage() {
+fun StoryStudioPage(
+    initialStoryId: String? = null,
+) {
     val haptics = rememberPremiumHaptics()
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
     val directorChatListState = rememberLazyListState()
@@ -122,7 +129,7 @@ fun StoryStudioPage() {
         settings.getAssistantById(settings.assistantId) ?: settings.assistants.firstOrNull()
     }
 
-    var selectedProjectId by remember { mutableStateOf<String?>(null) }
+    var selectedProjectId by remember(initialStoryId) { mutableStateOf<String?>(initialStoryId) }
     val currentProject = projects.firstOrNull { it.id == selectedProjectId }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -693,12 +700,49 @@ fun StoryStudioPage() {
                                     modifier = Modifier.padding(20.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    Text(
-                                        text = currentProject.title,
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Serif
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = currentProject.title,
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Serif,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        val beats = currentProject.bible?.beats ?: emptyList()
+                                        if (beats.any { it.content.isNotBlank() }) {
+                                            IconButton(
+                                                onClick = {
+                                                    haptics.perform(HapticPattern.Tick)
+                                                    val manuscriptText = buildString {
+                                                        appendLine("# ${currentProject.title}")
+                                                        appendLine("Genre: ${currentProject.genre} • Tone: ${currentProject.tone}")
+                                                        appendLine()
+                                                        beats.forEach { beat ->
+                                                            if (beat.content.isNotBlank()) {
+                                                                appendLine("## Beat ${beat.index + 1}: ${beat.title}")
+                                                                appendLine()
+                                                                appendLine(beat.content)
+                                                                appendLine()
+                                                            }
+                                                        }
+                                                    }.trim()
+                                                    context.writeClipboardText(manuscriptText)
+                                                    toaster.show("Manuscript copied to clipboard")
+                                                }
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.ContentCopy,
+                                                    contentDescription = "Copy manuscript",
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
 
                                     val beats = currentProject.bible?.beats ?: emptyList()
                                     if (beats.isEmpty()) {
@@ -786,53 +830,76 @@ fun StoryStudioPage() {
                                             }
                                         }
                                     } else {
-                                        beats.forEach { beat ->
-                                            if (beat.content.isNotBlank()) {
-                                                // Beat Divider Pill
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                ) {
-                                                    HorizontalDivider(
-                                                        modifier = Modifier.weight(1f),
-                                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                                    )
-                                                    Surface(
-                                                        shape = AppShapes.ButtonPill,
-                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest
-                                                    ) {
+                                        SelectionContainer {
+                                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                beats.forEach { beat ->
+                                                    if (beat.content.isNotBlank()) {
+                                                        // Beat Divider Pill
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                        ) {
+                                                            HorizontalDivider(
+                                                                modifier = Modifier.weight(1f),
+                                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                                            )
+                                                            Surface(
+                                                                shape = AppShapes.ButtonPill,
+                                                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                            ) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Beat ${beat.index + 1}: ${beat.title} • ${beat.wordsWritten} Words",
+                                                                        style = MaterialTheme.typography.labelSmall,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = MaterialTheme.colorScheme.primary,
+                                                                    )
+                                                                    IconButton(
+                                                                        onClick = {
+                                                                            haptics.perform(HapticPattern.Tick)
+                                                                            context.writeClipboardText(beat.content)
+                                                                            toaster.show("Beat ${beat.index + 1} copied to clipboard")
+                                                                        },
+                                                                        modifier = Modifier.size(24.dp)
+                                                                    ) {
+                                                                        Icon(
+                                                                            Icons.Rounded.ContentCopy,
+                                                                            contentDescription = "Copy beat",
+                                                                            modifier = Modifier.size(14.dp),
+                                                                            tint = MaterialTheme.colorScheme.primary
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                            HorizontalDivider(
+                                                                modifier = Modifier.weight(1f),
+                                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                                            )
+                                                        }
+
                                                         Text(
-                                                            text = "Beat ${beat.index + 1}: ${beat.title} • ${beat.wordsWritten} Words",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.primary,
-                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                            text = beat.content,
+                                                            style = MaterialTheme.typography.bodyLarge,
+                                                            lineHeight = 26.sp,
+                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                                                         )
                                                     }
-                                                    HorizontalDivider(
-                                                        modifier = Modifier.weight(1f),
-                                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                                                    )
                                                 }
 
-                                                Text(
-                                                    text = beat.content,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    lineHeight = 26.sp,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                                                )
+                                                // Streaming active prose chunk
+                                                if (isGenerating && activeProseChunk.isNotBlank()) {
+                                                    Text(
+                                                        text = activeProseChunk,
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        lineHeight = 26.sp,
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
+                                                    )
+                                                }
                                             }
-                                        }
-
-                                        // Streaming active prose chunk
-                                        if (isGenerating && activeProseChunk.isNotBlank()) {
-                                            Text(
-                                                text = activeProseChunk,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                lineHeight = 26.sp,
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
-                                            )
                                         }
                                     }
 
@@ -953,6 +1020,59 @@ fun StoryStudioPage() {
                                 }
                             }
                         } else {
+                            // Story Bible Header & Copy Action
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Story Bible & Beats Outline",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Tick)
+                                            val bibleText = buildString {
+                                                appendLine("# ${currentProject.title} — Story Bible")
+                                                appendLine("Premise: ${currentProject.premise}")
+                                                appendLine("Genre: ${currentProject.genre} • Tone: ${currentProject.tone}")
+                                                appendLine("Style Guidelines: ${bible.styleGuidelines}")
+                                                appendLine()
+                                                appendLine("## Characters")
+                                                bible.characters.forEach {
+                                                    appendLine("- ${it.name} (${it.role}): ${it.description} Motive: ${it.motive}")
+                                                }
+                                                if (bible.worldRules.isNotEmpty()) {
+                                                    appendLine()
+                                                    appendLine("## Setting & Narrative Rules")
+                                                    bible.worldRules.forEach { appendLine("- $it") }
+                                                }
+                                                if (bible.beats.isNotEmpty()) {
+                                                    appendLine()
+                                                    appendLine("## Beats Outline")
+                                                    bible.beats.forEach { beat ->
+                                                        appendLine("${beat.index + 1}. ${beat.title} [${beat.status}] (~${beat.targetWords} words)")
+                                                        appendLine("   Objective: ${beat.objective}")
+                                                    }
+                                                }
+                                            }.trim()
+                                            context.writeClipboardText(bibleText)
+                                            toaster.show("Story Bible copied to clipboard")
+                                        }
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.ContentCopy,
+                                            contentDescription = "Copy Story Bible",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
                             // Characters Card
                             item {
                                 Card(
@@ -1248,18 +1368,41 @@ fun StoryStudioPage() {
                                             modifier = Modifier.fillMaxWidth(0.85f)
                                         ) {
                                             Column(modifier = Modifier.padding(12.dp)) {
-                                                Text(
-                                                    text = if (isUser) "You" else activeAssistant?.name ?: "Director",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
-                                                )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = if (isUser) "You" else activeAssistant?.name ?: "Director",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            haptics.perform(HapticPattern.Tick)
+                                                            context.writeClipboardText(msg.content)
+                                                            toaster.show("Message copied to clipboard")
+                                                        },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Rounded.ContentCopy,
+                                                            contentDescription = "Copy message",
+                                                            modifier = Modifier.size(14.dp),
+                                                            tint = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                                        )
+                                                    }
+                                                }
                                                 Spacer(Modifier.height(4.dp))
-                                                Text(
-                                                    text = msg.content,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                                )
+                                                SelectionContainer {
+                                                    Text(
+                                                        text = msg.content,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
                                             }
                                         }
                                     }

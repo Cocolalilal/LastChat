@@ -35,6 +35,7 @@ import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -194,6 +195,13 @@ fun SettingPage(
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_data_settings)
                 ) {
+                    SettingGroupItem(
+                        title = "Library",
+                        subtitle = "All photos, artifacts, stories, audio & files",
+                        icon = { Icon(Icons.Rounded.Collections, null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = mainSettingItemPadding,
+                        onClick = { navController.navigate(Screen.Library) }
+                    )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_data_backup),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },

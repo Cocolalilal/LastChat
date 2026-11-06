@@ -37,6 +37,9 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.foundation.text.selection.SelectionContainer
+import me.rerere.rikkahub.utils.writeClipboardText
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -240,6 +243,17 @@ fun MemorySummaryPage(
                         }
                     },
                     actions = {
+                        if (summaryData != null) {
+                            IconButton(
+                                onClick = {
+                                    val markdown = renderMemorySummaryToMarkdown(summaryData)
+                                    context.writeClipboardText(markdown)
+                                    toaster.show("Memory summary copied to clipboard")
+                                }
+                            ) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy summary")
+                            }
+                        }
                         IconButton(
                             onClick = { vm.regenerateMemorySummary() },
                             enabled = !isGenerating
@@ -541,11 +555,14 @@ fun MemorySummaryPage(
 }
 
 @Composable
-private fun MemorySummarySectionItem(
-    section: MemorySummarySection,
+private fun MemorySummarySectionView(
+    section: MemorySection,
     index: Int,
 ) {
     val icon = remember(section.icon) { resolveSectionIcon(section.icon) }
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
     val tintColor = when (index % 4) {
         0 -> MaterialTheme.colorScheme.primary
         1 -> MaterialTheme.colorScheme.secondary
@@ -561,35 +578,61 @@ private fun MemorySummarySectionItem(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(containerColor.copy(alpha = 0.6f)),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tintColor,
-                    modifier = Modifier.size(20.dp),
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(containerColor.copy(alpha = 0.6f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tintColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
+
+            IconButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Tick)
+                    val sectionText = "${section.title}\n\n${section.content}"
+                    context.writeClipboardText(sectionText)
+                    toaster.show("${section.title} copied")
+                },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = "Copy section",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        SelectionContainer {
             Text(
-                text = section.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                text = section.content,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
             )
         }
-        Text(
-            text = section.content,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
-        )
     }
 }
 

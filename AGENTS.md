@@ -455,3 +455,54 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 ### 6. Interactive Generation Lifecycle & Cancellation
 - Story generation and Bible drafting feature cancellation buttons (`Icons.Rounded.Stop`) that cancel the active coroutine `Job` and gracefully roll back the beat status to `Queued` or `Paused`.
 
+---
+
+## 16. Architecture: Stream Delta Spacing Fix, Copy Everywhere, Voice Memo Refinement & Unified Library (`Screen.Library`)
+
+### 1. The Stream Delta Spacing Incident (`StoryStudioRepository.kt`)
+- **Symptom:** Words were concatenated without spaces in Story Studio beat generation and Director Chat (e.g. `stormhittheSunnylikea debtcollectorwith agrudge`, `Honestly?Halfofit'shotandhalfof it'sfightingitself`).
+- **Root Cause:**
+  - Token streams emitted by LLMs often deliver whitespace or punctuation as isolated chunk deltas (e.g. `" "`, `"\n"`).
+  - In `StoryStudioRepository.kt`, chunk filtering used `if (delta.isNotBlank())`.
+  - In Kotlin, `" ".isNotBlank()` evaluates to `false`. Every standalone space token was silently discarded.
+- **Permanent Resolution:**
+  - Replaced `delta.isNotBlank()` with `delta.isNotEmpty()` across beat prose generation and Director chat collectors.
+
+### 2. Voice Memos Workflow Refinement (`VoiceMemosPage.kt`)
+- Removed the redundant "Story Studio" export chip.
+- Added "Copy Memo" quick-action chip to copy title, summary, key takeaways, action items, and full transcript in one tap.
+- Added dedicated copy icon buttons to the Executive Summary & Bullets card and the Transcript card.
+- Wrapped transcript and summary texts in `SelectionContainer` for native touch cursor selection and copying.
+
+### 3. Copy Everywhere Engine (Story Studio & Memory Summary)
+- **Story Studio Manuscript:**
+  - Added "Copy Manuscript" action in the story header to copy all completed beats formatted as a clean markdown manuscript.
+  - Added individual per-beat copy buttons next to beat header pills (`Beat X: Title`).
+  - Wrapped manuscript prose in `SelectionContainer`.
+- **Story Bible & Beats Outline:**
+  - Added "Copy Story Bible" action button copying the entire Bible (premise, characters, world rules, beat outlines) as structured markdown.
+  - Wrapped in `SelectionContainer`.
+- **Director Chat:**
+  - Added per-message copy buttons in bubble headers for both user and assistant co-writers.
+  - Wrapped chat bubbles in `SelectionContainer`.
+- **Memory Summary (`MemorySummaryPage.kt`):**
+  - Added TopAppBar action to copy the entire memory summary markdown.
+  - Added per-section copy buttons in `MemorySummarySectionView` headers.
+  - Wrapped section text in `SelectionContainer`.
+
+### 4. Unified Library Architecture (`Screen.Library`, `LibraryPage.kt`)
+- **Unified Catalog:** Accessible directly from Main Settings (**Settings $\rightarrow$ Library**) and Studio Hub (**Studio $\rightarrow$ Creations Library**).
+- **Consolidated Categories:**
+  1. `Photos & Art`: Generated images from `GenMediaDAO` / `GenMediaRepository` + uploaded images.
+  2. `In-World Artifacts`: HTML in-world visuals from `ArtifactStorageManager`.
+  3. `Stories`: Novel manuscripts and Story Bibles from `StoryStudioRepository`.
+  4. `Recordings`: Voice memos, transcripts, and audio playback from `VoiceMemoRepository`.
+  5. `Summaries`: Assistant memory summaries from `MemorySummaryDao`.
+  6. `Uploads & Files`: General files, videos, documents from `AppStorageRepository`.
+- **Unified Actions:**
+  - Global search bar filtering across titles, prompts, subtitles, and transcripts.
+  - Category filter chips with dynamic count badges.
+  - Built-in visual inspection dialogs: `ImagePreviewDialog`, `ArtifactZoomDialog`, full-screen story reader dialog, voice memo player with audio playback, and memory summary markdown reader.
+  - Direct navigation jump to host workspaces (`StoryStudio(storyId)`, `VoiceMemos`, `MemorySummary`, `ImageGen`).
+  - Safe, permanent deletion dialog with synchronized database and filesystem cleanup.
+

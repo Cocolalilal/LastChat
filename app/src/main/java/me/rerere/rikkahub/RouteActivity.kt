@@ -78,6 +78,7 @@ import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.studio.StudioPage
 import me.rerere.rikkahub.ui.pages.studio.StoryStudioPage
 import me.rerere.rikkahub.ui.pages.studio.VoiceMemosPage
+import me.rerere.rikkahub.ui.pages.library.LibraryPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.onboarding.OnboardingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
@@ -963,8 +964,13 @@ class RouteActivity : ComponentActivity() {
                         StudioPage()
                     }
 
-                    composable<Screen.StoryStudio> {
-                        StoryStudioPage()
+                    composable<Screen.StoryStudio> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.StoryStudio>()
+                        StoryStudioPage(initialStoryId = route.storyId)
+                    }
+
+                    composable<Screen.Library> {
+                        LibraryPage()
                     }
 
                     composable<Screen.VoiceMemos> {
@@ -1425,7 +1431,10 @@ sealed interface Screen {
     data object Studio : Screen
 
     @Serializable
-    data object StoryStudio : Screen
+    data class StoryStudio(val storyId: String? = null) : Screen
+
+    @Serializable
+    data object Library : Screen
 
     @Serializable
     data object VoiceMemos : Screen

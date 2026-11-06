@@ -15,6 +15,12 @@ interface MemorySummaryDao {
     @Query("SELECT * FROM memory_summary WHERE assistant_id = :assistantId")
     suspend fun getSummary(assistantId: String): MemorySummaryEntity?
 
+    @Query("SELECT * FROM memory_summary ORDER BY updated_at DESC")
+    fun getAllSummariesFlow(): Flow<List<MemorySummaryEntity>>
+
+    @Query("SELECT * FROM memory_summary ORDER BY updated_at DESC")
+    suspend fun getAllSummaries(): List<MemorySummaryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(summary: MemorySummaryEntity)
 

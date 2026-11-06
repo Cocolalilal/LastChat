@@ -406,7 +406,7 @@ class StoryStudioRepository(
                     )
                 ).collect { chunk ->
                     val delta = chunk.choices.firstOrNull()?.delta?.toContentText().orEmpty()
-                    if (delta.isNotBlank()) {
+                    if (delta.isNotEmpty()) {
                         proseBuilder.append(delta)
                         onChunk(delta)
                     }
@@ -542,7 +542,7 @@ class StoryStudioRepository(
                 )
             ).collect { chunk ->
                 val delta = chunk.choices.firstOrNull()?.delta?.toContentText().orEmpty()
-                if (delta.isNotBlank()) {
+                if (delta.isNotEmpty()) {
                     responseBuilder.append(delta)
                     onChunk(delta)
                 }
