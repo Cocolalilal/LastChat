@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -22,19 +23,27 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
@@ -50,11 +59,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,20 +77,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import coil3.request.placeholder
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.R
@@ -86,6 +100,7 @@ import me.rerere.rikkahub.data.service.TmdbService
 import me.rerere.rikkahub.ui.components.richtext.ArtifactOrbGenerating
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
+import me.rerere.rikkahub.ui.context.LocalChatSendMessage
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -154,6 +169,12 @@ fun MediaDeckArtifact(
 
     var showActionSheet by remember { mutableStateOf(false) }
     var selectedPreviewImage by remember { mutableStateOf<String?>(null) }
+    var showMediaGallery by remember { mutableStateOf(false) }
+    var galleryLoading by remember { mutableStateOf(false) }
+    var galleryPosters by remember { mutableStateOf<List<String>>(emptyList()) }
+    var galleryBackdrops by remember { mutableStateOf<List<String>>(emptyList()) }
+    var galleryError by remember { mutableStateOf<String?>(null) }
+    var activeGalleryTmdbId by remember { mutableIntStateOf(0) }
 
     val payload = remember(code) {
         runCatching {
@@ -215,10 +236,263 @@ fun MediaDeckArtifact(
         )
     }
 
+    if (showMediaGallery) {
+        val galleryPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
+        val configuration = LocalConfiguration.current
+        val sheetMaxHeight = (configuration.screenHeightDp.dp * 0.85f).coerceAtLeast(360.dp)
+
+        ModalBottomSheet(
+            onDismissRequest = { showMediaGallery = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = sheetMaxHeight)
+                    .navigationBarsPadding()
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        val currentItem = items.getOrNull(pagerState.currentPage) ?: items.first()
+                        val currentTitle = currentItem.title.ifBlank { currentItem.name.orEmpty() }
+                        Text(
+                            text = currentTitle.ifBlank { "Media Gallery" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "TMDB Media Gallery",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showMediaGallery = false },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Tabs: Posters & Backdrops
+                SecondaryTabRow(
+                    selectedTabIndex = galleryPagerState.currentPage,
+                    containerColor = Color.Transparent,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                ) {
+                    Tab(
+                        selected = galleryPagerState.currentPage == 0,
+                        onClick = {
+                            scope.launch {
+                                galleryPagerState.animateScrollToPage(0)
+                            }
+                        },
+                        text = {
+                            val posterCount = galleryPosters.size
+                            Text(
+                                text = if (posterCount > 0) "Posters ($posterCount)" else "Posters",
+                                fontWeight = if (galleryPagerState.currentPage == 0) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = galleryPagerState.currentPage == 1,
+                        onClick = {
+                            scope.launch {
+                                galleryPagerState.animateScrollToPage(1)
+                            }
+                        },
+                        text = {
+                            val backdropCount = galleryBackdrops.size
+                            Text(
+                                text = if (backdropCount > 0) "Backdrops ($backdropCount)" else "Backdrops",
+                                fontWeight = if (galleryPagerState.currentPage == 1) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Gallery Pager
+                HorizontalPager(
+                    state = galleryPagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) { page ->
+                    if (galleryLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Fetching media assets...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else if (galleryError != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = galleryError ?: "Failed to load media assets",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else if (page == 0) {
+                        // Posters Tab
+                        if (galleryPosters.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No posters found for this title",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 105.dp),
+                                contentPadding = PaddingValues(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(galleryPosters) { _, url ->
+                                    Card(
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                        ),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                        ),
+                                        modifier = Modifier
+                                            .aspectRatio(2f / 3f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                haptics.perform(HapticPattern.Pop)
+                                                selectedPreviewImage = url
+                                            }
+                                    ) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(url)
+                                                .crossfade(200)
+                                                .build(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Backdrops Tab
+                        if (galleryBackdrops.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No backdrops found for this title",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 180.dp),
+                                contentPadding = PaddingValues(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(galleryBackdrops) { _, url ->
+                                    Card(
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                        ),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                        ),
+                                        modifier = Modifier
+                                            .aspectRatio(16f / 9f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                haptics.perform(HapticPattern.Pop)
+                                                selectedPreviewImage = url
+                                            }
+                                    ) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(url)
+                                                .crossfade(200)
+                                                .build(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     AnimatedContent(
         targetState = hasEnd,
         transitionSpec = {
-            fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
+            (fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300)))
+                .using(SizeTransform { _, _ -> null })
         },
         label = "MediaDeckPhaseTransition"
     ) { finished ->
@@ -306,11 +580,11 @@ fun MediaDeckArtifact(
                             .padding(vertical = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        val containerWidth = maxWidth
-                        val isTablet = containerWidth >= 480.dp
+                        val configuration = LocalConfiguration.current
+                        val isTablet = configuration.screenWidthDp >= 480
                         val posterHeight = if (isTablet) 230.dp else 195.dp
                         val posterWidth = posterHeight * (2f / 3f)
-                        val placeholder = if (darkMode) R.drawable.placeholder_dark else R.drawable.placeholder
+                        val containerWidth = maxWidth
 
                         if (items.size == 1) {
                             val item = items.first()
@@ -337,8 +611,7 @@ fun MediaDeckArtifact(
                                 AsyncImage(
                                     model = ImageRequest.Builder(context)
                                         .data(posterUrl)
-                                        .placeholder(placeholder)
-                                        .crossfade(true)
+                                        .crossfade(200)
                                         .build(),
                                     contentDescription = item.title,
                                     contentScale = ContentScale.Crop,
@@ -400,8 +673,7 @@ fun MediaDeckArtifact(
                                         AsyncImage(
                                             model = ImageRequest.Builder(context)
                                                 .data(posterUrl)
-                                                .placeholder(placeholder)
-                                                .crossfade(true)
+                                                .crossfade(200)
                                                 .build(),
                                             contentDescription = item.title,
                                             contentScale = ContentScale.Crop,
@@ -613,6 +885,65 @@ fun MediaDeckArtifact(
                                         text = if (isInWatchlist) "In Watchlist" else "Watchlist",
                                         style = MaterialTheme.typography.labelMedium
                                     )
+                                }
+
+                                // Tell Agent Button (Ask agent about current title)
+                                val chatSendMessage = LocalChatSendMessage.current
+                                IconButton(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        val title = currentTitle
+                                        if (title.isNotBlank()) {
+                                            chatSendMessage("Tell me about this show: $title")
+                                        }
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AutoAwesome,
+                                        contentDescription = "Tell me about this show",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                // Media Gallery Button (Posters & Backdrops)
+                                if (tmdbId > 0) {
+                                    IconButton(
+                                        onClick = {
+                                            haptics.perform(HapticPattern.Pop)
+                                            if (activeGalleryTmdbId != tmdbId) {
+                                                galleryPosters = emptyList()
+                                                galleryBackdrops = emptyList()
+                                                activeGalleryTmdbId = tmdbId
+                                            }
+                                            showMediaGallery = true
+                                            if (galleryPosters.isEmpty() && galleryBackdrops.isEmpty() && !galleryLoading) {
+                                                scope.launch {
+                                                    galleryLoading = true
+                                                    galleryError = null
+                                                    val endpoint = if (currentItem.media_type == "movie" || currentItem.type == "movie") "movie" else "tv"
+                                                    val res = tmdbService.getImages(tmdbId, endpoint)
+                                                    galleryLoading = false
+                                                    val obj = res.jsonObject
+                                                    if (obj.containsKey("error")) {
+                                                        galleryError = obj["error"]?.jsonPrimitive?.contentOrNull ?: "Failed to fetch images"
+                                                    } else {
+                                                        galleryPosters = obj["posters"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                                                        galleryBackdrops = obj["backdrops"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Collections,
+                                            contentDescription = "Media Gallery",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
 
                                 // External TMDB Info Button

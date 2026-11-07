@@ -191,14 +191,14 @@ class TmdbService(
                 val backPrefix = getResolutionPrefix(true)
 
                 val posterUrls = buildJsonArray {
-                    posters.take(8).forEach { p ->
+                    posters.take(30).forEach { p ->
                         val path = p.jsonObject["file_path"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                         add(kotlinx.serialization.json.JsonPrimitive("https://image.tmdb.org/t/p/$resPrefix$path"))
                     }
                 }
 
                 val backdropUrls = buildJsonArray {
-                    backdrops.take(8).forEach { b ->
+                    backdrops.take(30).forEach { b ->
                         val path = b.jsonObject["file_path"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                         add(kotlinx.serialization.json.JsonPrimitive("https://image.tmdb.org/t/p/$backPrefix$path"))
                     }

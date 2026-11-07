@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
+import me.rerere.rikkahub.ui.context.LocalChatSendMessage
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
@@ -1590,7 +1591,14 @@ private fun ChatPageContent(
                             searchQuerySnapshots[targetConversationId]
                         }
                         CompositionLocalProvider(
-                            LocalChatAnimationsEnabled provides chatAnimationsEnabled
+                            LocalChatAnimationsEnabled provides chatAnimationsEnabled,
+                            LocalChatSendMessage provides { prompt ->
+                                if (currentChatModel != null) {
+                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(prompt)))
+                                } else {
+                                    toaster.show("Please select a model first")
+                                }
+                            }
                         ) {
                             Box(
                                 modifier = Modifier
