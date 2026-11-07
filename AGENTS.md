@@ -518,3 +518,54 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
   - Direct navigation jump to host workspaces (`StoryStudio(storyId)`, `VoiceMemos`, `MemorySummary`, `ImageGen`).
   - Safe, permanent deletion dialog with synchronized database and filesystem cleanup.
 
+---
+
+## 17. Architecture: 3D Interactive Media Recommendation Decks, TMDB v4 Integration & Plugins Hub Redesign
+
+### 1. Plugins Hub Transformation (`SettingMcpPage.kt`)
+- Replaced cramped horizontal `SecondaryTabRow` tabs with a clean, modern **Plugins Hub** navigation view.
+- 3 categorized settings cards:
+  1. **MCP Tools**: Model Context Protocol servers, tools, and local loopback daemons (`selectedMainTab = 0`).
+  2. **Python Extensions**: PRoot Python client scripts, UI hooks, and background daemons (`selectedMainTab = 1`).
+  3. **Movies & TV Shows (TMDB)**: TMDB v4 account sync, watchlists, and 3D recommendation decks (`Screen.SettingTmdb`).
+- Sub-pages feature dedicated OneUITopAppBar titles with back navigation returning directly to the Plugins Hub.
+- The floating action button (`+`) now strictly renders on relevant sub-pages, eliminating FAB action ambiguity.
+
+### 2. Elimination of Python Extension 3-Second Cold Check Lag (`PythonPluginManager.kt`, `SettingMcpPage.kt`)
+- **Root Cause:** On page entry, `PythonEnvStatus` initialized with `isPythonInstalled = false`, triggering a synchronous-style 3.5-second PRoot fork-exec running `command -v python3 && python3 -m pip --version`. While executing, the UI fell through to display the disruptive "Python 3 Runtime Required" setup card before abruptly flashing to "Python 3 Active".
+- **Permanent Architectural Resolution:**
+  - Added in-memory concurrent caching (`pythonInstalledCache`) in `PythonPluginManager`. Once Python installation is confirmed for a workspace root, subsequent environment checks return `true` immediately in 0ms.
+  - Added `isInitialCheckDone: Boolean` flag in `PythonEnvStatus`.
+  - In `SettingMcpPage.kt`, suppressed the setup card during initial evaluation (`status.isInitialCheckDone && !status.isPythonInstalled`), eliminating UI flashing.
+
+### 3. Chat Tools Bottom Sheet Unification (`MinimalChatInput.kt`)
+- **Visual Harmonization:**
+  - Stripped bulky multi-line supporting paragraphs from In-World Visual Artifacts quick toggle.
+  - Rebuilt In-World Visual Artifacts to match the sleek single-line design of `SearchToggleItem` (`padding(horizontal = 16.dp, vertical = 12.dp)`).
+  - Added settings gear icon button (`Icons.Rounded.Settings`) navigating directly to `Screen.SettingArtifacts`.
+  - Added a matching quick-toggle row for **Movies & TV Shows** with direct settings navigation to `Screen.SettingTmdb`.
+
+### 4. 3D Interactive Media Deck Renderer (`MediaDeckArtifact.kt`, `Markdown.kt`)
+- Dedicated markdown fence tags: ````media_deck````, ````showcase````, ````movie_deck````.
+- **Arbitrary N Item Support:**
+  - Dynamic 3D Cover Flow geometry with modular rotation (`rotateY(30deg)` on flanking wings).
+  - Handles single hero cards (N = 1), pairs (N = 2), and multi-card decks (N >= 3) with circular navigation.
+  - Touch swipe gestures with velocity threshold and floating frosted-glass arrow pills.
+  - Dynamic ambient colored glow sampled from active poster accents.
+  - Interactive companion commentary bubble (Velvet Hook), rating stars, and badges.
+- **Two-Way AndroidInterface Bridge:**
+  - WebView button `+ Watchlist` invokes `window.AndroidInterface.addToTmdbWatchlist(id, type)`.
+  - Native handler executes haptic feedback (`HapticPattern.Success`), displays feedback toast, and syncs to user's TMDB account.
+  - Dynamic content height reporting via `ResizeObserver` eliminates internal scrollbars.
+
+### 5. TMDB v4 Service & Local AI Tools (`TmdbService.kt`, `LocalTools.kt`, `ChatService.kt`)
+- Added `TmdbSetting` to `Settings` (`PreferencesModels.kt`) tracking user access tokens, account IDs, poster/backdrop resolutions, adult content preferences, and context sync toggles.
+- Exposes 5 autonomous tools to the AI assistant under `LocalToolOption.Tmdb`:
+  1. `tmdb_search`: Search movies, TV series, anime, people.
+  2. `tmdb_get_details`: Deep show metadata, cast, synopsis, episode counts.
+  3. `tmdb_get_images`: Pull multiple posters, 16:9 cinematic backdrops, and stills.
+  4. `tmdb_get_recommendations`: Algorithmic recommendations based on title IDs.
+  5. `tmdb_watchlist`: Read user's real TMDB watchlist or add/remove titles.
+- Auto-hydrates tools when `settings.tmdbSetting.enabled` is active, injecting media prompt guidelines in `GenerationHandler.kt`.
+
+
