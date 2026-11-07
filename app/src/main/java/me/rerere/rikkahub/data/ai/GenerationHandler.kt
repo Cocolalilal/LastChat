@@ -661,6 +661,7 @@ class GenerationHandler(
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
         enabledLorebookIds: Set<Uuid>? = null,
+        enabledInstructionIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -773,6 +774,7 @@ class GenerationHandler(
                 conversationEnabledModeIds = conversationSkillIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
                 conversationEnabledLorebookIds = enabledLorebookIds,
+                conversationEnabledInstructionIds = enabledInstructionIds,
                 activeConversationId = activeConversationId,
                 contextSummary = contextSummary,
                 contextSummaryUpToIndex = contextSummaryUpToIndex,
@@ -909,6 +911,7 @@ class GenerationHandler(
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
+        conversationEnabledInstructionIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -1262,9 +1265,9 @@ class GenerationHandler(
         }
 
         // 1.5. Custom Instructions (Appended as dedicated paragraphs to steer behavior)
-        val activeInstructionIds = conversation.enabledInstructionIds ?: assistant.enabledInstructionIds
+        val activeInstructionIds = conversationEnabledInstructionIds ?: assistant.enabledInstructionIds
         val activeInstructions = settings.instructions.filter { inst ->
-            if (conversation.enabledInstructionIds != null) {
+            if (conversationEnabledInstructionIds != null) {
                 activeInstructionIds.contains(inst.id)
             } else if (assistant.enabledInstructionIds.isNotEmpty()) {
                 activeInstructionIds.contains(inst.id)
@@ -1891,6 +1894,7 @@ class GenerationHandler(
         conversationEnabledModeIds: Set<Uuid> = emptySet(),
         turnScopedEnabledModeIds: Set<Uuid> = emptySet(),
         conversationEnabledLorebookIds: Set<Uuid>? = null,
+        conversationEnabledInstructionIds: Set<Uuid>? = null,
         activeConversationId: Uuid? = null,
         contextSummary: String? = null,
         contextSummaryUpToIndex: Int = -1,
@@ -1909,6 +1913,7 @@ class GenerationHandler(
             conversationEnabledModeIds = conversationEnabledModeIds,
             turnScopedEnabledModeIds = turnScopedEnabledModeIds,
             conversationEnabledLorebookIds = conversationEnabledLorebookIds,
+            conversationEnabledInstructionIds = conversationEnabledInstructionIds,
             activeConversationId = activeConversationId,
             contextSummary = contextSummary,
             contextSummaryUpToIndex = contextSummaryUpToIndex,

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -59,7 +60,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.InstructionItem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
@@ -292,7 +292,7 @@ fun SettingInstructionsPage(
                                     vm.updateSettings { s -> s.copy(instructions = s.instructions.filter { it.id != inst.id }) }
                                     toaster.show(
                                         message = "Deleted ${deleted.name.ifEmpty { "instruction" }}",
-                                        action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                        action = ToastAction(
                                             label = "Undo",
                                             onClick = {
                                                 vm.updateSettings { s ->
@@ -308,60 +308,36 @@ fun SettingInstructionsPage(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                FormItem(
+                                InstructionCard(
+                                    instruction = inst,
                                     position = position,
-                                    title = {
-                                        Text(
-                                            text = inst.name.ifBlank { "Untitled Instruction" },
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    description = {
-                                        Text(
-                                            text = inst.content.ifBlank { "No content" },
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 13.sp
-                                        )
-                                    },
-                                    trailing = {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            HapticSwitch(
-                                                checked = inst.enabled,
-                                                onCheckedChange = { checked ->
-                                                    vm.updateSettings { s ->
-                                                        s.copy(
-                                                            instructions = s.instructions.map {
-                                                                if (it.id == inst.id) it.copy(enabled = checked) else it
-                                                            }
-                                                        )
-                                                    }
-                                                }
-                                            )
-                                            IconButton(
-                                                onClick = {},
-                                                modifier = Modifier.longPressDraggableHandle(
-                                                    onDragStarted = { haptics.perform(HapticPattern.Pop) },
-                                                    onDragStopped = { haptics.perform(HapticPattern.Tick) }
-                                                )
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.DragIndicator,
-                                                    contentDescription = "Drag to reorder",
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = {
+                                    onEdit = {
                                         editingInstruction = inst
                                         showDialog = true
+                                    },
+                                    onToggle = { checked ->
+                                        vm.updateSettings { s ->
+                                            s.copy(
+                                                instructions = s.instructions.map {
+                                                    if (it.id == inst.id) it.copy(enabled = checked) else it
+                                                }
+                                            )
+                                        }
+                                    },
+                                    dragHandle = {
+                                        IconButton(
+                                            onClick = {},
+                                            modifier = Modifier.longPressDraggableHandle(
+                                                onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                                onDragStopped = { haptics.perform(HapticPattern.Tick) }
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.DragIndicator,
+                                                contentDescription = "Drag to reorder",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 )
                             }
@@ -441,5 +417,99 @@ fun SettingInstructionsPage(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun InstructionCard(
+    instruction: InstructionItem,
+    position: ItemPosition,
+    onEdit: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    dragHandle: @Composable () -> Unit,
+) {
+    val cornerRadius = 28.dp
+    val smallCorner = 8.dp
+    val shape = when (position) {
+        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
+        ItemPosition.FIRST -> RoundedCornerShape(
+            topStart = cornerRadius,
+            topEnd = cornerRadius,
+            bottomStart = smallCorner,
+            bottomEnd = smallCorner
+        )
+        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
+        ItemPosition.LAST -> RoundedCornerShape(
+            topStart = smallCorner,
+            topEnd = smallCorner,
+            bottomStart = cornerRadius,
+            bottomEnd = cornerRadius
+        )
+    }
+
+    Card(
+        onClick = onEdit,
+        colors = CardDefaults.cardColors(
+            containerColor = if (LocalDarkMode.current) {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
+        ),
+        shape = shape
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (instruction.enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.Assignment,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (instruction.enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = instruction.name.ifBlank { "Untitled Instruction" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = instruction.content.ifBlank { "No content" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            HapticSwitch(
+                checked = instruction.enabled,
+                onCheckedChange = onToggle
+            )
+
+            dragHandle()
+        }
     }
 }
