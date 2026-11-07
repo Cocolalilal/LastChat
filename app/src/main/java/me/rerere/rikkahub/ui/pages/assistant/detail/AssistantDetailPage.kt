@@ -473,6 +473,7 @@ fun AssistantDetailPage(
                     scrollToMemoryId = scrollToMemoryId,
                     onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) },
                     onNavigateToMemorySummary = { rootNavController.navigate(Screen.MemorySummary(assistant.id.toString())) },
+                    onNavigateToAssistantMedia = { rootNavController.navigate(Screen.AssistantMedia(assistant.id.toString())) },
                 )
             }
 

@@ -144,6 +144,7 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
         modes = mergeSettingsValue(base.modes, edited.modes, latest.modes),
         lorebooks = mergeSettingsValue(base.lorebooks, edited.lorebooks, latest.lorebooks),
         skills = mergeSettingsValue(base.skills, edited.skills, latest.skills),
+        instructions = mergeSettingsValue(base.instructions, edited.instructions, latest.instructions),
         chatStorage = mergeSettingsValue(base.chatStorage, edited.chatStorage, latest.chatStorage),
         textSelectionConfig = mergeSettingsValue(
             base.textSelectionConfig,

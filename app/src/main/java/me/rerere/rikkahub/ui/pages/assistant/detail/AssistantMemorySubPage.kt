@@ -37,9 +37,11 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
+import org.koin.compose.koinInject
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -154,6 +156,7 @@ fun AssistantMemorySettings(
     scrollToMemoryId: Int? = null,
     onNavigateToSummarizerSettings: () -> Unit = {},
     onNavigateToMemorySummary: () -> Unit = {},
+    onNavigateToAssistantMedia: () -> Unit = {},
 ) {
     var showReembedConfirmation by remember { mutableStateOf(false) }
     val requestEmbeddingRegeneration = onRegenerateEmbeddings?.let {
@@ -271,6 +274,12 @@ fun AssistantMemorySettings(
                 onClick = onNavigateToMemorySummary,
             )
         }
+
+        // Assistant Media Watchlist Card
+        AssistantMediaHeroCard(
+            assistant = assistant,
+            onClick = onNavigateToAssistantMedia,
+        )
 
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
@@ -1687,6 +1696,66 @@ private fun MemorySummaryHeroCard(
                 }
                 Text(
                     text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AssistantMediaHeroCard(
+    assistant: Assistant,
+    onClick: () -> Unit,
+) {
+    val isDark = LocalDarkMode.current
+    val mediaRepo = koinInject<me.rerere.rikkahub.data.repository.AssistantMediaRepository>()
+    val mediaFlow = remember(assistant.id) { mediaRepo.getMediaFlow(assistant.id.toString()) }
+    val mediaList by mediaFlow.collectAsStateWithLifecycle()
+    val countsSummary = remember(mediaList) {
+        mediaRepo.getCountsSummary(assistant.id.toString())
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Media & Watchlist",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = countsSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

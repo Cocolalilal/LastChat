@@ -14,7 +14,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Assignment
+import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -23,12 +27,15 @@ import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +52,11 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
@@ -504,6 +516,345 @@ internal fun PluginsPickerSheet(
                     .fillMaxWidth()
                     .weight(1f),
             )
+        }
+    }
+}
+
+@Composable
+internal fun ExtensionsPickerSheet(
+    settings: Settings,
+    assistant: Assistant,
+    conversation: Conversation,
+    onUpdateConversation: (Conversation) -> Unit,
+    onNavigateToLorebook: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val navController = LocalNavController.current
+    val haptics = rememberPremiumHaptics()
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Skills computation
+    val availableSkills = remember(settings.skills) { settings.skills }
+    val userInvocableSkills = remember(availableSkills) { availableSkills.filter { it.userInvocable } }
+    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
+    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    }
+    val alwaysEnabledSkillIds = remember(availableSkills, assistantAvailableSkillIds) {
+        availableSkills.filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }.map { it.id }.toSet()
+    }
+    val effectiveSkillIds = remember(
+        conversation.enabledModeIds,
+        assistant.enabledSkillIds,
+        availableSkillIds,
+        assistantAvailableSkillIds,
+        alwaysEnabledSkillIds
+    ) {
+        val hasOverride = conversation.enabledModeIds.hasManualSkillSelectionOverride()
+        val base = if (hasOverride || conversation.enabledModeIds.isNotEmpty()) {
+            conversation.enabledModeIds.withoutSkillSelectionOverride()
+        } else {
+            assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
+        }
+        (base + if (hasOverride) emptySet() else alwaysEnabledSkillIds).intersect(availableSkillIds)
+    }
+    var localSkillIds by remember(conversation.id, conversation.enabledModeIds, assistant.enabledSkillIds) {
+        mutableStateOf(effectiveSkillIds)
+    }
+
+    // Lorebooks computation
+    val lorebookIds = remember(settings.lorebooks) { settings.lorebooks.map { it.id }.toSet() }
+    val effectiveLorebookIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
+    var localLorebookIds by remember(conversation.id, conversation.enabledLorebookIds, assistant.enabledLorebookIds, lorebookIds) {
+        mutableStateOf(effectiveLorebookIds)
+    }
+
+    // Instructions computation
+    val effectiveInstructionIds = (conversation.enabledInstructionIds
+        ?: assistant.enabledInstructionIds.takeIf { it.isNotEmpty() }
+        ?: settings.instructions.filter { it.enabled }.map { it.id }.toSet())
+    var localInstructionIds by remember(conversation.id, conversation.enabledInstructionIds, assistant.enabledInstructionIds) {
+        mutableStateOf(effectiveInstructionIds)
+    }
+
+    ModalBottomSheet(
+        containerColor = lastChatSheetContainerColor(),
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                    }
+                }
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, null)
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Extensions",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                IconButton(
+                    onClick = {
+                        onDismiss()
+                        when (selectedTab) {
+                            0 -> navController.navigate(Screen.SettingInstructions)
+                            1 -> navController.navigate(Screen.SettingSkills())
+                            else -> navController.navigate(Screen.SettingLorebooks)
+                        }
+                    }
+                ) {
+                    Icon(
+                        Icons.Rounded.Settings,
+                        contentDescription = "Manage",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            SecondaryTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color.Transparent,
+                divider = {}
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = {
+                        haptics.perform(HapticPattern.Selection)
+                        selectedTab = 0
+                    },
+                    text = { Text("Instructions") },
+                    icon = { Icon(Icons.AutoMirrored.Rounded.Assignment, null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = {
+                        haptics.perform(HapticPattern.Selection)
+                        selectedTab = 1
+                    },
+                    text = { Text("Skills") },
+                    icon = { Icon(Icons.Rounded.Category, null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = {
+                        haptics.perform(HapticPattern.Selection)
+                        selectedTab = 2
+                    },
+                    text = { Text("Lorebooks") },
+                    icon = { Icon(Icons.Rounded.Book, null, modifier = Modifier.size(18.dp)) }
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                when (selectedTab) {
+                    0 -> {
+                        // Instructions Tab
+                        if (settings.instructions.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No instructions configured yet. Tap settings to add.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        } else {
+                            settings.instructions.forEach { inst ->
+                                val isEnabled = localInstructionIds.contains(inst.id)
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                    ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = inst.name.ifBlank { "Untitled" },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = inst.content,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        HapticSwitch(
+                                            checked = isEnabled,
+                                            onCheckedChange = { checked ->
+                                                val next = if (checked) localInstructionIds + inst.id else localInstructionIds - inst.id
+                                                localInstructionIds = next
+                                                onUpdateConversation(conversation.copy(enabledInstructionIds = next))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    1 -> {
+                        // Skills Tab
+                        if (userInvocableSkills.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.skills_picker_none),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            userInvocableSkills.forEach { skill ->
+                                val isEnabled = localSkillIds.contains(skill.id)
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                    ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = skill.name.ifEmpty { stringResource(R.string.skills_page_unnamed) },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = skill.description.ifBlank { skill.instructions.take(50) },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        HapticSwitch(
+                                            checked = isEnabled,
+                                            onCheckedChange = { newEnabled ->
+                                                val newIds = if (newEnabled) localSkillIds + skill.id else localSkillIds - skill.id
+                                                localSkillIds = newIds
+                                                onUpdateConversation(
+                                                    conversation.copy(enabledModeIds = newIds + SKILL_SELECTION_OVERRIDE_ID)
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        // Lorebooks Tab
+                        if (settings.lorebooks.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.lorebooks_picker_none),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            settings.lorebooks.forEach { lorebook ->
+                                val isEnabled = localLorebookIds.contains(lorebook.id)
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                    ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    onClick = { onNavigateToLorebook(lorebook.id.toString()) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = lorebook.name.ifEmpty { stringResource(R.string.lorebooks_page_unnamed) },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = lorebook.description.ifBlank { "No description" },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        HapticSwitch(
+                                            checked = isEnabled,
+                                            onCheckedChange = { newEnabled ->
+                                                val newIds = if (newEnabled) localLorebookIds + lorebook.id else localLorebookIds - lorebook.id
+                                                localLorebookIds = newIds
+                                                onUpdateConversation(conversation.copy(enabledLorebookIds = newIds))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

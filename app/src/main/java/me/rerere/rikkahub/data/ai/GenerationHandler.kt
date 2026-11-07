@@ -1260,6 +1260,30 @@ class GenerationHandler(
                 """.trimIndent()
             )
         }
+
+        // 1.5. Custom Instructions (Appended as dedicated paragraphs to steer behavior)
+        val activeInstructionIds = conversation.enabledInstructionIds ?: assistant.enabledInstructionIds
+        val activeInstructions = settings.instructions.filter { inst ->
+            if (conversation.enabledInstructionIds != null) {
+                activeInstructionIds.contains(inst.id)
+            } else if (assistant.enabledInstructionIds.isNotEmpty()) {
+                activeInstructionIds.contains(inst.id)
+            } else {
+                inst.enabled
+            }
+        }
+        if (activeInstructions.isNotEmpty()) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.appendLine("## Custom Instructions")
+            activeInstructions.forEach { inst ->
+                if (inst.name.isNotBlank()) {
+                    baseSystemPromptBuilder.appendLine("[Instruction: ${inst.name}]")
+                }
+                baseSystemPromptBuilder.appendLine(inst.content)
+                baseSystemPromptBuilder.appendLine()
+            }
+        }
+
         val toolDefinitionText = effectiveTools.joinToString("\n") { tool ->
             ContextTokenEstimator.toolDefinitionText(tool)
         }

@@ -105,6 +105,9 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
+import me.rerere.rikkahub.ui.pages.setting.SettingInstructionsPage
+import me.rerere.rikkahub.ui.pages.assistant.media.AssistantMediaPage
+import me.rerere.rikkahub.ui.pages.assistant.media.AssistantMediaDetailPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
@@ -1338,6 +1341,26 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingInstructions> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Skills) {
+                            SettingInstructionsPage()
+                        }
+                    }
+
+                    composable<Screen.AssistantMedia> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.AssistantMedia>()
+                        AssistantMediaPage(assistantId = route.assistantId)
+                    }
+
+                    composable<Screen.AssistantMediaDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.AssistantMediaDetail>()
+                        AssistantMediaDetailPage(
+                            assistantId = route.assistantId,
+                            mediaId = route.mediaId,
+                            mediaType = route.mediaType
+                        )
+                    }
+
                     composable<Screen.Developer> {
                         DeveloperPage()
                     }
@@ -1508,6 +1531,15 @@ sealed interface Screen {
 
     @Serializable
     data class SettingSkills(val scrollToSkillId: String? = null) : Screen
+
+    @Serializable
+    data object SettingInstructions : Screen
+
+    @Serializable
+    data class AssistantMedia(val assistantId: String) : Screen
+
+    @Serializable
+    data class AssistantMediaDetail(val assistantId: String, val mediaId: Long, val mediaType: String) : Screen
 
     @Serializable
     data object SettingAndroidIntegration : Screen

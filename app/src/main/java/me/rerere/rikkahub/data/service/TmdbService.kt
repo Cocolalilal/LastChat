@@ -141,9 +141,31 @@ class TmdbService(
                 val epCount = obj["number_of_episodes"]?.jsonPrimitive?.intOrNull
                 val seasonCount = obj["number_of_seasons"]?.jsonPrimitive?.intOrNull
                 val status = obj["status"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val tagline = obj["tagline"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
                 val resPrefix = getResolutionPrefix(false)
                 val backPrefix = getResolutionPrefix(true)
+
+                val seasonsRaw = obj["seasons"]?.jsonArray
+                val seasonsList = buildJsonArray {
+                    seasonsRaw?.forEach { sItem ->
+                        val sObj = sItem.jsonObject
+                        val sNum = sObj["season_number"]?.jsonPrimitive?.intOrNull ?: return@forEach
+                        val sName = sObj["name"]?.jsonPrimitive?.contentOrNull ?: "Season $sNum"
+                        val sEpCount = sObj["episode_count"]?.jsonPrimitive?.intOrNull ?: 0
+                        val sOverview = sObj["overview"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val sPoster = sObj["poster_path"]?.jsonPrimitive?.contentOrNull
+                        add(buildJsonObject {
+                            put("season_number", sNum)
+                            put("name", sName)
+                            put("episode_count", sEpCount)
+                            put("overview", sOverview)
+                            if (sPoster != null) {
+                                put("poster", "https://image.tmdb.org/t/p/$resPrefix$sPoster")
+                            }
+                        })
+                    }
+                }
 
                 buildJsonObject {
                     put("id", id)
@@ -152,6 +174,8 @@ class TmdbService(
                     put("year", release.take(4))
                     put("rating", vote)
                     put("status", status)
+                    put("tagline", tagline)
+                    put("seasons", seasonsList)
                     if (epCount != null) put("number_of_episodes", epCount)
                     if (seasonCount != null) put("number_of_seasons", seasonCount)
                     put("genres", JsonArray(genres.map { kotlinx.serialization.json.JsonPrimitive(it) }))
@@ -262,6 +286,56 @@ class TmdbService(
             }
         }.getOrElse { e ->
             buildJsonObject { put("error", e.message ?: "Failed to fetch recommendations from TMDB") }
+        }
+    }
+
+    suspend fun getSeasonEpisodes(tvId: Int, seasonNumber: Int): JsonElement = withContext(Dispatchers.IO) {
+        val url = "https://api.themoviedb.org/3/tv/$tvId/season/$seasonNumber"
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", getAuthHeader())
+            .header("Accept", "application/json")
+            .build()
+
+        runCatching {
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                val obj = json.parseToJsonElement(body).jsonObject
+                val episodesArray = obj["episodes"]?.jsonArray ?: JsonArray(emptyList())
+                val resPrefix = getResolutionPrefix(true)
+
+                val mappedEpisodes = buildJsonArray {
+                    episodesArray.forEach { epItem ->
+                        val epObj = epItem.jsonObject
+                        val epNum = epObj["episode_number"]?.jsonPrimitive?.intOrNull ?: return@forEach
+                        val epName = epObj["name"]?.jsonPrimitive?.contentOrNull ?: "Episode $epNum"
+                        val epOverview = epObj["overview"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val airDate = epObj["air_date"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val stillPath = epObj["still_path"]?.jsonPrimitive?.contentOrNull
+                        val vote = epObj["vote_average"]?.jsonPrimitive?.contentOrNull ?: "0.0"
+
+                        add(buildJsonObject {
+                            put("episode_number", epNum)
+                            put("season_number", seasonNumber)
+                            put("name", epName)
+                            put("overview", epOverview)
+                            put("air_date", airDate)
+                            put("rating", vote)
+                            if (stillPath != null) {
+                                put("still", "https://image.tmdb.org/t/p/$resPrefix$stillPath")
+                            }
+                        })
+                    }
+                }
+
+                buildJsonObject {
+                    put("tv_id", tvId)
+                    put("season_number", seasonNumber)
+                    put("episodes", mappedEpisodes)
+                }
+            }
+        }.getOrElse { e ->
+            buildJsonObject { put("error", e.message ?: "Failed to fetch season episodes") }
         }
     }
 

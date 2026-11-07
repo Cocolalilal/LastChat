@@ -234,6 +234,27 @@ fun SettingSkillsPage(
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        navController.navigate(Screen.SettingInstructions) {
+                                            popUpTo(Screen.SettingSkills()) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Assignment,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }

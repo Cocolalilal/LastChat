@@ -2023,6 +2023,7 @@ private fun MinimalPickerContent(
     // Sub-picker states
     var showModelPicker by remember { mutableStateOf(false) }
     var showReasoningPicker by remember { mutableStateOf(false) }
+    var showExtensionsPicker by remember { mutableStateOf(false) }
     var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
@@ -2327,58 +2328,50 @@ private fun MinimalPickerContent(
             }
         )
         
-        if (settings.skills.isNotEmpty()) {
-            // Skills - use enabledModeIds (legacy field) for per-chat overrides.
+        val hasAnyExtensions = settings.instructions.isNotEmpty() || settings.skills.isNotEmpty() || settings.lorebooks.isNotEmpty()
+        if (hasAnyExtensions) {
+            val activeInstructionsCount = settings.instructions.count { inst ->
+                if (conversation.enabledInstructionIds != null) {
+                    conversation.enabledInstructionIds.contains(inst.id)
+                } else if (assistant.enabledInstructionIds.isNotEmpty()) {
+                    assistant.enabledInstructionIds.contains(inst.id)
+                } else {
+                    inst.enabled
+                }
+            }
             val activeSkills = availableSkills.filter { skill ->
                 effectiveActiveSkillIds.contains(skill.id)
             }
             val activeSkillsCount = activeSkills.size
-            val skillsActive = activeSkillsCount > 0
-            val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
-            MinimalPickerItem(
-                icon = {
-                    Icon(
-                        imageVector = if (singleActiveSkillIcon != null) {
-                            ModeIcons.getIcon(singleActiveSkillIcon)
-                        } else {
-                            Icons.Rounded.Category
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                title = stringResource(R.string.minimal_input_skills),
-                subtitle = if (activeSkillsCount > 0) {
-                    stringResource(R.string.skills_picker_active_count, activeSkillsCount)
-                } else {
-                    stringResource(R.string.minimal_input_skills_desc)
-                },
-                onClick = {
-                    showSkillsPicker = true
-                }
-            )
-        }
-        
-        if (settings.lorebooks.isNotEmpty()) {
-            // Lorebooks - show active count and blue icon when enabled
             val lorebookIds = settings.lorebooks.map { it.id }.toSet()
             val activeLorebookIds = (conversation.enabledLorebookIds ?: assistant.enabledLorebookIds).intersect(lorebookIds)
             val activeLorebooksCount = activeLorebookIds.size
-            val lorebooksActive = activeLorebooksCount > 0
+            val totalActive = activeInstructionsCount + activeSkillsCount + activeLorebooksCount
+            val extensionsActive = totalActive > 0
+
+            val extSubtitle = if (totalActive > 0) {
+                val parts = mutableListOf<String>()
+                if (activeInstructionsCount > 0) parts.add("$activeInstructionsCount instructions")
+                if (activeSkillsCount > 0) parts.add("$activeSkillsCount skills")
+                if (activeLorebooksCount > 0) parts.add("$activeLorebooksCount lorebooks")
+                parts.joinToString(" • ")
+            } else {
+                "Instructions, skills & lorebooks"
+            }
+
             MinimalPickerItem(
                 icon = {
                     Icon(
-                        imageVector = Icons.Rounded.Book,
+                        imageVector = Icons.Rounded.Extension,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
-                        tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (extensionsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                title = stringResource(R.string.minimal_input_lorebooks),
-                subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
+                title = "Extensions",
+                subtitle = extSubtitle,
                 onClick = {
-                    showLorebooksPicker = true
+                    showExtensionsPicker = true
                 }
             )
         }
@@ -2499,6 +2492,21 @@ private fun MinimalPickerContent(
         }
     }
     
+    // Extensions picker sheet (Instructions, Skills & Lorebooks)
+    if (showExtensionsPicker) {
+        ExtensionsPickerSheet(
+            settings = settings,
+            assistant = assistant,
+            conversation = conversation,
+            onUpdateConversation = onUpdateConversation,
+            onNavigateToLorebook = { lorebookId ->
+                showExtensionsPicker = false
+                onNavigateToLorebook(lorebookId)
+            },
+            onDismiss = { showExtensionsPicker = false }
+        )
+    }
+
     // Skills picker sheet
     if (showSkillsPicker) {
         SkillsPickerSheet(

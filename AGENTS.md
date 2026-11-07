@@ -641,5 +641,42 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
     - Backdrops Tab: 2-column / adaptive $16:9$ cinematic grid (`GridCells.Adaptive(180.dp)`).
   - **One-Tap Zoom & Download:** Tapping any poster or backdrop in the gallery opens it directly in `ImagePreviewDialog`, allowing smooth pinch-to-zoom, panning, and native one-tap saving to `/sdcard/Download/`.
 
+---
+
+## 19. Architecture: Per-Assistant Media Watchlist & Library, Title Detail Tracker, Custom Instructions & Unified Extensions
+
+### 1. Per-Assistant Media Watchlist & Library (`AssistantMediaPage.kt`, `AssistantMediaRepository.kt`)
+- **Companion-Scoped Isolation:** Media tastes and watch history are strictly isolated per-assistant. Storage is kept in sandboxed JSON storage at `context.filesDir/assistant_media/<assistantId>.json` using concurrent mutex locking and reactive `StateFlow` caching, preventing Room migration fragility.
+- **Entry Point:** Nested directly inside **Assistant Settings $\rightarrow$ Memory $\rightarrow$ Media & Watchlist** with a dedicated hero card displaying real-time watching and planned counts.
+- **Library Grid:**
+  - Standard OneUI top bar with search/add actions and back navigation.
+  - Category filter tabs: **All**, **Watching**, **Plan to Watch**, **Watched**, **On Hold**, and **Dropped** with dynamic count pills.
+  - Adaptive 3-column tablet poster grid (`GridCells.Adaptive(110.dp)`) with 2:3 aspect ratio cards, title, release year, and top-corner live episode badge (`S1 E4`) for in-progress titles.
+  - In-app TMDB search dialog allowing instant lookup and one-tap addition of series and films.
+
+### 2. Title Detail, Season Browser, Episode Checkoff & Recommendations (`AssistantMediaDetailPage.kt`, `TmdbService.kt`)
+- **Cinematic Header:** 16:9 widescreen backdrop with bottom alpha gradient scrim blending seamlessly into the native surface.
+- **Hero Card:** Floating 2:3 poster, bold title, italicized tagline, TMDB vote rating badge (`Icons.Rounded.Star`), release year, and season count.
+- **"Pick the appropriate category" Modal:** One-tap status picker dialog (Watching, Plan to Watch, Watched, On Hold, Dropped) with haptics and instant local persistence.
+- **Season Browser & Episode Tracker:**
+  - Horizontal season chips (`Season 1`, `Season 2`, etc.).
+  - Header action: *"Mark Season Watched / Unwatched"*.
+  - Episode cards detailing episode numbers, titles, air dates, synopses, and one-tap watched toggle checkmarks (`Icons.Rounded.CheckCircle` vs `Icons.Rounded.RadioButtonUnchecked`).
+- **Recommendations Carousel:** TMDB algorithmic recommendations carousel rendered at the footer for effortless discovery.
+
+### 3. Custom Instructions System (`SettingInstructionsPage.kt`, `InstructionItem.kt`, `PreferencesStore.kt`, `SettingsMerge.kt`, `GenerationHandler.kt`)
+- **3-Way Navigation Hub:** Added the 3rd tab to the bottom floating pill across `SettingSkillsPage`, `SettingLorebooksPage`, and `SettingInstructionsPage` (`Icons.Rounded.Category`, `Icons.Rounded.Book`, `Icons.AutoMirrored.Rounded.Assignment`).
+- **Reorderable Instructions Shelf:**
+  - Drag-and-drop reordering with `rememberAppReorderableLazyListState`, `AppReorderableItem`, and `DragIndicator`.
+  - Instant on/off switches, physics swipe-to-delete with Undo toast, and add/edit modal sheet.
+- **DataStore Persistence:** Follows the strict DataStore pipeline rule (`PreferencesModels.kt`, `PreferencesStore.kt`, `SettingsMerge.kt`) preventing state loss or snap-backs.
+- **System Prompt Injection:** In `GenerationHandler.kt`, active instructions are appended in user-ordered sequence to the end of the system prompt as dedicated steering paragraphs.
+
+### 4. Unified Extensions in Chat Sheet (`InputPickerSheets.kt`, `MinimalChatInput.kt`)
+- **Decluttered Chat Menu:** Replaced scattered individual rows for Skills and Lorebooks with a single unified **Extensions** entry (`Icons.Rounded.Extension`).
+- **Live Count Subtitle:** Summarizes active components (e.g., *"1 instructions • 2 skills • 1 lorebooks"*).
+- **Interactive Multi-Tab Sheet:** Tapping opens `ExtensionsPickerSheet` with 3 tabs (Instructions, Skills, Lorebooks) for rapid per-chat toggling and direct shortcut to settings management.
+
+
 
 

@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.Mode
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.model.InstructionItem
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.model.TextSelectionAction
 import me.rerere.rikkahub.data.model.AssistantOverlayConfig
@@ -100,6 +101,7 @@ data class Settings(
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
     val skills: List<Skill> = emptyList(),
+    val instructions: List<InstructionItem> = emptyList(),
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),

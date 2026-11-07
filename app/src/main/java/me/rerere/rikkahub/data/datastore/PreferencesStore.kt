@@ -156,6 +156,7 @@ class SettingsStore(
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val SKILLS = stringPreferencesKey("skills")
+        val INSTRUCTIONS = stringPreferencesKey("instructions")
         val CHAT_STORAGE = stringPreferencesKey("chat_storage")
 
         // Android Integration
@@ -266,6 +267,7 @@ class SettingsStore(
                     modes = decodePreferenceList(preferences[MODES]) ?: emptyList(),
                     lorebooks = decodePreferenceList(preferences[LOREBOOKS]) ?: emptyList(),
                     skills = decodePreferenceList(preferences[SKILLS]) ?: emptyList(),
+                    instructions = decodePreferenceList(preferences[INSTRUCTIONS]) ?: emptyList(),
                     chatStorage = decodePreferenceValue(
                         preferences[CHAT_STORAGE],
                         ChatStorageSettings(),
@@ -743,6 +745,7 @@ class SettingsStore(
             preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
             preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
+            preferences[INSTRUCTIONS] = JsonInstant.encodeToString(normalizedSettings.instructions)
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)

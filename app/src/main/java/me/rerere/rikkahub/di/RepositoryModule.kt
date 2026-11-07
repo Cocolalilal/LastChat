@@ -149,4 +149,11 @@ val repositoryModule = module {
             memoryRepository = get(),
         )
     }
+
+    single {
+        me.rerere.rikkahub.data.repository.AssistantMediaRepository(
+            context = get(),
+            tmdbService = get(),
+        )
+    }
 }
