@@ -1221,7 +1221,7 @@ class GenerationHandler(
                 - `get_media_recommendations(id, type)`: Algorithmic recommendations. Parameters: `id`, `type` (default 'tv').
                 - `manage_watchlist(action, id, type)`: View or modify watchlist. Parameters: `action` ('get' (default), 'add', 'remove'), `id` (numeric id), `type` ('tv' or 'movie').
 
-                When recommending titles or presenting multiple shows to the user, ALWAYS present them as an interactive 3D Cover Flow deck using the ```media_deck``` code fence:
+                When recommending titles or presenting multiple shows to the user, ALWAYS present them as a native media showcase using the ```media_deck``` code fence:
                 ```media_deck
                 {
                   "title": "Companion Recommendations",

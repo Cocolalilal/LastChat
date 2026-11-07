@@ -550,18 +550,18 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
   - Added settings gear icon button (`Icons.Rounded.Settings`) navigating directly to `Screen.SettingArtifacts`.
   - Added a matching quick-toggle row for **Movies & TV Shows** with direct settings navigation to `Screen.SettingTmdb`.
 
-### 4. 3D Interactive Media Deck Renderer (`MediaDeckArtifact.kt`, `Markdown.kt`)
+### 4. 100% Native Jetpack Compose Media Showcase & Recommender (`MediaDeckArtifact.kt`, `Markdown.kt`)
 - Dedicated markdown fence tags: ````media_deck````, ````showcase````, ````movie_deck````.
-- **Arbitrary N Item Support:**
-  - Dynamic 3D Cover Flow geometry with modular rotation (`rotateY(30deg)` on flanking wings).
-  - Handles single hero cards (N = 1), pairs (N = 2), and multi-card decks (N >= 3) with circular navigation.
-  - Touch swipe gestures with velocity threshold and floating frosted-glass arrow pills.
-  - Dynamic ambient colored glow sampled from active poster accents.
-  - Interactive companion commentary bubble (Velvet Hook), rating stars, and badges.
-- **Two-Way AndroidInterface Bridge:**
-  - WebView button `+ Watchlist` invokes `window.AndroidInterface.addToTmdbWatchlist(id, type)`.
-  - Native handler executes haptic feedback (`HapticPattern.Success`), displays feedback toast, and syncs to user's TMDB account.
-  - Dynamic content height reporting via `ResizeObserver` eliminates internal scrollbars.
+- **Permanent Elimination of WebView / HTML Slop:**
+  - **The Problem:** The initial WebView-based 3D Cover Flow approach placed a Chromium instance inside Compose's chat `LazyColumn`. This caused severe thread contention, memory bloat on 4GB RAM devices, chat scrolling lag, touch event conflicts, and height relayout flickering via JavaScript bridges. Furthermore, heavy CSS border radiuses (`16px-20px`) clipped title text and artwork on 2:3 posters, while artificial neon glows and 3D skewing felt foreign to the app's native Material 3 / OneUI design.
+  - **The Native Solution:** Rebuilt `MediaDeckArtifact` as a **100% native Jetpack Compose** component.
+    - Zero WebViews, zero HTML/CSS lag, zero thread contention, and zero memory leaks.
+    - Standard 2:3 aspect-ratio posters (`aspectRatio(2f / 3f)`) with clean, subtle `RoundedCornerShape(8.dp)` preserving full poster artwork and title typography without clipping.
+    - Fluid `HorizontalPager` carousel with hardware-accelerated 2D scaling (`graphicsLayer`) and centered active card.
+    - Smooth touch swiping, navigation chevrons, and animated capsule dot indicators.
+    - Tapping the center poster opens full-screen pinch-to-zoom inspection via `ImagePreviewDialog`.
+    - Live TMDB Watchlist toggle powered directly by native `TmdbService` (`koinInject<TmdbService>()`) with haptic feedback and toast feedback.
+    - Velvet's commentary / take rendered in a quiet, high-contrast quote card with `SelectionContainer` for native touch selection and copying.
 
 ### 5. TMDB Service, Direct Login & Clean Local AI Tools (`TmdbService.kt`, `LocalTools.kt`, `ChatService.kt`)
 - Added `TmdbSetting` to `Settings` (`PreferencesModels.kt`) tracking user access tokens, session IDs, account IDs, poster/backdrop resolutions, adult content preferences, and context sync toggles.

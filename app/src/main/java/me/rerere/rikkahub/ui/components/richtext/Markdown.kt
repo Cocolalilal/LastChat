@@ -1921,7 +1921,7 @@ private fun MarkdownNode(
             val inWorldArtifactsEnabled = LocalSettings.current.getEffectiveDisplaySetting().enableInWorldArtifacts
             val isArtifactFence = inWorldArtifactsEnabled && normalizedLanguage in listOf("artifact", "visual", "inworld")
             val tmdbSetting = LocalSettings.current.tmdbSetting
-            val isMediaDeckFence = tmdbSetting.enabled && normalizedLanguage in listOf("media_deck", "showcase", "movie_deck")
+            val isMediaDeckFence = normalizedLanguage in listOf("media_deck", "showcase", "movie_deck")
 
             // Mermaid diagrams, media decks and in-world artifacts: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
