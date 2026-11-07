@@ -282,6 +282,7 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 | `42376651491` | `:app:compileStableReleaseKotlin` | Receiver type mismatch on `writeClipboardText`: called as function `writeClipboardText(context, code)` instead of extension `context.writeClipboardText(code)` | Changed to `context.writeClipboardText(code)` in `MediaDeckArtifact.kt`. Fixed in run `42377319409` |
 | `42370097371` | Native RenderThread Crash (`libhwui.so SkSurface::getCanvas()+16`) | Un-isolated `AndroidView(WebView)` inside clipped Compose layout triggered Skia null `tmpSurface` in `GLFunctorDrawable::onDraw(SkCanvas*)` on Android 13; `view.draw(canvas)` in `InWorldArtifact` triggered software draw functor | Wrapped WebViews inside `android.widget.FrameLayout`, removed software `view.draw(canvas)`, replaced `scaleIn`/`scaleOut` transitions with clean alpha fades, and added floating corner options menu |
 | `42384505404` | UI lag & clipped WebView Cover Flow | Chromium WebView in chat `LazyColumn` caused thread contention, severe GPU/scroll lag, clamped height amputating the bottom watchlist button and commentary, and 20dp border radii clipping poster titles | Replaced WebView with 100% native Compose `MediaDeckArtifact`: `HorizontalPager` with standard 2:3 aspect-ratio posters (`RoundedCornerShape(8.dp)`), tap-to-zoom (`ImagePreviewDialog`), native watchlist button with haptics/toasts, external TMDB button, and smooth carousel controls. Run `42384505404` succeeded with ~66MB stable release APK |
+| `42404212343` | `:app:compileStableReleaseKotlin` | `SizeTransform { _, _ -> null }` threw `Null cannot be a value of a non-null type 'FiniteAnimationSpec<IntSize>'` | Switched to `SizeTransform(clip = false)`. Run `42405068740` succeeded with 66.58 MB minified stable release APK |
 | `[RESOLVED]` | TMDB Settings snap-back / revert on save | `tmdbSetting` was missing from `PreferencesStore` DataStore keys, pipeline decoder, `persistSettings`, and `mergeSettingsEdit` | Added `TMDB_SETTING` preferences key, hooked decoder into pipeline, persisted JSON in `dataStore.edit`, added 3-way merge in `SettingsMerge.kt`, and switched `SettingTmdbPage` to `vm.updateSettings` transform queue |
 | `[PENDING]` | Provider model fetch UI hang | Under investigation (suspect network timeout in `listModels` or recomposition storm in provider settings) | Next session diagnostic checklist documented in Section 9 |
 
@@ -592,5 +593,53 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
 ### 7. Custom Smart Mic Profile Renaming (`SettingModelPage.kt`)
 - Custom Smart Mic profiles now feature an editable **"Profile Name"** input field directly on their card in **Settings $\rightarrow$ Model $\rightarrow$ Smart Mic**.
 - Dynamically updates profile labels across the UI and the chat composer long-press microphone slide sheet.
+
+---
+
+## 18. Architecture: Media Deck Polish, Initial Poster Zoom-Snap Fix, Auto-Ask Agent & TMDB Media Gallery Modal
+
+### 1. Root Cause & Permanent Resolution of Initial Poster Zoom-Snap
+- **The Problem:** When a media deck card loaded in the chat stream or entered the viewport, posters initially appeared zoomed in or stretched, then after 1–2 seconds abruptly jumped/zoomed out into their settled positions.
+- **Root Causes Discovered:**
+  1. **Coil Placeholder Aspect Mismatch:** Fallback drawables `R.drawable.placeholder` and `placeholder_dark` were $1024 \times 1024$ squares ($1:1$). When loading a $2:3$ theatrical poster, Coil's `crossfade(true)` blended between a square bitmap and a rectangular bitmap, creating an aggressive scale/zoom distortion while the image decoded.
+  2. **`BoxWithConstraints` Frame 0 Jitter:** `posterHeight` was dynamically calculated inside `BoxWithConstraints` using `val isTablet = maxWidth >= 480.dp`. When items are first measured inside `LazyColumn`, `maxWidth` frequently measured with narrow/default bounds on frame 0 before re-measuring to the tablet's full $640\text{ dp}$ width on frame 1, triggering a sudden layout jump from $195\text{ dp} \rightarrow 230\text{ dp}$.
+  3. **`AnimatedContent` SizeTransform Morphing:** `AnimatedContent(targetState = hasEnd)` used default size transitions that interpolated container height and scaled child surfaces.
+- **The Permanent Fix:**
+  - Replaced `maxWidth >= 480.dp` with window configuration: `val isTablet = LocalConfiguration.current.screenWidthDp >= 480`, guaranteeing 100% stable dimensions on frame 0.
+  - Removed the $1:1$ square drawable placeholder from `ImageRequest.Builder`. The card container now renders its own native high-contrast `surfaceContainerHighest` background with a clean 200ms alpha crossfade (`crossfade(200)`), completely eliminating aspect ratio stretching.
+  - Constrained `AnimatedContent` transition to non-morphing bounds: `.using(SizeTransform(clip = false))`.
+
+### 2. Auto-Ask Current Agent ("Tell me about this show")
+- **High-Level Design:** Allows the user to click a single native button on the deck footer to automatically query the active conversational agent about the currently selected film or series without typing.
+- **Implementation:**
+  - Created `LocalChatSendMessage` composition local (`me.rerere.rikkahub.ui.context.LocalChatSendMessage.kt`):
+    ```kotlin
+    val LocalChatSendMessage = compositionLocalOf<(String) -> Unit> { {} }
+    ```
+  - In `ChatPage.kt`, bound `LocalChatSendMessage` directly to the active ViewModel:
+    ```kotlin
+    LocalChatSendMessage provides { prompt ->
+        if (currentChatModel != null) {
+            vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(prompt)))
+        } else {
+            toaster.show("Please select a model first")
+        }
+    }
+    ```
+  - In `MediaDeckArtifact.kt`, added a dedicated action button (`Icons.Rounded.AutoAwesome`) on the deck footer. Tapping it fires haptic feedback and sends `"Tell me about this show: <Title>"` directly to the active model.
+
+### 3. TMDB Media Gallery Modal Sheet (`MediaDeckArtifact.kt`, `TmdbService.kt`)
+- **High-Level Design:** Clicking the new gallery icon (`Icons.Rounded.Collections`) opens an interactive modal bottom sheet displaying all official theatrical posters and widescreen backdrops for the active title.
+- **Backend & Network Upgrades:**
+  - In `TmdbService.kt`, increased `getImages` retrieval limit from `take(8)` to `take(30)` for both posters and backdrops.
+- **Modal Architecture:**
+  - Rendered via `ModalBottomSheet` with maximum height capped at `85%` screen height (`heightIn(max = sheetMaxHeight)`).
+  - **Top Tabs:** Native `SecondaryTabRow` with two tabs: **Posters (N)** and **Backdrops (N)**.
+  - **Swipeable Content:** Nested `HorizontalPager(state = galleryPagerState)` allowing fluid horizontal swiping between the Posters grid and Backdrops grid.
+  - **Adaptive Grids:**
+    - Posters Tab: 3-column / adaptive $2:3$ grid (`GridCells.Adaptive(105.dp)`).
+    - Backdrops Tab: 2-column / adaptive $16:9$ cinematic grid (`GridCells.Adaptive(180.dp)`).
+  - **One-Tap Zoom & Download:** Tapping any poster or backdrop in the gallery opens it directly in `ImagePreviewDialog`, allowing smooth pinch-to-zoom, panning, and native one-tap saving to `/sdcard/Download/`.
+
 
 
