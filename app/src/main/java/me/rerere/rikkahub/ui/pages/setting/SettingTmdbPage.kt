@@ -77,13 +77,14 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var showManualTokenDialog by remember { mutableStateOf(false) }
-    var manualTokenInput by remember { mutableStateOf(tmdb.userAccessToken) }
-    var manualAccountIdInput by remember { mutableStateOf(tmdb.accountId) }
-    var manualUsernameInput by remember { mutableStateOf(tmdb.username) }
+    var manualTokenInput by remember(tmdb.userAccessToken) { mutableStateOf(tmdb.userAccessToken) }
+    var manualAccountIdInput by remember(tmdb.accountId) { mutableStateOf(tmdb.accountId) }
+    var manualUsernameInput by remember(tmdb.username) { mutableStateOf(tmdb.username) }
 
     fun updateTmdb(transform: (me.rerere.rikkahub.data.datastore.TmdbSetting) -> me.rerere.rikkahub.data.datastore.TmdbSetting) {
-        val updated = transform(settings.tmdbSetting)
-        vm.updateSettings(settings.copy(tmdbSetting = updated))
+        vm.updateSettings { current ->
+            current.copy(tmdbSetting = transform(current.tmdbSetting))
+        }
     }
 
     if (showManualTokenDialog) {

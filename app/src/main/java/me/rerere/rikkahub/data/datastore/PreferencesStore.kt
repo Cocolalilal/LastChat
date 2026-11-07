@@ -167,6 +167,9 @@ class SettingsStore(
         val SMART_MIC_PROFILES = stringPreferencesKey("smart_mic_profiles")
         val SELECTED_SMART_MIC_PROFILE = stringPreferencesKey("selected_smart_mic_profile")
 
+        // TMDB
+        val TMDB_SETTING = stringPreferencesKey("tmdb_setting")
+
         // Local Models
         val DEVICE_PERFORMANCE_PROFILE = stringPreferencesKey("device_performance_profile")
     }
@@ -278,6 +281,7 @@ class SettingsStore(
                     enableVoiceMemosMemoryBridge = preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] ?: true,
                     smartMicProfiles = decodePreferenceList(preferences[SMART_MIC_PROFILES]) ?: DEFAULT_SMART_MIC_PROFILES,
                     selectedSmartMicProfileId = preferences[SELECTED_SMART_MIC_PROFILE] ?: "raw_dictation",
+                    tmdbSetting = decodePreferenceValue(preferences[TMDB_SETTING], TmdbSetting()),
                 ).normalizeThemeId()
             }.getOrElse {
                 Log.e(TAG, "Failed to parse settings", it)
@@ -745,6 +749,7 @@ class SettingsStore(
             preferences[ENABLE_VOICE_MEMOS_MEMORY_BRIDGE] = normalizedSettings.enableVoiceMemosMemoryBridge
             preferences[SMART_MIC_PROFILES] = JsonInstant.encodeToString(normalizedSettings.smartMicProfiles)
             preferences[SELECTED_SMART_MIC_PROFILE] = normalizedSettings.selectedSmartMicProfileId
+            preferences[TMDB_SETTING] = JsonInstant.encodeToString(normalizedSettings.tmdbSetting)
         }
         return saved
     }

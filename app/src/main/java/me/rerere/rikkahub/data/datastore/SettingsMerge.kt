@@ -170,6 +170,11 @@ fun mergeSettingsEdit(base: Settings, edited: Settings, latest: Settings): Setti
             edited.selectedSmartMicProfileId,
             latest.selectedSmartMicProfileId,
         ),
+        tmdbSetting = mergeSettingsValue(
+            base.tmdbSetting,
+            edited.tmdbSetting,
+            latest.tmdbSetting,
+        ),
     )
 }
 
