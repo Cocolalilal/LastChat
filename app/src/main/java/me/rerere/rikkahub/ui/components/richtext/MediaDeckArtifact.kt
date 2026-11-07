@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -191,9 +193,8 @@ fun MediaDeckArtifact(
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null)
                     },
                     modifier = Modifier.padding(vertical = 4.dp),
-                    trailingContent = {},
                 )
-                androidx.compose.material3.Button(
+                Button(
                     onClick = {
                         writeClipboardText(context, code)
                         toaster.show("Copied deck JSON to clipboard")

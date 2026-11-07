@@ -789,10 +789,18 @@ class LocalTools(
 
         return result
     }
+
+    private fun Tool.withAlias(aliasName: String): Tool = Tool(
+        name = aliasName,
+        description = description,
+        parameters = parameters,
+        approvalMode = approvalMode,
+        execute = execute
+    )
     
-    val tmdbSearchTool by lazy {
+    val searchMediaTool by lazy {
         Tool(
-            name = "tmdb_search",
+            name = "search_media",
             description = "Search for movies, TV series, anime, and shows on TMDB to find titles, years, ratings, and IDs.",
             parameters = {
                 InputSchema.Obj(
@@ -1011,11 +1019,11 @@ class LocalTools(
             tools.add(mediaWatchlistTool)
 
             // Transparent legacy aliases so both naming styles work
-            tools.add(searchMediaTool.copy(name = "tmdb_search"))
-            tools.add(mediaInfoTool.copy(name = "tmdb_get_details"))
-            tools.add(mediaArtTool.copy(name = "tmdb_get_images"))
-            tools.add(mediaRecommendationsTool.copy(name = "tmdb_get_recommendations"))
-            tools.add(mediaWatchlistTool.copy(name = "tmdb_watchlist"))
+            tools.add(searchMediaTool.withAlias("tmdb_search"))
+            tools.add(mediaInfoTool.withAlias("tmdb_get_details"))
+            tools.add(mediaArtTool.withAlias("tmdb_get_images"))
+            tools.add(mediaRecommendationsTool.withAlias("tmdb_get_recommendations"))
+            tools.add(mediaWatchlistTool.withAlias("tmdb_watchlist"))
         }
         return tools
     }
