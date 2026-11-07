@@ -2550,6 +2550,7 @@ private fun MinimalPickerContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                val navController = LocalNavController.current
                 Text(
                     text = stringResource(R.string.chat_tools_title),
                     style = MaterialTheme.typography.titleLarge

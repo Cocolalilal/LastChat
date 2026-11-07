@@ -843,7 +843,7 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
                 val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
                 tmdb.getDetails(id = id, type = type)
             }
@@ -873,7 +873,7 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
                 val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
                 tmdb.getImages(id = id, type = type)
             }
@@ -903,7 +903,7 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
                 val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
                 tmdb.getRecommendations(id = id, type = type)
             }
@@ -938,7 +938,7 @@ class LocalTools(
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
                 val action = params["action"]?.jsonPrimitive?.contentOrNull ?: "get"
-                val id = params["id"]?.jsonPrimitive?.intOrNull
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
                 val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
                 tmdb.manageWatchlist(action = action, id = id, type = type)
             }

@@ -32,13 +32,13 @@ class TmdbService(
     private val defaultBearerToken = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJkMGIwZjgyMWU2MWJkNTU5MmRhN2ZhODg5YTMxMTViYyIsIm5iZiI6MTczMDk5ODk3MC4xNjk2Niwic3ViIjoiNjc0MzY3YjA5MzU1YzMwMDE3YTRlZDMwIiwic2NvcGVzIjpbImFwaV9yZWFkIl0sInZlcnNpb24iOjF9.e-9FknJqD_WjK1K-3JdZ4Q6QzQY7yG8r1S-hJ8t1Q"
 
     private fun getAuthHeader(): String {
-        val userToken = settingsStore.current.tmdbSetting.userAccessToken.trim()
+        val userToken = settingsStore.settingsFlow.value.tmdbSetting.userAccessToken.trim()
         val token = userToken.ifBlank { defaultBearerToken }
         return "Bearer $token"
     }
 
     private fun getResolutionPrefix(isBackdrop: Boolean): String {
-        val setting = settingsStore.current.tmdbSetting
+        val setting = settingsStore.settingsFlow.value.tmdbSetting
         return if (isBackdrop) setting.backdropResolution else setting.posterResolution
     }
 
@@ -48,7 +48,7 @@ class TmdbService(
         page: Int = 1,
         includeAdult: Boolean? = null
     ): JsonElement = withContext(Dispatchers.IO) {
-        val adultFlag = includeAdult ?: settingsStore.current.tmdbSetting.includeAdult
+        val adultFlag = includeAdult ?: settingsStore.settingsFlow.value.tmdbSetting.includeAdult
         val encoded = URLEncoder.encode(query, "UTF-8")
         val endpoint = if (type in listOf("movie", "tv")) type else "multi"
         val url = "https://api.themoviedb.org/3/search/$endpoint?query=$encoded&page=$page&include_adult=$adultFlag"
@@ -265,8 +265,8 @@ class TmdbService(
     }
 
     suspend fun manageWatchlist(action: String, id: Int? = null, type: String = "tv"): JsonElement = withContext(Dispatchers.IO) {
-        val userToken = settingsStore.current.tmdbSetting.userAccessToken.trim()
-        val accountId = settingsStore.current.tmdbSetting.accountId.trim()
+        val userToken = settingsStore.settingsFlow.value.tmdbSetting.userAccessToken.trim()
+        val accountId = settingsStore.settingsFlow.value.tmdbSetting.accountId.trim()
 
         if (userToken.isBlank() || accountId.isBlank()) {
             return@withContext buildJsonObject {
