@@ -492,7 +492,7 @@ fun MediaDeckArtifact(
         targetState = hasEnd,
         transitionSpec = {
             (fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300)))
-                .using(SizeTransform { _, _ -> null })
+                .using(SizeTransform(clip = false))
         },
         label = "MediaDeckPhaseTransition"
     ) { finished ->
