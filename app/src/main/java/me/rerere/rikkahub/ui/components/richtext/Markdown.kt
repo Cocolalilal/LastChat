@@ -1052,7 +1052,7 @@ fun MarkdownBlock(
                         val isArtifactBlock = run.size == 1 && run.first().let { piece ->
                             piece is MarkdownWholePiece && piece.node.type == MarkdownElementTypes.CODE_FENCE && run {
                                 val lang = piece.node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(preprocessed) ?: ""
-                                normalizeCodeBlockLanguage(lang) in listOf("artifact", "visual", "inworld")
+                                normalizeCodeBlockLanguage(lang) in listOf("artifact", "visual", "inworld", "media_deck", "showcase", "movie_deck")
                             }
                         }
                         me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble(
@@ -1920,12 +1920,22 @@ private fun MarkdownNode(
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
             val inWorldArtifactsEnabled = LocalSettings.current.getEffectiveDisplaySetting().enableInWorldArtifacts
             val isArtifactFence = inWorldArtifactsEnabled && normalizedLanguage in listOf("artifact", "visual", "inworld")
+            val tmdbSetting = LocalSettings.current.tmdbSetting
+            val isMediaDeckFence = tmdbSetting.enabled && normalizedLanguage in listOf("media_deck", "showcase", "movie_deck")
 
-            // Mermaid diagrams and in-world artifacts: render directly without HighlightCodeBlock wrapper
+            // Mermaid diagrams, media decks and in-world artifacts: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
                         code = code,
+                        modifier = modifier
+                            .mediaEdgePadding(node, paragraphSpacing)
+                            .fillMaxWidth(),
+                    )
+                } else if (isMediaDeckFence) {
+                    MediaDeckArtifact(
+                        code = code,
+                        hasEnd = hasEnd,
                         modifier = modifier
                             .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),

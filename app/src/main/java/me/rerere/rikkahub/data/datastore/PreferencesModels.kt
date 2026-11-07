@@ -106,11 +106,27 @@ data class Settings(
     val enableVoiceMemosMemoryBridge: Boolean = true,
     val smartMicProfiles: List<SmartMicProfile> = DEFAULT_SMART_MIC_PROFILES,
     val selectedSmartMicProfileId: String = "raw_dictation",
+    val tmdbSetting: TmdbSetting = TmdbSetting(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)
     }
 }
+
+@Serializable
+data class TmdbSetting(
+    val enabled: Boolean = true,
+    val userAccessToken: String = "",
+    val accountId: String = "",
+    val username: String = "",
+    val avatarPath: String = "",
+    val posterResolution: String = "w500",
+    val backdropResolution: String = "w780",
+    val includeAdult: Boolean = false,
+    val autoSyncWatchlistToContext: Boolean = true,
+    val enable3DDecks: Boolean = true,
+    val defaultDeckSize: Int = 3,
+)
 
 @Serializable
 data class SmartMicProfile(

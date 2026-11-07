@@ -433,6 +433,9 @@ val dataSourceModule = module {
     // On-device (LiteRT-LM) provider stack
     single { me.rerere.locallm.LocalModelStore(get()) }
     single { me.rerere.locallm.LiteRtCatalog(get()) }
+
+    // TMDB Integration Service
+    single { me.rerere.rikkahub.data.service.TmdbService(get(), get()) }
     single { 
         me.rerere.locallm.ModelInstall(
             context = get(),

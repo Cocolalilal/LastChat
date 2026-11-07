@@ -56,6 +56,7 @@ data class PythonEnvStatus(
     val isPythonInstalled: Boolean = false,
     val isBusy: Boolean = false,
     val currentTask: WorkspaceEnvironmentTask? = null,
+    val isInitialCheckDone: Boolean = false,
 )
 
 data class PythonPluginUiState(
@@ -73,6 +74,7 @@ class PythonPluginManager(
 ) {
     private val _uiState = MutableStateFlow(PythonPluginUiState())
     val uiState: StateFlow<PythonPluginUiState> = _uiState.asStateFlow()
+    private val pythonInstalledCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     private val _runningServers = MutableStateFlow<Map<String, PythonServerProcess>>(emptyMap())
     val runningServers: StateFlow<Map<String, PythonServerProcess>> = _runningServers.asStateFlow()
@@ -184,11 +186,17 @@ class PythonPluginManager(
         workspaceDao.getAll().firstOrNull()
     }
 
-    suspend fun checkEnvironmentStatus(): PythonEnvStatus = withContext(Dispatchers.IO) {
-        val workspace = getActiveWorkspace() ?: return@withContext PythonEnvStatus()
+    suspend fun checkEnvironmentStatus(forceRefresh: Boolean = false): PythonEnvStatus = withContext(Dispatchers.IO) {
+        val workspace = getActiveWorkspace() ?: return@withContext PythonEnvStatus(isInitialCheckDone = true)
         val isRootfsReady = workspace.shellStatus == WorkspaceShellStatus.READY.name
         val isPythonInstalled = if (isRootfsReady) {
-            runCatching { workspaceRepository.isPythonInstalled(workspace.id) }.getOrDefault(false)
+            if (!forceRefresh && pythonInstalledCache[workspace.id] == true) {
+                true
+            } else {
+                val installed = runCatching { workspaceRepository.isPythonInstalled(workspace.id) }.getOrDefault(false)
+                if (installed) pythonInstalledCache[workspace.id] = true
+                installed
+            }
         } else false
 
         val currentTask = environmentManager.tasks.value[workspace.id]
@@ -201,6 +209,7 @@ class PythonPluginManager(
             isPythonInstalled = isPythonInstalled,
             isBusy = isBusy,
             currentTask = currentTask,
+            isInitialCheckDone = true,
         )
     }
 

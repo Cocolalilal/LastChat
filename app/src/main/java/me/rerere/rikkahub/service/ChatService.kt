@@ -1967,9 +1967,15 @@ class ChatService(
                 is AssistantSearchMode.Off -> Unit
             }
 
+            val effectiveLocalTools = if (settings.tmdbSetting.enabled && !assistant.localTools.contains(LocalToolOption.Tmdb)) {
+                assistant.localTools + LocalToolOption.Tmdb
+            } else {
+                assistant.localTools
+            }
+
             addAll(
                 localTools.getTools(
-                    options = assistant.localTools,
+                    options = effectiveLocalTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,
                 )

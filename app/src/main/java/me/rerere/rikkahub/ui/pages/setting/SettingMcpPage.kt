@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Movie
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.shape.CircleShape
@@ -183,9 +189,14 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val lazyListState = rememberLazyListState()
     val oauthManager = koinInject<McpOAuthManager>()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    var selectedMainTab by rememberSaveable { mutableIntStateOf(0) }
+    val navController = LocalNavController.current
+    var selectedMainTab by rememberSaveable { mutableIntStateOf(-1) }
     val pythonPluginManager = koinInject<PythonPluginManager>()
     var showCreatePythonPluginDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selectedMainTab != -1) {
+        selectedMainTab = -1
+    }
 
     fun addConnection(preset: McpConnectionPreset) {
         val existing = mcpConfigs.firstOrNull { it.commonOptions.presetId == preset.id }
@@ -214,98 +225,180 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     
     Scaffold(
         topBar = {
-            Column {
-                OneUITopAppBar(
-                    title = stringResource(R.string.setting_mcp_page_title),
-                    scrollBehavior = scrollBehavior,
-                    navigationIcon = {
+            OneUITopAppBar(
+                title = when (selectedMainTab) {
+                    0 -> stringResource(R.string.setting_mcp_tab_mcp)
+                    1 -> stringResource(R.string.setting_mcp_tab_python)
+                    else -> stringResource(R.string.setting_mcp_page_title)
+                },
+                scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    if (selectedMainTab != -1) {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                selectedMainTab = -1
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Plugins")
+                        }
+                    } else {
                         BackButton()
                     }
-                )
-                SecondaryTabRow(
-                    selectedTabIndex = selectedMainTab,
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
-                    Tab(
-                        selected = selectedMainTab == 0,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            selectedMainTab = 0
-                        },
-                        text = {
-                            Text(stringResource(R.string.setting_mcp_tab_mcp))
-                        },
-                        icon = {
-                            Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(18.dp))
-                        }
-                    )
-                    Tab(
-                        selected = selectedMainTab == 1,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            selectedMainTab = 1
-                        },
-                        text = {
-                            Text(stringResource(R.string.setting_mcp_tab_python))
-                        },
-                        icon = {
-                            Icon(Icons.Rounded.Code, null, modifier = Modifier.size(18.dp))
-                        }
-                    )
                 }
-            }
+            )
         },
         bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-            ) {
-                if (selectedMainTab == 0) {
-                    Column(
-                        modifier = Modifier.align(Alignment.BottomEnd),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
+            if (selectedMainTab != -1) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                ) {
+                    if (selectedMainTab == 0) {
+                        Column(
+                            modifier = Modifier.align(Alignment.BottomEnd),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            FloatingActionButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    showImportDialog = true
+                                },
+                                shape = AppShapes.CardLarge,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ) {
+                                Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                            }
+                            FloatingActionButton(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    showConnectionsSheet = true
+                                },
+                                shape = AppShapes.CardLarge,
+                            ) {
+                                Icon(Icons.Rounded.Add, "Add connection")
+                            }
+                        }
+                    } else if (selectedMainTab == 1) {
                         FloatingActionButton(
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                showImportDialog = true
+                                showCreatePythonPluginDialog = true
                             },
                             shape = AppShapes.CardLarge,
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.align(Alignment.BottomEnd),
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.Input, "Import MCP configuration")
+                            Icon(Icons.Rounded.Add, stringResource(R.string.python_new_plugin))
                         }
-                        FloatingActionButton(
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                showConnectionsSheet = true
-                            },
-                            shape = AppShapes.CardLarge,
-                        ) {
-                            Icon(Icons.Rounded.Add, "Add connection")
-                        }
-                    }
-                } else {
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            showCreatePythonPluginDialog = true
-                        },
-                        shape = AppShapes.CardLarge,
-                        modifier = Modifier.align(Alignment.BottomEnd),
-                    ) {
-                        Icon(Icons.Rounded.Add, stringResource(R.string.python_new_plugin))
                     }
                 }
             }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        if (selectedMainTab == 0) {
+        if (selectedMainTab == -1) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .consumeWindowInsets(innerPadding),
+                contentPadding = PaddingValues(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    SettingsGroup(title = "INTEGRATIONS & PLUGINS") {
+                        SettingGroupItem(
+                            title = "MCP Tools",
+                            subtitle = "Model Context Protocol servers, remote endpoints & tools",
+                            icon = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
+                            trailing = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${mcpConfigs.size} Active",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                        null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                selectedMainTab = 0
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Python Extensions",
+                            subtitle = "PRoot Python client scripts, UI hooks & event daemons",
+                            icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
+                            trailing = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "PRoot Active",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                        null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                selectedMainTab = 1
+                            }
+                        )
+
+                        SettingGroupItem(
+                            title = "Movies & TV Shows (TMDB)",
+                            subtitle = "TMDB v4 authorization, watchlists & 3D recommendation decks",
+                            icon = { Icon(Icons.Rounded.Movie, null, modifier = Modifier.size(20.dp)) },
+                            trailing = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    val isAuth = settings.tmdbSetting.userAccessToken.isNotBlank()
+                                    Text(
+                                        text = if (isAuth) "Connected" else "Not Authorized",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (isAuth) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                        null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                navController.navigate(Screen.SettingTmdb)
+                            }
+                        )
+                    }
+                }
+            }
+        } else if (selectedMainTab == 0) {
         val mcpManager = koinInject<McpManager>()
         val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
         val scope = rememberCoroutineScope()
@@ -1636,7 +1729,7 @@ private fun PythonExtensionsContent(
                         }
                     }
                 }
-            } else if (!status.isPythonInstalled) {
+            } else if (status.isInitialCheckDone && !status.isPythonInstalled) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow

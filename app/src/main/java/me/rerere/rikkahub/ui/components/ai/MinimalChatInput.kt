@@ -208,6 +208,11 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.mergeCommittedSttTranscript
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.shouldApplyPendingSttTranscript
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.ui.draw.clip
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.blurredContainerColor
 import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
 import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
@@ -2279,17 +2284,21 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Tools picker (Web Search + In-World Visual Artifacts)
+        // Tools picker (Web Search + In-World Visual Artifacts + Movies & TV)
+        val navController = LocalNavController.current
         val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null
         val artifactsEnabled = settings.displaySetting.enableInWorldArtifacts
-        val isAnyToolActive = enableSearch || artifactsEnabled
+        val tmdbEnabled = settings.tmdbSetting.enabled
+        val activeToolsCount = (if (enableSearch) 1 else 0) + (if (artifactsEnabled) 1 else 0) + (if (tmdbEnabled) 1 else 0)
+        val isAnyToolActive = activeToolsCount > 0
         val toolsSubtitle = when {
-            enableSearch && artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_all)
+            activeToolsCount >= 2 -> "$activeToolsCount active tools"
             enableSearch -> stringResource(R.string.chat_tools_subtitle_search)
             artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_artifacts)
+            tmdbEnabled -> "Movies & TV active"
             else -> stringResource(R.string.chat_tools_subtitle_none)
         }
         
@@ -2547,49 +2556,101 @@ private fun MinimalPickerContent(
                 )
 
                 // In-World Visual Artifacts Quick Toggle
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                    shape = AppShapes.CardLarge,
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(AppShapes.ListItem)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        leadingContent = {
-                            Icon(
-                                Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                tint = if (settings.displaySetting.enableInWorldArtifacts) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.setting_in_world_artifacts_title),
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = stringResource(R.string.setting_in_world_artifacts_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = settings.displaySetting.enableInWorldArtifacts,
-                                onCheckedChange = { enabled ->
-                                    haptics.perform(HapticPattern.Pop)
-                                    scope.launch {
-                                        settingsStore.update { current ->
-                                            current.copy(
-                                                displaySetting = current.displaySetting.copy(
-                                                    enableInWorldArtifacts = enabled
-                                                )
-                                            )
-                                        }
-                                    }
+                    Icon(
+                        Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = if (settings.displaySetting.enableInWorldArtifacts) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_in_world_artifacts_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            showSearchPicker = false
+                            navController.navigate(Screen.SettingArtifacts)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.setting_in_world_artifacts_title),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    HapticSwitch(
+                        checked = settings.displaySetting.enableInWorldArtifacts,
+                        onCheckedChange = { enabled ->
+                            haptics.perform(HapticPattern.Pop)
+                            scope.launch {
+                                settingsStore.update { current ->
+                                    current.copy(
+                                        displaySetting = current.displaySetting.copy(
+                                            enableInWorldArtifacts = enabled
+                                        )
+                                    )
                                 }
-                            )
+                            }
+                        }
+                    )
+                }
+
+                // Movies & TV Shows Quick Toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(AppShapes.ListItem)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.Movie,
+                        contentDescription = null,
+                        tint = if (settings.tmdbSetting.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Movies & TV Shows",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            showSearchPicker = false
+                            navController.navigate(Screen.SettingTmdb)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = "Movies & TV Settings",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    HapticSwitch(
+                        checked = settings.tmdbSetting.enabled,
+                        onCheckedChange = { enabled ->
+                            haptics.perform(HapticPattern.Pop)
+                            scope.launch {
+                                settingsStore.update { current ->
+                                    current.copy(
+                                        tmdbSetting = current.tmdbSetting.copy(
+                                            enabled = enabled
+                                        )
+                                    )
+                                }
+                            }
                         }
                     )
                 }

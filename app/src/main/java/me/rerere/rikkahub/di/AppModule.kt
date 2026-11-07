@@ -32,7 +32,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), tmdbService = getOrNull())
     }
 
     single {

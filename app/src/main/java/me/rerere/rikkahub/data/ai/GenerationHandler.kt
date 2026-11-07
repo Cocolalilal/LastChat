@@ -1209,6 +1209,37 @@ class GenerationHandler(
             )
         }
 
+        if (settings.tmdbSetting.enabled) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ## Movies, TV Series & 3D Media Showcase
+                - You have access to TMDB media tools (`tmdb_search`, `tmdb_get_details`, `tmdb_get_images`, `tmdb_get_recommendations`, `tmdb_watchlist`).
+                - When recommending movies, anime, or TV shows, or presenting posters/backdrops to the user, render an interactive 3D media deck using the ```media_deck ... ``` code fence with this JSON shape:
+                  ```media_deck
+                  {
+                    "title": "Velvet Picks",
+                    "items": [
+                      {
+                        "tmdb_id": 37854,
+                        "media_type": "tv",
+                        "title": "Title Name",
+                        "year": "1999",
+                        "rating": "8.7",
+                        "progress": "Ep 594 / 1122",
+                        "poster": "https://image.tmdb.org/t/p/w500/<hash>.jpg",
+                        "badges": ["Anime", "Action", "Adventure"],
+                        "hook": "Your personal companion commentary explaining why you picked this."
+                      }
+                    ]
+                  }
+                  ```
+                - You can include any number of items (1, 2, 3, 5, etc.).
+                - When asked to show posters or backdrops, fetch them with `tmdb_get_images` and embed them in the deck.
+                """.trimIndent()
+            )
+        }
+
         val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
