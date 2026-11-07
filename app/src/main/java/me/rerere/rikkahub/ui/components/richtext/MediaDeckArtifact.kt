@@ -196,7 +196,7 @@ fun MediaDeckArtifact(
                 )
                 Button(
                     onClick = {
-                        writeClipboardText(context, code)
+                        context.writeClipboardText(code)
                         toaster.show("Copied deck JSON to clipboard")
                         showActionSheet = false
                     },
