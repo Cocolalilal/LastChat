@@ -563,14 +563,33 @@ The AI assistant in LastChat now has 5 specialized tools for complete autonomous
   - Native handler executes haptic feedback (`HapticPattern.Success`), displays feedback toast, and syncs to user's TMDB account.
   - Dynamic content height reporting via `ResizeObserver` eliminates internal scrollbars.
 
-### 5. TMDB v4 Service & Local AI Tools (`TmdbService.kt`, `LocalTools.kt`, `ChatService.kt`)
-- Added `TmdbSetting` to `Settings` (`PreferencesModels.kt`) tracking user access tokens, account IDs, poster/backdrop resolutions, adult content preferences, and context sync toggles.
-- Exposes 5 autonomous tools to the AI assistant under `LocalToolOption.Tmdb`:
-  1. `tmdb_search`: Search movies, TV series, anime, people.
-  2. `tmdb_get_details`: Deep show metadata, cast, synopsis, episode counts.
-  3. `tmdb_get_images`: Pull multiple posters, 16:9 cinematic backdrops, and stills.
-  4. `tmdb_get_recommendations`: Algorithmic recommendations based on title IDs.
-  5. `tmdb_watchlist`: Read user's real TMDB watchlist or add/remove titles.
+### 5. TMDB Service, Direct Login & Clean Local AI Tools (`TmdbService.kt`, `LocalTools.kt`, `ChatService.kt`)
+- Added `TmdbSetting` to `Settings` (`PreferencesModels.kt`) tracking user access tokens, session IDs, account IDs, poster/backdrop resolutions, adult content preferences, and context sync toggles.
+- **Direct In-App Credential Login:**
+  - Implemented `loginWithCredentials(username, password)` in `TmdbService.kt` (`SettingTmdbPage.kt`).
+  - Native in-app username/password dialog: requests token (`/3/authentication/token/new`), validates credentials (`/3/authentication/token/validate_with_login`), creates session (`/3/authentication/session/new`), and auto-populates account ID, username, avatar, and adult content flags (`/3/account`) into DataStore without browser redirects or manual token copying.
+- **Clean Media Tools (`LocalToolOption.Tmdb`):**
+  1. `search_media(query, type)`: Search movies, TV series, anime, people.
+  2. `get_media_info(id, type)`: Deep show metadata, cast, synopsis, episode counts.
+  3. `get_media_art(id, type)`: High-resolution posters, 16:9 cinematic backdrops, and stills.
+  4. `get_media_recommendations(id, type)`: Algorithmic recommendations based on title IDs.
+  5. `manage_watchlist(action, id, type)`: Read user's real TMDB watchlist or add/remove titles.
+  *(Transparent legacy `tmdb_*` aliases maintained under `withAlias` for backwards compatibility).*
+- **Tolerant Parameter Parsing:**
+  - Parameters accept numeric IDs (`id`, `media_id`, `tmdb_id`) as either int or string.
+  - Queries accept `query`, `title`, `name`, or `search`.
+  - Type defaults to `"tv"` for details/art and `"multi"` for search.
+  - Action defaults to `"get"`.
 - Auto-hydrates tools when `settings.tmdbSetting.enabled` is active, injecting media prompt guidelines in `GenerationHandler.kt`.
+
+### 6. Floating Corner Menu & Touch Interactivity (`InWorldArtifact.kt`, `MediaDeckArtifact.kt`)
+- Because 3D interactive artifacts and WebViews capture touch gestures (swipes, dragging, clicks), Android never passed long-presses to Compose, making the action menu unreachable.
+- Pinned a sleek floating options menu button (`Icons.Rounded.MoreVert`) to the **top-right corner** of the artifact tile.
+- Tapping the corner button opens the action sheet (*Inspect & Zoom*, *Copy Code*, *View Source*, *Save Image*), leaving the entire body free for 3D gestures.
+- Updated `InWorldArtifactPrompt.kt` with explicit instructions on mobile responsiveness and touch target sizing.
+
+### 7. Custom Smart Mic Profile Renaming (`SettingModelPage.kt`)
+- Custom Smart Mic profiles now feature an editable **"Profile Name"** input field directly on their card in **Settings $\rightarrow$ Model $\rightarrow$ Smart Mic**.
+- Dynamically updates profile labels across the UI and the chat composer long-press microphone slide sheet.
 
 
