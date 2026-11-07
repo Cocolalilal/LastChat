@@ -117,6 +117,7 @@ data class Settings(
 data class TmdbSetting(
     val enabled: Boolean = true,
     val userAccessToken: String = "",
+    val sessionId: String = "",
     val accountId: String = "",
     val username: String = "",
     val avatarPath: String = "",

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Spacer
@@ -259,131 +260,109 @@ fun InWorldArtifact(
                     val bubbleShape = LocalMessageBubbleShape.current
                     val blockShape = bubbleShape ?: if (frame.nested) frame.innerShape else AppShapes.InputField
 
-                    Surface(
+                    Box(
                         modifier = modifier
-                            .combinedClickable(
-                                onClick = {
-                                    haptics.perform(HapticPattern.Pop)
-                                    showActionSheet = true
-                                },
-                                onLongClick = {
-                                    haptics.perform(HapticPattern.Thud)
-                                    showActionSheet = true
-                                }
-                            ),
-                        shape = blockShape,
-                        color = Color.Transparent,
+                            .fillMaxWidth()
+                            .clip(blockShape),
+                        contentAlignment = Alignment.TopStart
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clipToBounds()
-                                .then(
-                                    if (chatAnimationsEnabled) {
-                                        Modifier.animateContentSize(
-                                            animationSpec = tween(
-                                                durationMillis = 350,
-                                                easing = FastOutSlowInEasing
-                                            )
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (cachedBitmap != null) {
-                                Image(
-                                    bitmap = cachedBitmap!!,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(contentHeightDp.dp)
-                                )
-                            } else {
-                                AndroidView(
-                                    factory = { ctx ->
-                                        WebView(ctx).apply {
-                                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                            with(this.settings) {
-                                                javaScriptEnabled = true
-                                                domStorageEnabled = false
-                                                allowFileAccess = false
-                                                allowContentAccess = false
-                                                setSupportZoom(true)
-                                                builtInZoomControls = true
-                                                displayZoomControls = false
-                                            }
-                                            isVerticalScrollBarEnabled = false
-                                            isHorizontalScrollBarEnabled = false
-                                            overScrollMode = View.OVER_SCROLL_NEVER
-                                            tag = code
-                                            addJavascriptInterface(jsInterface, "AndroidInterface")
-                                            webViewClient = object : WebViewClient() {
-                                                override fun onPageFinished(view: WebView?, url: String?) {
-                                                    super.onPageFinished(view, url)
-                                                    view?.evaluateJavascript(
-                                                        "(function() { var r = document.getElementById('artifact-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : (document.body.scrollHeight || 0); })();"
-                                                    ) { result ->
-                                                        val measured = result?.replace("\"", "")?.toIntOrNull() ?: 0
-                                                        if (measured > 30) {
-                                                            val finalH = measured + 14
-                                                            contentHeightDp = finalH
-                                                            artifactHeightCache.put(code, finalH)
-                                                        }
+                        AndroidView(
+                            factory = { ctx ->
+                                android.widget.FrameLayout(ctx).apply {
+                                    layoutParams = android.view.ViewGroup.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                    val wv = WebView(ctx).apply {
+                                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                        with(this.settings) {
+                                            javaScriptEnabled = true
+                                            domStorageEnabled = true
+                                            allowFileAccess = false
+                                            allowContentAccess = false
+                                            setSupportZoom(true)
+                                            builtInZoomControls = true
+                                            displayZoomControls = false
+                                        }
+                                        isVerticalScrollBarEnabled = false
+                                        isHorizontalScrollBarEnabled = false
+                                        overScrollMode = View.OVER_SCROLL_NEVER
+                                        tag = code
+                                        addJavascriptInterface(jsInterface, "AndroidInterface")
+                                        webViewClient = object : WebViewClient() {
+                                            override fun onPageFinished(view: WebView?, url: String?) {
+                                                super.onPageFinished(view, url)
+                                                view?.evaluateJavascript(
+                                                    "(function() { var r = document.getElementById('artifact-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : (document.body.scrollHeight || 0); })();"
+                                                ) { result ->
+                                                    val measured = result?.replace("\"", "")?.toIntOrNull() ?: 0
+                                                    if (measured > 30) {
+                                                        val finalH = measured + 14
+                                                        contentHeightDp = finalH
+                                                        artifactHeightCache.put(code, finalH)
                                                     }
-                                                    view?.postDelayed({
-                                                        runCatching {
-                                                            val w = view.width
-                                                            val h = view.height
-                                                            if (w > 0 && h > 0) {
-                                                                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                                                                val c = Canvas(b)
-                                                                view.draw(c)
-                                                                val imgBmp = b.asImageBitmap()
-                                                                artifactBitmapCache.put(code, imgBmp)
-                                                                cachedBitmap = imgBmp
-                                                                if (settings.displaySetting.autoSaveArtifactsToStorage) {
-                                                                    scope.launch(Dispatchers.IO) {
-                                                                        ArtifactStorageManager.saveArtifact(context, code, b)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }, 300)
                                                 }
                                             }
-                                            loadDataWithBaseURL(
-                                                "http://localhost/",
-                                                sanitizeResult.documentHtml,
-                                                "text/html",
-                                                "utf-8",
-                                                null
-                                            )
-                                            webViewInstance = this
                                         }
-                                    },
-                                    update = { webView ->
-                                        webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                        webViewInstance = webView
-                                        if (webView.tag != code) {
-                                            webView.tag = code
-                                            webView.loadDataWithBaseURL(
-                                                "http://localhost/",
-                                                sanitizeResult.documentHtml,
-                                                "text/html",
-                                                "utf-8",
-                                                null
-                                            )
-                                        } else {
-                                            webView.invalidate()
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(contentHeightDp.dp)
+                                        loadDataWithBaseURL(
+                                            "http://localhost/",
+                                            sanitizeResult.documentHtml,
+                                            "text/html",
+                                            "utf-8",
+                                            null
+                                        )
+                                        webViewInstance = this
+                                    }
+                                    addView(
+                                        wv,
+                                        android.widget.FrameLayout.LayoutParams(
+                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    )
+                                }
+                            },
+                            update = { container ->
+                                val webView = container.getChildAt(0) as? WebView ?: return@AndroidView
+                                webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                webViewInstance = webView
+                                if (webView.tag != code) {
+                                    webView.tag = code
+                                    webView.loadDataWithBaseURL(
+                                        "http://localhost/",
+                                        sanitizeResult.documentHtml,
+                                        "text/html",
+                                        "utf-8",
+                                        null
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(contentHeightDp.dp)
+                        )
+
+                        // Top-Right Floating Menu Button (Always accessible without gesture conflicts)
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                showActionSheet = true
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(34.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                                    shape = CircleShape
                                 )
-                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = "Artifact Options",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }

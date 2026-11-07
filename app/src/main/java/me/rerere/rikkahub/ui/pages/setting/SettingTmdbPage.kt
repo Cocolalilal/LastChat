@@ -18,19 +18,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PhotoSizeSelectActual
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,10 +54,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.service.TmdbService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -64,12 +71,14 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val tmdb = settings.tmdbSetting
+    val tmdbService = koinInject<TmdbService>()
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
@@ -81,10 +90,121 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
     var manualAccountIdInput by remember(tmdb.accountId) { mutableStateOf(tmdb.accountId) }
     var manualUsernameInput by remember(tmdb.username) { mutableStateOf(tmdb.username) }
 
+    // Direct Login Dialog State
+    var showLoginDialog by remember { mutableStateOf(false) }
+    var loginUsername by remember { mutableStateOf("") }
+    var loginPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var isLoggingIn by remember { mutableStateOf(false) }
+
     fun updateTmdb(transform: (me.rerere.rikkahub.data.datastore.TmdbSetting) -> me.rerere.rikkahub.data.datastore.TmdbSetting) {
         vm.updateSettings { current ->
             current.copy(tmdbSetting = transform(current.tmdbSetting))
         }
+    }
+
+    val isConnected = tmdb.userAccessToken.isNotBlank() || tmdb.sessionId.isNotBlank()
+
+    // Direct Login Dialog
+    if (showLoginDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isLoggingIn) showLoginDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.Login, null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Sign in with TMDB")
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enter your TMDB account username and password to connect directly without manual tokens:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = loginUsername,
+                        onValueChange = { loginUsername = it },
+                        label = { Text("Username") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !isLoggingIn
+                    )
+                    OutlinedTextField(
+                        value = loginPassword,
+                        onValueChange = { loginPassword = it },
+                        label = { Text("Password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = "Toggle password visibility"
+                                )
+                            }
+                        },
+                        enabled = !isLoggingIn
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (loginUsername.isBlank() || loginPassword.isBlank()) {
+                            toaster.show("Username and password are required")
+                            return@Button
+                        }
+                        scope.launch {
+                            isLoggingIn = true
+                            haptics.perform(HapticPattern.Pop)
+                            val res = tmdbService.loginWithCredentials(loginUsername, loginPassword)
+                            isLoggingIn = false
+                            if (res.success) {
+                                haptics.perform(HapticPattern.Success)
+                                updateTmdb {
+                                    it.copy(
+                                        username = res.username,
+                                        accountId = res.accountId,
+                                        sessionId = res.sessionId,
+                                        avatarPath = res.avatarPath,
+                                        includeAdult = res.includeAdult
+                                    )
+                                }
+                                toaster.show("Signed in as @${res.username}")
+                                showLoginDialog = false
+                                loginPassword = ""
+                            } else {
+                                toaster.show(res.errorMessage)
+                            }
+                        }
+                    },
+                    enabled = !isLoggingIn
+                ) {
+                    if (isLoggingIn) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Sign In")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLoginDialog = false },
+                    enabled = !isLoggingIn
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showManualTokenDialog) {
@@ -186,8 +306,8 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
 
             // TMDB v4 Account Authorization
             item {
-                SettingsGroup(title = "TMDB V4 AUTHORIZATION") {
-                    if (tmdb.userAccessToken.isNotBlank()) {
+                SettingsGroup(title = "TMDB ACCOUNT AUTHORIZATION") {
+                    if (isConnected) {
                         // Authorized State Card
                         Card(
                             colors = CardDefaults.cardColors(
@@ -221,7 +341,7 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = if (tmdb.accountId.isNotBlank()) "Account ID: ${tmdb.accountId}" else "Active v4 User Token",
+                                            text = if (tmdb.accountId.isNotBlank()) "Account ID: ${tmdb.accountId}" else "Active TMDB Session",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -244,6 +364,7 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
                                             updateTmdb {
                                                 it.copy(
                                                     userAccessToken = "",
+                                                    sessionId = "",
                                                     accountId = "",
                                                     username = "",
                                                     avatarPath = ""
@@ -296,7 +417,7 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "Sign in to The Movie Database to access your watchlist, sync episodes, and add shows seamlessly.",
+                                            text = "Sign in directly with your TMDB username & password or paste an API token to access your watchlist and track shows.",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -310,16 +431,12 @@ fun SettingTmdbPage(vm: SettingVM = koinViewModel()) {
                                     Button(
                                         onClick = {
                                             haptics.perform(HapticPattern.Pop)
-                                            // Launch TMDB settings/auth
-                                            val url = "https://www.themoviedb.org/settings/api"
-                                            runCatching {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                            }
+                                            showLoginDialog = true
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(Icons.Rounded.OpenInNew, null, modifier = Modifier.size(16.dp))
-                                        Text(modifier = Modifier.padding(start = 6.dp), text = "Get v4 Token")
+                                        Icon(Icons.Rounded.Login, null, modifier = Modifier.size(16.dp))
+                                        Text(modifier = Modifier.padding(start = 6.dp), text = "Sign In")
                                     }
                                     OutlinedButton(
                                         onClick = { showManualTokenDialog = true },

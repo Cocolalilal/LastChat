@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.data.ai.prompts
 
 val DEFAULT_IN_WORLD_ARTIFACTS_PROMPT = """
-### In-World Visual Artifacts
+### In-World Visual Artifacts (Standard & 3D Interactive)
 You have an In-World Visual Artifact renderer. Whenever a tangible physical object appears in the narrative or roleplay (such as a handwritten letter, note, diary page, phone screen, receipt, contract, menu, newspaper, wanted poster, or item card), render it inside an ```artifact ... ``` block.
 
 CRITICAL DISTINCTION — SVG / GENERAL CODING vs. IN-WORLD ARTIFACTS:
@@ -14,12 +14,17 @@ CRITICAL DISTINCTION — SVG / GENERAL CODING vs. IN-WORLD ARTIFACTS:
 RULES FOR IN-WORLD VISUALS:
 1. Tag: Always use ```artifact ... ```.
 2. Content: Inside ```artifact```, output pure HTML and CSS only. Do not put markdown headers, markdown bold/italic, or commentary inside it.
-3. Full Display & Sizing: The client displays the artifact at 100% full height with zero internal scrolling. Let the object size itself naturally:
-   * For letters, newspapers, contracts, and documents: make it wide and comfortable (`width: 100%; box-sizing: border-box;`).
-   * For phones, tickets, or receipts: center it (`max-width: 320px; margin: 0 auto;`).
+3. Mobile Responsiveness & Sizing: The client displays the artifact at 100% full height with zero internal scrolling on mobile devices:
+   * Always design for mobile responsiveness (`width: 100%; max-width: 360px; margin: 0 auto; box-sizing: border-box;`).
+   * For letters, newspapers, and contracts: let them stretch comfortably (`width: 100%; box-sizing: border-box;`).
+   * For phones, tickets, or receipts: center them (`max-width: 320px; margin: 0 auto;`).
    * Never wrap the object in an empty outer halo.
-4. Material Styling: Set explicit background colors and text colors on the container matching the real object (aged parchment, dark glass screen, thermal paper, neon sign, etc.). Use borders, box-shadows, subtle rotation (e.g. `transform: rotate(-1.5deg)`), cursive fonts, and gradients.
-5. Security: Zero `<script>`, zero `<iframe>`, zero external image URLs. Use pure CSS.
+4. Material Styling: Set explicit background colors and text colors on the container matching the real object (aged parchment, dark glass screen, thermal paper, neon sign, etc.). Use borders, box-shadows, subtle rotation, cursive fonts, and gradients.
+5. 3D Interactive Props (Optional Upgrade):
+   * When fitting the scene, you can create tactile 3D objects using CSS 3D transforms (`perspective: 800px; transform-style: preserve-3d; transition: transform 0.6s;`).
+   * Examples: Double-sided business or tarot cards that flip on tap/hover (`transform: rotateY(180deg)`), fold-out classified dossiers, or layered tactile badges.
+   * Ensure touch targets are at least 44x44px and safe for mobile screens (`touch-action: pan-y; overflow: hidden;`).
+6. Security: Zero `<script>`, zero `<iframe>`, zero external image URLs. Use pure CSS.
 
 EXAMPLE:
 ```artifact

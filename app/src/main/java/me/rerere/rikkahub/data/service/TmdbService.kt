@@ -13,6 +13,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.put
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import okhttp3.MediaType.Companion.toMediaType
@@ -265,12 +266,14 @@ class TmdbService(
     }
 
     suspend fun manageWatchlist(action: String, id: Int? = null, type: String = "tv"): JsonElement = withContext(Dispatchers.IO) {
-        val userToken = settingsStore.settingsFlow.value.tmdbSetting.userAccessToken.trim()
-        val accountId = settingsStore.settingsFlow.value.tmdbSetting.accountId.trim()
+        val tmdb = settingsStore.settingsFlow.value.tmdbSetting
+        val userToken = tmdb.userAccessToken.trim()
+        val sessionId = tmdb.sessionId.trim()
+        val accountId = tmdb.accountId.trim()
 
-        if (userToken.isBlank() || accountId.isBlank()) {
+        if ((userToken.isBlank() && sessionId.isBlank()) || accountId.isBlank()) {
             return@withContext buildJsonObject {
-                put("error", "TMDB account not connected. Please authorize or add your v4 User Access Token in Settings -> Plugins -> Movies & TV.")
+                put("error", "TMDB account not connected. Please sign in or add your v4 User Access Token in Settings -> Plugins -> Movies & TV.")
             }
         }
 
@@ -279,19 +282,26 @@ class TmdbService(
         if (action.lowercase() in listOf("add", "remove")) {
             val mediaId = id ?: return@withContext buildJsonObject { put("error", "id is required for add/remove") }
             val isWatchlist = action.lowercase() == "add"
-            val url = "https://api.themoviedb.org/3/account/$accountId/watchlist"
+            val url = if (sessionId.isNotBlank()) {
+                "https://api.themoviedb.org/3/account/$accountId/watchlist?session_id=$sessionId"
+            } else {
+                "https://api.themoviedb.org/3/account/$accountId/watchlist"
+            }
             val bodyJson = """{"media_type":"$endpoint","media_id":$mediaId,"watchlist":$isWatchlist}"""
 
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(url)
-                .header("Authorization", "Bearer $userToken")
                 .header("Content-Type", "application/json")
                 .post(bodyJson.toRequestBody(jsonMediaType))
-                .build()
+
+            if (userToken.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $userToken")
+            } else {
+                requestBuilder.header("Authorization", "Bearer $defaultBearerToken")
+            }
 
             runCatching {
-                okHttpClient.newCall(request).execute().use { response ->
-                    val resBody = response.body?.string().orEmpty()
+                okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
                     buildJsonObject {
                         put("success", response.isSuccessful)
                         put("action", action)
@@ -305,15 +315,24 @@ class TmdbService(
             }
         } else {
             // Read watchlist
-            val url = "https://api.themoviedb.org/4/account/$accountId/$endpoint/watchlist"
-            val request = Request.Builder()
+            val url = if (sessionId.isNotBlank()) {
+                val plural = if (endpoint == "tv") "tv" else "movies"
+                "https://api.themoviedb.org/3/account/$accountId/watchlist/$plural?session_id=$sessionId"
+            } else {
+                "https://api.themoviedb.org/4/account/$accountId/$endpoint/watchlist"
+            }
+            val requestBuilder = Request.Builder()
                 .url(url)
-                .header("Authorization", "Bearer $userToken")
                 .header("Accept", "application/json")
-                .build()
+
+            if (userToken.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $userToken")
+            } else {
+                requestBuilder.header("Authorization", "Bearer $defaultBearerToken")
+            }
 
             runCatching {
-                okHttpClient.newCall(request).execute().use { response ->
+                okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
                     val resBody = response.body?.string().orEmpty()
                     val parsed = json.parseToJsonElement(resBody).jsonObject
                     parsed
@@ -323,4 +342,105 @@ class TmdbService(
             }
         }
     }
+
+    suspend fun loginWithCredentials(username: String, password: String): TmdbLoginResult = withContext(Dispatchers.IO) {
+        runCatching {
+            // Step 1: Create request token
+            val tokenReq = Request.Builder()
+                .url("https://api.themoviedb.org/3/authentication/token/new")
+                .header("Authorization", "Bearer $defaultBearerToken")
+                .header("Accept", "application/json")
+                .build()
+
+            val tokenRes = okHttpClient.newCall(tokenReq).execute().use { resp ->
+                val b = resp.body?.string().orEmpty()
+                json.parseToJsonElement(b).jsonObject
+            }
+            val requestToken = tokenRes["request_token"]?.jsonPrimitive?.contentOrNull
+                ?: return@withContext TmdbLoginResult(false, errorMessage = "Failed to obtain request token")
+
+            // Step 2: Validate with login credentials
+            val loginBody = buildJsonObject {
+                put("username", username.trim())
+                put("password", password)
+                put("request_token", requestToken)
+            }.toString()
+
+            val loginReq = Request.Builder()
+                .url("https://api.themoviedb.org/3/authentication/token/validate_with_login")
+                .header("Authorization", "Bearer $defaultBearerToken")
+                .header("Content-Type", "application/json")
+                .post(loginBody.toRequestBody(jsonMediaType))
+                .build()
+
+            val loginRes = okHttpClient.newCall(loginReq).execute().use { resp ->
+                val b = resp.body?.string().orEmpty()
+                val parsed = json.parseToJsonElement(b).jsonObject
+                if (!resp.isSuccessful) {
+                    val msg = parsed["status_message"]?.jsonPrimitive?.contentOrNull ?: "Invalid username or password"
+                    return@withContext TmdbLoginResult(false, errorMessage = msg)
+                }
+                parsed
+            }
+            val validatedToken = loginRes["request_token"]?.jsonPrimitive?.contentOrNull ?: requestToken
+
+            // Step 3: Create session
+            val sessionBody = buildJsonObject {
+                put("request_token", validatedToken)
+            }.toString()
+
+            val sessionReq = Request.Builder()
+                .url("https://api.themoviedb.org/3/authentication/session/new")
+                .header("Authorization", "Bearer $defaultBearerToken")
+                .header("Content-Type", "application/json")
+                .post(sessionBody.toRequestBody(jsonMediaType))
+                .build()
+
+            val sessionRes = okHttpClient.newCall(sessionReq).execute().use { resp ->
+                val b = resp.body?.string().orEmpty()
+                json.parseToJsonElement(b).jsonObject
+            }
+            val sessionId = sessionRes["session_id"]?.jsonPrimitive?.contentOrNull
+                ?: return@withContext TmdbLoginResult(false, errorMessage = "Failed to create session")
+
+            // Step 4: Fetch user account profile
+            val accountReq = Request.Builder()
+                .url("https://api.themoviedb.org/3/account?session_id=$sessionId")
+                .header("Authorization", "Bearer $defaultBearerToken")
+                .header("Accept", "application/json")
+                .build()
+
+            val accountRes = okHttpClient.newCall(accountReq).execute().use { resp ->
+                val b = resp.body?.string().orEmpty()
+                json.parseToJsonElement(b).jsonObject
+            }
+
+            val accountId = accountRes["id"]?.jsonPrimitive?.intOrNull?.toString()
+                ?: accountRes["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val fetchedUsername = accountRes["username"]?.jsonPrimitive?.contentOrNull ?: username
+            val adult = accountRes["include_adult"]?.jsonPrimitive?.booleanOrNull ?: false
+            val avatarPath = accountRes["avatar"]?.jsonObject?.get("tmdb")?.jsonObject?.get("avatar_path")?.jsonPrimitive?.contentOrNull.orEmpty()
+
+            TmdbLoginResult(
+                success = true,
+                username = fetchedUsername,
+                accountId = accountId,
+                sessionId = sessionId,
+                avatarPath = avatarPath,
+                includeAdult = adult
+            )
+        }.getOrElse { e ->
+            TmdbLoginResult(false, errorMessage = e.message ?: "Network error during TMDB login")
+        }
+    }
 }
+
+data class TmdbLoginResult(
+    val success: Boolean,
+    val username: String = "",
+    val accountId: String = "",
+    val sessionId: String = "",
+    val avatarPath: String = "",
+    val includeAdult: Boolean = false,
+    val errorMessage: String = ""
+)

@@ -369,7 +369,7 @@ private fun DefaultSTTModelSetting(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = profile.name,
+                                    text = if (profile.isDefault) "${profile.name} (Default)" else profile.name,
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -393,6 +393,25 @@ private fun DefaultSTTModelSetting(
                                         )
                                     }
                                 }
+                            }
+
+                            if (!profile.isDefault) {
+                                OutlinedTextField(
+                                    value = profile.name,
+                                    onValueChange = { newName ->
+                                        vm.updateSettings { current ->
+                                            current.copy(
+                                                smartMicProfiles = current.smartMicProfiles.map {
+                                                    if (it.id == profile.id) it.copy(name = newName) else it
+                                                }
+                                            )
+                                        }
+                                    },
+                                    label = { Text("Profile Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = AppShapes.CardSmall
+                                )
                             }
 
                             // Model Selector for this profile

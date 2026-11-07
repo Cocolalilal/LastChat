@@ -262,7 +262,7 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
     )
     LocalToolOption.Tmdb -> listOf(
         LocalToolDefinitionPreview(
-            name = "tmdb_search",
+            name = "search_media",
             description = "Search for movies, TV series, anime, and shows on TMDB to find titles, years, ratings, and IDs.",
             schema = InputSchema.Obj(
                 properties = buildJsonObject {
@@ -279,7 +279,7 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
             )
         ),
         LocalToolDefinitionPreview(
-            name = "tmdb_get_details",
+            name = "get_media_info",
             description = "Get comprehensive details of a movie or TV show including synopsis, episode count, seasons, genres, cast, and user ratings.",
             schema = InputSchema.Obj(
                 properties = buildJsonObject {
@@ -289,14 +289,14 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
                     })
                     put("type", buildJsonObject {
                         put("type", "string")
-                        put("description", "'tv' or 'movie'")
+                        put("description", "'tv' (default) or 'movie'")
                     })
                 },
                 required = listOf("id")
             )
         ),
         LocalToolDefinitionPreview(
-            name = "tmdb_get_images",
+            name = "get_media_art",
             description = "Fetch multiple high-resolution posters, 16:9 backdrops, and stills for a show or movie to display to the user.",
             schema = InputSchema.Obj(
                 properties = buildJsonObject {
@@ -306,14 +306,14 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
                     })
                     put("type", buildJsonObject {
                         put("type", "string")
-                        put("description", "'tv' or 'movie'")
+                        put("description", "'tv' (default) or 'movie'")
                     })
                 },
                 required = listOf("id")
             )
         ),
         LocalToolDefinitionPreview(
-            name = "tmdb_get_recommendations",
+            name = "get_media_recommendations",
             description = "Get algorithmic recommendations similar to a given movie or TV show.",
             schema = InputSchema.Obj(
                 properties = buildJsonObject {
@@ -323,20 +323,20 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
                     })
                     put("type", buildJsonObject {
                         put("type", "string")
-                        put("description", "'tv' or 'movie'")
+                        put("description", "'tv' (default) or 'movie'")
                     })
                 },
                 required = listOf("id")
             )
         ),
         LocalToolDefinitionPreview(
-            name = "tmdb_watchlist",
+            name = "manage_watchlist",
             description = "Get the user's real TMDB watchlist or add a movie/show to their watchlist on their behalf.",
             schema = InputSchema.Obj(
                 properties = buildJsonObject {
                     put("action", buildJsonObject {
                         put("type", "string")
-                        put("description", "Action to perform: 'get' to read watchlist, 'add' or 'remove' to modify")
+                        put("description", "Action to perform: 'get' (default) to read watchlist, 'add' or 'remove' to modify")
                     })
                     put("id", buildJsonObject {
                         put("type", "integer")
@@ -344,7 +344,7 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
                     })
                     put("type", buildJsonObject {
                         put("type", "string")
-                        put("description", "'tv' or 'movie'")
+                        put("description", "'tv' (default) or 'movie'")
                     })
                 },
                 required = listOf("action")
@@ -804,6 +804,7 @@ class LocalTools(
                         put("type", buildJsonObject {
                             put("type", "string")
                             put("description", "Search scope: 'multi' (default), 'movie', or 'tv'")
+                            put("default", "multi")
                         })
                     },
                     required = listOf("query")
@@ -813,27 +814,34 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val query = params["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "multi"
+                val query = params["query"]?.jsonPrimitive?.contentOrNull
+                    ?: params["title"]?.jsonPrimitive?.contentOrNull
+                    ?: params["search"]?.jsonPrimitive?.contentOrNull
+                    ?: params["name"]?.jsonPrimitive?.contentOrNull
+                    ?: ""
+                val type = params["type"]?.jsonPrimitive?.contentOrNull
+                    ?: params["media_type"]?.jsonPrimitive?.contentOrNull
+                    ?: "multi"
                 tmdb.searchMedia(query = query, type = type)
             }
         )
     }
 
-    val tmdbDetailsTool by lazy {
+    val mediaInfoTool by lazy {
         Tool(
-            name = "tmdb_get_details",
+            name = "get_media_info",
             description = "Get comprehensive details of a movie or TV show including synopsis, episode count, seasons, genres, cast, and user ratings.",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("id", buildJsonObject {
                             put("type", "integer")
-                            put("description", "The TMDB numeric media ID")
+                            put("description", "The TMDB numeric media ID (from search_media)")
                         })
                         put("type", buildJsonObject {
                             put("type", "string")
-                            put("description", "'tv' or 'movie'")
+                            put("description", "'tv' (default) or 'movie'")
+                            put("default", "tv")
                         })
                     },
                     required = listOf("id")
@@ -843,16 +851,21 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
-                val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["media_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["tmdb_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: error("Numeric 'id' is required")
+                val type = params["type"]?.jsonPrimitive?.contentOrNull
+                    ?: params["media_type"]?.jsonPrimitive?.contentOrNull
+                    ?: "tv"
                 tmdb.getDetails(id = id, type = type)
             }
         )
     }
 
-    val tmdbImagesTool by lazy {
+    val mediaArtTool by lazy {
         Tool(
-            name = "tmdb_get_images",
+            name = "get_media_art",
             description = "Fetch multiple high-resolution posters, 16:9 backdrops, and stills for a show or movie to display to the user.",
             parameters = {
                 InputSchema.Obj(
@@ -863,7 +876,8 @@ class LocalTools(
                         })
                         put("type", buildJsonObject {
                             put("type", "string")
-                            put("description", "'tv' or 'movie'")
+                            put("description", "'tv' (default) or 'movie'")
+                            put("default", "tv")
                         })
                     },
                     required = listOf("id")
@@ -873,16 +887,21 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
-                val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["media_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["tmdb_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: error("Numeric 'id' is required")
+                val type = params["type"]?.jsonPrimitive?.contentOrNull
+                    ?: params["media_type"]?.jsonPrimitive?.contentOrNull
+                    ?: "tv"
                 tmdb.getImages(id = id, type = type)
             }
         )
     }
 
-    val tmdbRecommendationsTool by lazy {
+    val mediaRecommendationsTool by lazy {
         Tool(
-            name = "tmdb_get_recommendations",
+            name = "get_media_recommendations",
             description = "Get algorithmic recommendations similar to a given movie or TV show.",
             parameters = {
                 InputSchema.Obj(
@@ -893,7 +912,8 @@ class LocalTools(
                         })
                         put("type", buildJsonObject {
                             put("type", "string")
-                            put("description", "'tv' or 'movie'")
+                            put("description", "'tv' (default) or 'movie'")
+                            put("default", "tv")
                         })
                     },
                     required = listOf("id")
@@ -903,23 +923,29 @@ class LocalTools(
             execute = { args ->
                 val tmdb = tmdbService ?: error("TMDB service is not available")
                 val params = args.jsonObject
-                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: error("id is required")
-                val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
+                val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["media_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: params["tmdb_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: error("Numeric 'id' is required")
+                val type = params["type"]?.jsonPrimitive?.contentOrNull
+                    ?: params["media_type"]?.jsonPrimitive?.contentOrNull
+                    ?: "tv"
                 tmdb.getRecommendations(id = id, type = type)
             }
         )
     }
 
-    val tmdbWatchlistTool by lazy {
+    val mediaWatchlistTool by lazy {
         Tool(
-            name = "tmdb_watchlist",
-            description = "Get the user's real TMDB watchlist or add a movie/show to their watchlist on their behalf.",
+            name = "manage_watchlist",
+            description = "Get the user's real TMDB watchlist or add/remove a movie or show on their behalf.",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("action", buildJsonObject {
                             put("type", "string")
-                            put("description", "Action to perform: 'get' to read watchlist, 'add' or 'remove' to modify")
+                            put("description", "Action to perform: 'get' (default) to read watchlist, 'add' or 'remove' to modify")
+                            put("default", "get")
                         })
                         put("id", buildJsonObject {
                             put("type", "integer")
@@ -927,7 +953,8 @@ class LocalTools(
                         })
                         put("type", buildJsonObject {
                             put("type", "string")
-                            put("description", "'tv' or 'movie'")
+                            put("description", "'tv' (default) or 'movie'")
+                            put("default", "tv")
                         })
                     },
                     required = listOf("action")
@@ -939,7 +966,10 @@ class LocalTools(
                 val params = args.jsonObject
                 val action = params["action"]?.jsonPrimitive?.contentOrNull ?: "get"
                 val id = params["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
-                val type = params["type"]?.jsonPrimitive?.contentOrNull ?: "tv"
+                    ?: params["media_id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                val type = params["type"]?.jsonPrimitive?.contentOrNull
+                    ?: params["media_type"]?.jsonPrimitive?.contentOrNull
+                    ?: "tv"
                 tmdb.manageWatchlist(action = action, id = id, type = type)
             }
         )
@@ -973,11 +1003,19 @@ class LocalTools(
             tools.add(imageGenerationTool)
         }
         if (options.contains(LocalToolOption.Tmdb) && tmdbService != null) {
-            tools.add(tmdbSearchTool)
-            tools.add(tmdbDetailsTool)
-            tools.add(tmdbImagesTool)
-            tools.add(tmdbRecommendationsTool)
-            tools.add(tmdbWatchlistTool)
+            // Clean named tools
+            tools.add(searchMediaTool)
+            tools.add(mediaInfoTool)
+            tools.add(mediaArtTool)
+            tools.add(mediaRecommendationsTool)
+            tools.add(mediaWatchlistTool)
+
+            // Transparent legacy aliases so both naming styles work
+            tools.add(searchMediaTool.copy(name = "tmdb_search"))
+            tools.add(mediaInfoTool.copy(name = "tmdb_get_details"))
+            tools.add(mediaArtTool.copy(name = "tmdb_get_images"))
+            tools.add(mediaRecommendationsTool.copy(name = "tmdb_get_recommendations"))
+            tools.add(mediaWatchlistTool.copy(name = "tmdb_watchlist"))
         }
         return tools
     }

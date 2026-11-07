@@ -1213,29 +1213,34 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(
                 """
-                ## Movies, TV Series & 3D Media Showcase
-                - You have access to TMDB media tools (`tmdb_search`, `tmdb_get_details`, `tmdb_get_images`, `tmdb_get_recommendations`, `tmdb_watchlist`).
-                - When recommending movies, anime, or TV shows, or presenting posters/backdrops to the user, render an interactive 3D media deck using the ```media_deck ... ``` code fence with this JSON shape:
-                  ```media_deck
-                  {
-                    "title": "Velvet Picks",
-                    "items": [
-                      {
-                        "tmdb_id": 37854,
-                        "media_type": "tv",
-                        "title": "Title Name",
-                        "year": "1999",
-                        "rating": "8.7",
-                        "progress": "Ep 594 / 1122",
-                        "poster": "https://image.tmdb.org/t/p/w500/<hash>.jpg",
-                        "badges": ["Anime", "Action", "Adventure"],
-                        "hook": "Your personal companion commentary explaining why you picked this."
-                      }
-                    ]
-                  }
-                  ```
-                - You can include any number of items (1, 2, 3, 5, etc.).
-                - When asked to show posters or backdrops, fetch them with `tmdb_get_images` and embed them in the deck.
+                ## Entertainment & TMDB Media Tools
+                When discussing, searching, or recommending movies, TV shows, or anime:
+                - `search_media(query, type)`: Find shows or movies. Parameters: `query` (title/actor name), `type` ('multi', 'tv', 'movie', default 'multi').
+                - `get_media_info(id, type)`: Full details (synopsis, seasons, episodes, cast, rating). Parameters: `id` (numeric TMDB id), `type` ('tv' or 'movie', default 'tv').
+                - `get_media_art(id, type)`: High-res posters and 16:9 cinematic backdrops. Parameters: `id`, `type` (default 'tv').
+                - `get_media_recommendations(id, type)`: Algorithmic recommendations. Parameters: `id`, `type` (default 'tv').
+                - `manage_watchlist(action, id, type)`: View or modify watchlist. Parameters: `action` ('get' (default), 'add', 'remove'), `id` (numeric id), `type` ('tv' or 'movie').
+
+                When recommending titles or presenting multiple shows to the user, ALWAYS present them as an interactive 3D Cover Flow deck using the ```media_deck``` code fence:
+                ```media_deck
+                {
+                  "title": "Companion Recommendations",
+                  "items": [
+                    {
+                      "tmdb_id": 37854,
+                      "media_type": "tv",
+                      "title": "One Piece",
+                      "year": "1999",
+                      "rating": "8.7",
+                      "progress": "Ep 594 / 1122",
+                      "poster": "https://image.tmdb.org/t/p/w500/<hash>.jpg",
+                      "badges": ["Anime", "Action"],
+                      "hook": "Companion's personalized commentary explaining why you picked this."
+                    }
+                  ]
+                }
+                ```
+                You can recommend any number of items (1, 2, 3, 5, etc.). Always keep the deck mobile-friendly and include real poster URLs returned by the media tools.
                 """.trimIndent()
             )
         }

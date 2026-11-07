@@ -6,20 +6,30 @@ import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,6 +52,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.extractJsonPayload
+import me.rerere.rikkahub.utils.writeClipboardText
 
 @Serializable
 data class MediaDeckItem(
@@ -98,6 +110,7 @@ private class MediaDeckAndroidBridge(
  * Supports arbitrary number of items (N >= 1) with Cover Flow geometry, touch gestures,
  * ambient theme glow, and live TMDB watchlist integration.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun MediaDeckArtifact(
@@ -106,10 +119,12 @@ fun MediaDeckArtifact(
     modifier: Modifier = Modifier,
 ) {
     val darkMode = LocalDarkMode.current
+    val context = LocalContext.current
     val toaster = LocalToaster.current
     val settings = LocalSettings.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val scope = rememberCoroutineScope()
+    var showActionSheet by remember { mutableStateOf(false) }
 
     val payload = remember(code) {
         runCatching {
@@ -159,15 +174,45 @@ fun MediaDeckArtifact(
         buildDeckDocument(payload, darkMode)
     }
 
+    if (showActionSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showActionSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                ListItem(
+                    headlineContent = { Text("Copy Media Deck JSON") },
+                    leadingContent = {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                    },
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    trailingContent = {},
+                )
+                androidx.compose.material3.Button(
+                    onClick = {
+                        writeClipboardText(context, code)
+                        toaster.show("Copied deck JSON to clipboard")
+                        showActionSheet = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    Text("Copy Code")
+                }
+            }
+        }
+    }
+
     AnimatedContent(
         targetState = hasEnd,
         transitionSpec = {
-            (fadeIn(animationSpec = tween(600, delayMillis = 100, easing = LinearOutSlowInEasing)) +
-             scaleIn(initialScale = 0.96f, animationSpec = tween(600, delayMillis = 100, easing = LinearOutSlowInEasing)))
-                .togetherWith(
-                    fadeOut(animationSpec = tween(400, easing = FastOutLinearInEasing)) +
-                    scaleOut(targetScale = 1.05f, animationSpec = tween(400, easing = FastOutLinearInEasing))
-                )
+            fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
         },
         label = "MediaDeckPhaseTransition"
     ) { finished ->
@@ -178,37 +223,75 @@ fun MediaDeckArtifact(
                 modifier = modifier
                     .fillMaxWidth()
                     .height(contentHeightDp.dp)
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.TopStart
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        WebView(ctx).apply {
-                            setBackgroundColor(0)
-                            overScrollMode = View.OVER_SCROLL_NEVER
-                            isVerticalScrollBarEnabled = false
-                            isHorizontalScrollBarEnabled = false
+                        FrameLayout(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            val wv = WebView(ctx).apply {
+                                setBackgroundColor(0)
+                                overScrollMode = View.OVER_SCROLL_NEVER
+                                isVerticalScrollBarEnabled = false
+                                isHorizontalScrollBarEnabled = false
 
-                            with(this.settings) {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                allowFileAccess = false
-                                allowContentAccess = false
-                                cacheMode = WebSettings.LOAD_DEFAULT
-                                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                with(this.settings) {
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = true
+                                    allowFileAccess = false
+                                    allowContentAccess = false
+                                    cacheMode = WebSettings.LOAD_DEFAULT
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                }
+
+                                addJavascriptInterface(bridge, "AndroidInterface")
+                                loadDataWithBaseURL("https://image.tmdb.org", htmlDoc, "text/html", "UTF-8", null)
                             }
-
-                            addJavascriptInterface(bridge, "AndroidInterface")
-                            loadDataWithBaseURL("https://image.tmdb.org", htmlDoc, "text/html", "UTF-8", null)
+                            addView(
+                                wv,
+                                FrameLayout.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                            )
                         }
                     },
-                    update = { view ->
-                        if (view.tag != htmlDoc) {
-                            view.tag = htmlDoc
-                            view.loadDataWithBaseURL("https://image.tmdb.org", htmlDoc, "text/html", "UTF-8", null)
+                    update = { container ->
+                        val webView = container.getChildAt(0) as? WebView ?: return@AndroidView
+                        if (webView.tag != htmlDoc) {
+                            webView.tag = htmlDoc
+                            webView.loadDataWithBaseURL("https://image.tmdb.org", htmlDoc, "text/html", "UTF-8", null)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().height(contentHeightDp.dp)
                 )
+
+                // Top-right Menu Button (Direct Options Access)
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showActionSheet = true
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(32.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                            shape = CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Deck Options",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }
@@ -553,7 +636,7 @@ private fun buildDeckDocument(payload: MediaDeckPayload, darkMode: Boolean): Str
         const card = document.createElement('div');
         card.className = 'poster-card';
         card.id = 'card-' + idx;
-        card.innerHTML = '<img src="' + show.poster + '" alt="' + show.title + '" loading="eager" crossorigin="anonymous"><div class="card-shine"></div>';
+        card.innerHTML = '<img src="' + show.poster + '" alt="' + show.title + '" loading="eager" crossorigin="anonymous" onerror="this.style.opacity=\'0.25\'"><div class="card-shine"></div>';
         card.addEventListener('click', () => { if (idx !== currentIndex) goTo(idx); });
         track.appendChild(card);
 
