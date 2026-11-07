@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.AlertDialog
@@ -38,6 +39,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -107,6 +109,96 @@ fun AssistantMediaPage(
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var showSearchDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var isSyncingTmdb by remember { mutableStateOf(false) }
+
+    fun syncFromTmdb() {
+        if (isSyncingTmdb) return
+        isSyncingTmdb = true
+        scope.launch {
+            var importedCount = 0
+            // 1. Fetch TV Watchlist
+            val tvRes = tmdbService.manageWatchlist("get", type = "tv")
+            val tvObj = tvRes.jsonObject
+            if (tvObj["error"] != null) {
+                val err = tvObj["error"]?.jsonPrimitive?.contentOrNull ?: "Failed to read TV watchlist"
+                toaster.show(err)
+                isSyncingTmdb = false
+                return@launch
+            }
+            val tvResults = tvObj["results"]?.jsonArray
+            tvResults?.forEach { elem ->
+                val obj = elem.jsonObject
+                val id = obj["id"]?.jsonPrimitive?.intOrNull?.toLong() ?: return@forEach
+                val title = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val poster = obj["poster_path"]?.jsonPrimitive?.contentOrNull?.let { "https://image.tmdb.org/t/p/w342$it" }
+                val backdrop = obj["backdrop_path"]?.jsonPrimitive?.contentOrNull?.let { "https://image.tmdb.org/t/p/w780$it" }
+                val overview = obj["overview"]?.jsonPrimitive?.contentOrNull
+                val year = obj["first_air_date"]?.jsonPrimitive?.contentOrNull?.take(4)
+                val rating = obj["vote_average"]?.jsonPrimitive?.doubleOrNull
+
+                val existing = mediaRepo.getItem(assistantId, id, "tv")
+                if (existing == null) {
+                    mediaRepo.upsertItem(
+                        assistantId,
+                        AssistantMediaItem(
+                            tmdbId = id,
+                            mediaType = "tv",
+                            title = title,
+                            posterPath = poster,
+                            backdropPath = backdrop,
+                            overview = overview,
+                            releaseDate = year,
+                            voteAverage = rating,
+                            status = AssistantMediaCategory.PLAN_TO_WATCH.name
+                        )
+                    )
+                    importedCount++
+                }
+            }
+
+            // 2. Fetch Movie Watchlist
+            val movieRes = tmdbService.manageWatchlist("get", type = "movie")
+            val movieObj = movieRes.jsonObject
+            val movieResults = movieObj["results"]?.jsonArray
+            movieResults?.forEach { elem ->
+                val obj = elem.jsonObject
+                val id = obj["id"]?.jsonPrimitive?.intOrNull?.toLong() ?: return@forEach
+                val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val poster = obj["poster_path"]?.jsonPrimitive?.contentOrNull?.let { "https://image.tmdb.org/t/p/w342$it" }
+                val backdrop = obj["backdrop_path"]?.jsonPrimitive?.contentOrNull?.let { "https://image.tmdb.org/t/p/w780$it" }
+                val overview = obj["overview"]?.jsonPrimitive?.contentOrNull
+                val year = obj["release_date"]?.jsonPrimitive?.contentOrNull?.take(4)
+                val rating = obj["vote_average"]?.jsonPrimitive?.doubleOrNull
+
+                val existing = mediaRepo.getItem(assistantId, id, "movie")
+                if (existing == null) {
+                    mediaRepo.upsertItem(
+                        assistantId,
+                        AssistantMediaItem(
+                            tmdbId = id,
+                            mediaType = "movie",
+                            title = title,
+                            posterPath = poster,
+                            backdropPath = backdrop,
+                            overview = overview,
+                            releaseDate = year,
+                            voteAverage = rating,
+                            status = AssistantMediaCategory.PLAN_TO_WATCH.name
+                        )
+                    )
+                    importedCount++
+                }
+            }
+
+            isSyncingTmdb = false
+            haptics.perform(HapticPattern.Success)
+            if (importedCount > 0) {
+                toaster.show("Imported $importedCount titles from TMDB")
+            } else {
+                toaster.show("All TMDB watchlist titles are already synced")
+            }
+        }
+    }
 
     val categories = remember {
         listOf("All") + AssistantMediaCategory.entries.map { it.label }
@@ -130,6 +222,13 @@ fun AssistantMediaPage(
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
+                    IconButton(onClick = { syncFromTmdb() }) {
+                        if (isSyncingTmdb) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Sync from TMDB")
+                        }
+                    }
                     IconButton(onClick = { showSearchDialog = true }) {
                         Icon(imageVector = Icons.Rounded.Add, contentDescription = "Add Media")
                     }
@@ -238,6 +337,24 @@ fun AssistantMediaPage(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Spacer(Modifier.height(4.dp))
+
+                        OutlinedButton(
+                            onClick = { syncFromTmdb() }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (isSyncingTmdb) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }
+                                Text(if (isSyncingTmdb) "Syncing..." else "Import from TMDB Watchlist")
+                            }
+                        }
                     }
                 }
             } else {
