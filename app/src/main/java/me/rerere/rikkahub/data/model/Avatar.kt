@@ -36,8 +36,6 @@ sealed class Avatar {
         val eyeColorHex: String? = null,
         /** Generical eyes: soft shade toward the body colour at the bottom. */
         val eyeShade: Boolean = true,
-        /** Optional character trait overrides (trait name → 0…1); null = style default. */
-        val traits: Map<String, Float>? = null,
         /** Version of the stock colour choice; explicit editor saves opt out of old defaults. */
         val stockColorVersion: Int = 0,
     ) : Avatar() {

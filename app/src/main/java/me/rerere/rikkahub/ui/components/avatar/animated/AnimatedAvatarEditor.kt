@@ -82,8 +82,6 @@ fun AnimatedAvatarEditor(
     var colorPreset by remember { mutableStateOf(startBody.second) }
     var eyeColorHex by remember { mutableStateOf(initialAvatar?.eyeColorHex) }
     var eyeShade by remember { mutableStateOf(initialAvatar?.eyeShade ?: true) }
-    // Personality knobs are set by the model, not here; keep whatever is stored.
-    val traits = initialAvatar?.traits
     var showColorPicker by remember { mutableStateOf(false) }
     var showEyeColorPicker by remember { mutableStateOf(false) }
 
@@ -129,7 +127,6 @@ fun AnimatedAvatarEditor(
             onEyeColor = { eyeColorHex = it },
             eyeShade = eyeShade,
             onEyeShade = { eyeShade = it },
-            traits = traits,
             onPickColor = { showColorPicker = true },
             onPickEyeColor = { showEyeColorPicker = true },
             onDismiss = onDismiss,
@@ -143,7 +140,6 @@ fun AnimatedAvatarEditor(
                         colorPreset = colorPreset,
                         eyeColorHex = eyeColorHex?.let { MarkColors.normalizeHex(it) },
                         eyeShade = eyeShade,
-                        traits = traits?.takeIf { it.isNotEmpty() },
                     )
                 )
             },
@@ -183,7 +179,6 @@ internal fun AnimatedAvatarEditorContent(
     onEyeColor: (String?) -> Unit,
     eyeShade: Boolean = true,
     onEyeShade: (Boolean) -> Unit = {},
-    traits: Map<String, Float>? = null,
     onPickColor: () -> Unit,
     onPickEyeColor: () -> Unit,
     onDismiss: () -> Unit,
@@ -230,7 +225,6 @@ internal fun AnimatedAvatarEditorContent(
                     colorPreset = colorPreset,
                     eyeColorHex = eyeColorHex,
                     eyeShade = eyeShade,
-                    personality = Personality.resolve(eyeType, traits),
                     isLoading = false,
                     calmPreview = !livePreview,
                     editorCue = cue,

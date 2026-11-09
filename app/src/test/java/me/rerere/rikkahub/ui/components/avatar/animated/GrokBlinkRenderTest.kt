@@ -39,28 +39,4 @@ class GrokBlinkRenderTest {
             a.recycle(); b.recycle()
         }
     }
-    @Test fun aQuietFocusHasNoClockDrivenRenderedAdjustments() {
-        AvatarPackData.ensureLoaded(RuntimeEnvironment.getApplication())
-        fun render(shapeId: String, time: Float): Bitmap {
-            val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
-            val shape = requireNotNull(MarkShapes.resolve(shapeId))
-            CanvasDrawScope().draw(Density(2f), LayoutDirection.Ltr, Canvas(android.graphics.Canvas(bitmap)), Size(240f, 240f)) {
-                drawMark(shape, shapeId, true, MotionFrame(
-                    body = BodyPose(yaw = 8f, pitch = 2f, roll = 3f),
-                    headLookX = 0.2f, leadX = 0.01f, timeSec = time, incidentalMotion = 0f,
-                ), false, 1f, Color(0xFF2A92FE), Color.White, Color.White)
-            }
-            return bitmap
-        }
-        for (shape in listOf("blob", "heart", "cloud", "square")) {
-            val first = render(shape, 0f)
-            for (t in listOf(0.5f, 2f, 10f)) {
-                val next = render(shape, t)
-                assertTrue("$shape moves despite an unchanged attention target", first.sameAs(next))
-                next.recycle()
-            }
-            first.recycle()
-        }
-    }
-
 }

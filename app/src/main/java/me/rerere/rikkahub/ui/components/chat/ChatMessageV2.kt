@@ -1522,32 +1522,7 @@ private fun AssistantMessageTurn(
         }
     }
     
-    // When the newest reply finishes, let the avatars react to its tone.
-    val avatarStageForTone = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage.current
-    val replyTextForTone = allTextBubbles.joinToString("\n") { it.second.text }
-    var toneSeenLoading by remember { mutableStateOf(false) }
-    val toneContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    LaunchedEffect(loading, isLastTurn) {
-        if (loading && isLastTurn) toneSeenLoading = true
-        if (!loading && isLastTurn && toneSeenLoading) {
-            toneSeenLoading = false
-            // LC Smart Core reads the tone when installed (most replies come back neutral → no
-            // reaction); otherwise the small heuristic reader. The avatar's perception gate decides the rest.
-            val smart = if (me.rerere.rikkahub.smartcore.LcSmartCore.isInstalled(toneContext)) {
-                me.rerere.rikkahub.smartcore.LcSmartCore.classify(toneContext, replyTextForTone.take(1500))
-            } else null
-            val tone = if (smart != null) me.rerere.rikkahub.smartcore.LcSmartCoreHeads.toneHint(smart)
-            else me.rerere.rikkahub.ui.components.avatar.animated.ToneAnalyzer.read(replyTextForTone)
-            tone?.let { t ->
-                avatarStageForTone.emit(
-                    me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.ReplyTone,
-                    magnitude = t.valence,
-                    extra = (t.emotion?.ordinal ?: -1) + 1,
-                    direction = (t.intensity * 100).toInt(),
-                )
-            }
-        }
-    }
+
 
     // Consistent spacing between all elements
     val elementSpacing = 4.dp

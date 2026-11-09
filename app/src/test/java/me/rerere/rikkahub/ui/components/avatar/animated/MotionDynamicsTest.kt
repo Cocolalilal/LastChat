@@ -8,7 +8,7 @@ import kotlin.random.Random
 
 class MotionDynamicsTest {
     @Test
-    fun leanKeepsMomentumAndSettlesTheSameAtDifferentFrameRates() {
+    fun spinOscillatorKeepsMomentumAndSettlesTheSameAtDifferentFrameRates() {
         fun run(hz: Int): DampedMotion {
             val s = DampedMotion()
             repeat(hz / 2) { s.advance(8f, 1f / hz, 7f, 0.78f) }
@@ -62,19 +62,6 @@ class MotionDynamicsTest {
             s.sample(join + h); val c = s.angle; val ec = s.eyeLead
             assertTrue("angle cut at $join", abs(b - a) < 0.1f && abs(c - b) < 0.1f)
             assertTrue("eye cut at $join", abs(eb - ea) < 0.002f && abs(ec - eb) < 0.002f)
-        }
-    }
-
-    @Test
-    fun gesturePeaksAndEndsHaveNoVelocityCuts() {
-        val curves = listOf<(Float) -> Float>(MotionDirector::springNod, MotionDirector::startlePop,
-            { MotionDirector.snapCurve(it, 0.15f, 0.12f) })
-        val joins = listOf(listOf(0f, 0.26f, 1f), listOf(0f, 0.09f, 1f), listOf(0f, 0.15f, 0.405f, 1f))
-        val h = 0.0001f
-        for ((j, curve) in curves.withIndex()) for (t in joins[j]) {
-            val incoming = (curve(t) - curve((t - h).coerceAtLeast(0f))) / h
-            val outgoing = (curve((t + h).coerceAtMost(1f)) - curve(t)) / h
-            assertTrue("gesture $j velocity cut at $t: $incoming → $outgoing", abs(incoming - outgoing) < 0.3f)
         }
     }
 

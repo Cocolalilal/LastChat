@@ -1,11 +1,9 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
 /**
- * Character personality as four high-level knobs, each 0…1 (0.5 = average). The
- * engine maps them to every behaviour parameter (timing, amplitude, expression
- * weights, gaze habits, blink rate, idle habits, reactions) through the derived
- * traits below, so callers — later the decision model reading a character's system
- * prompt — only ever set these four.
+ * Fixed style temperament for the original procedural character engine.
+ * These internal values drive its timing, gaze habits and reactions; they are
+ * not exposed as settings, stored overrides or model outputs.
  */
 data class Personality(
     /** Pace and liveliness: how often and how briskly it moves. */
@@ -33,18 +31,6 @@ data class Personality(
     /** Blink rate multiplier. */
     val blinkRate: Float get() = 0.8f + 0.4f * energy + 0.3f * shyness - 0.2f * calmness
 
-    fun toMap(): Map<String, Float> = mapOf(
-        "energy" to energy, "warmth" to warmth, "playfulness" to playfulness, "expressiveness" to expressiveness,
-    )
-
-    fun with(name: String, v: Float): Personality = when (name) {
-        "energy" -> copy(energy = v)
-        "warmth" -> copy(warmth = v)
-        "playfulness" -> copy(playfulness = v)
-        "expressiveness" -> copy(expressiveness = v)
-        else -> this
-    }.clamped()
-
     private fun c(v: Float) = v.coerceIn(0f, 1f)
 
     companion object {
@@ -56,15 +42,7 @@ data class Personality(
         fun defaultFor(eyeType: String): Personality =
             if (eyeType.equals("grok", ignoreCase = true)) GROK else GENERICAL
 
-        /** The only knobs the outside world sets. */
-        val KNOBS = listOf("energy", "warmth", "playfulness", "expressiveness")
 
-        /** Stored overrides (knob name → 0…1) on top of the style default; unknown keys ignored. */
-        fun resolve(eyeType: String, traits: Map<String, Float>?): Personality {
-            var p = defaultFor(eyeType)
-            traits?.forEach { (k, v) -> p = p.with(k, v) }
-            return p
-        }
     }
 }
 

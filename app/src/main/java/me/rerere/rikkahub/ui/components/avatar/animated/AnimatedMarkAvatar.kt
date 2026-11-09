@@ -51,7 +51,6 @@ fun AnimatedMarkAvatar(
     /** Generical eye bottom shade on/off (glides between the two). */
     eyeShade: Boolean = true,
     /** Character traits; null = sensible default for the eye style. */
-    personality: Personality? = null,
     calmPreview: Boolean = false,
     /**
      * False = static (older chat messages): eases to the rest pose and stops; flipping
@@ -134,7 +133,7 @@ fun AnimatedMarkAvatar(
     if (!frozen) {
         motionState.stage = stage
         motionState.stageId = stageId
-        motionState.personality = personality ?: Personality.defaultFor(eyeType)
+        motionState.personality = Personality.defaultFor(eyeType)
         motionState.isGrok = isGrok
         DisposableEffect(stageId) {
             onDispose { stage.remove(stageId) }
@@ -454,7 +453,7 @@ private fun DrawScope.drawMarkInner(
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
-            awake = if (calm) 0f else f.incidentalMotion,
+            awake = if (calm) 0f else 1f,
             yawDeg = yawOverride ?: (MarkClipEngine.wrap180(yaw) * k),
             pitchDeg = MarkClipEngine.wrap180(pitch) * k,
             rollDeg = roll,

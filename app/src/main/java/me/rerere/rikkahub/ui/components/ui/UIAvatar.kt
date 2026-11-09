@@ -133,7 +133,6 @@ fun UIAvatar(
                 colorPreset = value.colorPreset,
                 eyeColorHex = value.eyeColorHex,
                 eyeShade = value.eyeShade,
-                personality = me.rerere.rikkahub.ui.components.avatar.animated.Personality.resolve(value.eyeType, value.traits),
                 isLoading = loading || motionHints.isGenerating,
                 isTyping = motionHints.isTyping,
                 animate = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarAnimate.current,

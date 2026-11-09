@@ -203,10 +203,8 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             "sad" -> {
-                // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
-                // the / \ pair read clearly apart at a glance. Engine21: a little lower too.
-                // Engine21.1 (Julian: far stronger tilts): inner tops raised hard, shorter, lower.
-                val e = en(UR, 0.46f, -30f, 0f).let { it.copy(offY = it.offY - 0.035f) }
+                // A full open pill with a pronounced mirrored lean; sadness is not a squint.
+                val e = en(UR, 0.62f, -51f, 0f).let { it.copy(offY = it.offY - 0.035f) }
                 listOf(e, e)
             }
             // Engine21: asleep = soft downward-curved pill strokes (relaxed lids).
@@ -228,10 +226,9 @@ object WhSphereEyes {
                 val e = en(UR, 0.5f, 90f, 0f).let { it.copy(offY = it.offY - 0.03f) }
                 listOf(e, e)
             }
-            // Engine21.1 pouty (Figma Angry/pouty): a sulk — short pills, a firm frown tilt,
-            // dropped low like a lowered head.
+            // Pouty keeps the same open pill language, with a pronounced sulking lean.
             "pouty" -> {
-                val e = en(UR, 0.42f, 18f, 0f).let { it.copy(offY = it.offY - 0.05f) }
+                val e = en(UR, 0.60f, 46f, 0f).let { it.copy(offY = it.offY - 0.05f) }
                 listOf(e, e)
             }
             // Confused: same eyes as every other face, one lid tilted, both on one level.
@@ -255,10 +252,9 @@ object WhSphereEyes {
             "hm" -> confusedPair(confusedVariant)
             // The mirror: the same two eyes swapped (per-side tilt is mirrored already).
             "hmleft" -> confusedPair(confusedVariant).reversed()
-            // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
-            // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
+            // Strong mirrored frown, with open eyes rather than shortened or closed bars.
             "angry" -> {
-                val e = en(UR, 0.45f, 28f, 0f) // engine21.1: a real frown (was 15°, read as neutral)
+                val e = en(UR, 0.62f, 51f, 0f)
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.

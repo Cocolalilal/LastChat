@@ -228,7 +228,7 @@ class WidgetConfigActivity : ComponentActivity() {
             is Avatar.Resource -> "resource" to avatar.id.toString()
             is Avatar.Animated -> "animated" to JsonInstant.encodeToString(
                 Avatar.Animated.serializer(),
-                avatar.copy(traits = null)
+                avatar
             )
         }
 

@@ -1,5 +1,18 @@
 # Avatar character engine
 
+> Selective rollback (2026-11-08): behavior is restored to `d0ad749a`, before
+> this chat's animation passes. Retained: continuous rotational spins with eye
+> follow-through, no clip camera zoom or spin squash, and shared Happy-to-Neutral
+> blink masking for Generical and Grok. Original gaze, lean, busy-motion and
+> spontaneous blink timing are restored. Avatar-only model/classifier code and
+> stored/exposed personality overrides remain removed; internal fixed style
+> temperament and mood are retained because they drive the original behavior.
+> Grok Sad/Worried, Angry and Pouty use full-height pills and stronger mirrored
+> tilts. Actual blinks may still close these eyes.
+>
+> The rejected intentional-attention rewrite is not active. See
+> [rollback validation](avatar-selective-rollback.md) for scope and checks.
+
 Animated avatars (Generical and Grok eye styles) are driven by three layers:
 
 1. **Motion director** (`MotionDirector`) – body pose: turns, look-arounds, tilts,
@@ -1439,57 +1452,3 @@ saved per widget in both WidgetPrefs and Glance state; refreshes and restarts pr
 Existing widgets without a preset keep their random seed/variant behavior: a no-anger expression
 and settled attitude, with the variant advanced once per system update. Unknown preset IDs also
 fall back to this behavior. Other avatar types retain their existing configuration flow.
-
-## Motion continuity and intentional movement
-
-Spins keep the live face and gaze instead of capturing a pose at entry. An angular
-oscillator winds against a small counter-turn, then follows one full-turn goal with
-its existing velocity intact. Damping supplies braking and overshoot; eye inertia
-responds to acceleration and continues through the body's settle. There are no
-separate eased spin/follow-through phases. Direction usually follows current attention.
-Only the causal character engine schedules spins; the duplicate busy-body spin route
-has been removed. Authored camera zoom no longer changes the avatar's uniform scale.
-
-Eye surface constraints fade with angular distance from the front over 35 degrees.
-Seating uses wrapped angles so a safety fit cannot scale a 360-degree turn into an
-unrelated orientation. Grok uses the silhouette clip throughout.
-
-Side leans use a shared continuous attention/body phrase. Intermediate poses have
-through-velocity, eyes lead by only a small amount, and the body retains spring
-momentum. TiltChain, HmmLean and Peek no longer schedule independent gaze, head,
-lean and straighten steps. Busy turns/tilts use a prompt ~240 ms target arrival, a quiet focus and a softer release.
-A new look starts from the currently visible gaze and body target, so handover does not
-first pull toward centre. Busy reading and surveying use a single fixation instead of
-several independent little head steps. Outside attention can interrupt a phrase; its body motion settles instead of snapping.
-
-Auxiliary body channels use exact damped oscillators. Slower frames no longer discard
-elapsed time or destabilize the bob. Nod/recoil curves have matching velocity at their
-joins, and beat handovers do not count source playback speed twice.
-
-Random blinks have a 5.8-second median before context scaling, a 3.5–12-second interval,
-and sparse gaze coupling with a shared 3-second minimum gap. Spontaneous doubles are
-rarer; purposeful requests remain available through the same scheduler. Generic face
-masking is occasional. Grok Happy-to-open transitions use a dedicated coordinator:
-wait for a confirmed full blink, meet at a canonical closed-eye shape (including its
-seating width), swap only behind that closure, and retain the mask during reopening.
-Generical continues to use its existing outline morphs.
-
-`MotionDynamicsTest`, `AvatarIntentionalMotionTest` and
-`GrokTransitionCoordinatorTest` cover momentum, fixed uniform scale, moving lean goals,
-blink frequency and safe hidden swaps. `GrokBlinkRenderTest` checks identical rendered
-pixels on both sides of a fully closed Happy/Neutral swap for every picker shape.
-The existing channel metrics, gaze audit and context tests cover longer sessions.
-
-Behavior rules about up-right gaze and the currently unapplied squash/stretch channel
-are unchanged; changes to those were proposed separately for user review.
-
-### Quiet ownership during busy motion
-
-While busy, the body director supplies the attention targets; the independent idle gaze
-planner does not insert competing looks. Head drift is removed, and eye drift/micro
-saccades fade out during an intentional look. Facial jitter and posture fidgets are
-reserved for quiet rest, and incidental eye-seat motion fades with the same ownership.
-Breathing, blinks, expression changes and genuine attention events remain active.
-
-`BusyFocusTest` checks prompt arrival and a stable fixation. Native rendering checks
-that advancing time alone cannot move the eyes while a quiet focus owns the pose.

@@ -147,10 +147,6 @@ internal object TransitionRules {
     const val OMEGA_SMALL = 15f
     const val OMEGA_BIG = 8.5f
 
-    /** A question resolves promptly; a slow return makes the two lids appear to lag apart. */
-    fun promptRelease(from: String, to: String): Boolean =
-        to == "Neutral" && from in setOf("confused", "confused left")
-
     /** Spring ω for a default (Soft) change of emotional size [d]. */
     fun softOmega(d: Float): Float {
         val u = ((d - 0.3f) / 1.0f).coerceIn(0f, 1f)
@@ -182,8 +178,8 @@ internal object TransitionRules {
     }
 
     /** A masking blink may follow the last blink this soon (s): it reads as part of the change. */
-    const val MASK_MIN_GAP = 3.5f
+    const val MASK_MIN_GAP = 0.6f
 
     /** Chance a Blink-eligible change really uses a blink (a few stay plain morphs for variety). */
-    fun maskChance(d: Float): Float = if (d >= 0.8f) 0.22f else 0.12f
+    fun maskChance(d: Float): Float = if (d >= 0.8f) 0.85f else 0.72f
 }

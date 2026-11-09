@@ -61,13 +61,6 @@ class AlivenessEngineTest {
 
 class ToneAndHobbyTest {
     @Test
-    fun toneReadsObviousCases() {
-        assertTrue(ToneAnalyzer.read("Haha, that's a funny one 😂")?.emotion == Emotion.Amusement)
-        assertTrue(ToneAnalyzer.read("I'm sorry, unfortunately that failed.")?.emotion == Emotion.Concern)
-        assertTrue(ToneAnalyzer.read("Here is the list you asked for.") == null)
-    }
-
-    @Test
     fun boredIdleCharacterDoesHobbiesAndGlancesAnywhere() {
         val glances = ArrayList<AlivenessEngine.Beat.Glance>()
         val kinds = HashSet<String>()
