@@ -167,10 +167,13 @@ fun AssistantOverlayScreen(
 ) {
     val settings = LocalSettings.current
     val settingsStore = koinInject<SettingsStore>()
+    val phoneManager = koinInject<me.rerere.rikkahub.phoneuse.PhoneUseManager>()
+    val phoneTask by phoneManager.session.collectAsStateWithLifecycle()
     val mcpManager = koinInject<McpManager>()
     val toaster = LocalToaster.current
     val config = settings.assistantOverlayConfig
-    val assistant = remember(settings) { settings.resolveAssistantOverlayAssistant() }
+    val assistant = settings.assistants.firstOrNull { it.id == viewModel.overlayAssistantId }
+        ?: settings.resolveAssistantOverlayAssistant()
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics()
     val scope = rememberCoroutineScope()
@@ -346,6 +349,9 @@ fun AssistantOverlayScreen(
                     },
                 verticalArrangement = Arrangement.Bottom,
             ) {
+                phoneTask?.takeIf { it.conversationId == conversationId }?.let { task ->
+                    me.rerere.rikkahub.phoneuse.PhoneUseControls(task, assistant, phoneManager)
+                }
                 val convId = conversationId
                 if (convId != null) {
                     val conversation by viewModel.conversationFlow(convId)

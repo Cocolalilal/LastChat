@@ -146,6 +146,9 @@ fun ToolCallItem(
             ) {
                 Text(
                     text = when (toolName) {
+                        "phone_use" -> me.rerere.rikkahub.phoneuse.phoneActionLabel(
+                            (arguments as? JsonObject)?.get("action")?.jsonPrimitiveOrNull?.contentOrNull.orEmpty()
+                        )
                         "create_memory" -> stringResource(R.string.chat_message_tool_create_memory)
                         "edit_memory" -> stringResource(R.string.chat_message_tool_edit_memory)
                         "delete_memory" -> stringResource(R.string.chat_message_tool_delete_memory)

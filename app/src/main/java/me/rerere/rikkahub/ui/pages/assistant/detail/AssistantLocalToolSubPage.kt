@@ -72,6 +72,8 @@ fun AssistantLocalToolSubPage(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // JavaScript 引擎工具卡片
+            me.rerere.rikkahub.phoneuse.PhoneUseSetting(assistant, onUpdate)
+
         LocalToolCard(
             title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
             description = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),

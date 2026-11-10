@@ -182,6 +182,8 @@ fun AssistantToolsSubPage(
 
         // LOCAL TOOLS GROUP
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
+            me.rerere.rikkahub.phoneuse.PhoneUseSetting(assistant, onUpdate)
+
             // JavaScript Engine
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),

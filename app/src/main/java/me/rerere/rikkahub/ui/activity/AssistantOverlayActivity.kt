@@ -40,9 +40,22 @@ class AssistantOverlayActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        val existingId = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
+            runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull()
+        }
+        viewModel.initialize(existingId)
         setContent {
             val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
             val toastState = rememberAppToasterState()
+            val phoneManager = org.koin.compose.koinInject<me.rerere.rikkahub.phoneuse.PhoneUseManager>()
+            val phoneTask by phoneManager.session.collectAsStateWithLifecycle()
+            androidx.compose.runtime.LaunchedEffect(phoneTask?.conversationId, phoneTask?.paused) {
+                if (phoneTask?.running == true && phoneTask?.paused == false && phoneTask?.systemAssistant == true &&
+                    phoneTask?.conversationId == viewModel.conversationId.value) {
+                    // Continue in the assistant's compact bottom surface while other apps are operated.
+                    moveTaskToBack(true)
+                }
+            }
 
             RikkahubTheme {
                 // The overlay has no NavHost; provide a no-op controller so composables
@@ -87,6 +100,24 @@ class AssistantOverlayActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let { value ->
+            runCatching { kotlin.uuid.Uuid.parse(value) }.getOrNull()?.let(viewModel::initialize)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        org.koin.core.context.GlobalContext.get().get<me.rerere.rikkahub.phoneuse.PhoneUseManager>().assistantUiVisible.value = true
+    }
+
+    override fun onStop() {
+        org.koin.core.context.GlobalContext.get().get<me.rerere.rikkahub.phoneuse.PhoneUseManager>().assistantUiVisible.value = false
+        super.onStop()
     }
 
     // NOTE: we intentionally do NOT clear AssistScreenHolder here. After "Open in app" the

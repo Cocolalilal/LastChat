@@ -1,3 +1,4 @@
+import { phoneUseLabel } from "~/lib/phone-use";
 import { serverNow } from "~/lib/utils";
 import type {
   MessageDto,
@@ -194,9 +195,19 @@ export function categorizeToolName(toolName: string, args = ""): ActivityType {
   return "tool_other";
 }
 
-export function getToolDisplayName(toolName: string): string {
+export function getToolDisplayName(toolName: string, input = ""): string {
   const normalized = resolveActivityToolName(toolName, "");
   switch (normalized) {
+    case "phone_use": {
+      let action: string | undefined;
+      try {
+        const value: unknown = JSON.parse(input);
+        if (value && typeof value === "object" && "action" in value && typeof value.action === "string") {
+          action = value.action;
+        }
+      } catch { /* Tool arguments may still be streaming. */ }
+      return phoneUseLabel(action);
+    }
     case "search_web":
       return "Searching web";
     case "scrape_web":
@@ -311,7 +322,7 @@ export function buildTimelineEntries(
         type: "tool",
         tool: part,
         activityType: categorizeToolName(part.toolName, part.input),
-        displayName: getToolDisplayName(part.toolName),
+        displayName: getToolDisplayName(part.toolName, part.input),
         isLoading: part.output.length === 0,
       };
 
@@ -413,7 +424,7 @@ export function deriveActivityState(
     return {
       type: "tool_use",
       toolName: activeTool.toolName,
-      displayName: getToolDisplayName(activeTool.toolName),
+      displayName: getToolDisplayName(activeTool.toolName, activeTool.input),
       startTimeMs: serverNow(),
     };
   }

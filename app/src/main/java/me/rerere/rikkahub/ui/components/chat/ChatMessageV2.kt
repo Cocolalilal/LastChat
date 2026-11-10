@@ -786,7 +786,7 @@ internal fun buildTimelineEntries(
                     entries.add(TimelineEntry.ToolCall(
                         id = reserveEntryId("tool_$rawId"),
                         toolName = resolvedToolName,
-                        displayName = getToolDisplayName(resolvedToolName),
+                        displayName = getToolDisplayName(resolvedToolName, part.arguments),
                         argumentsText = part.arguments,
                         resultText = result?.content?.toString(),
                         argumentsJson = argumentsJson,
@@ -871,8 +871,11 @@ private fun toolResultMatchKey(toolCallId: String, toolName: String): String {
 /**
  * Get display name for a tool.
  */
-private fun getToolDisplayName(toolName: String): String {
+private fun getToolDisplayName(toolName: String, arguments: String = ""): String {
     return when (toolName) {
+        "phone_use" -> me.rerere.rikkahub.phoneuse.phoneActionLabel(
+            me.rerere.rikkahub.data.ai.tools.phoneUseActionOf(arguments).orEmpty()
+        )
         "search_web" -> "Searching web"
         "search_memory" -> "Recalling memories"
         "scrape_web" -> "Reading page"
@@ -951,7 +954,8 @@ internal fun deriveActivityState(
                 type = toolCategories.first(),
                 toolName = resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments),
                 displayName = getToolDisplayName(
-                    resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments)
+                    resolveActivityToolName(toolCalls.first().toolName, toolCalls.first().arguments),
+                    toolCalls.first().arguments
                 ),
                 count = toolCalls.size  // Pass total count of tool calls
             )
@@ -983,7 +987,7 @@ internal fun deriveActivityState(
         val resolvedToolName = resolveActivityToolName(activeTool.toolName, activeTool.arguments)
         return ActivityState.ToolUse(
             toolName = resolvedToolName,
-            displayName = getToolDisplayName(resolvedToolName),
+            displayName = getToolDisplayName(resolvedToolName, activeTool.arguments),
             startTimeMs = System.currentTimeMillis()
         )
     }

@@ -761,6 +761,11 @@ class ChatService(
     }
 
     init {
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(localTools.phoneUseManager.session, generationJobs) { task, jobs ->
+                task?.takeIf { it.running && jobs[it.conversationId] == null }
+            }.collect { task -> task?.let { localTools.phoneUseManager.finish(it.conversationId) } }
+        }
         // 添加生命周期观察者
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
     }
@@ -1988,6 +1993,8 @@ class ChatService(
 
             addAll(
                 localTools.getTools(
+                    supportsVision = me.rerere.ai.provider.Modality.IMAGE in model.inputModalities,
+                    stopGeneration = { stopGeneration(conversation.id) },
                     options = assistant.localTools,
                     assistantId = assistant.id,
                     conversationId = conversation.id,

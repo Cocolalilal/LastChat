@@ -25,6 +25,13 @@
     android:name="android.hardware.camera.autofocus"
     android:required="false" />
 
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
   <application
         android:name=".LastChatApp"
     android:allowBackup="true"
@@ -39,6 +46,17 @@
     android:theme="@style/Theme.Rikkahub"
         android:usesCleartextTraffic="true"
     tools:targetApi="33">
+    <service
+      android:name=".phoneuse.PhoneUseAccessibilityService"
+      android:enabled="@bool/phone_use_supported"
+      android:exported="true"
+      android:label="@string/phone_use_accessibility_label"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/phone_use_accessibility" />
+    </service>
     <!-- AGP lint can fail to resolve ComponentActivity/Glance inheritance here during lintVitalRelease. -->
     <activity
       android:name=".RouteActivity"

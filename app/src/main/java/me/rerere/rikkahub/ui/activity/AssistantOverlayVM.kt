@@ -31,9 +31,10 @@ import kotlin.uuid.Uuid
 class AssistantOverlayVM(
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
+    private val phoneUseManager: me.rerere.rikkahub.phoneuse.PhoneUseManager,
 ) : ViewModel() {
 
-    val overlayAssistantId: Uuid =
+    var overlayAssistantId: Uuid =
         settingsStore.settingsFlow.value.resolveAssistantOverlayAssistant().id
 
     private val _conversationId = MutableStateFlow<Uuid?>(null)
@@ -41,9 +42,21 @@ class AssistantOverlayVM(
 
     val errorFlow: SharedFlow<Throwable> get() = chatService.errorFlow
 
-    init {
-        viewModelScope.launch {
-            val conversation = chatService.createConversation(overlayAssistantId)
+    private var initializationJob: Job? = null
+
+    fun initialize(existingId: Uuid? = null) {
+        val previousId = _conversationId.value
+        if (previousId != null && (existingId == null || existingId == previousId)) return
+        initializationJob?.cancel()
+        initializationJob = viewModelScope.launch {
+            val conversation = existingId?.let { chatService.ensureConversationLoaded(it) }
+                ?: chatService.createConversation(overlayAssistantId)
+            previousId?.let {
+                phoneUseManager.unregisterAssistantConversation(it)
+                chatService.removeConversationReference(it)
+            }
+            overlayAssistantId = conversation.assistantId
+            phoneUseManager.registerAssistantConversation(conversation.id)
             chatService.addConversationReference(conversation.id)
             _conversationId.value = conversation.id
         }
@@ -113,6 +126,9 @@ class AssistantOverlayVM(
 
     override fun onCleared() {
         super.onCleared()
-        _conversationId.value?.let { chatService.removeConversationReference(it) }
+        _conversationId.value?.let {
+            phoneUseManager.unregisterAssistantConversation(it)
+            chatService.removeConversationReference(it)
+        }
     }
 }

@@ -1,3 +1,4 @@
+import { phoneUseLabel } from "~/lib/phone-use";
 import * as React from "react";
 import type { TFunction } from "i18next";
 import { AudioLines,
@@ -27,6 +28,7 @@ export const TOOL_NAMES = {
   GET_TIME_INFO: "get_time_info",
   CLIPBOARD: "clipboard_tool",
   ASK_USER: "ask_user",
+  PHONE_USE: "phone_use",
 } as const;
 
 export const MEMORY_ACTIONS = {
@@ -187,6 +189,7 @@ export function getToolIcon(toolName: string, action?: string) {
 
 export function getToolTitle(toolName: string, args: unknown, t: TFunction): string {
   const action = getStringField(args, "action");
+  if (toolName === TOOL_NAMES.PHONE_USE) return phoneUseLabel(action);
   if (toolName === TOOL_NAMES.MEMORY) {
     if (action === MEMORY_ACTIONS.CREATE) return t("tool_part.memory_create");
     if (action === MEMORY_ACTIONS.EDIT) return t("tool_part.memory_edit");

@@ -1188,7 +1188,7 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
 
-        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
+        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen", "phone_use")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
         }
