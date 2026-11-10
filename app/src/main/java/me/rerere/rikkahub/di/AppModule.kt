@@ -2,7 +2,7 @@ package me.rerere.rikkahub.di
 
 import com.google.firebase.Firebase
 import com.google.firebase.crashlytics.crashlytics
-import com.google.firebase.remoteconfig.remoteConfig
+import me.rerere.rikkahub.data.config.AppRemoteConfig
 import kotlinx.serialization.json.Json
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.android.AndroidHighlighter
@@ -17,6 +17,7 @@ import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.web.WebServerManager
 import me.rerere.tts.provider.android.TTSManager
 import org.koin.dsl.module
+import org.koin.android.ext.koin.androidContext
 
 val appModule = module {
     single<Json> { JsonInstant }
@@ -56,7 +57,7 @@ val appModule = module {
     }
 
     single {
-        Firebase.remoteConfig
+        AppRemoteConfig(androidContext())
     }
 
     single {

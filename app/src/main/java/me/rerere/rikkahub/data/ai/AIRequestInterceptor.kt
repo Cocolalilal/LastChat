@@ -1,6 +1,6 @@
 package me.rerere.rikkahub.data.ai
 
-import com.google.firebase.remoteconfig.FirebaseRemoteConfig
+import me.rerere.rikkahub.data.config.AppRemoteConfig
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.provider.SiliconFlowFreeApiPolicy
@@ -11,7 +11,7 @@ import okhttp3.Request
 import okhttp3.Response
 import kotlin.io.encoding.Base64
 
-class AIRequestInterceptor(private val remoteConfig: FirebaseRemoteConfig) : Interceptor {
+class AIRequestInterceptor(private val remoteConfig: AppRemoteConfig) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         var request = chain.request()
         val host = request.url.host
