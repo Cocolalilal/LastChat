@@ -44,6 +44,23 @@ class PhoneUseControlsRenderTest {
         override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
     }, null, false)
 
+    @Test fun visibilityTracksOverlappingActivities() {
+        val manager = PhoneUseManager()
+        val tracker = PhoneUseVisibilityTracker(manager)
+        val first = Robolectric.buildActivity(ComponentActivity::class.java).get()
+        val second = Robolectric.buildActivity(me.rerere.rikkahub.ui.activity.AssistantOverlayActivity::class.java).get()
+        tracker.onActivityStarted(first)
+        tracker.onActivityStarted(second)
+        tracker.onActivityStopped(first)
+        org.junit.Assert.assertTrue(manager.assistantUiVisible.value)
+        org.junit.Assert.assertTrue(manager.appUiVisible.value)
+        tracker.onActivityDestroyed(first)
+        org.junit.Assert.assertTrue(manager.appUiVisible.value)
+        tracker.onActivityStopped(second)
+        org.junit.Assert.assertFalse(manager.appUiVisible.value)
+        org.junit.Assert.assertFalse(manager.assistantUiVisible.value)
+    }
+
     @Test fun renderControlSurfaces() {
         val output = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() } ?: return
         File(output).mkdirs()
@@ -52,18 +69,23 @@ class PhoneUseControlsRenderTest {
             Triple("phone-floating", false, false),
             Triple("phone-assistant", true, false),
             Triple("phone-paused", true, true),
+            Triple("phone-reply", false, false),
         )) {
             val activityController = Robolectric.buildActivity(ComponentActivity::class.java).setup()
             val activity = activityController.get()
             // Freeze through the real system motion policy; Robolectric cannot idle a live avatar loop.
             android.provider.Settings.Global.putFloat(activity.contentResolver,
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
-            val task = PhoneUseTask(Uuid.random(), assistant.id, system, "observe", paused = paused)
+            val task = PhoneUseTask(Uuid.random(), assistant.id, system, "observe", paused = paused,
+                running = name != "phone-reply", reply = if (name == "phone-reply") "The address is **12 Main Street**. It closes at 6 pm." else "")
+            val heightDp = if (name == "phone-reply") 300 else 120
             activity.setContent {
                 CompositionLocalProvider(LocalSettings provides Settings()) {
                     MaterialTheme(colorScheme = PresetThemes[0].getColorScheme(true), shapes = Shapes, typography = Typography) {
-                        Box(Modifier.requiredSize(411.dp, 120.dp)) {
-                            PhoneUseControls(task, assistant, PhoneUseManager(), onOpen = {}, floating = true, haptics = noHaptics)
+                        Box(Modifier.requiredSize(411.dp, heightDp.dp)) {
+                            if (system) AssistantPhoneUseDock(task, assistant, PhoneUseManager(), onOpen = {})
+                            else PhoneUseControls(task, assistant, PhoneUseManager(), onOpen = {}, floating = true,
+                                haptics = noHaptics, onSendReply = {})
                         }
                     }
                 }
@@ -71,7 +93,7 @@ class PhoneUseControlsRenderTest {
             val root = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content)
             repeat(10) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100)) }
             val width = (411 * activity.resources.displayMetrics.density).toInt()
-            val height = (120 * activity.resources.displayMetrics.density).toInt()
+            val height = (heightDp * activity.resources.displayMetrics.density).toInt()
             val view = root.getChildAt(0)
             repeat(3) {
                 view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),

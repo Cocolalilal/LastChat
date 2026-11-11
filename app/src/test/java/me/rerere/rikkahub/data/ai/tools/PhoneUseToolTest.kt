@@ -79,6 +79,7 @@ class PhoneUseToolTest {
         }
         assertEquals(listOf(540f, 1200f, 540f, 1200f), controller.gestures.single())
         assertEquals(listOf(true), controller.actingDuringGesture)
+        assertEquals(listOf(false), controller.capturingDuringGesture)
         assertFalse(manager.acting.value)
         // 结果直接带回操作后的界面
         assertTrue(output.startsWith("tap done."))
@@ -247,6 +248,24 @@ class PhoneUseToolTest {
         assertTrue(output.containsKey(me.rerere.rikkahub.data.ai.TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY))
         assertTrue(output.toString().contains("image/jpeg"))
         assertFalse(manager.acting.value)
+        assertFalse(manager.capturing.value)
+        assertTrue(controller.capturingDuringScreenshot)
+    }
+
+    @Test fun `screenshot failures restore visibility and gesture flags`() = runTest {
+        manager.attach(controller)
+        controller.screenshotFailure = true
+        assertTrue(runCatching { call { put("action", "screenshot") } }.isFailure)
+        assertTrue(controller.capturingDuringScreenshot)
+        assertFalse(manager.capturing.value)
+        assertFalse(manager.acting.value)
+    }
+
+    @Test fun `finish closes the protocol without reading or operating the screen`() = runTest {
+        manager.attach(controller)
+        assertTrue(call { put("action", "finish") }.contains("final reply"))
+        assertTrue(controller.gestures.isEmpty())
+        assertTrue(controller.keys.isEmpty())
     }
 
     @Test
@@ -261,6 +280,9 @@ class PhoneUseToolTest {
     private class FakeController(private val manager: PhoneUseManager) : PhoneController {
         val gestures = mutableListOf<List<Float>>()
         val actingDuringGesture = mutableListOf<Boolean>()
+        val capturingDuringGesture = mutableListOf<Boolean>()
+        var capturingDuringScreenshot = false
+        var screenshotFailure = false
         val keys = mutableListOf<PhoneKey>()
         val texts = mutableListOf<Pair<Int?, String>>()
         val opened = mutableListOf<String>()
@@ -286,12 +308,17 @@ class PhoneUseToolTest {
             truncated = false,
         )
 
-        override suspend fun screenshot(maxSide: Int) = ByteArray(0)
+        override suspend fun screenshot(maxSide: Int): ByteArray {
+            capturingDuringScreenshot = manager.capturing.value
+            if (screenshotFailure) error("Screenshot unavailable")
+            return ByteArray(0)
+        }
 
         override suspend fun gesture(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMs: Long): Boolean {
             gestures += listOf(fromX, fromY, toX, toY)
             afterGesture()
             actingDuringGesture += manager.acting.value
+            capturingDuringGesture += manager.capturing.value
             return true
         }
 

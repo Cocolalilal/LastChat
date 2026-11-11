@@ -717,6 +717,7 @@ class LocalTools(
         val tools = mutableListOf<Tool>()
         if (LocalToolOption.PhoneUse in options && me.rerere.rikkahub.phoneuse.PhoneUseManager.isSupported) {
             val phoneTool = buildPhoneUseTool(
+                isSelfInForeground = { phoneUseManager.appUiVisible.value },
                 supportsVision = supportsVision,
                 ownPackageName = context.packageName,
                 manager = phoneUseManager,

@@ -94,6 +94,7 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             androidContext(this@LastChatApp)
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
+        registerActivityLifecycleCallbacks(me.rerere.rikkahub.phoneuse.PhoneUseVisibilityTracker(get()))
         SingletonImageLoader.setSafe(this)
         installHazeDetachedCoordinateCrashGuard()
         val searchHttpClient = get<PlatformHttpClient>(named(SEARCH_PLATFORM_HTTP_CLIENT))

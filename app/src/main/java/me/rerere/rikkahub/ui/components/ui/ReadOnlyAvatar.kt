@@ -20,9 +20,12 @@ import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 
 /** Avatar display without activity-result launchers; safe in service-owned Compose windows. */
 @Composable
-fun ReadOnlyAvatar(name: String, avatar: Avatar, modifier: Modifier = Modifier, loading: Boolean = false) {
+fun ReadOnlyAvatar(
+    name: String, avatar: Avatar, modifier: Modifier = Modifier, loading: Boolean = false,
+    shape: androidx.compose.ui.graphics.Shape = rememberAvatarShape(loading),
+) {
     Box(
-        modifier.size(32.dp).clip(rememberAvatarShape(loading))
+        modifier.size(32.dp).clip(shape)
             .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
     ) {

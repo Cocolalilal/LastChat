@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
@@ -82,4 +83,75 @@ class PhoneUseManagerTest {
         assertFalse(manager.session.value!!.running)
         assertEquals(id, manager.session.value!!.conversationId)
     }
+    private suspend fun startTask(system: Boolean = false) {
+        manager.attach(controller)
+        if (system) manager.registerAssistantConversation(id)
+        manager.controlsReady.value = id
+        // runAction clears readiness for a new owner; the simulated host attaches below.
+        kotlinx.coroutines.coroutineScope {
+            val action = async { manager.runAction(id, assistantId, "observe", {}) {} }
+            manager.session.first { it != null }
+            manager.controlsReady.value = id
+            action.await()
+        }
+    }
+
+    @Test fun `waiting for approval retains task and can continue`() = runTest {
+        startTask()
+        manager.generationSettled(id, awaitingReply = true, reply = "Which account?")
+        assertTrue(manager.session.value!!.running)
+        assertTrue(manager.session.value!!.awaitingReply)
+        manager.runAction(id, assistantId, "tap", {}) {}
+        assertFalse(manager.session.value!!.awaitingReply)
+        manager.generationSettled(id, awaitingReply = false, reply = "Done")
+        assertFalse(manager.session.value!!.running)
+        assertEquals("Done", manager.session.value!!.reply)
+    }
+
+    @Test fun `completion belongs to visible assistant or attached phone controls`() = runTest {
+        manager.registerAssistantConversation(id)
+        assertFalse(manager.ownsCompletion(id))
+        manager.assistantUiVisible.value = true
+        assertTrue(manager.ownsCompletion(id))
+        manager.assistantUiVisible.value = false
+        startTask(system = true)
+        assertTrue(manager.ownsCompletion(id))
+        assertTrue(manager.claimAssistantReturn(id))
+        assertFalse(manager.claimAssistantReturn(id))
+        manager.generationSettled(id, false, "Done")
+        manager.markAssistantPresented(id)
+        assertFalse(shouldShowPhoneOverlay(manager.session.value, false, false))
+        assertFalse(manager.ownsCompletion(id))
+        // An ordinary later chat turn must not reopen a completed phone task.
+        manager.generationSettled(id, false, "A later chat reply")
+        assertEquals("Done", manager.session.value!!.reply)
+        assertTrue(manager.session.value!!.resultPresented)
+    }
+
+    @Test fun `gestures keep overlay visible while screenshots and app UI hide it`() = runTest {
+        startTask()
+        manager.setActing(true)
+        assertTrue(shouldShowPhoneOverlay(manager.session.value, false, manager.capturing.value))
+        assertFalse(shouldShowPhoneOverlay(manager.session.value, true, false))
+        manager.setActing(true, capturing = true)
+        assertFalse(shouldShowPhoneOverlay(manager.session.value, false, manager.capturing.value))
+        manager.setActing(false)
+        assertFalse(manager.capturing.value)
+        assertTrue(shouldShowPhoneOverlay(manager.session.value, false, false))
+    }
+
+    @Test fun `reply speech and follow up cancellation have a single owner`() = runTest {
+        val replyId = Uuid.random()
+        assertTrue(manager.claimSpokenReply(replyId))
+        assertFalse(manager.claimSpokenReply(replyId))
+        startTask()
+        manager.generationSettled(id, false, "Done")
+        var cancelled = false
+        manager.resumeReply(id) { cancelled = true }
+        assertTrue(manager.session.value!!.running)
+        assertEquals("reply", manager.session.value!!.action)
+        manager.stop()
+        assertTrue(cancelled)
+    }
+
 }

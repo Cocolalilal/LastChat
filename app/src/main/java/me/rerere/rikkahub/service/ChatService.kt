@@ -761,11 +761,6 @@ class ChatService(
     }
 
     init {
-        appScope.launch {
-            kotlinx.coroutines.flow.combine(localTools.phoneUseManager.session, generationJobs) { task, jobs ->
-                task?.takeIf { it.running && jobs[it.conversationId] == null }
-            }.collect { task -> task?.let { localTools.phoneUseManager.finish(it.conversationId) } }
-        }
         // 添加生命周期观察者
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
     }
@@ -927,6 +922,15 @@ class ChatService(
     private fun launchGeneration(conversationId: Uuid, block: suspend () -> Unit) {
         generationTasks.launch(conversationId, onCompletion = {
             appScope.launch {
+                if (getGenerationJob(conversationId) == null) {
+                    getConversationState(conversationId)?.value?.let { conversation ->
+                        val reply = conversation.currentMessages.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }
+                            ?.toContentText().orEmpty()
+                        localTools.phoneUseManager.generationSettled(
+                            conversationId, conversation.hasPendingToolApprovals(), reply,
+                        )
+                    }
+                }
                 delay(500)
                 checkAllConversationsReferences()
             }
@@ -1759,6 +1763,9 @@ class ChatService(
                     _contextUsage.value = current + (conversationId to usage)
                 },
             ).onCompletion { cause ->
+                if (cause != null && cause !is CancellationException) {
+                    localTools.phoneUseManager.setError(conversationId, cause.message ?: "Phone use interrupted")
+                }
                 withContext(NonCancellable) {
                     if (conversationDeletionLedger.isTombstoned(conversationId)) {
                         LogUtil.i(TAG, "generation onCompletion: skipping persist for tombstoned $conversationId")
@@ -1828,6 +1835,7 @@ class ChatService(
                         !cleanedConversation.hasPendingToolApprovals() &&
                         cleanedConversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true &&
                         !suppressCompletionNotification &&
+                        !localTools.phoneUseManager.ownsCompletion(conversationId) &&
                         !isForeground.value &&
                         settings.displaySetting.enableNotificationOnMessageGeneration
                     ) {

@@ -62,7 +62,7 @@ internal val PHONE_USE_BLOCKED_APPS = setOf(
 )
 
 private val ACTIONS = listOf(
-    "observe", "screenshot", "tap", "long_press", "swipe", "scroll", "type", "press", "open_app", "list_apps", "wait",
+    "observe", "screenshot", "tap", "long_press", "swipe", "scroll", "type", "press", "open_app", "list_apps", "wait", "finish",
 )
 
 /** 悬浮窗和通知里显示当前在做哪个动作；参数还在流式输出时解析不出来，返回 null */
@@ -88,6 +88,11 @@ internal fun buildPhoneUseTool(
             Operate the user's Android phone: read the screen, tap, swipe, type and open apps.
             Workflow: open_app (or press home) first, then observe to get the on-screen elements, then act.
             Every action that changes the screen returns the new element list, so you rarely need to call observe again.
+            Keep working across tool calls until the entire requested task is done or a specific blocker requires the user.
+            Opening an app, a successful tap, or an intermediate screen is not task completion.
+            Check the resulting screen to verify the outcome. Call finish when done or blocked, then give a concise final reply.
+            Do not call finish for intermediate progress such as opening an app or a successful tap.
+            If a step fails, inspect the current screen and try a different supported action; do not silently abandon the task.
             Prefer targeting elements by their index from the latest element list; indexes are only valid for that list.
             Coordinates are on a $GRID x $GRID grid: (0,0) is the top-left of the screen and ($GRID,$GRID) the bottom-right,
             in both the element list and screenshots.
@@ -149,6 +154,7 @@ private class PhoneUseSession(
             "Phone Use is not enabled. Ask the user to turn on \"LastChat Phone use\" in the system accessibility settings."
         )
         when (val action = params.string("action") ?: error("action is required")) {
+            "finish" -> text("Phone-use task closed. Give the user a concise final reply with the result or remaining blocker.")
             "list_apps" -> text(
                 controller.listApps()
                     .filterNot { it.packageName in PHONE_USE_BLOCKED_APPS }
@@ -192,7 +198,7 @@ private class PhoneUseSession(
             "screenshot" -> {
                 ensureOperable(controller)
                 val screen = capture(controller)
-                val bytes = hidingOverlays { controller.screenshot(SCREENSHOT_MAX_SIDE) }
+                val bytes = yieldingControls(capturing = true) { controller.screenshot(SCREENSHOT_MAX_SIDE) }
                 listOf(
                     UIMessagePart.Image(url = encodeScreenshot(bytes)),
                     UIMessagePart.Text(
@@ -261,7 +267,7 @@ private class PhoneUseSession(
         name: String,
         block: suspend () -> Boolean,
     ): List<UIMessagePart> {
-        val done = hidingOverlays { block() }
+        val done = yieldingControls { block() }
         if (!done) {
             return text("$name failed: the system rejected it. Observe the screen and try another way.")
         }
@@ -269,10 +275,10 @@ private class PhoneUseSession(
         return text("$name done.\n" + describeCurrent(controller))
     }
 
-    private suspend fun <T> hidingOverlays(block: suspend () -> T): T {
-        manager.setActing(true)
+    private suspend fun <T> yieldingControls(capturing: Boolean = false, block: suspend () -> T): T {
+        manager.setActing(true, capturing = capturing)
         try {
-            delay(OVERLAY_HIDE_MS)
+            delay(if (capturing) OVERLAY_HIDE_MS else 32L)
             return block()
         } finally {
             manager.setActing(false)
@@ -392,7 +398,7 @@ internal fun phoneUseInputSchema(): InputSchema.Obj = InputSchema.Obj(
                     "scroll: scroll the content in 'direction', optionally inside 'element'. " +
                     "type: replace the text of an input field ('element', or the focused field) with 'text'. " +
                     "press: press 'key'. open_app: launch an app by 'app' (name or package). " +
-                    "list_apps: list installed apps. wait: wait 'seconds' for loading."
+                    "list_apps: list installed apps. wait: wait 'seconds' for loading. finish: close the task after verifying completion or identifying a blocker, then reply to the user."
             )
         })
         put("element", buildJsonObject {

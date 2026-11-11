@@ -24,18 +24,82 @@ class PhoneUseManager {
     val acting: StateFlow<Boolean> = _acting.asStateFlow()
     private val _session = MutableStateFlow<PhoneUseTask?>(null)
     val session: StateFlow<PhoneUseTask?> = _session.asStateFlow()
+    private val _capturing = MutableStateFlow(false)
+    val capturing: StateFlow<Boolean> = _capturing.asStateFlow()
+    val appUiVisible = MutableStateFlow(false)
     val assistantUiVisible = MutableStateFlow(false)
     val controlsReady = MutableStateFlow<Uuid?>(null)
     private val stateLock = Any()
     private val assistantConversations = mutableSetOf<Uuid>()
     private val gate = Mutex()
     private var cancelTask: (() -> Unit)? = null
+    private var lastSpokenReply: Uuid? = null
 
     fun attach(controller: PhoneController) { _controller.value = controller }
     fun detach(controller: PhoneController) {
         if (_controller.compareAndSet(controller, null)) stop()
     }
-    fun setActing(acting: Boolean) { _acting.value = acting }
+    fun setActing(acting: Boolean, capturing: Boolean = false) {
+        _capturing.value = acting && capturing
+        _acting.value = acting
+    }
+
+    fun isAssistantConversation(id: Uuid): Boolean = synchronized(stateLock) {
+        id in assistantConversations || _session.value?.let { it.conversationId == id && it.systemAssistant } == true
+    }
+
+    fun ownsCompletion(id: Uuid): Boolean =
+        (isAssistantConversation(id) && assistantUiVisible.value) ||
+            (_session.value?.let {
+                it.conversationId == id && (it.running || !it.resultPresented) &&
+                    (it.systemAssistant || controlsReady.value == id)
+            } == true)
+
+    fun claimSpokenReply(id: Uuid): Boolean = synchronized(stateLock) {
+        if (lastSpokenReply == id) false else { lastSpokenReply = id; true }
+    }
+
+    fun claimAssistantReturn(id: Uuid): Boolean = synchronized(stateLock) {
+        val current = _session.value ?: return@synchronized false
+        if (current.conversationId != id || current.returnRequested) false else {
+            _session.value = current.copy(returnRequested = true)
+            true
+        }
+    }
+
+    fun markAssistantPresented(id: Uuid) = synchronized(stateLock) {
+        _session.value = _session.value?.let {
+            if (it.conversationId == id && !it.running) it.copy(resultPresented = true) else it
+        }
+    }
+
+    fun markReturnFailed(id: Uuid) = synchronized(stateLock) {
+        _session.value = _session.value?.let { if (it.conversationId == id) it.copy(returnFailed = true) else it }
+    }
+
+    fun resumeReply(id: Uuid, cancel: () -> Unit) = synchronized(stateLock) {
+        val current = _session.value ?: return@synchronized
+        if (current.conversationId != id) return@synchronized
+        cancelTask = cancel
+        _session.value = current.copy(running = true, paused = false, awaitingReply = false,
+            action = "reply", error = null, returnRequested = false, resultPresented = false)
+    }
+
+    fun setError(id: Uuid, message: String?) = synchronized(stateLock) {
+        _session.value = _session.value?.let { if (it.conversationId == id && it.running) it.copy(error = message) else it }
+    }
+
+    fun generationSettled(id: Uuid, awaitingReply: Boolean, reply: String) {
+        synchronized(stateLock) {
+            val current = _session.value ?: return
+            if (current.conversationId != id || !current.running) return
+            _session.value = current.copy(
+                running = awaitingReply, awaitingReply = awaitingReply, paused = false,
+                reply = reply, returnRequested = false,
+            )
+            if (!awaitingReply) cancelTask = null
+        }
+    }
     fun registerAssistantConversation(id: Uuid) { synchronized(stateLock) { assistantConversations.add(id) } }
     fun unregisterAssistantConversation(id: Uuid) { synchronized(stateLock) { assistantConversations.remove(id) } }
 
@@ -58,7 +122,7 @@ class PhoneUseManager {
                 _session.value = PhoneUseTask(id, assistantId, id in assistantConversations, action)
                 true
             } else {
-                _session.value = current.copy(action = action)
+                _session.value = current.copy(action = action, awaitingReply = false, returnRequested = false, returnFailed = false, error = null)
                 false
             }
         }
@@ -71,8 +135,8 @@ class PhoneUseManager {
         session.first { it?.conversationId != id || !it.paused }
         if (_session.value?.systemAssistant == true && (starting || wasPaused || assistantUiVisible.value)) {
             withTimeout(5000) { assistantUiVisible.first { !it } }
-            // ProcessLifecycleOwner delays ON_STOP; let it catch up before checking self-operation.
-            delay(800)
+            // Wait for the activity-to-dock handoff to finish before acting on the target app.
+            delay(40)
         }
         session.first { it?.conversationId != id || !it.paused }
         check(_session.value?.let { it.conversationId == id && it.running } == true) { "Phone use stopped." }
@@ -109,4 +173,10 @@ data class PhoneUseTask(
     val action: String,
     val running: Boolean = true,
     val paused: Boolean = false,
+    val awaitingReply: Boolean = false,
+    val reply: String = "",
+    val error: String? = null,
+    val returnRequested: Boolean = false,
+    val returnFailed: Boolean = false,
+    val resultPresented: Boolean = false,
 )
