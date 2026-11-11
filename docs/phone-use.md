@@ -18,10 +18,11 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
   avatar to expand the action label, conversation shortcut, and pause control.
 - Tasks started from the system assistant use a full-width bottom assistant
   surface using the assistant's actual transcript header. The transcript and input
-  collapse before the activity yields to the target app. Completion or a pending
-  approval brings the same conversation back into the assistant UI; automatic
-  speech follows its configured setting, once per reply. If Android blocks the
-  return, the shared transcript is available in the service window instead.
+  collapse before the activity yields to the target app. Completion expands the
+  shared transcript directly in the floating window over the live app; it does not
+  reopen an activity. Automatic speech follows the assistant setting, once per reply.
+  Pending approvals return to the assistant's existing input/approval UI. The drag
+  handle moves the service window; the reply has an explicit dismiss control.
 - Opening the conversation pauses phone use. For system assistant conversations,
   resuming yields the assistant activity again. The conversation, character,
   tool approvals, questions, and history continue through the existing ChatService.
@@ -44,7 +45,10 @@ visible window without detaching/recreating it; screenshots alone briefly hide i
 with flags restored in a finally block. Any started LastChat activity hides the
 service window, including translucent activities, to avoid duplicate avatars.
 System-assistant and attached popup replies own completion delivery and suppress
-the duplicate generation notification. Approvals retain task ownership even when
+the duplicate generation notification. Toast decorations are constrained to the content
+size so an empty host cannot turn a popup into a full-screen touch region. Drag bounds
+use the usable window frame and are clamped again after resizing or rotation.
+Approvals retain task ownership even when
 there is no active generation job. The tool rechecks character access before every
 action.
 
@@ -70,3 +74,18 @@ The action executor and accessibility controller are adapted from RikkaHub at
 `90269e39dcf1beabf3066139c03f29162ebb082b`, under the repository's AGPL-3.0 license.
 LastChat's task ownership, controls, assistant continuation, settings, result
 conversion, and avatar integration are implemented locally.
+
+## Live assistant window
+
+The system assistant uses a bottom-anchored, content-sized translucent activity.
+Outside touches pass through and dismiss it. On Android 12+, supported devices use
+native background blur within that window when blur is enabled in LastChat; changes
+to the OS blur capability are observed (for example, battery saver). Other devices
+keep the live app visible around readable assistant surfaces. Accessibility is not
+required for native window blur, and does not provide cross-app pixels to Compose's
+Haze renderer.
+
+Assist screenshots are retained only at model-inspection resolution for
+`look_at_screen` and optional context attachment. They are never displayed behind
+the assistant, and no capture loop is used for visual effects. Accessibility-owned
+phone-use windows keep the target app active during work and when showing the reply.

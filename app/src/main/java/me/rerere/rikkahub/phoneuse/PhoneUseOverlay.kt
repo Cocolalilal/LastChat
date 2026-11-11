@@ -3,6 +3,8 @@ package me.rerere.rikkahub.phoneuse
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Build
+import android.view.WindowInsets
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -31,6 +33,14 @@ import kotlin.uuid.Uuid
 internal fun shouldShowPhoneOverlay(task: PhoneUseTask?, appVisible: Boolean, capturing: Boolean): Boolean =
     task != null && !appVisible && !capturing && !(task.systemAssistant && task.resultPresented)
 
+internal fun shouldReturnForPhoneApproval(task: PhoneUseTask): Boolean =
+    task.systemAssistant && task.awaitingReply
+
+internal fun clampPhoneOverlayOffset(
+    x: Int, y: Int, frameWidth: Int, frameHeight: Int, contentWidth: Int, contentHeight: Int,
+): Pair<Int, Int> = x.coerceIn(0, (frameWidth - contentWidth).coerceAtLeast(0)) to
+    y.coerceIn(0, (frameHeight - contentHeight).coerceAtLeast(0))
+
 /** Gestures pass through the existing window. Only a real screenshot hides it. */
 internal class PhoneUseOverlay(
     private val service: AccessibilityService,
@@ -45,6 +55,7 @@ internal class PhoneUseOverlay(
     private var view: ComposeView? = null
     private var currentSystemMode: Boolean? = null
     private var inputRequested = false
+    private var positionDirty = false
     private var heldConversation: Uuid? = null
     private val chatService by lazy { GlobalContext.get().get<ChatService>() }
 
@@ -73,6 +84,7 @@ internal class PhoneUseOverlay(
                     currentSystemMode = task.systemAssistant
                     val content = ComposeView(service).apply {
                         visibility = View.INVISIBLE // Never flash an extra avatar over a starting app activity.
+                        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clampPosition() }
                         setViewTreeLifecycleOwner(this@PhoneUseOverlay)
                         setViewTreeSavedStateRegistryOwner(this@PhoneUseOverlay)
                         setContent {
@@ -86,7 +98,7 @@ internal class PhoneUseOverlay(
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         PixelFormat.TRANSLUCENT,
                     ).apply {
-                        gravity = Gravity.BOTTOM or (if (task.systemAssistant) Gravity.CENTER_HORIZONTAL else Gravity.END)
+                        gravity = Gravity.BOTTOM or Gravity.RIGHT
                         y = if (task.systemAssistant) 0 else (24 * service.resources.displayMetrics.density).toInt()
                     }
                     runCatching { windows.addView(content, params) }
@@ -97,11 +109,9 @@ internal class PhoneUseOverlay(
                 view?.visibility = if (shouldShowPhoneOverlay(task, appVisible, capturing)) View.VISIBLE else View.INVISIBLE
                 if (view?.isAttachedToWindow == true) manager.controlsReady.value = task.conversationId
 
-                if (task.systemAssistant && (!task.running || task.awaitingReply) &&
+                if (shouldReturnForPhoneApproval(task) &&
                     manager.claimAssistantReturn(task.conversationId)) {
-                    if (appVisible) {
-                        if (!task.running) manager.markAssistantPresented(task.conversationId)
-                    } else {
+                    if (!appVisible) {
                         openConversation(task, pause = false)
                         scope.launch {
                             delay(1200)
@@ -113,9 +123,7 @@ internal class PhoneUseOverlay(
                         }
                     }
                 }
-                if (task.systemAssistant && !task.running && appVisible && !task.resultPresented) {
-                    manager.markAssistantPresented(task.conversationId)
-                }
+
             }
         }
     }
@@ -152,9 +160,28 @@ internal class PhoneUseOverlay(
     private fun drag(dx: Float, dy: Float) {
         val content = view ?: return
         val params = content.layoutParams as WindowManager.LayoutParams
-        val bounds = service.resources.displayMetrics
-        params.x = (params.x - dx.toInt()).coerceIn(0, (bounds.widthPixels - content.width).coerceAtLeast(0))
-        params.y = (params.y - dy.toInt()).coerceIn(0, (bounds.heightPixels - content.height).coerceAtLeast(0))
+        params.x -= dx.toInt()
+        params.y -= dy.toInt()
+        positionDirty = true
+        clampPosition()
+    }
+
+    private fun clampPosition() {
+        val content = view ?: return
+        val params = content.layoutParams as WindowManager.LayoutParams
+        val (width, height) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = windows.currentWindowMetrics
+            val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
+            )
+            (metrics.bounds.width() - insets.left - insets.right) to
+                (metrics.bounds.height() - insets.top - insets.bottom)
+        } else service.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
+        val offset = clampPhoneOverlayOffset(params.x, params.y, width, height, content.width, content.height)
+        if (params.x == offset.first && params.y == offset.second && !positionDirty) return
+        params.x = offset.first
+        params.y = offset.second
+        positionDirty = false
         runCatching { windows.updateViewLayout(content, params) }
     }
 

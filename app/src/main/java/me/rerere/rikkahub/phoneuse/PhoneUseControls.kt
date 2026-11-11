@@ -39,6 +39,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.hasPendingToolApprovals
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.ui.FloatingOverlayLayout
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -108,24 +109,26 @@ internal fun PhoneUseOverlayContent(
     ) {
         RikkahubTheme {
             AssistantChatTheme(assistant) {
-                if (current.systemAssistant) {
-                    if (current.returnFailed || current.action == "reply") {
-                        AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
-                            chatService) { onOpen(current) }
-                    } else AssistantPhoneUseDock(current, assistant, manager) { onOpen(current) }
-                } else PhoneUseControls(
-                    current, assistant, manager, { onOpen(current) }, floating = true,
-                    onDrag = onDrag, needsReply = needsReply,
-                    reply = latestReply.ifBlank { current.reply },
-                    onReplyFocus = onReplyFocus,
-                    onSendReply = { text ->
-                        manager.resumeReply(current.conversationId) { chatService.stopGeneration(current.conversationId) }
-                        onReplyFocus(false)
-                        chatService.sendMessage(current.conversationId, listOf(UIMessagePart.Text(text)),
-                            suppressCompletionNotification = true)
-                    },
-                )
-                AppToasterHost(toaster)
+                FloatingOverlayLayout(content = {
+                    if (current.systemAssistant) {
+                        if (!current.running || current.returnFailed || current.action in setOf("reply", "finish")) {
+                            AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
+                                chatService, onOpen = { onOpen(current) }, onDrag = onDrag)
+                        } else AssistantPhoneUseDock(current, assistant, manager,
+                            onOpen = { onOpen(current) }, onDrag = onDrag)
+                    } else PhoneUseControls(
+                        current, assistant, manager, { onOpen(current) }, floating = true,
+                        onDrag = onDrag, needsReply = needsReply,
+                        reply = latestReply.ifBlank { current.reply },
+                        onReplyFocus = onReplyFocus,
+                        onSendReply = { text ->
+                            manager.resumeReply(current.conversationId) { chatService.stopGeneration(current.conversationId) }
+                            onReplyFocus(false)
+                            chatService.sendMessage(current.conversationId, listOf(UIMessagePart.Text(text)),
+                                suppressCompletionNotification = true)
+                        },
+                    )
+                }, decoration = { AppToasterHost(toaster) })
             }
         }
     }

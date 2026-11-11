@@ -27,6 +27,7 @@ internal fun AssistantPhoneUseDock(
     assistant: Assistant,
     manager: PhoneUseManager,
     onOpen: () -> Unit,
+    onDrag: ((Float, Float) -> Unit)? = null,
 ) {
     val config = LocalSettings.current.assistantOverlayConfig
     Box(Modifier.fillMaxWidth().height(112.dp), contentAlignment = Alignment.BottomCenter) {
@@ -40,13 +41,14 @@ internal fun AssistantPhoneUseDock(
                 messages = emptyList(), activityState = ActivityState.Waiting,
                 isGenerating = task.running, isSpeaking = false, onOpenInApp = onOpen,
                 onCopy = {}, onRegenerate = {}, onToggleTts = {}, compact = true,
+                onMoveWindow = onDrag, openDescription = "Open assistant",
                 phoneTask = task, onPausePhone = { manager.togglePause() }, onStopPhone = { manager.stop() },
             )
         }
     }
 }
 
-/** Fallback when Android cannot foreground the assistant activity; still the same transcript UI. */
+/** Completion stays in this service window over the live app, using the shared transcript UI. */
 @Composable
 internal fun AssistantPhoneUseReply(
     task: PhoneUseTask,
@@ -55,14 +57,16 @@ internal fun AssistantPhoneUseReply(
     messages: List<me.rerere.ai.ui.UIMessage>,
     chatService: me.rerere.rikkahub.service.ChatService,
     onOpen: () -> Unit,
+    onDrag: ((Float, Float) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings = LocalSettings.current
     val tts = me.rerere.rikkahub.ui.hooks.rememberCustomTtsState()
     val speaking by tts.isSpeaking.collectAsStateWithLifecycle()
+    val appVisible by manager.appUiVisible.collectAsStateWithLifecycle()
     val reply = messages.lastOrNull()?.takeIf { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
-    LaunchedEffect(task.running, reply?.id) {
-        if (!task.running && task.error == null && settings.assistantOverlayConfig.autoReadReply &&
+    LaunchedEffect(task.running, reply?.id, appVisible) {
+        if (!appVisible && !task.running && task.error == null && settings.assistantOverlayConfig.autoReadReply &&
             reply != null && reply.toContentText().isNotBlank() && manager.claimSpokenReply(reply.id)) {
             tts.speak(reply.toContentText(), overrideSetting = settings.getEffectiveTTSProvider(assistant))
         }
@@ -83,7 +87,8 @@ internal fun AssistantPhoneUseReply(
                 if (speaking) tts.stop()
                 else tts.speak(it.toContentText(), overrideSetting = settings.getEffectiveTTSProvider(assistant))
             },
-            phoneTask = task,
+            phoneTask = task, onMoveWindow = onDrag, onDismiss = { manager.stop() },
+            openDescription = "Open assistant",
             onPausePhone = { manager.togglePause() }, onStopPhone = { manager.stop() },
         )
     }

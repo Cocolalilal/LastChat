@@ -11,8 +11,8 @@ import me.rerere.rikkahub.ui.activity.AssistantOverlayActivity
  * A single assist invocation.
  *
  * We don't draw the assistant UI inside the session window itself — instead we cache
- * the trigger-time screenshot and immediately launch [AssistantOverlayActivity], which
- * hosts the full Compose overlay (glow + reply panel + input) with access to Koin,
+ * a small trigger-time image for model inspection and immediately launch [AssistantOverlayActivity], which
+ * hosts a content-sized floating Compose interface (reply panel + input) with access to Koin,
  * ViewModels and the generation pipeline. The system session window is then hidden.
  *
  * Rationale: hosting a full Compose + Koin + ViewModelStore stack inside a
