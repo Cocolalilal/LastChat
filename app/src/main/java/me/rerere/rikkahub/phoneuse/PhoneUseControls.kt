@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
@@ -175,7 +176,8 @@ fun PhoneUseControls(
     val animatedWidth by animateDpAsState(targetWidth,
         if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillWidth")
     val width = if (reduceMotion) targetWidth else animatedWidth
-    val showDetails = expanded && width >= 280.dp
+    val showDetails = width >= 280.dp
+    val detailsAlpha = ((width.value - 280f) / 40f).coerceIn(0f, 1f)
     LaunchedEffect(needsReply, task.running, task.action) {
         if (needsReply || !task.running || task.action == "reply") expanded = true
     }
@@ -203,7 +205,7 @@ fun PhoneUseControls(
                     PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
                 }
                 if (showDetails) {
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f).graphicsLayer { alpha = detailsAlpha }) {
                         Text(assistant.name, style = MaterialTheme.typography.labelLarge,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(if (needsReply) "Reply needed" else phoneTaskLabel(task),
@@ -211,13 +213,13 @@ fun PhoneUseControls(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    if (task.running) IconButton(modifier = Modifier.size(40.dp), onClick = {
+                    if (task.running) IconButton(modifier = Modifier.size(40.dp).graphicsLayer { alpha = detailsAlpha }, onClick = {
                         haptics.perform(HapticPattern.Tick); manager.togglePause()
                     }) {
                         Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
                             if (task.paused) "Resume phone use" else "Pause phone use")
                     }
-                    if (onOpen != null) IconButton(modifier = Modifier.size(40.dp), onClick = onOpen) {
+                    if (onOpen != null) IconButton(modifier = Modifier.size(40.dp).graphicsLayer { alpha = detailsAlpha }, onClick = onOpen) {
                         Icon(Icons.Rounded.OpenInFull, "Open conversation")
                     }
                 } else Spacer(Modifier.weight(1f))
@@ -231,7 +233,7 @@ fun PhoneUseControls(
                 }
             }
             AnimatedVisibility(
-                visible = showDetails && (!task.running || task.action == "reply"),
+                visible = expanded && showDetails && (!task.running || task.action == "reply"),
                 enter = expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +
                     fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)),
                 exit = shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +

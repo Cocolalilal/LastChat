@@ -153,6 +153,33 @@ class PhoneUseControlsRenderTest {
         controller.pause().stop().destroy()
     }
 
+    @Test fun compactAssistantHasNoResizeHandleAndKeepsCapsuleDimensions() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        android.provider.Settings.Global.putFloat(activity.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        val task = PhoneUseTask(Uuid.random(), Uuid.random(), true, "observe")
+        activity.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    me.rerere.rikkahub.ui.activity.TranscriptPanel(
+                        assistantAvatar = { Box(it) }, messages = emptyList(),
+                        activityState = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
+                        isGenerating = true, isSpeaking = false, onOpenInApp = {},
+                        onCopy = {}, onRegenerate = {}, onToggleTts = {}, compact = true, phoneTask = task,
+                    )
+                }
+            }
+        }
+        val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val density = activity.resources.displayMetrics.density
+        view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
+        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+        org.junit.Assert.assertEquals((56 * density).toInt(), view.measuredHeight)
+        controller.pause().stop().destroy()
+    }
+
     @Test fun finishedPopupExposesReplyAndComposerOnFirstLayout() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val activity = controller.get()

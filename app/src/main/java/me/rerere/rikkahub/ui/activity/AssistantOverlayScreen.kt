@@ -19,6 +19,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.core.snap
 import me.rerere.rikkahub.phoneuse.PHONE_MOTION_STIFFNESS
 import me.rerere.rikkahub.phoneuse.PHONE_MOTION_DAMPING
@@ -613,6 +614,12 @@ internal fun TranscriptPanel(
     }
 
     val blur = LocalLastChatBlur.current
+    val compactTransition = updateTransition(compact, label = "assistantPhoneMorph")
+    val handleProgress by compactTransition.animateFloat(
+        transitionSpec = { if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS) },
+        label = "resizeHandle",
+    ) { if (it) 0f else 1f }
+    val handleFraction = handleProgress.coerceIn(0f, 1f)
     val panelShape = RoundedCornerShape(28.dp)
     val containerColor = if (blur.enabled && (blur.hazeState != null || blur.windowBlur)) {
         blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
@@ -681,16 +688,17 @@ internal fun TranscriptPanel(
         border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize(if (reduceMotion || resizing || (isGenerating && !compact && !settlingResize)) snap()
+            .animateContentSize(if (reduceMotion || resizing || compactTransition.isRunning || (isGenerating && !compact && !settlingResize)) snap()
                 else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))
             .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
     ) {
         Column(modifier = Modifier.fillMaxWidth()
             .onSizeChanged { measuredHeight[0] = it.height / density.density }
-            .then(if (!compact && panelHeight != null) {
-                Modifier.height(panelHeight!!.coerceIn(minHeight, maxHeight).dp)
+            .then(if (panelHeight != null && (!compact || compactTransition.isRunning)) {
+                val expandedHeight = panelHeight!!.coerceIn(minHeight, maxHeight)
+                Modifier.height((56f + (expandedHeight - 56f) * handleFraction).dp)
             } else {
-                Modifier.heightIn(min = if (compact) 0.dp else minHeight.dp, max = maxHeight.dp)
+                Modifier.heightIn(min = (minHeight * handleFraction).dp, max = maxHeight.dp)
             })) {
             // Floating header (drag handle + avatar + compact activity pill + open-in-app).
             Column(
@@ -700,8 +708,10 @@ internal fun TranscriptPanel(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .phoneOverlayDrag(windowDrag)
-                        .then(if (windowDrag == null) Modifier.pointerInput(minHeight, maxHeight) {
+                        .height((20f * handleFraction).dp)
+                        .graphicsLayer { alpha = handleFraction; clip = true }
+                        .phoneOverlayDrag(if (compact) null else windowDrag)
+                        .then(if (windowDrag == null && !compact) Modifier.pointerInput(minHeight, maxHeight) {
                             detectVerticalDragGestures(
                                 onDragStart = {
                                     panelHeight = measuredHeight[0].coerceIn(minHeight, maxHeight)
@@ -721,7 +731,7 @@ internal fun TranscriptPanel(
                                 onDragCancel = { resizing = false },
                             )
                         } else Modifier)
-                        .padding(top = 10.dp, bottom = 6.dp),
+                        .padding(top = (10f * handleFraction).dp, bottom = (6f * handleFraction).dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
@@ -735,18 +745,24 @@ internal fun TranscriptPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 8.dp),
+                        .phoneOverlayDrag(if (compact) windowDrag else null)
+                        .padding(horizontal = (12f + 4f * handleFraction).dp)
+                        .padding(top = (8f * (1f - handleFraction)).dp, bottom = 8.dp),
                 ) {
                     assistantAvatar(Modifier.size(32.dp))
                     Spacer(Modifier.width(10.dp))
                     // Weighted box fills the leftover width so the button sits at the far right.
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                        if (compact && phoneTask != null) {
-                            Text(me.rerere.rikkahub.phoneuse.phoneTaskLabel(phoneTask),
+                        androidx.compose.animation.Crossfade(
+                            targetState = phoneTask?.takeIf { compact }?.let { me.rerere.rikkahub.phoneuse.phoneTaskLabel(it) },
+                            animationSpec = if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS),
+                            label = "phoneActivityLabel",
+                        ) { label ->
+                            if (label != null) Text(label,
                                 style = MaterialTheme.typography.labelLarge, maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        } else CompactActivityPill(state = activityState)
+                            else CompactActivityPill(state = activityState)
+                        }
                     }
                     if (phoneTask?.running == true) {
                         if (phoneTask.action != "reply") androidx.compose.material3.IconButton(onClick = onPausePhone, modifier = Modifier.size(40.dp)) {
@@ -782,18 +798,25 @@ internal fun TranscriptPanel(
                 }
             }
             // The scrolling reply is below the header from the first frame; no measured spacer.
-            if (!compact) Box(
-                modifier = Modifier
+            compactTransition.AnimatedVisibility(
+                visible = { !it },
+                modifier = Modifier.weight(1f, fill = false),
+                enter = fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                    androidx.compose.animation.expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                exit = fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                    androidx.compose.animation.shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+            ) {
+                Box(modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false)
                     .fadeEdges(
                         fadeTop = true,
                         fadeBottom = false,
                         fadeHeight = with(density) { 16.dp.toPx() },
                     )
                     .verticalScroll(scroll),
-            ) {
-                transcriptColumn()
+                ) {
+                    transcriptColumn()
+                }
             }
 
         }

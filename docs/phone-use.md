@@ -24,7 +24,10 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
   transfers any draft when the assistant opens. Automatic speech follows the
   assistant setting, once per reply.
   Pending approvals return to the assistant's existing input/approval UI. The drag
-  handle moves the service window; the reply has an explicit dismiss control.
+  handle moves the expanded service window; compact controls can be dragged by
+  their row. The resize handle fades and collapses during phone use, leaving a
+  56 dp capsule, and returns with the transcript. Status labels crossfade; the
+  reply has an explicit dismiss control.
 - Opening the conversation pauses phone use. For system assistant conversations,
   resuming yields the assistant activity again. The conversation, character,
   tool approvals, questions, and history continue through the existing ChatService.
