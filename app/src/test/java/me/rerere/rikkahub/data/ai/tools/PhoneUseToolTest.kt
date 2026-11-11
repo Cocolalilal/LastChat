@@ -252,6 +252,18 @@ class PhoneUseToolTest {
         assertTrue(controller.capturingDuringScreenshot)
     }
 
+    @Test fun `window screenshots keep controls attached and restore flags after failure`() = runTest {
+        manager.attach(controller)
+        controller.supportsWindowScreenshots = true
+        tool.execute(buildJsonObject { put("action", "screenshot") })
+        assertFalse(controller.capturingDuringScreenshot)
+        controller.screenshotFailure = true
+        assertTrue(runCatching { tool.execute(buildJsonObject { put("action", "screenshot") }) }.isFailure)
+        assertFalse(controller.capturingDuringScreenshot)
+        assertFalse(manager.capturing.value)
+        assertFalse(manager.acting.value)
+    }
+
     @Test fun `screenshot failures restore visibility and gesture flags`() = runTest {
         manager.attach(controller)
         controller.screenshotFailure = true
@@ -282,6 +294,7 @@ class PhoneUseToolTest {
         val actingDuringGesture = mutableListOf<Boolean>()
         val capturingDuringGesture = mutableListOf<Boolean>()
         var capturingDuringScreenshot = false
+        override var supportsWindowScreenshots = false
         var screenshotFailure = false
         val keys = mutableListOf<PhoneKey>()
         val texts = mutableListOf<Pair<Int?, String>>()

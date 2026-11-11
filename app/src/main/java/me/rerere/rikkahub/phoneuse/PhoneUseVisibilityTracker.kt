@@ -12,6 +12,9 @@ class PhoneUseVisibilityTracker(private val manager: PhoneUseManager) : Applicat
     override fun onActivityDestroyed(activity: Activity) { visible -= activity; update() }
     private fun update() {
         manager.appUiVisible.value = visible.isNotEmpty()
+        manager.otherAppUiVisible.value = visible.any {
+            it !is me.rerere.rikkahub.ui.activity.AssistantOverlayActivity
+        }
         manager.assistantUiVisible.value = visible.any {
             it is me.rerere.rikkahub.ui.activity.AssistantOverlayActivity
         }

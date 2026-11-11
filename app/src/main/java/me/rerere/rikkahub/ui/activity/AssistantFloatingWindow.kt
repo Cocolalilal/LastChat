@@ -53,7 +53,12 @@ internal class AssistantFloatingWindow(
             val params = activity.window.attributes
             params.flags = if (radius > 0) params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
                 else params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) params.setBlurBehindRadius(radius)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Some compositors only render background blur for translucent activities.
+                // Both requests use the same fixed window; neither depends on Compose sizing.
+                activity.window.setBackgroundBlurRadius(radius)
+                params.setBlurBehindRadius(radius / 2)
+            }
             activity.window.attributes = params
             appliedRadius = radius
         }

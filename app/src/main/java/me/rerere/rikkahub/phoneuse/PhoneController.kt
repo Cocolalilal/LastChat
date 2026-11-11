@@ -33,6 +33,8 @@ enum class PhoneKey { BACK, HOME, RECENTS, NOTIFICATIONS, ENTER }
 
 /** On-demand accessibility operations; never collects screen contents in the background. */
 interface PhoneController {
+    /** The implementation can capture a target window without hiding accessibility controls. */
+    val supportsWindowScreenshots: Boolean get() = false
     fun visiblePackages(): Set<String>
     suspend fun captureScreen(): PhoneScreen
     suspend fun screenshot(maxSide: Int): ByteArray

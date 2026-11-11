@@ -28,7 +28,12 @@ class PhoneUseManager {
     val capturing: StateFlow<Boolean> = _capturing.asStateFlow()
     val appUiVisible = MutableStateFlow(false)
     val assistantUiVisible = MutableStateFlow(false)
+    val otherAppUiVisible = MutableStateFlow(false)
+    val assistantReturning = MutableStateFlow(false)
     val controlsReady = MutableStateFlow<Uuid?>(null)
+    // The shared panel is already in its compact pose when another window takes over.
+    val assistantDocked = MutableStateFlow<Uuid?>(null)
+    val overlayBlur = MutableStateFlow(false)
     private val stateLock = Any()
     private val assistantConversations = mutableSetOf<Uuid>()
     private val gate = Mutex()
@@ -89,6 +94,7 @@ class PhoneUseManager {
     }
 
     fun markReturnFailed(id: Uuid) = synchronized(stateLock) {
+        assistantReturning.value = false
         _session.value = _session.value?.let { if (it.conversationId == id) it.copy(returnFailed = true) else it }
     }
 
@@ -170,12 +176,34 @@ class PhoneUseManager {
             cancelTask = null
         }
     }
+    /** Cancel the work while retaining the assistant surface and its reply/input ownership. */
+    fun cancelAndReturn() {
+        val cancel = synchronized(stateLock) {
+            val current = _session.value ?: return
+            val callback = cancelTask
+            cancelTask = null
+            if (current.systemAssistant) {
+                _session.value = current.copy(running = false, paused = false, awaitingReply = false,
+                    returnRequested = false, returnFailed = false, resultPresented = false)
+            } else {
+                _session.value = null
+                replyDraft = ""
+                draftOwner = null
+                controlsReady.value = null
+            }
+            callback
+        }
+        cancel?.invoke()
+    }
+
     fun stop() {
         val cancel = synchronized(stateLock) {
             val callback = cancelTask
             cancelTask = null
             _session.value = null
             replyDraft = ""; draftOwner = null
+            assistantDocked.value = null
+            assistantReturning.value = false
             controlsReady.value = null
             callback
         }

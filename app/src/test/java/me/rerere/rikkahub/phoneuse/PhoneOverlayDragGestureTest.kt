@@ -51,7 +51,8 @@ class PhoneOverlayDragGestureTest {
             val location = IntArray(2)
             view.getLocationOnScreen(location)
             val motion = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
-                origin[0] + x - location[0], origin[1] + 24 * density - location[1], 0)
+                origin[0] + x, origin[1] + 24 * density, 0)
+            motion.offsetLocation(-location[0].toFloat(), -location[1].toFloat())
             trace += "event=$action time=${SystemClock.uptimeMillis()} x=${motion.x} loc=${location[0]}"
             view.dispatchTouchEvent(motion)
             motion.recycle()

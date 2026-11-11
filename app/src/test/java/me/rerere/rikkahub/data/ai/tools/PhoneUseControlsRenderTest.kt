@@ -148,7 +148,7 @@ class PhoneUseControlsRenderTest {
             view.layout(0, 0, view.measuredWidth, view.measuredHeight)
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
         }
-        org.junit.Assert.assertEquals((128 * density).toInt(), view.measuredWidth)
+        org.junit.Assert.assertEquals((124 * density).toInt(), view.measuredWidth)
         org.junit.Assert.assertEquals((72 * density).toInt(), view.measuredHeight)
         controller.pause().stop().destroy()
     }

@@ -262,6 +262,7 @@ fun MinimalChatInput(
     showScrollToBottomButton: Boolean = false,
     onScrollToBottomClick: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 24.dp,
+    applyBottomInsets: Boolean = true,
     onInputFocusChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -637,8 +638,7 @@ fun MinimalChatInput(
     ) {
         Column(
             modifier = Modifier
-                .imePadding()
-                .navigationBarsPadding()
+                .then(if (applyBottomInsets) Modifier.imePadding().navigationBarsPadding() else Modifier)
                 .padding(bottom = bottomPadding, start = 16.dp, end = 16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)

@@ -57,4 +57,12 @@ class PhoneUseMotionTest {
         assertEquals(0f, target.x, 0.01f)
         assertEquals(1000f, target.y, 0.01f)
     }
+    @Test fun `assistant handoff position matches activity side and bottom insets`() {
+        val frame = phoneOverlayBounds(1233, 2400, 1137, 168, 72f)
+        val dock = assistantDockAnchor(frame, 3f)
+        assertEquals(48f, dock.x, 0.01f)
+        assertEquals(72f, dock.y, 0.01f)
+        assertEquals(PhoneOverlayVerticalEdge.BOTTOM, dock.vertical)
+    }
+
 }

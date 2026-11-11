@@ -89,7 +89,7 @@ internal fun phoneActionLabel(action: String): String = when (action) {
 internal fun phoneTaskLabel(task: PhoneUseTask): String = when {
     task.error != null -> "Interrupted"
     task.awaitingReply -> "Reply needed"
-    !task.running -> "Reply ready"
+    !task.running -> ""
     task.paused -> "Paused"
     else -> phoneActionLabel(task.action)
 }
@@ -104,9 +104,12 @@ internal fun PhoneUseOverlayContent(
 ) {
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
     val reduceMotion = rememberSystemMotionPolicy().reduceMotion
+    val nativeBlur by manager.overlayBlur.collectAsStateWithLifecycle()
     SideEffect { drag.reduceMotion = reduceMotion }
     val task by manager.session.collectAsStateWithLifecycle()
-    val current = task ?: return
+    var retainedTask by remember { mutableStateOf(task) }
+    SideEffect { if (task != null) retainedTask = task }
+    val current = task ?: retainedTask ?: return
     val assistant = settings.assistants.firstOrNull { it.id == current.assistantId }
     if (assistant == null) {
         LaunchedEffect(current.conversationId) { manager.stop() }
@@ -114,6 +117,9 @@ internal fun PhoneUseOverlayContent(
     }
     val chatService = koinInject<ChatService>()
     val conversation by chatService.getConversationFlow(current.conversationId).collectAsStateWithLifecycle()
+    val generation by chatService.getGenerationJobStateFlow(current.conversationId)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val popupTask = if (!current.running && generation != null) current.copy(running = true, action = "reply") else current
     val lastUser = conversation.currentMessages.indexOfLast { it.role == MessageRole.USER }
     val latestReply = conversation.currentMessages.drop((lastUser + 1).coerceAtLeast(0))
         .lastOrNull { it.role == MessageRole.ASSISTANT }?.toContentText().orEmpty()
@@ -123,6 +129,8 @@ internal fun PhoneUseOverlayContent(
     val nav = remember(context) { NavHostController(context) }
     val highlighter = koinInject<Highlighter>()
     CompositionLocalProvider(
+        me.rerere.rikkahub.ui.modifier.LocalLastChatBlur provides me.rerere.rikkahub.ui.modifier.LastChatBlur(
+            enabled = current.systemAssistant && nativeBlur, windowBlur = current.systemAssistant && nativeBlur),
         LocalSettings provides settings, LocalToaster provides toaster,
         LocalHighlighter provides highlighter, LocalNavController provides nav,
     ) {
@@ -130,13 +138,10 @@ internal fun PhoneUseOverlayContent(
             AssistantChatTheme(assistant) {
                 FloatingOverlayLayout(content = {
                     if (current.systemAssistant) {
-                        if (!current.running || current.returnFailed || current.action in setOf("reply", "finish")) {
-                            AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
-                                chatService, onOpen = { onOpen(current) }, drag = drag, onReplyFocus = onReplyFocus)
-                        } else AssistantPhoneUseDock(current, assistant, manager,
-                            onOpen = { onOpen(current) }, drag = drag)
+                        AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
+                            chatService, onOpen = { onOpen(current) }, drag = drag, onReplyFocus = onReplyFocus)
                     } else PhoneUseControls(
-                        current, assistant, manager, { onOpen(current) }, floating = true,
+                        popupTask, assistant, manager, { onOpen(current) }, floating = true,
                         drag = drag, needsReply = needsReply,
                         reply = latestReply.ifBlank { current.reply },
                         onReplyFocus = onReplyFocus,
@@ -154,7 +159,7 @@ internal fun PhoneUseOverlayContent(
     }
 }
 
-/** The compact state is a 112 × 56 capsule, with the stop control kept visible while morphing. */
+/** The compact state is a 108 × 56 capsule, with the stop control kept visible while morphing. */
 @Composable
 fun PhoneUseControls(
     task: PhoneUseTask,
@@ -172,12 +177,16 @@ fun PhoneUseControls(
 ) {
     var expanded by remember(task.conversationId) { mutableStateOf(task.systemAssistant || !floating || !task.running || task.awaitingReply || task.action == "reply") }
     val reduceMotion = rememberSystemMotionPolicy().reduceMotion
-    val targetWidth = if (expanded) 360.dp else 112.dp
+    val expandedWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 16).coerceAtMost(360).dp
+    val targetWidth = if (expanded) expandedWidth else 108.dp
     val animatedWidth by animateDpAsState(targetWidth,
         if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillWidth")
     val width = if (reduceMotion) targetWidth else animatedWidth
-    val showDetails = width >= 280.dp
-    val detailsAlpha = ((width.value - 280f) / 40f).coerceIn(0f, 1f)
+    val detailsStart = minOf(280f, expandedWidth.value - 60f)
+    val showDetails = width.value >= detailsStart
+    val gap by animateDpAsState(if (expanded) 8.dp else 6.dp,
+        if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillGap")
+    val detailsAlpha = ((width.value - detailsStart) / 40f).coerceIn(0f, 1f)
     LaunchedEffect(needsReply, task.running, task.action) {
         if (needsReply || !task.running || task.action == "reply") expanded = true
     }
@@ -186,14 +195,14 @@ fun PhoneUseControls(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
-        modifier = Modifier.padding(8.dp).widthIn(max = 360.dp).width(width.coerceAtLeast(112.dp)),
+        modifier = Modifier.padding(8.dp).widthIn(max = 360.dp).width(width.coerceAtLeast(108.dp)),
     ) {
         Column {
             Row(
                 Modifier.fillMaxWidth().phoneOverlayDrag(if (floating) drag else null, haptics)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 Box(Modifier
                     .semantics { contentDescription = "${assistant.name}, phone use controls" }
@@ -208,10 +217,18 @@ fun PhoneUseControls(
                     Column(Modifier.weight(1f).graphicsLayer { alpha = detailsAlpha }) {
                         Text(assistant.name, style = MaterialTheme.typography.labelLarge,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (needsReply) "Reply needed" else phoneTaskLabel(task),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        var lastStatus by remember { mutableStateOf(phoneTaskLabel(task)) }
+                        val status = if (needsReply) "Reply needed" else phoneTaskLabel(task)
+                        SideEffect { if (status.isNotBlank()) lastStatus = status }
+                        AnimatedVisibility(status.isNotBlank(),
+                            enter = fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                                expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                            exit = fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                                shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))) {
+                            Text(lastStatus, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                     if (task.running) IconButton(modifier = Modifier.size(40.dp).graphicsLayer { alpha = detailsAlpha }, onClick = {
                         haptics.perform(HapticPattern.Tick); manager.togglePause()
@@ -232,14 +249,15 @@ fun PhoneUseControls(
                         if (task.running) "Stop phone use" else "Dismiss")
                 }
             }
-            AnimatedVisibility(
-                visible = expanded && showDetails && (!task.running || task.action == "reply"),
-                enter = expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +
-                    fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)),
-                exit = shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +
-                    fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)),
+            me.rerere.rikkahub.ui.activity.AssistantInputReveal(
+                visible = expanded && (!task.running || task.action == "reply"),
             ) {
-                Column {
+                // Lay out the reply at its final width once. The outer surface morphs around
+                // it, avoiding paragraph reflow and repeated Markdown layout on every frame.
+                Column(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(expandedWidth)
+                    .graphicsLayer {
+                        alpha = ((width.value - (expandedWidth.value - 44f)) / 44f).coerceIn(0f, 1f)
+                    }) {
                     Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                         task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,

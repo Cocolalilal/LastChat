@@ -65,6 +65,11 @@ class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
         super.onDestroy()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        controls.onConfigurationChanged()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() { manager.stop() }
@@ -200,59 +205,87 @@ class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
 
     // ---- 截图 ----
 
+    override val supportsWindowScreenshots: Boolean get() = Build.VERSION.SDK_INT >= 34
+
     override suspend fun screenshot(maxSide: Int): ByteArray {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "Screenshots need Android 11 or later." }
-        val bitmap = try {
-            takeScreenshot()
-        } catch (e: ScreenshotIntervalException) {
-            // 系统限制了两次截图的最小间隔
+        check(Build.VERSION.SDK_INT >= 30) { "Screenshots need Android 11 or later." }
+        val target = if (Build.VERSION.SDK_INT >= 34) windows.firstOrNull {
+            (it.type == AccessibilityWindowInfo.TYPE_APPLICATION ||
+                (it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isFocused)) &&
+                it.root?.packageName?.toString()?.let { name -> name != packageName } == true
+        } else null
+        suspend fun captureWithRetry(windowId: Int?): Bitmap = try {
+            takeScreenshotBitmap(windowId)
+        } catch (_: ScreenshotIntervalException) {
             delay(SCREENSHOT_RETRY_DELAY_MS)
-            takeScreenshot()
+            takeScreenshotBitmap(windowId)
         }
-        return withContext(Dispatchers.Default) {
-            val ratio = maxSide.toFloat() / maxOf(bitmap.width, bitmap.height)
-            val scaled = if (ratio < 1f) {
-                bitmap.scale((bitmap.width * ratio).toInt(), (bitmap.height * ratio).toInt())
-            } else {
-                bitmap
+        val bitmap = if (target != null) {
+            try {
+                val bounds = Rect().also(target::getBoundsInScreen)
+                val windowBitmap = captureWithRetry(target.id)
+                val size = screenSize()
+                alignWindowScreenshot(windowBitmap, bounds, size.x, size.y).also { windowBitmap.recycle() }
+            } catch (error: ScreenshotFailure) {
+                // A closing/replaced window can invalidate its ID. Secure-window errors are
+                // deliberately propagated; they must never trigger a display-capture fallback.
+                if (error.code != ERROR_TAKE_SCREENSHOT_INVALID_WINDOW) throw error
+                captureDisplayWithoutControls { captureWithRetry(null) }
             }
-            ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
-                .toByteArray()
+        } else if (supportsWindowScreenshots) {
+            captureDisplayWithoutControls { captureWithRetry(null) }
+        } else captureWithRetry(null)
+        return try {
+            withContext(Dispatchers.Default) {
+                val ratio = maxSide.toFloat() / maxOf(bitmap.width, bitmap.height)
+                val scaled = if (ratio < 1f) bitmap.scale(
+                    (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                    (bitmap.height * ratio).toInt().coerceAtLeast(1)) else bitmap
+                try {
+                    ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+                        .toByteArray()
+                } finally {
+                    if (scaled !== bitmap) scaled.recycle()
+                }
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private suspend fun captureDisplayWithoutControls(capture: suspend () -> Bitmap): Bitmap {
+        manager.setActing(true, capturing = true)
+        return try {
+            delay(80)
+            capture()
+        } finally {
+            manager.setActing(true, capturing = false)
         }
     }
 
     private class ScreenshotIntervalException : IllegalStateException("Screenshot requested too frequently.")
+    private class ScreenshotFailure(val code: Int) : IllegalStateException("Screenshot failed (code $code).")
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    private suspend fun takeScreenshot(): Bitmap = suspendCancellableCoroutine { continuation ->
-        takeScreenshot(
-            Display.DEFAULT_DISPLAY,
-            mainExecutor,
-            object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    // 硬件位图不能缩放和压缩，转成普通位图
-                    val bitmap = screenshot.hardwareBuffer.use { buffer ->
-                        Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
-                            ?.copy(Bitmap.Config.ARGB_8888, false)
-                    }
-                    if (bitmap != null) {
-                        continuation.resume(bitmap)
-                    } else {
-                        continuation.resumeWithException(IllegalStateException("Screenshot failed."))
-                    }
+    @RequiresApi(30)
+    private suspend fun takeScreenshotBitmap(windowId: Int?): Bitmap = suspendCancellableCoroutine { continuation ->
+        val callback = object : TakeScreenshotCallback {
+            override fun onSuccess(screenshot: ScreenshotResult) {
+                val bitmap = screenshot.hardwareBuffer.use { buffer ->
+                    Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
                 }
-
-                override fun onFailure(errorCode: Int) {
-                    continuation.resumeWithException(
-                        if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
-                            ScreenshotIntervalException()
-                        } else {
-                            IllegalStateException("Screenshot failed (code $errorCode).")
-                        }
-                    )
-                }
-            },
-        )
+                if (!continuation.isActive) { bitmap?.recycle(); return }
+                if (bitmap != null) continuation.resume(bitmap)
+                else continuation.resumeWithException(IllegalStateException("Screenshot failed."))
+            }
+            override fun onFailure(errorCode: Int) {
+                if (!continuation.isActive) return
+                continuation.resumeWithException(
+                    if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) ScreenshotIntervalException()
+                    else ScreenshotFailure(errorCode))
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 34 && windowId != null) takeScreenshotOfWindow(windowId, mainExecutor, callback)
+        else takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
     }
 
     // ---- 操作 ----

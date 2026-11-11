@@ -198,7 +198,9 @@ private class PhoneUseSession(
             "screenshot" -> {
                 ensureOperable(controller)
                 val screen = capture(controller)
-                val bytes = yieldingControls(capturing = true) { controller.screenshot(SCREENSHOT_MAX_SIDE) }
+                val bytes = yieldingControls(capturing = !controller.supportsWindowScreenshots) {
+                    controller.screenshot(SCREENSHOT_MAX_SIDE)
+                }
                 listOf(
                     UIMessagePart.Image(url = encodeScreenshot(bytes)),
                     UIMessagePart.Text(

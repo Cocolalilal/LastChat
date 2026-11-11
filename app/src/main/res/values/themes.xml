@@ -13,4 +13,11 @@
         <item name="android:windowIsFloating">false</item>
         <item name="android:backgroundDimEnabled">false</item>
     </style>
+    <!-- Exact-size accessibility window. Platform dialog minimum widths must not widen the pill. -->
+    <style name="Theme.Rikkahub.PhoneOverlay" parent="Theme.Rikkahub.Translucent">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowMinWidthMajor">0dp</item>
+        <item name="android:windowMinWidthMinor">0dp</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

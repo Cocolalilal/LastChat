@@ -46,16 +46,37 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
   gap from system bars. Reduced motion docks immediately. The minimized control
   is a capsule with concentric avatar and outer curves; nested reply fields use
   an inset radius. Completed messages appear immediately when expanded.
-- Transcript resizing uses one spring, and direct dragging follows the finger.
+- Transcript resizing uses one critically damped height spring, and direct dragging
+  follows the finger. The rounded surface and scrolling viewport share that height;
+  there is no second content-size animation or streaming-driven resize. Input
+  remains composed and slides through the bottom screen edge. Window handoff waits
+  for both panel and input to settle, and return starts from the same compact pose.
+  Cancelling work retains that surface and restores its input.
+- Normal popup replies are laid out at their final width while their surface morphs,
+  so paragraphs do not rewrap on every animation frame. Completed replies have no
+  persistent status label. The compact popup is a 108 × 56 dp capsule.
+- Native drag updates are coalesced once per display frame and use raw screen touch
+  coordinates. Resizing retargets an in-flight throw without resetting its velocity.
   Scrolling back stops automatic following until the user returns to the latest
   text. The assistant input and phone controls retain bottom breathing room.
 
 A single PhoneUseManager coordinates ownership across app, assistant, and web
 conversations. Competing conversations cannot operate the phone concurrently.
 Actions wait for the service's stop controls to attach. Gestures pass through the
-visible window without detaching/recreating it; screenshots alone briefly hide it,
-with flags restored in a finally block. Any started LastChat activity hides the
+visible window without detaching/recreating it. On Android 14+, model screenshots
+capture the target window directly and keep controls visible. Images are aligned to
+screen coordinates so window insets do not shift the model's grid. Older Android
+versions (or a window that has just closed) briefly hide controls for a display
+screenshot; flags are restored in a finally block. Secure-window failures do not
+fall back to capturing the display. Screenshot buffers are released after encoding. Any started LastChat activity hides the
 service window, including translucent activities, to avoid duplicate avatars.
+An assistant return keeps its matching compact service surface until the activity's
+first pre-draw, rather than removing it at activity start before it can draw.
+A moved assistant bar springs back to that shared anchor before the return starts.
+Regular popups fade in after the app yields. Dismissing a popup fades its retained
+content before releasing its window. The dialog preserves hardware acceleration
+when focus/touch flags change. Both assistant hosts use the character's theme;
+palette seeds are retained across the handoff to avoid reloading the default colors.
 System-assistant and attached popup replies own completion delivery and suppress
 the duplicate generation notification. Toast decorations are constrained to the content
 size so an empty host cannot turn a popup into a full-screen touch region. Drag bounds
@@ -74,6 +95,7 @@ Model/provider behavior still determines successful task execution.
 - `:app:compileStableDebugKotlin`
 - `:app:testStableDebugUnitTest --tests '*PhoneUseToolTest' --tests '*PhoneUseManagerTest' --tests '*PhoneUseContinuationTest'`
 - `:app:testStableDebugUnitTest --tests '*PhoneUseControlsRenderTest' -Dlastchat.renderDir=/tmp/phone-use`
+- `:app:testStableDebugUnitTest --tests '*AssistantTransitionTest' --tests '*PhoneOverlayDragGestureTest'`
 - `npm run typecheck` and `npm run build` in `web-ui`
 
 On a physical Android 11+ device, verify accessibility onboarding/revocation,
@@ -94,9 +116,11 @@ Tapping outside the panels dismisses it. Compose resizing and message streaming 
 not resize the platform window. A microphone bar appears while the conversation is
 being created; opening does not wait for database I/O or stacked window/Compose
 animations. Phone-use service popups retain their separate wrap-content windows.
-On Android 12+, supported devices use compositor blur-behind when blur is enabled
-in LastChat; changes
-to the OS blur capability are observed (for example, battery saver). The blur request
+On Android 12+, supported devices use native background blur and blur-behind on
+that fixed activity. The accessibility-owned assistant uses a floating Android dialog with native
+background blur limited to its window, rather than blurring the target app fullscreen.
+It supplies the same translucent surface theme. Both follow LastChat's
+existing blur setting. Changes to the OS blur capability are observed (for example, battery saver). The blur request
 stays installed while the OS temporarily disables it; redundant state callbacks
 cannot trigger window relayouts. Availability and requested radius are recorded in
 app diagnostics. Other devices

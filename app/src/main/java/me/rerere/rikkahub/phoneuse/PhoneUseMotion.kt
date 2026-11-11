@@ -6,12 +6,13 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.input.pointer.motionEventSpy
+import androidx.compose.ui.ExperimentalComposeUiApi
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 
-internal const val PHONE_MOTION_STIFFNESS = 650f
-internal const val PHONE_MOTION_DAMPING = 0.82f
+internal const val PHONE_MOTION_STIFFNESS = 450f
+internal const val PHONE_MOTION_DAMPING = 1f
 
 class PhoneOverlayDragCallbacks(
     val onStart: () -> Unit,
@@ -22,14 +23,17 @@ class PhoneOverlayDragCallbacks(
 }
 
 /** Screen coordinates keep release velocity correct while the window itself follows the finger. */
+@OptIn(ExperimentalComposeUiApi::class)
 internal fun Modifier.phoneOverlayDrag(
     drag: PhoneOverlayDragCallbacks?,
     haptics: PremiumHaptics? = null,
 ): Modifier = if (drag == null) this else composed {
-    val view = LocalView.current
-    pointerInput(drag, haptics) {
+    val raw = androidx.compose.runtime.remember(drag) { floatArrayOf(0f, 0f) }
+    motionEventSpy { event ->
+        raw[0] = event.rawX
+        raw[1] = event.rawY
+    }.pointerInput(drag, haptics) {
         val tracker = VelocityTracker()
-        val location = IntArray(2)
         var previous: Offset? = null
         detectDragGestures(
             onDragStart = {
@@ -45,8 +49,8 @@ internal fun Modifier.phoneOverlayDrag(
                 haptics?.perform(HapticPattern.Tick)
             },
         ) { change, amount ->
-            view.getLocationOnScreen(location)
-            val screen = change.position + Offset(location[0].toFloat(), location[1].toFloat())
+            // MotionEvent raw coordinates do not depend on a pending WindowManager relayout.
+            val screen = Offset(raw[0], raw[1])
             val delta = previous?.let { screen - it } ?: amount
             previous = screen
             tracker.addPosition(change.uptimeMillis, screen)
@@ -98,3 +102,7 @@ internal fun phoneOverlaySnap(
         side = side, vertical = vertical,
     )
 }
+
+/** The activity and accessibility window meet at the same screen position. */
+internal fun assistantDockAnchor(bounds: PhoneOverlayBounds, density: Float) = PhoneOverlaySnap(
+    bounds.clampX(16f * density), bounds.minY, PhoneOverlaySide.RIGHT, PhoneOverlayVerticalEdge.BOTTOM)

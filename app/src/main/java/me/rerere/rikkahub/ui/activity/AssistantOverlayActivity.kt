@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.doOnPreDraw
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
+import me.rerere.rikkahub.ui.theme.AssistantChatTheme
+import me.rerere.rikkahub.data.datastore.resolveAssistantOverlayAssistant
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
@@ -38,6 +41,7 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 class AssistantOverlayActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
     private val settingsStore by inject<SettingsStore>()
+    private val phoneManager by inject<me.rerere.rikkahub.phoneuse.PhoneUseManager>()
     private val viewModel: AssistantOverlayVM by viewModel()
     private var nativeBlurActive by mutableStateOf(false)
     private lateinit var floatingWindow: AssistantFloatingWindow
@@ -47,13 +51,24 @@ class AssistantOverlayActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         floatingWindow = AssistantFloatingWindow(this) { nativeBlurActive = it }
         floatingWindow.attach()
+        completePhoneReturnOnDraw()
 
         val existingId = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
             runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull()
         }
+        intent.getStringExtra(RouteActivity.EXTRA_ASSISTANT_ID)?.let { value ->
+            runCatching { kotlin.uuid.Uuid.parse(value) }.getOrNull()?.let { id ->
+                if (settingsStore.settingsFlow.value.assistants.any { it.id == id }) viewModel.overlayAssistantId = id
+            }
+        }
         viewModel.initialize(existingId)
         setContent {
             val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+            val conversationId by viewModel.conversationId.collectAsStateWithLifecycle()
+            val assistant = remember(settings.assistants, conversationId) {
+                settings.assistants.firstOrNull { it.id == viewModel.overlayAssistantId }
+                    ?: settings.resolveAssistantOverlayAssistant()
+            }
             val toastState = rememberAppToasterState()
             SideEffect { floatingWindow.setBlurEnabled(settings.displaySetting.enableBlurEffect) }
 
@@ -72,6 +87,7 @@ class AssistantOverlayActivity : ComponentActivity() {
                     LocalToaster provides toastState,
                     LocalNavController provides noopNavController,
                 ) {
+                    AssistantChatTheme(assistant) {
                     FloatingOverlayLayout(content = {
                         AssistantOverlayScreen(
                             viewModel = viewModel,
@@ -101,6 +117,7 @@ class AssistantOverlayActivity : ComponentActivity() {
                             },
                         )
                     }, decoration = { AppToasterHost(state = toastState) })
+                    }
                 }
             }
         }
@@ -109,9 +126,18 @@ class AssistantOverlayActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        completePhoneReturnOnDraw()
         intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let { value ->
             runCatching { kotlin.uuid.Uuid.parse(value) }.getOrNull()?.let(viewModel::initialize)
         }
+    }
+
+    private fun completePhoneReturnOnDraw() {
+        window.decorView.doOnPreDraw {
+            if (phoneManager.assistantReturning.value) phoneManager.assistantDocked.value = null
+            phoneManager.assistantReturning.value = false
+        }
+        window.decorView.invalidate()
     }
 
     override fun onDestroy() {
