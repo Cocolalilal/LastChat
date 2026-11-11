@@ -29,6 +29,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.RouteActivity
@@ -188,10 +189,12 @@ internal class PhoneUseOverlay(
 
     private fun openConversation(task: PhoneUseTask, pause: Boolean = true) {
         if (pause && task.running && !task.paused && !task.awaitingReply) manager.togglePause()
-        if (task.systemAssistant) manager.claimAssistantReturn(task.conversationId)
+        if (task.systemAssistant) manager.prepareAssistantReturn(task.conversationId)
         returnJob?.cancel()
         returnJob = scope.launch {
             if (task.systemAssistant) {
+                combine(manager.overlayCompactReady, manager.overlayInputHidden) { compact, hidden -> compact && hidden }
+                    .first { it }
                 val bounds = motionBounds() ?: return@launch
                 val dock = assistantDockAnchor(bounds, service.resources.displayMetrics.density)
                 anchor = dock
@@ -448,6 +451,8 @@ internal class PhoneUseOverlay(
         paramsDirty = false
         lastBounds = null
         manager.overlayBlur.value = false
+        manager.overlayCompactReady.value = false
+        manager.overlayInputHidden.value = true
         anchor = null
         popup?.let { runCatching { it.dismiss() } }
         view?.disposeComposition()

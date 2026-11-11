@@ -67,7 +67,7 @@ internal fun AssistantPhoneUseReply(
     }
     // Keep the same panel instance and compact pose while the activity returns. Only an
     // OS-denied return expands this host, so two differently sized surfaces never swap.
-    val compact = !task.returnFailed && task.action != "reply"
+    val compact = !task.returnFailed && (task.returnRequested || task.action != "reply")
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     LaunchedEffect(compact) {
@@ -90,6 +90,7 @@ internal fun AssistantPhoneUseReply(
                 else tts.speak(it.toContentText(), overrideSetting = settings.getEffectiveTTSProvider(assistant))
             },
             compact = compact,
+            onCompactSettled = { manager.overlayCompactReady.value = it },
             modifier = Modifier.weight(1f, fill = false),
             phoneTask = task, windowDrag = drag, onDismiss = { manager.stop() },
             openDescription = "Open assistant",
@@ -98,7 +99,7 @@ internal fun AssistantPhoneUseReply(
                 chatService.stopGeneration(task.conversationId)
             },
         )
-        AssistantInputReveal(visible = !compact) {
+        AssistantInputReveal(visible = !compact, onHidden = { manager.overlayInputHidden.value = it }) {
             PhoneUseReplyComposer(task, manager, onReplyFocus, onSend = { text ->
                 manager.resumeReply(task.conversationId) { chatService.stopGeneration(task.conversationId) }
                 chatService.sendMessage(task.conversationId, listOf(me.rerere.ai.ui.UIMessagePart.Text(text)),

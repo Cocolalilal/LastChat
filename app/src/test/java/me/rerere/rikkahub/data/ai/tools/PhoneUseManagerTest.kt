@@ -178,6 +178,11 @@ class PhoneUseManagerTest {
         assertTrue(manager.claimAssistantReturn(id))
         assertFalse(manager.session.value!!.returnFailed)
         assertFalse(manager.claimAssistantReturn(id))
+        manager.markReturnFailed(id)
+        manager.prepareAssistantReturn(id)
+        assertFalse(manager.session.value!!.returnFailed)
+        assertTrue(manager.session.value!!.returnRequested)
+        assertEquals(id, manager.assistantDocked.value)
     }
 
     @Test fun `cancelling phone work retains the assistant and restores return ownership`() = runTest {

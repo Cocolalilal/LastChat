@@ -34,6 +34,8 @@ class PhoneUseManager {
     // The shared panel is already in its compact pose when another window takes over.
     val assistantDocked = MutableStateFlow<Uuid?>(null)
     val overlayBlur = MutableStateFlow(false)
+    val overlayCompactReady = MutableStateFlow(false)
+    val overlayInputHidden = MutableStateFlow(true)
     private val stateLock = Any()
     private val assistantConversations = mutableSetOf<Uuid>()
     private val gate = Mutex()
@@ -84,6 +86,15 @@ class PhoneUseManager {
         if (current.conversationId != id || current.returnRequested) false else {
             _session.value = current.copy(returnRequested = true, returnFailed = false)
             true
+        }
+    }
+
+    fun prepareAssistantReturn(id: Uuid) = synchronized(stateLock) {
+        _session.value = _session.value?.let {
+            if (it.conversationId == id) {
+                assistantDocked.value = id
+                it.copy(returnRequested = true, returnFailed = false)
+            } else it
         }
     }
 
