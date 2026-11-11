@@ -29,7 +29,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.RouteActivity
@@ -108,7 +107,7 @@ internal class PhoneUseOverlay(
                     task, acting, capturing, appVisible, settings ->
                 OverlayState(task, acting, capturing, appVisible, settings.displaySetting.enableBlurEffect)
             }.collect { (task, acting, capturing, appVisible, blur) ->
-                requestedBlur = task?.systemAssistant == true && blur
+                requestedBlur = task != null && blur
                 if (task != null && heldConversation != task.conversationId) {
                     heldConversation?.let(chatService::removeConversationReference)
                     heldConversation = task?.conversationId
@@ -137,7 +136,12 @@ internal class PhoneUseOverlay(
                             PhoneUseOverlayContent(manager, settingsStore, { openConversation(it) }, dragCallbacks, ::setInputEnabled)
                         }
                     }
-                    val host = createPhoneOverlayDialog(service, content)
+                    val host = createPhoneOverlayDialog(service, content, if (task.systemAssistant) 28f else 36f)
+                    appliedBlurRadius = if (requestedBlur && Build.VERSION.SDK_INT >= 31) {
+                        (24f * service.resources.displayMetrics.density).toInt()
+                    } else 0
+                    if (Build.VERSION.SDK_INT >= 31) host.window!!.setBackgroundBlurRadius(appliedBlurRadius)
+                    manager.overlayBlur.value = appliedBlurRadius > 0 && blurAvailable
                     runCatching {
                         host.show()
                         host.window!!.decorView.visibility = View.INVISIBLE
@@ -184,6 +188,7 @@ internal class PhoneUseOverlay(
 
     private fun openConversation(task: PhoneUseTask, pause: Boolean = true) {
         if (pause && task.running && !task.paused && !task.awaitingReply) manager.togglePause()
+        if (task.systemAssistant) manager.claimAssistantReturn(task.conversationId)
         returnJob?.cancel()
         returnJob = scope.launch {
             if (task.systemAssistant) {
@@ -199,13 +204,11 @@ internal class PhoneUseOverlay(
                     yMotion = retargetAxis(yMotion, bounds.clampY(offsetY), dock.y, bounds.minY, bounds.maxY, followSize = false) {
                         offsetY = it; applyPosition()
                     }
-                    withTimeoutOrNull(1500) {
-                        while (xMotion?.isRunning == true || yMotion?.isRunning == true) awaitFrame()
-                    }
+                    while (xMotion?.isRunning == true || yMotion?.isRunning == true) awaitFrame()
                 }
                 // Publish the final native position before replacing its surface with the activity.
                 awaitFrame()
-                if (manager.session.value?.conversationId != task.conversationId) return@launch
+                if (manager.session.value?.conversationId != task.conversationId || manager.appUiVisible.value) return@launch
                 manager.assistantReturning.value = true
             }
             val target = if (task.systemAssistant) AssistantOverlayActivity::class.java else RouteActivity::class.java
@@ -276,7 +279,9 @@ internal class PhoneUseOverlay(
         val density = service.resources.displayMetrics.density
         val velocityX = (if (vx.isFinite()) -vx else 0f).coerceIn(-8000f * density, 8000f * density)
         val velocityY = (if (vy.isFinite()) -vy else 0f).coerceIn(-8000f * density, 8000f * density)
-        val target = if (currentSystemMode == true) {
+        val target = if (currentSystemMode == true && manager.session.value?.returnRequested == true) {
+            assistantDockAnchor(bounds, density)
+        } else if (currentSystemMode == true) {
             PhoneOverlaySnap(16f * density, bounds.clampY(offsetY + velocityY * 0.28f),
                 PhoneOverlaySide.RIGHT, null)
         } else phoneOverlaySnap(offsetX, offsetY, velocityX, velocityY, bounds, 48f * density)

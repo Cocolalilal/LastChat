@@ -45,6 +45,7 @@ class PhoneOverlayDialogTest {
         assertEquals(0, window.attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         assertEquals(0, window.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
         assertEquals(0, window.attributes.windowAnimations)
+        assertTrue(window.decorView.clipToOutline)
         assertTrue(window.attributes.flags and WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED != 0)
         popup.dismiss()
         controller.pause().stop().destroy()

@@ -13,7 +13,7 @@ import me.rerere.rikkahub.phoneuse.PHONE_MOTION_STIFFNESS
 import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 import kotlin.math.roundToInt
 
-/** Preserve the input composition and let it travel through the bottom screen edge. */
+/** Preserve the input composition and let it slide below the panel's rounded window edge. */
 @Composable
 internal fun AssistantInputReveal(
     visible: Boolean,

@@ -49,7 +49,7 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
 - Transcript resizing uses one critically damped height spring, and direct dragging
   follows the finger. The rounded surface and scrolling viewport share that height;
   there is no second content-size animation or streaming-driven resize. Input
-  remains composed and slides through the bottom screen edge. Window handoff waits
+  remains composed and slides below the rounded controls window edge. Window handoff waits
   for both panel and input to settle, and return starts from the same compact pose.
   Cancelling work retains that surface and restores its input.
 - Normal popup replies are laid out at their final width while their surface morphs,
@@ -111,13 +111,16 @@ conversion, and avatar integration are implemented locally.
 
 ## Live assistant window
 
-The system assistant uses a fixed transparent activity with bottom-anchored panels.
-Tapping outside the panels dismisses it. Compose resizing and message streaming do
-not resize the platform window. A microphone bar appears while the conversation is
+The system assistant uses a fixed transparent activity for outside taps and a
+separate, tightly sized floating controls window. Both modes use the same native
+window theme, rounded blur outline, side margins and bottom anchor. Tapping outside
+the controls dismisses them. The transparent host never resizes; only the controls
+window follows the explicitly animated surface, without feeding measured content
+sizes back into layout parameters. A microphone bar appears while the conversation is
 being created; opening does not wait for database I/O or stacked window/Compose
 animations. Phone-use service popups retain their separate wrap-content windows.
-On Android 12+, supported devices use native background blur and blur-behind on
-that fixed activity. The accessibility-owned assistant uses a floating Android dialog with native
+On Android 12+, supported devices use native background blur on the controls window;
+the full-screen outside-tap host has no blur or dim layer. The accessibility-owned assistant uses a floating Android dialog with native
 background blur limited to its window, rather than blurring the target app fullscreen.
 It supplies the same translucent surface theme. Both follow LastChat's
 existing blur setting. Changes to the OS blur capability are observed (for example, battery saver). The blur request

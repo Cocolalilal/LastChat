@@ -32,6 +32,8 @@ class AssistantTransitionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val task = PhoneUseTask(Uuid.random(), Uuid.random(), true, "observe")
     private var compact by mutableStateOf(false)
+    private var panelVisible by mutableStateOf(true)
+    private var viewportHeight = 700
     private var panelPixels = 0
     private var inputPixels = 0
     private var hidden = false
@@ -43,13 +45,13 @@ class AssistantTransitionTest {
         compose.setContent {
             CompositionLocalProvider(LocalSettings provides Settings()) {
                 MaterialTheme {
-                    Box(Modifier.size(400.dp, 700.dp)) {
+                    Box(Modifier.size(400.dp, viewportHeight.dp)) {
                         Column(Modifier.align(Alignment.BottomCenter)) {
                             TranscriptPanel(assistantAvatar = { Box(it) }, messages = emptyList(),
                                 activityState = ActivityState.Waiting, isGenerating = true, isSpeaking = false,
                                 onOpenInApp = {}, onCopy = {}, onRegenerate = {}, onToggleTts = {},
-                                compact = compact, phoneTask = task,
-                                modifier = Modifier.onSizeChanged { panelPixels = it.height },
+                                compact = compact, visible = panelVisible, phoneTask = task,
+                                modifier = Modifier.weight(1f, fill = false).onSizeChanged { panelPixels = it.height },
                                 onCompactSettled = { compactSettled = it })
                             AssistantInputReveal(visible = !compact, onHidden = { hidden = it },
                                 modifier = Modifier.onSizeChanged { inputPixels = it.height }) {
@@ -147,6 +149,39 @@ class AssistantTransitionTest {
         second.zipWithNext().forEach { (a, b) ->
             assertTrue("A released resize must settle continuously", abs(a.first - b.first) < 60 * density)
         }
+    }
+
+    @Test fun newlyVisibleTranscriptGrowsItsOwnSurfaceInsteadOfClippingAnOversizedChild() {
+        panelVisible = false
+        content()
+        assertEquals(0, panelPixels)
+        compose.runOnIdle { panelVisible = true }
+        val samples = frames(50)
+        samples.forEach { assertTrue(it.first in 0..(221 * density).toInt()) }
+        samples.zipWithNext().forEach { (a, b) -> assertTrue(abs(a.first - b.first) < 45 * density) }
+        assertEquals((220 * density).toInt(), panelPixels)
+        compose.runOnIdle { panelVisible = false }
+        frames(50)
+        assertEquals(0, panelPixels)
+        assertEquals((80 * density).toInt(), inputPixels)
+    }
+
+    @Test fun grabbingAConstrainedPanelUsesItsVisibleHeightAndKeepsInputAvailable() {
+        viewportHeight = 280
+        content()
+        assertEquals((200 * density).toInt(), panelPixels)
+        val before = panelPixels
+        compose.onNodeWithContentDescription("Resize assistant").performTouchInput {
+            down(center)
+            moveBy(androidx.compose.ui.geometry.Offset(0f, 30 * density))
+        }
+        frames(2)
+        assertTrue("Dragging must start at the rendered size, not its unconstrained target",
+            panelPixels < before - 10 * density)
+        assertEquals((80 * density).toInt(), inputPixels)
+        compose.onNodeWithContentDescription("Resize assistant").performTouchInput { up() }
+        frames(50)
+        assertEquals((80 * density).toInt(), inputPixels)
     }
 
 }

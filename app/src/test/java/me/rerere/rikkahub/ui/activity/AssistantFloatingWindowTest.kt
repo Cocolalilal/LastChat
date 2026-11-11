@@ -20,6 +20,8 @@ class AssistantFloatingWindowTest {
         var blurActive = false
         val chrome = AssistantFloatingWindow(activity) { blurActive = it }
         chrome.attach()
+        val foreground = me.rerere.rikkahub.phoneuse.createPhoneOverlayDialog(activity, android.view.View(activity))
+        chrome.setContentWindow(foreground.window!!)
         val params = activity.window.attributes
         assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.height)
         assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.width)
@@ -29,8 +31,10 @@ class AssistantFloatingWindowTest {
         assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
         chrome.setBlurEnabled(true)
         if (Build.VERSION.SDK_INT >= 31) {
-            assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
-            assertTrue(activity.window.attributes.blurBehindRadius > 0)
+            assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, foreground.window!!.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            assertEquals(0, foreground.window!!.attributes.blurBehindRadius)
+            assertNotNull(foreground.window!!.decorView.background)
             assertEquals(activity.getSystemService(WindowManager::class.java).isCrossWindowBlurEnabled, blurActive)
         } else assertFalse(blurActive)
         chrome.setBlurEnabled(false)
@@ -45,11 +49,13 @@ class AssistantFloatingWindowTest {
         var notifications = 0
         val chrome = AssistantFloatingWindow(activity) { notifications++ }
         chrome.attach()
+        val foreground = me.rerere.rikkahub.phoneuse.createPhoneOverlayDialog(activity, android.view.View(activity))
+        chrome.setContentWindow(foreground.window!!)
         chrome.setBlurEnabled(true)
         val count = notifications
-        val current = activity.window.callback
+        val current = foreground.window!!.callback
         var relayouts = 0
-        activity.window.callback = object : android.view.Window.Callback by current {
+        foreground.window!!.callback = object : android.view.Window.Callback by current {
             override fun onWindowAttributesChanged(attrs: WindowManager.LayoutParams) {
                 relayouts++
                 current.onWindowAttributesChanged(attrs)

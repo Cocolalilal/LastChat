@@ -3,7 +3,11 @@ package me.rerere.rikkahub.ui.activity
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import androidx.activity.ComponentDialog
+import androidx.compose.ui.platform.ComposeView
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import me.rerere.rikkahub.phoneuse.createPhoneOverlayDialog
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.doOnPreDraw
 import androidx.compose.runtime.CompositionLocalProvider
@@ -45,13 +49,27 @@ class AssistantOverlayActivity : ComponentActivity() {
     private val viewModel: AssistantOverlayVM by viewModel()
     private var nativeBlurActive by mutableStateOf(false)
     private lateinit var floatingWindow: AssistantFloatingWindow
+    private lateinit var controlsDialog: ComponentDialog
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         floatingWindow = AssistantFloatingWindow(this) { nativeBlurActive = it }
         floatingWindow.attach()
-        completePhoneReturnOnDraw()
+        val controls = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@AssistantOverlayActivity)
+            setViewTreeSavedStateRegistryOwner(this@AssistantOverlayActivity)
+        }
+        controlsDialog = createPhoneOverlayDialog(this, controls).apply {
+            setOwnerActivity(this@AssistantOverlayActivity)
+            window!!.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION)
+        }
+        floatingWindow.setContentWindow(controlsDialog.window!!)
+        floatingWindow.setBlurEnabled(settingsStore.settingsFlow.value.displaySetting.enableBlurEffect)
+        setContentView(android.widget.FrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setOnClickListener { controlsDialog.onBackPressedDispatcher.onBackPressed() }
+        })
 
         val existingId = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
             runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull()
@@ -62,7 +80,7 @@ class AssistantOverlayActivity : ComponentActivity() {
             }
         }
         viewModel.initialize(existingId)
-        setContent {
+        controls.setContent {
             val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
             val conversationId by viewModel.conversationId.collectAsStateWithLifecycle()
             val assistant = remember(settings.assistants, conversationId) {
@@ -88,39 +106,49 @@ class AssistantOverlayActivity : ComponentActivity() {
                     LocalNavController provides noopNavController,
                 ) {
                     AssistantChatTheme(assistant) {
-                    FloatingOverlayLayout(content = {
-                        AssistantOverlayScreen(
-                            viewModel = viewModel,
-                            autoStartListening = existingId == null,
-                            nativeBlurActive = nativeBlurActive,
-                            onPhoneUseYield = { moveTaskToBack(true) },
-                            onDismiss = { finish() },
-                            onOpenInApp = {
-                                // The overlay runs in its own task. Reuse the app task and carry
-                                // both IDs: if the ChatService state is cleaned up during the
-                                // hand-off, RouteActivity can still recreate the chat with the
-                                // overlay's character rather than whichever character was selected
-                                // before the assist gesture.
-                                val conversationId = viewModel.conversationId.value ?: return@AssistantOverlayScreen
-                                val routeIntent = Intent(this, RouteActivity::class.java).apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                    putExtra(RouteActivity.EXTRA_CONVERSATION_ID, conversationId.toString())
-                                    putExtra(RouteActivity.EXTRA_ASSISTANT_ID, viewModel.overlayAssistantId.toString())
-                                }
-                                runCatching { startActivity(routeIntent) }
-                                    .onSuccess { finishAndRemoveTask() }
-                                    .onFailure { error ->
-                                        android.util.Log.e(TAG, "Unable to open overlay conversation", error)
+                        FloatingOverlayLayout(content = {
+                            AssistantOverlayScreen(
+                                viewModel = viewModel,
+                                autoStartListening = existingId == null,
+                                nativeBlurActive = nativeBlurActive,
+                                floatingContent = true,
+                                onSurfaceOpacity = { alpha -> controlsDialog.window?.decorView?.background?.alpha = (alpha * 255).toInt() },
+                                onPhoneUseYield = { moveTaskToBack(true) },
+                                onDismiss = { finish() },
+                                onOpenInApp = {
+                                    // The overlay runs in its own task. Reuse the app task and carry
+                                    // both IDs: if the ChatService state is cleaned up during the
+                                    // hand-off, RouteActivity can still recreate the chat with the
+                                    // overlay's character rather than whichever character was selected
+                                    // before the assist gesture.
+                                    val conversationId = viewModel.conversationId.value ?: return@AssistantOverlayScreen
+                                    val routeIntent = Intent(this, RouteActivity::class.java).apply {
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                        putExtra(RouteActivity.EXTRA_CONVERSATION_ID, conversationId.toString())
+                                        putExtra(RouteActivity.EXTRA_ASSISTANT_ID, viewModel.overlayAssistantId.toString())
                                     }
-                            },
-                        )
-                    }, decoration = { AppToasterHost(state = toastState) })
+                                    runCatching { startActivity(routeIntent) }
+                                        .onSuccess { finishAndRemoveTask() }
+                                        .onFailure { error ->
+                                            android.util.Log.e(TAG, "Unable to open overlay conversation", error)
+                                        }
+                                },
+                            )
+                        }, decoration = { AppToasterHost(state = toastState) })
                     }
                 }
             }
         }
+        controlsDialog.show()
+        floatingWindow.updateContentBounds()
+        completePhoneReturnOnDraw()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        floatingWindow.updateContentBounds()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -133,15 +161,16 @@ class AssistantOverlayActivity : ComponentActivity() {
     }
 
     private fun completePhoneReturnOnDraw() {
-        window.decorView.doOnPreDraw {
+        controlsDialog.window!!.decorView.doOnPreDraw {
             if (phoneManager.assistantReturning.value) phoneManager.assistantDocked.value = null
             phoneManager.assistantReturning.value = false
         }
-        window.decorView.invalidate()
+        controlsDialog.window!!.decorView.invalidate()
     }
 
     override fun onDestroy() {
         floatingWindow.close()
+        if (::controlsDialog.isInitialized) controlsDialog.dismiss()
         super.onDestroy()
     }
 

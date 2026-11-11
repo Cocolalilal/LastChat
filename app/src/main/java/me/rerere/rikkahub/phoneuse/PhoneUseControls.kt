@@ -130,7 +130,7 @@ internal fun PhoneUseOverlayContent(
     val highlighter = koinInject<Highlighter>()
     CompositionLocalProvider(
         me.rerere.rikkahub.ui.modifier.LocalLastChatBlur provides me.rerere.rikkahub.ui.modifier.LastChatBlur(
-            enabled = current.systemAssistant && nativeBlur, windowBlur = current.systemAssistant && nativeBlur),
+            enabled = nativeBlur, windowBlur = nativeBlur),
         LocalSettings provides settings, LocalToaster provides toaster,
         LocalHighlighter provides highlighter, LocalNavController provides nav,
     ) {
@@ -139,7 +139,8 @@ internal fun PhoneUseOverlayContent(
                 FloatingOverlayLayout(content = {
                     if (current.systemAssistant) {
                         AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
-                            chatService, onOpen = { onOpen(current) }, drag = drag, onReplyFocus = onReplyFocus)
+                            chatService, onOpen = { onOpen(current) },
+                            drag = drag.takeUnless { current.returnRequested }, onReplyFocus = onReplyFocus)
                     } else PhoneUseControls(
                         popupTask, assistant, manager, { onOpen(current) }, floating = true,
                         drag = drag, needsReply = needsReply,
@@ -193,7 +194,8 @@ fun PhoneUseControls(
     Surface(
         // 28 = avatar radius 20 + inset 8: the collapsed cap and avatar are concentric.
         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = me.rerere.rikkahub.ui.modifier.blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
         tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
         modifier = Modifier.padding(8.dp).widthIn(max = 360.dp).width(width.coerceAtLeast(108.dp)),
     ) {
