@@ -88,6 +88,40 @@ class PhoneUseControlsRenderTest {
         controller.pause().stop().destroy()
     }
 
+    @Test fun startingBarIsVisibleWithoutConversationOrOpeningAnimation() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        android.provider.Settings.Global.putFloat(activity.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        activity.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme(colorScheme = PresetThemes[0].getColorScheme(true), shapes = Shapes, typography = Typography) {
+                    me.rerere.rikkahub.ui.activity.AssistantStartingBar(
+                        Assistant(name = "Assistant", avatar = Avatar.Animated.defaultGenerical()), recording = false,
+                        onToggleMicrophone = {},
+                    )
+                }
+            }
+        }
+        val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val density = activity.resources.displayMetrics.density
+        view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
+        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+        org.junit.Assert.assertTrue(view.measuredHeight >= (64 * density).toInt())
+        org.junit.Assert.assertTrue(view.measuredHeight < (200 * density).toInt())
+        System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { output ->
+            File(output).mkdirs()
+            val bitmap = Bitmap.createBitmap(view.measuredWidth, view.measuredHeight, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
+            File(output, "assistant-first-frame.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+        controller.pause().stop().destroy()
+    }
+
     @Test fun renderControlSurfaces() {
         val output = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() } ?: return
         File(output).mkdirs()

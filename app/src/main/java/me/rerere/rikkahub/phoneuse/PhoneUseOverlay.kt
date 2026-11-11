@@ -134,6 +134,7 @@ internal class PhoneUseOverlay(
         runCatching {
             service.startActivity(Intent(service, target).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                if (task.systemAssistant) addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 putExtra(RouteActivity.EXTRA_CONVERSATION_ID, task.conversationId.toString())
                 putExtra(RouteActivity.EXTRA_ASSISTANT_ID, task.assistantId.toString())
             })

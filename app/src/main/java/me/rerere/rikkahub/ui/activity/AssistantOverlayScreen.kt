@@ -34,6 +34,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -157,7 +159,7 @@ import kotlin.math.sqrt
  * conversation (via [AssistantOverlayVM]) so it supports full multi-turn back-and-forth,
  * tools, MCP, search and tool-approval — the same pipeline as the chat page.
  *
- * - the underlying app stays visible through a translucent, content-sized window,
+ * - the underlying app stays visible through a fixed transparent window,
  * - a vivid Material You glow "washes" over the screen on open and again whenever the model
  *   looks at the screen,
  * - the app's real [MinimalChatInput] floats at the bottom (search toggle, pickers, STT…),
@@ -186,12 +188,8 @@ fun AssistantOverlayScreen(
     val haptics = rememberPremiumHaptics()
     val scope = rememberCoroutineScope()
 
-    // ---- Enter / exit motion (premium fade + slide, native crossfade) --------------------
+    // ---- Dismissal and predictive back; opening content is visible on its first frame. ----
     // Animate the assistant surface only; another app's pixels are never copied into this UI.
-    val appear = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        appear.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = 260f))
-    }
     val dismiss = remember { Animatable(0f) }
     // Custom predictive-back: 0 = open, 1 = fully swiped. Follows the finger (shrink + drift
     // toward the swipe edge + fade), commits to a dismiss on release, springs back on cancel.
@@ -238,7 +236,6 @@ fun AssistantOverlayScreen(
     val blur = remember(nativeBlurActive) {
         LastChatBlur(enabled = nativeBlurActive, windowBlur = nativeBlurActive)
     }
-    val maxWindowHeight = LocalConfiguration.current.screenHeightDp.dp
 
     val screenReadSignal by AssistScreenHolder.screenReadSignal.collectAsStateWithLifecycle()
 
@@ -302,8 +299,7 @@ fun AssistantOverlayScreen(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxWindowHeight)
+                .fillMaxSize()
                 .graphicsLayer {
                     // Fade and transform the floating surface during predictive back.
                     val bp = backProgress.value
@@ -318,6 +314,9 @@ fun AssistantOverlayScreen(
                     alpha = ((1f - dismiss.value) * (1f - bp * 0.2f)).coerceIn(0f, 1f)
                 }
         ) {
+            Box(Modifier.matchParentSize().clickable(
+                interactionSource = remember { MutableInteractionSource() }, indication = null,
+            ) { dismissWithAnimation() })
             SilkGlowLayer(
                 active = voiceActive, waveSignal = screenReadSignal,
                 originX = config.waveOriginX, originY = config.waveOriginY,
@@ -333,12 +332,7 @@ fun AssistantOverlayScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .animateContentSize(tween(if (reduceMotion) 0 else 260))
-                    .graphicsLayer {
-                        alpha = appear.value
-                        translationY = (1f - appear.value) * 48.dp.toPx() +
-                            dismiss.value * 80.dp.toPx()
-                    },
+                    .graphicsLayer { translationY = dismiss.value * 32.dp.toPx() },
                 verticalArrangement = Arrangement.Bottom,
             ) {
                 val convId = conversationId
@@ -520,7 +514,40 @@ fun AssistantOverlayScreen(
                         }
                     }
                     if (compactPhone) Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                } else {
+                    AssistantStartingBar(assistant, sttState.isRecording) {
+                        if (sttState.isRecording) stt.stop()
+                        else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED) stt.start(::applySttTranscript)
+                        else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
                 }
+            }
+        }
+    }
+}
+
+/** Visible from the first frame, even if creating/loading the conversation is still pending. */
+@Composable
+internal fun AssistantStartingBar(
+    assistant: me.rerere.rikkahub.data.model.Assistant,
+    recording: Boolean,
+    onToggleMicrophone: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 16.dp),
+        shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            me.rerere.rikkahub.phoneuse.PhoneUseAvatar(assistant, Modifier.size(32.dp), active = recording)
+            Text(assistant.name, Modifier.weight(1f).padding(horizontal = 12.dp),
+                style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            androidx.compose.material3.IconButton(onClick = onToggleMicrophone) {
+                Icon(if (recording) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                    if (recording) "Stop listening" else "Start listening")
             }
         }
     }

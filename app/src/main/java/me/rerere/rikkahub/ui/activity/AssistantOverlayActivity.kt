@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.activity
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -33,8 +32,8 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
  * Translucent floating activity that hosts the digital-assistant overlay.
  *
  * Launched by [me.rerere.rikkahub.service.assist.LastChatVoiceInteractionSession] when the
- * device assist gesture fires. Its content-sized translucent window floats over the
- * live app, with native window blur where supported. Screenshots are only model input.
+ * device assist gesture fires. A fixed transparent window hosts the floating panels
+ * over the live app, with compositor blur where supported. Screenshots are only model input.
  */
 class AssistantOverlayActivity : ComponentActivity() {
     private val highlighter by inject<Highlighter>()
@@ -113,14 +112,6 @@ class AssistantOverlayActivity : ComponentActivity() {
         intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let { value ->
             runCatching { kotlin.uuid.Uuid.parse(value) }.getOrNull()?.let(viewModel::initialize)
         }
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_OUTSIDE) {
-            finish()
-            return true
-        }
-        return super.onTouchEvent(event)
     }
 
     override fun onDestroy() {

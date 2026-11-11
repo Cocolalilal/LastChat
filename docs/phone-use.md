@@ -77,10 +77,17 @@ conversion, and avatar integration are implemented locally.
 
 ## Live assistant window
 
-The system assistant uses a bottom-anchored, content-sized translucent activity.
-Outside touches pass through and dismiss it. On Android 12+, supported devices use
-native background blur within that window when blur is enabled in LastChat; changes
-to the OS blur capability are observed (for example, battery saver). Other devices
+The system assistant uses a fixed transparent activity with bottom-anchored panels.
+Tapping outside the panels dismisses it. Compose resizing and message streaming do
+not resize the platform window. A microphone bar appears while the conversation is
+being created; opening does not wait for database I/O or stacked window/Compose
+animations. Phone-use service popups retain their separate wrap-content windows.
+On Android 12+, supported devices use compositor blur-behind when blur is enabled
+in LastChat; changes
+to the OS blur capability are observed (for example, battery saver). The blur request
+stays installed while the OS temporarily disables it; redundant state callbacks
+cannot trigger window relayouts. Availability and requested radius are recorded in
+app diagnostics. Other devices
 keep the live app visible around readable assistant surfaces. Accessibility is not
 required for native window blur, and does not provide cross-app pixels to Compose's
 Haze renderer.

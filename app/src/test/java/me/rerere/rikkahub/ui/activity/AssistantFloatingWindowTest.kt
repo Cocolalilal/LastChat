@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.activity
 
 import android.app.Application
 import android.os.Build
-import android.view.Gravity
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import org.junit.Assert.*
@@ -15,25 +14,53 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30, 35], application = Application::class)
 class AssistantFloatingWindowTest {
-    @Test fun `assistant window wraps content and allows touches outside without dimming`() {
+    @Test fun `assistant uses a fixed transparent host and compositor blur without dimming`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val activity = controller.get()
         var blurActive = false
         val chrome = AssistantFloatingWindow(activity) { blurActive = it }
         chrome.attach()
         val params = activity.window.attributes
-        assertEquals(WindowManager.LayoutParams.WRAP_CONTENT, params.height)
-        assertEquals(Gravity.BOTTOM, params.gravity and Gravity.VERTICAL_GRAVITY_MASK)
+        assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.height)
+        assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.width)
+        assertEquals(0, params.windowAnimations)
         assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        assertTrue(params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL != 0)
-        assertTrue(params.flags and WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH != 0)
+        assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+        assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
         chrome.setBlurEnabled(true)
         if (Build.VERSION.SDK_INT >= 31) {
+            assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND != 0)
+            assertTrue(activity.window.attributes.blurBehindRadius > 0)
             assertEquals(activity.getSystemService(WindowManager::class.java).isCrossWindowBlurEnabled, blurActive)
         } else assertFalse(blurActive)
         chrome.setBlurEnabled(false)
         assertFalse(blurActive)
+        assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
         chrome.close()
         controller.pause().stop().destroy()
     }
+    @Test fun `repeated state updates do not relayout or reannounce the window`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        var notifications = 0
+        val chrome = AssistantFloatingWindow(activity) { notifications++ }
+        chrome.attach()
+        chrome.setBlurEnabled(true)
+        val count = notifications
+        val current = activity.window.callback
+        var relayouts = 0
+        activity.window.callback = object : android.view.Window.Callback by current {
+            override fun onWindowAttributesChanged(attrs: WindowManager.LayoutParams) {
+                relayouts++
+                current.onWindowAttributesChanged(attrs)
+            }
+        }
+        repeat(120) { chrome.setBlurEnabled(true) }
+        assertEquals(0, relayouts)
+        assertEquals(count, notifications)
+        assertEquals(WindowManager.LayoutParams.MATCH_PARENT, activity.window.attributes.height)
+        chrome.close()
+        controller.pause().stop().destroy()
+    }
+
 }
