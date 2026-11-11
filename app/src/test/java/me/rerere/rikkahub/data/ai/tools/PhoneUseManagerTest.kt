@@ -154,4 +154,30 @@ class PhoneUseManagerTest {
         assertTrue(cancelled)
     }
 
+    @Test fun `an unsent fallback reply transfers once to the same assistant conversation`() = runTest {
+        startTask(system = true)
+        manager.generationSettled(id, false, "Done")
+        manager.updateReplyDraft(id, "One more thing")
+        assertEquals("", manager.takeReplyDraft(Uuid.random()))
+        assertEquals("One more thing", manager.replyDraft(id))
+        assertEquals("One more thing", manager.takeReplyDraft(id))
+        assertEquals("", manager.takeReplyDraft(id))
+        manager.updateReplyDraft(id, "Discard on dismiss")
+        manager.stop()
+        assertEquals("", manager.replyDraft(id))
+    }
+
+    @Test fun `a reply retry renews assistant return ownership before fallback speech`() = runTest {
+        startTask(system = true)
+        manager.generationSettled(id, false, "Done")
+        manager.markReturnFailed(id)
+        assertTrue(manager.session.value!!.returnFailed)
+        manager.resumeReply(id) {}
+        assertFalse(manager.session.value!!.returnFailed)
+        manager.generationSettled(id, false, "Another reply")
+        assertTrue(manager.claimAssistantReturn(id))
+        assertFalse(manager.session.value!!.returnFailed)
+        assertFalse(manager.claimAssistantReturn(id))
+    }
+
 }

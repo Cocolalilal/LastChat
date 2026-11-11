@@ -1,11 +1,22 @@
 package me.rerere.rikkahub.phoneuse
 
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -18,9 +29,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import me.rerere.rikkahub.ui.modifier.lastChatSoftEdgeBorder
+import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
@@ -48,7 +65,6 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import org.koin.compose.koinInject
@@ -82,10 +98,12 @@ internal fun PhoneUseOverlayContent(
     manager: PhoneUseManager,
     settingsStore: SettingsStore,
     onOpen: (PhoneUseTask) -> Unit,
-    onDrag: (Float, Float) -> Unit,
+    drag: PhoneOverlayDragCallbacks,
     onReplyFocus: (Boolean) -> Unit,
 ) {
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val reduceMotion = rememberSystemMotionPolicy().reduceMotion
+    SideEffect { drag.reduceMotion = reduceMotion }
     val task by manager.session.collectAsStateWithLifecycle()
     val current = task ?: return
     val assistant = settings.assistants.firstOrNull { it.id == current.assistantId }
@@ -113,14 +131,15 @@ internal fun PhoneUseOverlayContent(
                     if (current.systemAssistant) {
                         if (!current.running || current.returnFailed || current.action in setOf("reply", "finish")) {
                             AssistantPhoneUseReply(current, assistant, manager, conversation.currentMessages,
-                                chatService, onOpen = { onOpen(current) }, onDrag = onDrag)
+                                chatService, onOpen = { onOpen(current) }, drag = drag, onReplyFocus = onReplyFocus)
                         } else AssistantPhoneUseDock(current, assistant, manager,
-                            onOpen = { onOpen(current) }, onDrag = onDrag)
+                            onOpen = { onOpen(current) }, drag = drag)
                     } else PhoneUseControls(
                         current, assistant, manager, { onOpen(current) }, floating = true,
-                        onDrag = onDrag, needsReply = needsReply,
+                        drag = drag, needsReply = needsReply,
                         reply = latestReply.ifBlank { current.reply },
                         onReplyFocus = onReplyFocus,
+                        onStopGeneration = { chatService.stopGeneration(current.conversationId) },
                         onSendReply = { text ->
                             manager.resumeReply(current.conversationId) { chatService.stopGeneration(current.conversationId) }
                             onReplyFocus(false)
@@ -134,7 +153,7 @@ internal fun PhoneUseOverlayContent(
     }
 }
 
-/** One avatar and one continuously sized surface, including the completion reply. */
+/** The compact state is a 112 × 56 capsule, with the stop control kept visible while morphing. */
 @Composable
 fun PhoneUseControls(
     task: PhoneUseTask,
@@ -142,46 +161,35 @@ fun PhoneUseControls(
     manager: PhoneUseManager,
     onOpen: (() -> Unit)? = null,
     floating: Boolean = false,
-    onDrag: ((Float, Float) -> Unit)? = null,
+    drag: PhoneOverlayDragCallbacks? = null,
     needsReply: Boolean = false,
     haptics: PremiumHaptics = rememberPremiumHaptics(),
     reply: String = task.reply,
     onReplyFocus: (Boolean) -> Unit = {},
     onSendReply: ((String) -> Unit)? = null,
+    onStopGeneration: (() -> Unit)? = null,
 ) {
-    var expanded by remember(task.conversationId) { mutableStateOf(task.systemAssistant || !floating) }
-    var editing by remember(task.conversationId) { mutableStateOf(false) }
-    var input by remember(task.conversationId) { mutableStateOf("") }
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(needsReply, task.running) {
+    var expanded by remember(task.conversationId) { mutableStateOf(task.systemAssistant || !floating || !task.running || task.awaitingReply || task.action == "reply") }
+    val reduceMotion = rememberSystemMotionPolicy().reduceMotion
+    val targetWidth = if (expanded) 360.dp else 112.dp
+    val animatedWidth by animateDpAsState(targetWidth,
+        if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillWidth")
+    val width = if (reduceMotion) targetWidth else animatedWidth
+    val showDetails = expanded && width >= 280.dp
+    LaunchedEffect(needsReply, task.running, task.action) {
         if (needsReply || !task.running || task.action == "reply") expanded = true
-        if (task.running) editing = false
-    }
-    val appVisible by manager.appUiVisible.collectAsStateWithLifecycle()
-    LaunchedEffect(appVisible) {
-        if (appVisible) { editing = false; onReplyFocus(false) }
-    }
-    LaunchedEffect(editing) {
-        if (editing) {
-            withFrameNanos { }
-            focus.requestFocus()
-            keyboard?.show()
-        } else onReplyFocus(false)
     }
     Surface(
-        shape = AppShapes.CardLarge, color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 28 = avatar radius 20 + inset 8: the collapsed cap and avatar are concentric.
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
-        modifier = Modifier.padding(8.dp)
-            .widthIn(max = 360.dp)
-            .width(if (expanded) 360.dp else 112.dp)
-            .animateContentSize(),
+        modifier = Modifier.padding(8.dp).widthIn(max = 360.dp).width(width.coerceAtLeast(112.dp)),
     ) {
         Column {
             Row(
-                Modifier.then(if (floating && onDrag != null) Modifier.pointerInput(onDrag) {
-                    detectDragGestures { change, delta -> change.consume(); onDrag(delta.x, delta.y) }
-                } else Modifier).padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                Modifier.fillMaxWidth().phoneOverlayDrag(if (floating) drag else null, haptics)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -189,54 +197,132 @@ fun PhoneUseControls(
                     .semantics { contentDescription = "${assistant.name}, phone use controls" }
                     .clickable(role = Role.Button,
                         onClickLabel = if (expanded) "Collapse controls" else "Expand controls") {
-                        haptics.perform(HapticPattern.Tick); expanded = !expanded
+                        haptics.perform(HapticPattern.Tick)
+                        expanded = !expanded
                     }) {
-                    PhoneUseAvatar(assistant, Modifier.size(44.dp), task.running && !task.paused)
+                    PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
                 }
-                if (expanded) Column(Modifier.weight(1f)) {
-                    Text(assistant.name, style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (needsReply) "Reply needed" else phoneTaskLabel(task),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (expanded && onOpen != null) IconButton(onClick = onOpen) {
-                    Icon(Icons.Rounded.OpenInFull, "Open conversation")
-                }
-                if (expanded && task.running) IconButton(onClick = {
-                    haptics.perform(HapticPattern.Tick); manager.togglePause()
+                if (showDetails) {
+                    Column(Modifier.weight(1f)) {
+                        Text(assistant.name, style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (needsReply) "Reply needed" else phoneTaskLabel(task),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (task.running) IconButton(modifier = Modifier.size(40.dp), onClick = {
+                        haptics.perform(HapticPattern.Tick); manager.togglePause()
+                    }) {
+                        Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                            if (task.paused) "Resume phone use" else "Pause phone use")
+                    }
+                    if (onOpen != null) IconButton(modifier = Modifier.size(40.dp), onClick = onOpen) {
+                        Icon(Icons.Rounded.OpenInFull, "Open conversation")
+                    }
+                } else Spacer(Modifier.weight(1f))
+                IconButton(modifier = Modifier.size(40.dp), onClick = {
+                    haptics.perform(HapticPattern.Tick)
+                    if (task.running && task.action == "reply" && onStopGeneration != null) onStopGeneration()
+                    else manager.stop()
                 }) {
-                    Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                        if (task.paused) "Resume phone use" else "Pause phone use")
-                }
-                IconButton(onClick = { haptics.perform(HapticPattern.Tick); manager.stop() }) {
                     Icon(if (task.running) Icons.Rounded.Stop else Icons.Rounded.Close,
                         if (task.running) "Stop phone use" else "Dismiss")
                 }
             }
-            if (expanded && (!task.running || task.action == "reply")) {
-                Column(Modifier.fillMaxWidth().heightIn(max = 280.dp)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                    task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium) }
-                    if (reply.isNotBlank()) SelectionContainer {
-                        MarkdownBlock(reply, style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth())
+            AnimatedVisibility(
+                visible = showDetails && (!task.running || task.action == "reply"),
+                enter = expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +
+                    fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)),
+                exit = shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)) +
+                    fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)),
+            ) {
+                Column {
+                    Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                        task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium) }
+                        if (reply.isNotBlank()) SelectionContainer {
+                            MarkdownBlock(reply, style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.fillMaxWidth())
+                        }
                     }
+                    if (onSendReply != null) PhoneUseReplyComposer(
+                        task, manager, onReplyFocus, onSendReply,
+                        modifier = Modifier.padding(12.dp), onStopGeneration = onStopGeneration, nested = true,
+                    )
+                    else Spacer(Modifier.height(12.dp))
                 }
-                if (!task.running && onSendReply != null) {
-                    if (editing) Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(input, { input = it }, modifier = Modifier.weight(1f).focusRequester(focus),
-                            placeholder = { Text("Reply") }, maxLines = 3, shape = AppShapes.InputField)
-                        IconButton(enabled = input.isNotBlank(), onClick = {
-                            val text = input.trim(); input = ""; editing = false
-                            keyboard?.hide(); onSendReply(text)
-                        }) { Icon(Icons.Rounded.ArrowUpward, "Send reply") }
-                    } else TextButton(onClick = { onReplyFocus(true); editing = true },
-                        modifier = Modifier.padding(horizontal = 8.dp)) { Text("Reply") }
-                }
-                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+/** A visible composer after completion; focusing it is deliberate and never opens the IME on its own. */
+@Composable
+internal fun PhoneUseReplyComposer(
+    task: PhoneUseTask,
+    manager: PhoneUseManager,
+    onReplyFocus: (Boolean) -> Unit,
+    onSend: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onStopGeneration: (() -> Unit)? = null,
+    nested: Boolean = false,
+) {
+    var input by remember(task.conversationId) { mutableStateOf(manager.replyDraft(task.conversationId)) }
+    var focused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    val appVisible by manager.appUiVisible.collectAsStateWithLifecycle()
+    LaunchedEffect(appVisible) {
+        if (appVisible) { focus.clearFocus(); onReplyFocus(false) }
+    }
+    LaunchedEffect(focused) {
+        onReplyFocus(focused)
+        if (focused) { withFrameNanos { }; keyboard?.show() }
+    }
+    DisposableEffect(Unit) { onDispose { onReplyFocus(false) } }
+    fun send() {
+        val message = input.trim()
+        if (message.isEmpty() || task.running) return
+        input = ""
+        manager.updateReplyDraft(task.conversationId, "")
+        focus.clearFocus(); keyboard?.hide(); onReplyFocus(false)
+        onSend(message)
+    }
+    // A nested composer follows the card's curve at a 12 dp inset; separate bars keep 28 dp ends.
+    Surface(modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(
+        if (nested) 28.dp - 12.dp else 28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            BasicTextField(
+                value = input, onValueChange = { input = it; manager.updateReplyDraft(task.conversationId, it) }, maxLines = 4,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                modifier = Modifier.weight(1f).heightIn(min = 40.dp, max = 120.dp)
+                    .pointerInput(onReplyFocus) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            onReplyFocus(true)
+                        }
+                    }.onFocusChanged { focused = it.isFocused },
+                decorationBox = { field ->
+                    Box(Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.CenterStart) {
+                        if (input.isEmpty()) Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge)
+                        field()
+                    }
+                },
+            )
+            IconButton(enabled = if (task.running) onStopGeneration != null else input.isNotBlank(), onClick = {
+                if (task.running) onStopGeneration?.invoke() else send()
+            }) {
+                Icon(if (task.running) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+                    if (task.running) "Stop generating" else "Send message")
             }
         }
     }

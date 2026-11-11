@@ -7,12 +7,14 @@ import kotlin.uuid.Uuid
 class PhoneOverlayWindowPolicyTest {
     private val task = PhoneUseTask(Uuid.random(), Uuid.random(), true, "finish")
 
-    @Test fun `completion stays floating and only approvals request the activity`() {
+    @Test fun `system completion restores full assistant input and approvals keep their existing UI`() {
         val done = task.copy(running = false)
-        assertFalse(shouldReturnForPhoneApproval(done))
+        assertTrue(shouldReturnToAssistant(done))
+        assertFalse(shouldReturnToAssistant(done.copy(resultPresented = true)))
+        assertFalse(shouldReturnToAssistant(done.copy(systemAssistant = false)))
         assertTrue(shouldShowPhoneOverlay(done, appVisible = false, capturing = false))
-        assertTrue(shouldReturnForPhoneApproval(task.copy(awaitingReply = true)))
-        assertFalse(shouldReturnForPhoneApproval(task.copy(systemAssistant = false, awaitingReply = true)))
+        assertTrue(shouldReturnToAssistant(task.copy(awaitingReply = true)))
+        assertFalse(shouldReturnToAssistant(task.copy(systemAssistant = false, awaitingReply = true)))
     }
 
     @Test fun `small popup can move across the available screen`() {

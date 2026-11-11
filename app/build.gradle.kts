@@ -284,6 +284,7 @@ kotlin {
 
 
 dependencies {
+    implementation("androidx.dynamicanimation:dynamicanimation:1.1.0")
     implementation(project(":ui-core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import me.rerere.rikkahub.ui.components.ui.FloatingOverlayLayout
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
@@ -122,6 +123,61 @@ class PhoneUseControlsRenderTest {
         controller.pause().stop().destroy()
     }
 
+    @Test fun minimizedPillHasCompactCapsuleDimensionsWithItsRealToastHost() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        android.provider.Settings.Global.putFloat(activity.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        val assistant = Assistant(name = "Generical", avatar = Avatar.Animated.defaultGenerical())
+        activity.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    val toast = rememberAppToasterState()
+                    FloatingOverlayLayout(content = {
+                        PhoneUseControls(PhoneUseTask(Uuid.random(), assistant.id, false, "observe"),
+                            assistant, PhoneUseManager(), floating = true, haptics = noHaptics)
+                    }, decoration = { AppToasterHost(toast) })
+                }
+            }
+        }
+        val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val density = activity.resources.displayMetrics.density
+        repeat(3) {
+            view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
+            view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        }
+        org.junit.Assert.assertEquals((128 * density).toInt(), view.measuredWidth)
+        org.junit.Assert.assertEquals((72 * density).toInt(), view.measuredHeight)
+        controller.pause().stop().destroy()
+    }
+
+    @Test fun finishedPopupExposesReplyAndComposerOnFirstLayout() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        android.provider.Settings.Global.putFloat(activity.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        val assistant = Assistant(name = "Assistant", avatar = Avatar.Emoji("A"))
+        val task = PhoneUseTask(Uuid.random(), assistant.id, false, "finish", running = false, reply = "Done")
+        activity.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    PhoneUseControls(task, assistant, PhoneUseManager(), floating = true,
+                        haptics = noHaptics, onSendReply = {})
+                }
+            }
+        }
+        val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val density = activity.resources.displayMetrics.density
+        view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
+        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+        org.junit.Assert.assertEquals((376 * density).toInt(), view.measuredWidth)
+        org.junit.Assert.assertTrue(view.measuredHeight > (128 * density).toInt())
+        controller.pause().stop().destroy()
+    }
+
     @Test fun renderControlSurfaces() {
         val output = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() } ?: return
         File(output).mkdirs()
@@ -145,14 +201,18 @@ class PhoneUseControlsRenderTest {
                 CompositionLocalProvider(LocalSettings provides Settings()) {
                     MaterialTheme(colorScheme = PresetThemes[0].getColorScheme(true), shapes = Shapes, typography = Typography) {
                         Box(Modifier.requiredSize(411.dp, heightDp.dp)) {
-                            if (system && !task.running) me.rerere.rikkahub.ui.activity.TranscriptPanel(
+                            if (system && !task.running) androidx.compose.foundation.layout.Column(
+                                Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 16.dp)) {
+                                me.rerere.rikkahub.ui.activity.TranscriptPanel(
                                 assistantAvatar = { PhoneUseAvatar(assistant, it, active = false) },
                                 messages = listOf(me.rerere.ai.ui.UIMessage.assistant(task.reply)),
                                 activityState = me.rerere.rikkahub.ui.components.chat.ActivityState.Hidden,
                                 isGenerating = false, isSpeaking = false, onOpenInApp = {}, onCopy = {},
                                 onRegenerate = {}, onToggleTts = {}, phoneTask = task, onDismiss = {},
                                 openDescription = "Open assistant",
-                            )
+                                )
+                                PhoneUseReplyComposer(task, PhoneUseManager(), {}, {}, Modifier.padding(top = 8.dp))
+                            }
                             else if (system) AssistantPhoneUseDock(task, assistant, PhoneUseManager(), onOpen = {})
                             else PhoneUseControls(task, assistant, PhoneUseManager(), onOpen = {}, floating = true,
                                 haptics = noHaptics, onSendReply = {})

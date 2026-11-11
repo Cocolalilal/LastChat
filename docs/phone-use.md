@@ -19,8 +19,10 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
 - Tasks started from the system assistant use a full-width bottom assistant
   surface using the assistant's actual transcript header. The transcript and input
   collapse before the activity yields to the target app. Completion expands the
-  shared transcript directly in the floating window over the live app; it does not
-  reopen an activity. Automatic speech follows the assistant setting, once per reply.
+  full assistant interface, including its message input, over the live app. If Android
+  blocks that return, the floating transcript provides its own follow-up input and
+  transfers any draft when the assistant opens. Automatic speech follows the
+  assistant setting, once per reply.
   Pending approvals return to the assistant's existing input/approval UI. The drag
   handle moves the service window; the reply has an explicit dismiss control.
 - Opening the conversation pauses phone use. For system assistant conversations,
@@ -36,7 +38,14 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
   finish. Stop cancels the owning conversation's generation. Disconnecting the
   accessibility service also stops the task. Completion keeps a dismissible
   reply with Markdown and a follow-up input. Dragging is restricted to the header,
-  so scrolling and selecting the reply do not move the window.
+  so scrolling and selecting the reply do not move the window. Throws preserve
+  finger velocity and spring toward the nearest side or corner, keeping a safe
+  gap from system bars. Reduced motion docks immediately. The minimized control
+  is a capsule with concentric avatar and outer curves; nested reply fields use
+  an inset radius. Completed messages appear immediately when expanded.
+- Transcript resizing uses one spring, and direct dragging follows the finger.
+  Scrolling back stops automatic following until the user returns to the latest
+  text. The assistant input and phone controls retain bottom breathing room.
 
 A single PhoneUseManager coordinates ownership across app, assistant, and web
 conversations. Competing conversations cannot operate the phone concurrently.
@@ -95,4 +104,8 @@ Haze renderer.
 Assist screenshots are retained only at model-inspection resolution for
 `look_at_screen` and optional context attachment. They are never displayed behind
 the assistant, and no capture loop is used for visual effects. Accessibility-owned
-phone-use windows keep the target app active during work and when showing the reply.
+phone-use windows keep the target app active during work. Completion returns to
+the transparent assistant host, with a floating reply/input as a fallback.
+
+Release deliveries build stable APKs only (`:app:assembleStableRelease`); the
+stable ARM64 APK goes into the shared LC folder.

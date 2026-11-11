@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.phoneuse
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,7 +28,7 @@ internal fun AssistantPhoneUseDock(
     assistant: Assistant,
     manager: PhoneUseManager,
     onOpen: () -> Unit,
-    onDrag: ((Float, Float) -> Unit)? = null,
+    drag: PhoneOverlayDragCallbacks? = null,
 ) {
     val config = LocalSettings.current.assistantOverlayConfig
     Box(Modifier.fillMaxWidth().height(112.dp), contentAlignment = Alignment.BottomCenter) {
@@ -41,14 +42,14 @@ internal fun AssistantPhoneUseDock(
                 messages = emptyList(), activityState = ActivityState.Waiting,
                 isGenerating = task.running, isSpeaking = false, onOpenInApp = onOpen,
                 onCopy = {}, onRegenerate = {}, onToggleTts = {}, compact = true,
-                onMoveWindow = onDrag, openDescription = "Open assistant",
+                windowDrag = drag, openDescription = "Open assistant",
                 phoneTask = task, onPausePhone = { manager.togglePause() }, onStopPhone = { manager.stop() },
             )
         }
     }
 }
 
-/** Completion stays in this service window over the live app, using the shared transcript UI. */
+/** Shared reply and composer while the assistant returns, or if Android blocks that return. */
 @Composable
 internal fun AssistantPhoneUseReply(
     task: PhoneUseTask,
@@ -57,7 +58,8 @@ internal fun AssistantPhoneUseReply(
     messages: List<me.rerere.ai.ui.UIMessage>,
     chatService: me.rerere.rikkahub.service.ChatService,
     onOpen: () -> Unit,
-    onDrag: ((Float, Float) -> Unit)? = null,
+    drag: PhoneOverlayDragCallbacks? = null,
+    onReplyFocus: (Boolean) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings = LocalSettings.current
@@ -65,13 +67,13 @@ internal fun AssistantPhoneUseReply(
     val speaking by tts.isSpeaking.collectAsStateWithLifecycle()
     val appVisible by manager.appUiVisible.collectAsStateWithLifecycle()
     val reply = messages.lastOrNull()?.takeIf { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
-    LaunchedEffect(task.running, reply?.id, appVisible) {
-        if (!appVisible && !task.running && task.error == null && settings.assistantOverlayConfig.autoReadReply &&
+    LaunchedEffect(task.running, reply?.id, appVisible, task.returnFailed) {
+        if (!appVisible && !task.running && task.returnFailed && task.error == null && settings.assistantOverlayConfig.autoReadReply &&
             reply != null && reply.toContentText().isNotBlank() && manager.claimSpokenReply(reply.id)) {
             tts.speak(reply.toContentText(), overrideSetting = settings.getEffectiveTTSProvider(assistant))
         }
     }
-    Box(Modifier.padding(16.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 16.dp)) {
         TranscriptPanel(
             assistantAvatar = { PhoneUseAvatar(assistant, it, task.running && !task.paused) },
             messages = messages.filter { it.toContentText().isNotBlank() },
@@ -87,9 +89,18 @@ internal fun AssistantPhoneUseReply(
                 if (speaking) tts.stop()
                 else tts.speak(it.toContentText(), overrideSetting = settings.getEffectiveTTSProvider(assistant))
             },
-            phoneTask = task, onMoveWindow = onDrag, onDismiss = { manager.stop() },
+            modifier = Modifier.weight(1f, fill = false),
+            phoneTask = task, windowDrag = drag, onDismiss = { manager.stop() },
             openDescription = "Open assistant",
-            onPausePhone = { manager.togglePause() }, onStopPhone = { manager.stop() },
+            onPausePhone = { manager.togglePause() }, onStopPhone = {
+                if (task.action == "reply") chatService.stopGeneration(task.conversationId) else manager.stop()
+            },
         )
+        PhoneUseReplyComposer(task, manager, onReplyFocus, onSend = { text ->
+            manager.resumeReply(task.conversationId) { chatService.stopGeneration(task.conversationId) }
+            chatService.sendMessage(task.conversationId, listOf(me.rerere.ai.ui.UIMessagePart.Text(text)),
+                suppressCompletionNotification = true)
+        }, modifier = Modifier.padding(top = 8.dp),
+            onStopGeneration = { chatService.stopGeneration(task.conversationId) })
     }
 }

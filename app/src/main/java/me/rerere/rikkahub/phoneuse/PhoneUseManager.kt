@@ -34,6 +34,21 @@ class PhoneUseManager {
     private val gate = Mutex()
     private var cancelTask: (() -> Unit)? = null
     private var lastSpokenReply: Uuid? = null
+    private var draftOwner: Uuid? = null
+    private var replyDraft = ""
+
+    fun replyDraft(id: Uuid): String = synchronized(stateLock) {
+        if (draftOwner == id) replyDraft else ""
+    }
+
+    fun updateReplyDraft(id: Uuid, text: String) = synchronized(stateLock) {
+        if (_session.value?.conversationId == id) { draftOwner = id; replyDraft = text }
+    }
+
+    fun takeReplyDraft(id: Uuid): String = synchronized(stateLock) {
+        if (draftOwner != id) return@synchronized ""
+        replyDraft.also { replyDraft = ""; draftOwner = null }
+    }
 
     fun attach(controller: PhoneController) { _controller.value = controller }
     fun detach(controller: PhoneController) {
@@ -62,7 +77,7 @@ class PhoneUseManager {
     fun claimAssistantReturn(id: Uuid): Boolean = synchronized(stateLock) {
         val current = _session.value ?: return@synchronized false
         if (current.conversationId != id || current.returnRequested) false else {
-            _session.value = current.copy(returnRequested = true)
+            _session.value = current.copy(returnRequested = true, returnFailed = false)
             true
         }
     }
@@ -82,7 +97,7 @@ class PhoneUseManager {
         if (current.conversationId != id) return@synchronized
         cancelTask = cancel
         _session.value = current.copy(running = true, paused = false, awaitingReply = false,
-            action = "reply", error = null, returnRequested = false, resultPresented = false)
+            action = "reply", error = null, returnRequested = false, returnFailed = false, resultPresented = false)
     }
 
     fun setError(id: Uuid, message: String?) = synchronized(stateLock) {
@@ -119,6 +134,7 @@ class PhoneUseManager {
             if (current?.conversationId != id || !current.running) {
                 cancelTask = cancel
                 controlsReady.value = null
+                if (draftOwner != id) { replyDraft = ""; draftOwner = null }
                 _session.value = PhoneUseTask(id, assistantId, id in assistantConversations, action)
                 true
             } else {
@@ -159,6 +175,7 @@ class PhoneUseManager {
             val callback = cancelTask
             cancelTask = null
             _session.value = null
+            replyDraft = ""; draftOwner = null
             controlsReady.value = null
             callback
         }
