@@ -32,4 +32,12 @@ internal fun createPhoneOverlayDialog(context: Context, content: View, radiusDp:
         }
         content.visibility = View.VISIBLE
         setContentView(content)
+        // BackgroundBlurDrawable is maintained by DecorView, outside Compose's draw layer.
+        // Synchronize it at pre-draw, including its first frame and after capability changes.
+        window!!.decorView.viewTreeObserver.addOnPreDrawListener {
+            val background = window!!.decorView.background
+            val alpha = (content.alpha.coerceIn(0f, 1f) * 255).toInt()
+            if (background != null && background.alpha != alpha) background.alpha = alpha
+            true
+        }
     }

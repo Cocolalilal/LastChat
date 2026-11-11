@@ -165,7 +165,8 @@ internal class PhoneUseOverlay(
                 val decor = popup?.window?.decorView
                 val show = shouldShowPhoneOverlay(task, appVisible, capturing)
                 if (show && decor?.visibility != View.VISIBLE) {
-                    if (!task.systemAssistant && !hiddenForCapture && !dragCallbacks.reduceMotion) {
+                    val matchingHandoff = task.systemAssistant && manager.assistantDocked.value == task.conversationId
+                    if (!matchingHandoff && !hiddenForCapture && !dragCallbacks.reduceMotion) {
                         view?.alpha = 0f
                         view?.animate()?.alpha(1f)?.setDuration(180)?.start()
                     } else view?.alpha = 1f

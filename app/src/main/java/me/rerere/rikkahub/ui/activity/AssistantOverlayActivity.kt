@@ -112,7 +112,7 @@ class AssistantOverlayActivity : ComponentActivity() {
                                 autoStartListening = existingId == null,
                                 nativeBlurActive = nativeBlurActive,
                                 floatingContent = true,
-                                onSurfaceOpacity = { alpha -> controlsDialog.window?.decorView?.background?.alpha = (alpha * 255).toInt() },
+                                onSurfaceOpacity = { alpha -> controls.alpha = alpha },
                                 onPhoneUseYield = { moveTaskToBack(true) },
                                 onDismiss = { finish() },
                                 onOpenInApp = {

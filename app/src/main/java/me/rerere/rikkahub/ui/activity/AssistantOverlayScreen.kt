@@ -360,7 +360,7 @@ fun AssistantOverlayScreen(
                         if (backSwipeEdge == 1) 1f else 0f, 0.5f,
                     )
                     translationX = if (floatingContent) 0f else (if (backSwipeEdge == 1) -1f else 1f) * bp * size.width * 0.05f
-                    alpha = ((1f - dismiss.value) * (1f - bp * 0.2f)).coerceIn(0f, 1f)
+                    alpha = if (floatingContent) 1f else ((1f - dismiss.value) * (1f - bp * 0.2f)).coerceIn(0f, 1f)
                 }
         ) {
             Box(Modifier.matchParentSize().clickable(

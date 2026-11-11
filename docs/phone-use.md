@@ -74,7 +74,8 @@ An assistant return keeps its matching compact service surface until the activit
 first pre-draw, rather than removing it at activity start before it can draw.
 A moved assistant bar springs back to that shared anchor before the return starts.
 Regular popups fade in after the app yields. Dismissing a popup fades its retained
-content before releasing its window. The dialog preserves hardware acceleration
+content before releasing its window. Native blur follows the content opacity at
+pre-draw, including the first frame, without invalidating an unchanged backdrop. The dialog preserves hardware acceleration
 when focus/touch flags change. Both assistant hosts use the character's theme;
 palette seeds are retained across the handoff to avoid reloading the default colors.
 System-assistant and attached popup replies own completion delivery and suppress
