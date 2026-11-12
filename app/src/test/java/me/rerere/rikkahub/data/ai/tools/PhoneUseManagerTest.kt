@@ -83,6 +83,46 @@ class PhoneUseManagerTest {
         assertFalse(manager.session.value!!.running)
         assertEquals(id, manager.session.value!!.conversationId)
     }
+
+    @Test fun `opening assistant in app transfers work without cancelling or reopening the overlay`() = runTest {
+        startTask(system = true)
+        var cancelled = false
+        manager.resumeReply(id) { cancelled = true }
+        manager.assistantDocked.value = id
+        manager.assistantReturning.value = true
+        manager.releaseAssistantOverlay(id)
+        assertFalse(cancelled)
+        assertTrue(manager.session.value!!.running)
+        assertFalse(manager.session.value!!.systemAssistant)
+        assertFalse(manager.isAssistantConversation(id))
+        assertNull(manager.assistantDocked.value)
+        assertFalse(manager.assistantReturning.value)
+        manager.generationSettled(id, true, "Which account?")
+        assertFalse(shouldReturnToAssistant(manager.session.value!!))
+        manager.stop()
+        // Transferring presentation must leave generation cancellation attached to the task.
+        assertTrue(cancelled)
+    }
+
+    @Test fun `transferring a different assistant does not change active phone work`() = runTest {
+        startTask(system = true)
+        val before = manager.session.value
+        manager.releaseAssistantOverlay(Uuid.random())
+        assertEquals(before, manager.session.value)
+        assertTrue(manager.isAssistantConversation(id))
+    }
+    @Test fun `a reply visible in the service still owns completion after Activity return is denied`() = runTest {
+        startTask(system = true)
+        manager.generationSettled(id, false, "Done")
+        manager.markAssistantPresented(id)
+        manager.assistantUiVisible.value = false
+        manager.assistantReplyVisible.value = id
+        assertTrue(manager.ownsCompletion(id))
+        assertFalse(manager.ownsCompletion(Uuid.random()))
+        manager.assistantReplyVisible.value = null
+        assertFalse(manager.ownsCompletion(id))
+    }
+
     private suspend fun startTask(system: Boolean = false) {
         manager.attach(controller)
         if (system) manager.registerAssistantConversation(id)

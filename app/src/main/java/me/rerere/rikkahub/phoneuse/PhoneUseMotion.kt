@@ -73,6 +73,60 @@ internal fun phoneOverlayBounds(
     return PhoneOverlayBounds((width - contentWidth).coerceAtLeast(0).toFloat(), margin, availableY - margin)
 }
 
+/**
+ * A popup's attachment point in its available travel. Fractions let a left/top edge remain
+ * attached during a size morph, and keep a centred popup centred instead of pushing it away.
+ * Coordinates use the host's bottom/right origin; drag deltas use screen coordinates.
+ */
+internal class PhoneOverlayPositionState(initialX: Float = 0f, initialY: Float = 0f) {
+    var x: Float = initialX
+        private set
+    var y: Float = initialY
+        private set
+    var bounds: PhoneOverlayBounds? = null
+        private set
+    private var fractionX = 0f
+    private var fractionY = 0f
+    private var dragging = false
+
+    fun updateBounds(next: PhoneOverlayBounds): Pair<Float, Float> {
+        val previous = bounds
+        bounds = next
+        if (previous == null || dragging) {
+            x = next.clampX(x)
+            y = next.clampY(y)
+            rememberFractions(next)
+        } else {
+            x = fractionX * next.maxX
+            y = next.minY + fractionY * (next.maxY - next.minY)
+        }
+        return x to y
+    }
+
+    fun moveTo(right: Float, bottom: Float): Pair<Float, Float> {
+        val current = bounds
+        x = if (right.isFinite()) current?.clampX(right) ?: right else x
+        y = if (bottom.isFinite()) current?.clampY(bottom) ?: bottom else y
+        current?.let(::rememberFractions)
+        return x to y
+    }
+
+    fun beginDrag() { dragging = true }
+
+    fun dragBy(screenDx: Float, screenDy: Float): Pair<Float, Float> =
+        moveTo(x - screenDx, y - screenDy)
+
+    fun endDrag() { dragging = false }
+
+    private fun rememberFractions(current: PhoneOverlayBounds) {
+        // If an IME or rotation temporarily leaves no travel, retain the attachment so it
+        // returns to the same edge when there is room again.
+        if (current.maxX > 0f) fractionX = (x / current.maxX).coerceIn(0f, 1f)
+        val spanY = current.maxY - current.minY
+        if (spanY > 0f) fractionY = ((y - current.minY) / spanY).coerceIn(0f, 1f)
+    }
+}
+
 internal enum class PhoneOverlaySide { LEFT, RIGHT }
 internal enum class PhoneOverlayVerticalEdge { TOP, BOTTOM }
 internal data class PhoneOverlaySnap(

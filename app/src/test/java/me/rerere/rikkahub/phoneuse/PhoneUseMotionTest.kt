@@ -65,4 +65,45 @@ class PhoneUseMotionTest {
         assertEquals(PhoneOverlayVerticalEdge.BOTTOM, dock.vertical)
     }
 
+    @Test fun `left top dock follows morph geometry without a second spring`() {
+        val position = PhoneOverlayPositionState(bounds.maxX, bounds.maxY)
+        position.updateBounds(bounds)
+        val expanded = phoneOverlayBounds(1080, 2200, 1020, 1000, 16f)
+        position.updateBounds(expanded)
+        assertEquals(expanded.maxX, position.x, 0.01f)
+        assertEquals(expanded.maxY, position.y, 0.01f)
+        position.updateBounds(bounds)
+        assertEquals(bounds.maxX, position.x, 0.01f)
+        assertEquals(bounds.maxY, position.y, 0.01f)
+    }
+
+    @Test fun `centred popup preserves its centre during expansion`() {
+        val position = PhoneOverlayPositionState(bounds.maxX / 2, (bounds.minY + bounds.maxY) / 2)
+        position.updateBounds(bounds)
+        val expanded = phoneOverlayBounds(1080, 2200, 1020, 1000, 16f)
+        position.updateBounds(expanded)
+        assertEquals(540f, 1080f - position.x - 1020f / 2, 0.01f)
+        assertEquals(1100f, 2200f - position.y - 1000f / 2, 0.01f)
+    }
+
+    @Test fun `drag uses the visible origin and does not move with size fractions`() {
+        val position = PhoneOverlayPositionState(200f, 500f)
+        position.updateBounds(bounds)
+        position.beginDrag()
+        position.dragBy(25f, -20f)
+        position.updateBounds(phoneOverlayBounds(1080, 2200, 500, 300, 16f))
+        assertEquals(175f, position.x, 0.01f)
+        assertEquals(520f, position.y, 0.01f)
+        position.endDrag()
+    }
+
+    @Test fun `temporary zero travel does not forget the dock edge`() {
+        val position = PhoneOverlayPositionState(bounds.maxX, bounds.maxY)
+        position.updateBounds(bounds)
+        position.updateBounds(phoneOverlayBounds(320, 480, 640, 800, 16f))
+        position.updateBounds(bounds)
+        assertEquals(bounds.maxX, position.x, 0.01f)
+        assertEquals(bounds.maxY, position.y, 0.01f)
+    }
+
 }

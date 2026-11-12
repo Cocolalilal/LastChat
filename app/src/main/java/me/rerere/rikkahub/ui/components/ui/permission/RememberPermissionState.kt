@@ -1,16 +1,21 @@
 package me.rerere.rikkahub.ui.components.ui.permission
 
+import android.content.Context
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import me.rerere.rikkahub.utils.getActivity
 
 /**
  * 创建并记住权限状态
@@ -51,12 +56,12 @@ fun rememberPermissionState(
     permissions: Set<PermissionInfo>
 ): PermissionState {
     val context = LocalContext.current
-    val activity = context as? ComponentActivity
-        ?: throw IllegalStateException("rememberPermissionState 必须在 ComponentActivity 中使用")
+    val activity = permissionActivity(context, LocalActivityResultRegistryOwner.current)
+    val currentActivity = rememberUpdatedState(activity)
 
     // 创建权限状态对象
     val permissionState = remember(permissions) {
-        PermissionState(permissions, context, activity)
+        PermissionState(permissions, context) { currentActivity.value }
     }
 
     // 多个权限请求启动器
@@ -155,3 +160,8 @@ fun rememberPermissionState(
         permissions = setOf(info)
     )
 }
+
+/** The retained assistant uses a context wrapper and can acquire a new Activity after recreation. */
+internal fun permissionActivity(context: Context, owner: ActivityResultRegistryOwner?): ComponentActivity =
+    (owner as? ComponentActivity) ?: (context.getActivity() as? ComponentActivity)
+    ?: error("Permission requests require a ComponentActivity owner")

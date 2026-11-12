@@ -3,111 +3,53 @@ package me.rerere.rikkahub.ui.activity
 import android.app.Activity
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.os.Build
-import android.view.Window
-import android.view.WindowInsets
 import android.view.Gravity
 import android.view.WindowManager
-import java.util.function.Consumer
-import me.rerere.common.platform.PlatformLog
+import android.widget.FrameLayout
 
-/** A transparent outside-tap host and tightly sized controls window with local native blur. */
+/** Fixed native viewport: Compose changes card geometry without reallocating a Window. */
 internal class AssistantFloatingWindow(
     private val activity: Activity,
-    private val onBlurChanged: (Boolean) -> Unit,
+    private val session: AssistantOverlaySession,
 ) {
-    private val manager = activity.getSystemService(WindowManager::class.java)
-    private var contentWindow: Window? = null
-    private var requested = false
-    private var available = false
-    private var appliedRadius = -1
-    private var reportedActive: Boolean? = null
-    private var lastDiagnostic: String? = null
-    private val listener = Consumer<Boolean> { available = it; applyBlur() }
-
-    fun attach() {
+    private val root = FrameLayout(activity).apply {
+        clipChildren = false
+        clipToPadding = false
+        setOnClickListener { session.onBackPressedDispatcher.onBackPressed() }
+    }
+    private val viewport: FloatingOverlayViewport
+    private var blurRequest: ((Boolean) -> Unit)? = null
+    init {
         activity.window.apply {
-            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
-            setWindowAnimations(0)
-            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setWindowAnimations(0)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            available = manager.isCrossWindowBlurEnabled
-            manager.addCrossWindowBlurEnabledListener(activity.mainExecutor, listener)
-        }
-        applyBlur()
+        (session.view.parent as? android.view.ViewGroup)?.removeView(session.view)
+        root.addView(session.view, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+        ).apply {
+            val density = activity.resources.displayMetrics.density
+            setMargins((16 * density).toInt(), 0, (16 * density).toInt(), (24 * density).toInt())
+        })
+        activity.setContentView(root)
+        viewport = FloatingOverlayViewport(activity.window, root, session.view, passThrough = false)
+        viewport.onBlurChanged = { session.nativeBlurActive = it }
+        val request: (Boolean) -> Unit = { viewport.setBlurEnabled(it) }
+        blurRequest = request
+        session.onBlurRequested = request
+        session.bindWindow(activity.window)
+        viewport.attach()
+        viewport.setInputEnabled(true)
     }
-
-    fun setContentWindow(window: Window) {
-        contentWindow = window
-        appliedRadius = -1
-        window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-        window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
-        updateContentBounds()
-        applyBlur()
-    }
-
-    fun updateContentBounds() {
-        val window = contentWindow ?: return
-        val availableWidth = if (Build.VERSION.SDK_INT >= 30) {
-            val metrics = manager.currentWindowMetrics
-            val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            metrics.bounds.width() - insets.left - insets.right
-        } else activity.resources.displayMetrics.widthPixels
-        val density = activity.resources.displayMetrics.density
-        val width = (availableWidth - 32f * density).toInt().coerceAtLeast(1)
-        val params = window.attributes
-        val y = (24f * density).toInt()
-        if (params.width == width && params.height == WindowManager.LayoutParams.WRAP_CONTENT && params.y == y) return
-        params.width = width
-        params.height = WindowManager.LayoutParams.WRAP_CONTENT
-        params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        params.x = 0
-        params.y = y
-        window.attributes = params
-    }
-
-    fun setBlurEnabled(enabled: Boolean) {
-        if (requested == enabled) return
-        requested = enabled
-        applyBlur()
-    }
-
-    private fun applyBlur() {
-        val window = contentWindow ?: return
-        // Keep the request installed while the OS temporarily disables blur. The compositor
-        // owns availability; capability callbacks only change the readable surface tint.
-        val radius = if (requested && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (24 * activity.resources.displayMetrics.density).toInt()
-        } else 0
-        if (appliedRadius != radius) {
-            // Background blur follows the exact floating controls window. The full-screen
-            // outside-tap host stays transparent, so switching modes never blurs the whole app.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                window.setBackgroundBlurRadius(radius)
-                window.attributes.setBlurBehindRadius(0)
-            }
-            appliedRadius = radius
-        }
-        val active = radius > 0 && available
-        val diagnostic = "blur requested=$requested available=$available radius=$radius " +
-            "device=${Build.MANUFACTURER}/${Build.MODEL} sdk=${Build.VERSION.SDK_INT}"
-        if (lastDiagnostic != diagnostic) {
-            lastDiagnostic = diagnostic
-            PlatformLog.i("AssistantWindow", diagnostic)
-        }
-        if (reportedActive != active) {
-            reportedActive = active
-            onBlurChanged(active)
-        }
-    }
-
     fun close() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) manager.removeCrossWindowBlurEnabledListener(listener)
+        // The service may already have rebound these callbacks and reparented the persistent
+        // scene. Clean up only this Activity's native chrome, without touching the new host.
+        if (session.onBlurRequested === blurRequest) session.onBlurRequested = {}
+        viewport.onBlurChanged = null
+        viewport.setBlurEnabled(false)
+        viewport.close()
+        activity.window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     }
 }

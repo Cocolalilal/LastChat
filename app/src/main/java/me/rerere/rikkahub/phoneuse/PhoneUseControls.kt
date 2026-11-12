@@ -1,11 +1,5 @@
 package me.rerere.rikkahub.phoneuse
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.clickable
@@ -34,6 +28,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
@@ -160,7 +155,7 @@ internal fun PhoneUseOverlayContent(
     }
 }
 
-/** The compact state is a 108 × 56 capsule, with the stop control kept visible while morphing. */
+/** The capsule and reply share one spring, so their geometry and opacity cannot drift apart. */
 @Composable
 fun PhoneUseControls(
     task: PhoneUseTask,
@@ -176,92 +171,97 @@ fun PhoneUseControls(
     onSendReply: ((String) -> Unit)? = null,
     onStopGeneration: (() -> Unit)? = null,
 ) {
-    var expanded by remember(task.conversationId) { mutableStateOf(task.systemAssistant || !floating || !task.running || task.awaitingReply || task.action == "reply") }
+    var expanded by remember(task.conversationId) {
+        mutableStateOf(task.systemAssistant || !floating || !task.running || task.awaitingReply || needsReply)
+    }
     val reduceMotion = rememberSystemMotionPolicy().reduceMotion
-    val expandedWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 16).coerceAtMost(360).dp
-    val targetWidth = if (expanded) expandedWidth else 108.dp
-    val animatedWidth by animateDpAsState(targetWidth,
-        if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillWidth")
-    val width = if (reduceMotion) targetWidth else animatedWidth
-    val detailsStart = minOf(280f, expandedWidth.value - 60f)
-    val showDetails = width.value >= detailsStart
-    val gap by animateDpAsState(if (expanded) 8.dp else 6.dp,
-        if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS), label = "phonePillGap")
-    val detailsAlpha = ((width.value - detailsStart) / 40f).coerceIn(0f, 1f)
-    LaunchedEffect(needsReply, task.running, task.action) {
-        if (needsReply || !task.running || task.action == "reply") expanded = true
+    val progress by androidx.compose.animation.core.animateFloatAsState(
+        if (expanded) 1f else 0f,
+        if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS),
+        label = "phonePopupExpansion",
+    )
+    val expansion = progress.coerceIn(0f, 1f)
+    val expandedWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 16)
+        .coerceIn(104, 360).dp
+    // A tool finishing is not the end of generation. Keep the capsule in place through the
+    // model's final answer; only the actual settled turn (or an approval) requests expansion.
+    LaunchedEffect(needsReply, task.running, task.awaitingReply) {
+        if (needsReply || !task.running || task.awaitingReply) expanded = true
     }
     Surface(
-        // 28 = avatar radius 20 + inset 8: the collapsed cap and avatar are concentric.
+        // Avatar radius 20 + inset 8: both caps remain optically concentric.
         shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
         color = me.rerere.rikkahub.ui.modifier.blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
         border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
         tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
-        modifier = Modifier.padding(8.dp).widthIn(max = 360.dp).width(width.coerceAtLeast(108.dp)),
+        modifier = Modifier.padding(8.dp),
     ) {
-        Column {
-            Row(
-                Modifier.fillMaxWidth().phoneOverlayDrag(if (floating) drag else null, haptics)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                Box(Modifier
-                    .semantics { contentDescription = "${assistant.name}, phone use controls" }
-                    .clickable(role = Role.Button,
-                        onClickLabel = if (expanded) "Collapse controls" else "Expand controls") {
-                        haptics.perform(HapticPattern.Tick)
-                        expanded = !expanded
-                    }) {
-                    PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
-                }
-                if (showDetails) {
-                    Column(Modifier.weight(1f).graphicsLayer { alpha = detailsAlpha }) {
-                        Text(assistant.name, style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        var lastStatus by remember { mutableStateOf(phoneTaskLabel(task)) }
-                        val status = if (needsReply) "Reply needed" else phoneTaskLabel(task)
-                        SideEffect { if (status.isNotBlank()) lastStatus = status }
-                        AnimatedVisibility(status.isNotBlank(),
-                            enter = fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
-                                expandVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
-                            exit = fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
-                                shrinkVertically(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))) {
-                            Text(lastStatus, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        PhonePopupExpansionLayout(
+            expansion = expansion, expandedWidth = expandedWidth,
+            header = {
+                Box(Modifier.fillMaxWidth().height(56.dp)
+                    .phoneOverlayDrag(if (floating) drag else null, haptics)) {
+                    Box(Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
+                        .semantics { contentDescription = "${assistant.name}, phone use controls" }
+                        .clickable(role = Role.Button,
+                            onClickLabel = if (expanded) "Collapse controls" else "Expand controls") {
+                            haptics.perform(HapticPattern.Tick)
+                            expanded = !expanded
+                            if (!expanded) onReplyFocus(false)
+                        }) {
+                        PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
+                    }
+                    // Always keep the same header children measured at their final width.
+                    // The surface reveals them as it grows; no width threshold inserts controls.
+                    Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().padding(horizontal = 56.dp)
+                        .clipToBounds()) {
+                        Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(expandedWidth - 112.dp)
+                            .graphicsLayer { alpha = expansion },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(assistant.name, style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val status = if (needsReply) "Reply needed" else phoneTaskLabel(task)
+                                Text(status, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            val pauseAlpha by androidx.compose.animation.core.animateFloatAsState(
+                                if (task.running) 1f else 0f,
+                                if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS),
+                                label = "phonePauseVisibility",
+                            )
+                            IconButton(
+                                modifier = Modifier.size(40.dp).graphicsLayer { alpha = pauseAlpha },
+                                enabled = task.running && expansion > 0.95f,
+                                onClick = { haptics.perform(HapticPattern.Tick); manager.togglePause() },
+                            ) {
+                                Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                    if (task.paused) "Resume phone use" else "Pause phone use")
+                            }
+                            if (onOpen != null) IconButton(modifier = Modifier.size(40.dp),
+                                enabled = expansion > 0.95f, onClick = onOpen) {
+                                Icon(Icons.Rounded.OpenInFull, "Open conversation")
+                            }
                         }
                     }
-                    if (task.running) IconButton(modifier = Modifier.size(40.dp).graphicsLayer { alpha = detailsAlpha }, onClick = {
-                        haptics.perform(HapticPattern.Tick); manager.togglePause()
-                    }) {
-                        Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                            if (task.paused) "Resume phone use" else "Pause phone use")
+                    IconButton(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).size(40.dp),
+                        onClick = {
+                            haptics.perform(HapticPattern.Tick)
+                            if (task.running && task.action == "reply" && onStopGeneration != null) onStopGeneration()
+                            else manager.stop()
+                        }) {
+                        Icon(if (task.running) Icons.Rounded.Stop else Icons.Rounded.Close,
+                            if (task.running) "Stop phone use" else "Dismiss")
                     }
-                    if (onOpen != null) IconButton(modifier = Modifier.size(40.dp).graphicsLayer { alpha = detailsAlpha }, onClick = onOpen) {
-                        Icon(Icons.Rounded.OpenInFull, "Open conversation")
-                    }
-                } else Spacer(Modifier.weight(1f))
-                IconButton(modifier = Modifier.size(40.dp), onClick = {
-                    haptics.perform(HapticPattern.Tick)
-                    if (task.running && task.action == "reply" && onStopGeneration != null) onStopGeneration()
-                    else manager.stop()
-                }) {
-                    Icon(if (task.running) Icons.Rounded.Stop else Icons.Rounded.Close,
-                        if (task.running) "Stop phone use" else "Dismiss")
                 }
-            }
-            me.rerere.rikkahub.ui.activity.AssistantInputReveal(
-                visible = expanded && (!task.running || task.action == "reply"),
-            ) {
-                // Lay out the reply at its final width once. The outer surface morphs around
-                // it, avoiding paragraph reflow and repeated Markdown layout on every frame.
-                Column(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(expandedWidth)
-                    .graphicsLayer {
-                        alpha = ((width.value - (expandedWidth.value - 44f)) / 44f).coerceIn(0f, 1f)
-                    }) {
-                    Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            },
+            body = {
+                // A collapsed popup has no Markdown renderer. Once opened, its viewport stays
+                // stable throughout streaming and follow-up turns, including composer focus.
+                if (expanded || expansion > 0f) Column(Modifier.fillMaxWidth().graphicsLayer { alpha = expansion }) {
+                    Column(Modifier.fillMaxWidth().weight(1f, fill = false).height(220.dp).verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp)) {
                         task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium) }
                         if (reply.isNotBlank()) SelectionContainer {
@@ -272,10 +272,37 @@ fun PhoneUseControls(
                     if (onSendReply != null) PhoneUseReplyComposer(
                         task, manager, onReplyFocus, onSendReply,
                         modifier = Modifier.padding(12.dp), onStopGeneration = onStopGeneration, nested = true,
-                    )
-                    else Spacer(Modifier.height(12.dp))
+                    ) else Spacer(Modifier.height(12.dp))
                 }
-            }
+            },
+        )
+    }
+}
+
+/** Measure rich content once at its final width; one progress value reveals the whole surface. */
+@Composable
+private fun PhonePopupExpansionLayout(
+    expansion: Float,
+    expandedWidth: androidx.compose.ui.unit.Dp,
+    header: @Composable () -> Unit,
+    body: @Composable () -> Unit,
+) {
+    androidx.compose.ui.layout.Layout(
+        modifier = Modifier.clipToBounds(),
+        content = { Box { header() }; Box { body() } },
+    ) { measurables, constraints ->
+        val expanded = expandedWidth.roundToPx().coerceAtMost(constraints.maxWidth)
+        val compact = 104.dp.roundToPx().coerceAtMost(expanded)
+        val width = androidx.compose.ui.util.lerp(compact, expanded, expansion)
+        val headerPlaceable = measurables[0].measure(
+            constraints.copy(minWidth = width, maxWidth = width, minHeight = 0))
+        val bodyPlaceable = measurables[1].measure(
+            constraints.copy(minWidth = expanded, maxWidth = expanded, minHeight = 0,
+                maxHeight = (constraints.maxHeight - headerPlaceable.height).coerceAtLeast(0)))
+        val revealedBody = (bodyPlaceable.height * expansion).toInt()
+        layout(width, headerPlaceable.height + revealedBody) {
+            headerPlaceable.placeRelative(0, 0)
+            bodyPlaceable.placeRelative(0, headerPlaceable.height)
         }
     }
 }

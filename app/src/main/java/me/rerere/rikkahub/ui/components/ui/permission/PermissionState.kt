@@ -18,7 +18,7 @@ import androidx.core.content.ContextCompat
 class PermissionState internal constructor(
     private val permissions: Set<PermissionInfo>,
     private val context: Context,
-    private val activity: ComponentActivity
+    private val activity: () -> ComponentActivity
 ) {
     // 权限状态映射
     private val _permissionStates = mutableStateMapOf<String, PermissionStatus>()
@@ -73,7 +73,7 @@ class PermissionState internal constructor(
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED -> {
                 PermissionStatus.Granted
             }
-            activity.shouldShowRequestPermissionRationale(permission) -> {
+            activity().shouldShowRequestPermissionRationale(permission) -> {
                 PermissionStatus.Denied
             }
             // 如果之前被拒绝过（包括永久拒绝），现在又不显示rationale且未授权，说明是永久拒绝
@@ -110,7 +110,7 @@ class PermissionState internal constructor(
     private val permissionsNeedRationale: List<PermissionInfo>
         get() = permissions.filter {
             val status = permissionStates[it.permission]
-            status == PermissionStatus.Denied && activity.shouldShowRequestPermissionRationale(it.permission) ||
+            status == PermissionStatus.Denied && activity().shouldShowRequestPermissionRationale(it.permission) ||
             status == PermissionStatus.DeniedPermanently
         }
 
@@ -149,7 +149,7 @@ class PermissionState internal constructor(
 
         when (status) {
             PermissionStatus.Denied -> {
-                if (activity.shouldShowRequestPermissionRationale(permission)) {
+                if (activity().shouldShowRequestPermissionRationale(permission)) {
                     // 显示权限说明对话框
                     currentRationalePermissions = listOf(permissionInfo)
                     showRationaleDialog = true
@@ -219,7 +219,7 @@ class PermissionState internal constructor(
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)
         }
-        activity.startActivity(intent)
+        activity().startActivity(intent)
     }
 
     /**
@@ -237,7 +237,7 @@ class PermissionState internal constructor(
                     PermissionStatus.Granted
                 }
                 // 系统显示未授权，但可以显示说明对话框
-                activity.shouldShowRequestPermissionRationale(permissionInfo.permission) -> {
+                activity().shouldShowRequestPermissionRationale(permissionInfo.permission) -> {
                     PermissionStatus.Denied
                 }
                 // 系统显示未授权，且不能显示说明对话框
@@ -264,7 +264,7 @@ class PermissionState internal constructor(
             _permissionStates[permission] = if (granted) {
                 PermissionStatus.Granted
             } else {
-                if (activity.shouldShowRequestPermissionRationale(permission)) {
+                if (activity().shouldShowRequestPermissionRationale(permission)) {
                     PermissionStatus.Denied
                 } else {
                     PermissionStatus.DeniedPermanently

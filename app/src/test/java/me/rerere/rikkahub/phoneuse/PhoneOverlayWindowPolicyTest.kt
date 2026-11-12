@@ -3,9 +3,34 @@ package me.rerere.rikkahub.phoneuse
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.ui.activity.AssistantPresentation
 
 class PhoneOverlayWindowPolicyTest {
     private val task = PhoneUseTask(Uuid.random(), Uuid.random(), true, "finish")
+
+    @Test fun `summoning assist over LastChat keeps normal controls visible while phone controls stay hidden`() {
+        assertTrue(shouldShowAssistantOverlay(
+            AssistantPresentation.NORMAL, otherAppUiVisible = true, capturing = false,
+        ))
+        assertTrue(shouldShowAssistantOverlay(
+            AssistantPresentation.NORMAL, otherAppUiVisible = false, capturing = false,
+        ))
+        assertFalse(shouldShowAssistantOverlay(
+            AssistantPresentation.PHONE, otherAppUiVisible = true, capturing = false,
+        ))
+        assertTrue(shouldShowAssistantOverlay(
+            AssistantPresentation.PHONE, otherAppUiVisible = false, capturing = false,
+        ))
+        for (mode in AssistantPresentation.entries) {
+            assertFalse(shouldShowAssistantOverlay(mode, otherAppUiVisible = false, capturing = true))
+        }
+        assertFalse(shouldShowAssistantOverlay(
+            AssistantPresentation.HIDDEN, otherAppUiVisible = false, capturing = false,
+        ))
+        assertFalse(shouldShowAssistantOverlay(
+            AssistantPresentation.CLOSED, otherAppUiVisible = false, capturing = false,
+        ))
+    }
 
     @Test fun `system completion restores full assistant input and approvals keep their existing UI`() {
         val done = task.copy(running = false)

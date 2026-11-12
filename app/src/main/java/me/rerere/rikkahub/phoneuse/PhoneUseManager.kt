@@ -28,6 +28,10 @@ class PhoneUseManager {
     val capturing: StateFlow<Boolean> = _capturing.asStateFlow()
     val appUiVisible = MutableStateFlow(false)
     val assistantUiVisible = MutableStateFlow(false)
+    // The service can show the full reply even when Android denies the Activity's return.
+    internal val assistantReplyVisible = MutableStateFlow<Uuid?>(null)
+    internal val assistantOverlayHostReady = MutableStateFlow(false)
+    internal val assistantOverlay = MutableStateFlow<me.rerere.rikkahub.ui.activity.AssistantOverlaySession?>(null)
     val otherAppUiVisible = MutableStateFlow(false)
     val assistantReturning = MutableStateFlow(false)
     val controlsReady = MutableStateFlow<Uuid?>(null)
@@ -71,7 +75,7 @@ class PhoneUseManager {
     }
 
     fun ownsCompletion(id: Uuid): Boolean =
-        (isAssistantConversation(id) && assistantUiVisible.value) ||
+        (isAssistantConversation(id) && (assistantUiVisible.value || assistantReplyVisible.value == id)) ||
             (_session.value?.let {
                 it.conversationId == id && (it.running || !it.resultPresented) &&
                     (it.systemAssistant || controlsReady.value == id)
@@ -134,6 +138,18 @@ class PhoneUseManager {
     }
     fun registerAssistantConversation(id: Uuid) { synchronized(stateLock) { assistantConversations.add(id) } }
     fun unregisterAssistantConversation(id: Uuid) { synchronized(stateLock) { assistantConversations.remove(id) } }
+
+    /** The in-app chat takes over the same work without resurrecting the dismissed assistant. */
+    fun releaseAssistantOverlay(id: Uuid) = synchronized(stateLock) {
+        assistantConversations.remove(id)
+        val current = _session.value
+        if (current?.conversationId == id && current.systemAssistant) {
+            _session.value = current.copy(systemAssistant = false, returnRequested = false,
+                returnFailed = false, resultPresented = false)
+            assistantDocked.value = null
+            assistantReturning.value = false
+        }
+    }
 
     suspend fun <T> runAction(
         id: Uuid,

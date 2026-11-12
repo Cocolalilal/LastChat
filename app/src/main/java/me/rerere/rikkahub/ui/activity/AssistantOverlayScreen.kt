@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.activity
 
 import android.Manifest
 import android.content.pm.PackageManager
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import me.rerere.rikkahub.service.hasPendingToolApprovals
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -72,6 +71,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
@@ -170,6 +170,15 @@ import kotlin.math.sqrt
  * - the exchange appears in a blurred, growing transcript panel with a compact activity pill
  *   and "Open in app" (which opens this exact chat).
  */
+data class AssistantSurfaceMotion(
+    val alpha: Float,
+    val scale: Float,
+    val pivotX: Float,
+    val pivotY: Float,
+    val horizontalDrift: Float,
+    val liftDp: Float,
+)
+
 @Composable
 fun AssistantOverlayScreen(
     viewModel: AssistantOverlayVM,
@@ -180,11 +189,15 @@ fun AssistantOverlayScreen(
     nativeBlurActive: Boolean = false,
     floatingContent: Boolean = false,
     onSurfaceOpacity: (Float) -> Unit = {},
+    inputState: me.rerere.rikkahub.ui.hooks.ChatInputState = rememberChatInputState(),
+    persistentPhoneMode: Boolean? = null,
+    onSurfaceMotion: (AssistantSurfaceMotion) -> Unit = {},
 ) {
     val settings = LocalSettings.current
     val settingsStore = koinInject<SettingsStore>()
     val phoneManager = koinInject<me.rerere.rikkahub.phoneuse.PhoneUseManager>()
     val phoneTask by phoneManager.session.collectAsStateWithLifecycle()
+    val lastChatBehind by phoneManager.otherAppUiVisible.collectAsStateWithLifecycle()
     val mcpManager = koinInject<McpManager>()
     val toaster = LocalToaster.current
     val config = settings.assistantOverlayConfig
@@ -195,7 +208,7 @@ fun AssistantOverlayScreen(
     val scope = rememberCoroutineScope()
 
     val reduceMotion = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
-    val opening = remember { Animatable(if (reduceMotion || floatingContent || phoneManager.assistantDocked.value != null ||
+    val opening = remember { Animatable(if (reduceMotion || phoneManager.assistantDocked.value != null ||
         phoneManager.assistantReturning.value) 1f else 0f) }
     LaunchedEffect(reduceMotion) {
         opening.animateTo(1f, if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))
@@ -208,9 +221,22 @@ fun AssistantOverlayScreen(
     val backProgress = remember { Animatable(0f) }
     var backSwipeEdge by remember { mutableIntStateOf(0) }
     val opacityCallback by androidx.compose.runtime.rememberUpdatedState(onSurfaceOpacity)
+    val motionCallback by androidx.compose.runtime.rememberUpdatedState(onSurfaceMotion)
     LaunchedEffect(Unit) {
-        androidx.compose.runtime.snapshotFlow { ((1f - dismiss.value) * (1f - backProgress.value * 0.2f)).coerceIn(0f, 1f) }
-            .collect { opacityCallback(it) }
+        androidx.compose.runtime.snapshotFlow {
+            val back = backProgress.value
+            AssistantSurfaceMotion(
+                alpha = (opening.value * (1f - dismiss.value) * (1f - back * 0.2f)).coerceIn(0f, 1f),
+                scale = (0.97f + 0.03f * opening.value) * (1f - back * 0.15f),
+                pivotX = if (back == 0f) 0.5f else if (backSwipeEdge == 1) 1f else 0f,
+                pivotY = if (back == 0f) 1f else 0.5f,
+                horizontalDrift = (if (backSwipeEdge == 1) -1f else 1f) * back * 0.05f,
+                liftDp = (1f - opening.value) * 8f + dismiss.value * 24f,
+            )
+        }.collect { motion ->
+            opacityCallback(motion.alpha)
+            motionCallback(motion)
+        }
     }
     val isDismissing = remember { mutableStateOf(false) }
     fun dismissWithAnimation() {
@@ -232,7 +258,6 @@ fun AssistantOverlayScreen(
             backProgress.animateTo(0f, spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))
         }
     }
-    BackHandler(enabled = !isDismissing.value) { dismissWithAnimation() }
 
     // ---- Conversation (real ChatService chat, one per summon) ----------------------------
     val conversationId by viewModel.conversationId.collectAsStateWithLifecycle()
@@ -251,13 +276,17 @@ fun AssistantOverlayScreen(
             phoneManager.assistantDocked.value = null
         }
     }
-    val compactPhone = returnPose || currentPhoneTask?.let {
+    val compactPhone = if (persistentPhoneMode != null) {
+        persistentPhoneMode || currentPhoneTask?.let {
+            it.running && !it.paused && !it.awaitingReply && it.action != "reply"
+        } == true
+    } else returnPose || currentPhoneTask?.let {
         it.running && !it.paused && !it.awaitingReply && it.action != "reply"
     } == true
     var panelCompactSettled by remember { mutableStateOf(false) }
     var inputHidden by remember { mutableStateOf(false) }
-    LaunchedEffect(currentPhoneTask?.conversationId, currentPhoneTask?.running) {
-        if (currentPhoneTask?.running == false) {
+    LaunchedEffect(currentPhoneTask?.conversationId, currentPhoneTask?.running, persistentPhoneMode) {
+        if (currentPhoneTask?.running == false && persistentPhoneMode != true) {
             androidx.compose.runtime.withFrameNanos { }
             androidx.compose.runtime.withFrameNanos { }
             phoneManager.markAssistantPresented(currentPhoneTask.conversationId)
@@ -274,7 +303,6 @@ fun AssistantOverlayScreen(
     val sttState by stt.state.collectAsStateWithLifecycle()
     val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
 
-    val inputState = rememberChatInputState()
     LaunchedEffect(conversationId) {
         conversationId?.let { id ->
             val draft = phoneManager.takeReplyDraft(id)
@@ -298,6 +326,19 @@ fun AssistantOverlayScreen(
     var acceptSttTranscript by remember { mutableStateOf(true) }
     var utteranceSent by remember { mutableStateOf(false) }
     var sttSessionEpoch by remember { mutableIntStateOf(inputState.sttCommitEpoch) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, stt) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && stt.state.value.isRecording) {
+                // Retaining the scene must not retain a hidden microphone or send its final
+                // transcript when the user returns from another app or a picker.
+                utteranceSent = true
+                stt.stop()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     fun applySttTranscript(text: String) {
         if (acceptSttTranscript && inputState.sttCommitEpoch == sttSessionEpoch) {
@@ -473,8 +514,8 @@ fun AssistantOverlayScreen(
                         modifier = Modifier.weight(1f, fill = false)
                             .padding(horizontal = if (floatingContent) 0.dp else 16.dp),
                         assistantAvatar = { modifier ->
-                            me.rerere.rikkahub.phoneuse.PhoneUseAvatar(
-                                assistant, modifier, active = isGenerating,
+                            AssistantOverlayAvatar(
+                                assistant, modifier, active = isGenerating, personalized = !lastChatBehind,
                             )
                         },
                         compact = compactPhone,
@@ -556,7 +597,9 @@ fun AssistantOverlayScreen(
 
                 } else if (returnPose && currentPhoneTask != null) {
                     TranscriptPanel(
-                        assistantAvatar = { me.rerere.rikkahub.phoneuse.PhoneUseAvatar(assistant, it, currentPhoneTask.running) },
+                        assistantAvatar = {
+                            AssistantOverlayAvatar(assistant, it, currentPhoneTask.running, !lastChatBehind)
+                        },
                         messages = emptyList(), activityState = ActivityState.Waiting,
                         isGenerating = currentPhoneTask.running, isSpeaking = false,
                         onOpenInApp = onOpenInApp, onCopy = {}, onRegenerate = {}, onToggleTts = {},
@@ -565,6 +608,7 @@ fun AssistantOverlayScreen(
                     )
                 } else {
                     AssistantStartingBar(assistant, sttState.isRecording,
+                        personalizedAvatar = !lastChatBehind,
                         horizontalPadding = if (floatingContent) 0.dp else 16.dp) {
                         if (sttState.isRecording) stt.stop()
                         else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -577,12 +621,33 @@ fun AssistantOverlayScreen(
     }
 }
 
+/** Reserve the same slot without repeating a portrait already visible in LastChat underneath. */
+@Composable
+private fun AssistantOverlayAvatar(
+    assistant: me.rerere.rikkahub.data.model.Assistant,
+    modifier: Modifier,
+    active: Boolean,
+    personalized: Boolean,
+) {
+    if (personalized) {
+        me.rerere.rikkahub.phoneuse.PhoneUseAvatar(assistant, modifier, active)
+    } else {
+        Box(modifier.background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+            contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.SmartToy, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.fillMaxSize().padding(6.dp))
+        }
+    }
+}
+
 /** Visible from the first frame, even if creating/loading the conversation is still pending. */
 @Composable
 internal fun AssistantStartingBar(
     assistant: me.rerere.rikkahub.data.model.Assistant,
     recording: Boolean,
     horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp,
+    personalizedAvatar: Boolean = true,
     onToggleMicrophone: () -> Unit,
 ) {
     Surface(
@@ -592,7 +657,7 @@ internal fun AssistantStartingBar(
     ) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            me.rerere.rikkahub.phoneuse.PhoneUseAvatar(assistant, Modifier.size(32.dp), active = recording)
+            AssistantOverlayAvatar(assistant, Modifier.size(32.dp), recording, personalizedAvatar)
             Text(assistant.name, Modifier.weight(1f).padding(horizontal = 12.dp),
                 style = MaterialTheme.typography.labelLarge, maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -652,7 +717,7 @@ internal fun TranscriptPanel(
                 val current = dragHeight ?: measuredHeight[0]
                 val velocity = -vy / density.density
                 val projected = current + velocity * 0.15f
-                preferredHeight = if (projected < (minHeight + maxHeight) / 2f) minHeight else maxHeight
+                preferredHeight = listOf(minHeight, minOf(220f, maxHeight), maxHeight).minBy { kotlin.math.abs(it - projected) }
                 releaseVelocity = velocity.coerceIn(-3000f, 3000f)
                 resizeVersion++
             },
@@ -694,8 +759,10 @@ internal fun TranscriptPanel(
     }
     val contentColor = MaterialTheme.colorScheme.onSurface
 
-    val lastAssistantId = remember(messages) {
-        messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
+    var displayedMessages by remember { mutableStateOf(messages) }
+    if (!compact && displayedMessages !== messages) displayedMessages = messages
+    val lastAssistantId = remember(displayedMessages) {
+        displayedMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
     }
     var expandedIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
 
@@ -707,7 +774,7 @@ internal fun TranscriptPanel(
                 .padding(top = 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            messages.forEach { message ->
+            displayedMessages.forEach { message ->
                 val isAssistant = message.role == MessageRole.ASSISTANT
                 val actionsVisible = isAssistant && !isGenerating &&
                     (message.id == lastAssistantId || message.id in expandedIds)
@@ -732,7 +799,7 @@ internal fun TranscriptPanel(
                             AssistantActionsRow(
                                 isSpeaking = isSpeaking,
                                 showRegenerate = message.id == lastAssistantId &&
-                                    !isCharacterIntroMessage(messages, message),
+                                    !isCharacterIntroMessage(displayedMessages, message),
                                 onCopy = { onCopy(message) },
                                 onRegenerate = { onRegenerate(message) },
                                 onToggleTts = { onToggleTts(message) },
@@ -873,15 +940,15 @@ internal fun TranscriptPanel(
                 .graphicsLayer { alpha = bodyAlpha.coerceIn(0f, 1f) }
                 .fadeEdges(fadeTop = true, fadeBottom = false, fadeHeight = with(density) { 16.dp.toPx() })
                 .verticalScroll(scroll)) {
-                transcriptColumn()
+                if (!compact || compactTransition.isRunning) transcriptColumn()
             }
 
         }
     }
 
     // Keep the transcript pinned to the latest text while generating.
-    LaunchedEffect(messages, isGenerating, userDragging) {
-        if (followLatest && !userDragging) {
+    LaunchedEffect(if (compact) emptyList<UIMessage>() else messages, isGenerating, userDragging, compact) {
+        if (!compact && followLatest && !userDragging) {
             androidx.compose.runtime.withFrameNanos { }
             scroll.scrollTo(scroll.maxValue)
         }
