@@ -2,7 +2,6 @@ package me.rerere.rikkahub.phoneuse
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -24,7 +23,6 @@ import androidx.lifecycle.*
 import androidx.savedstate.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -43,6 +41,16 @@ internal fun shouldShowAssistantOverlay(
     AssistantPresentation.PHONE -> !otherAppUiVisible
     AssistantPresentation.HIDDEN, AssistantPresentation.CLOSED -> false
 }
+
+/** A delayed return belongs to the same task and phase that requested it. */
+internal fun canReturnPhoneConversation(
+    requested: PhoneUseTask,
+    current: PhoneUseTask?,
+    automatic: Boolean,
+): Boolean = current?.let {
+    it.conversationId == requested.conversationId && it.systemAssistant == requested.systemAssistant &&
+        (!automatic || shouldReturnToAssistant(it))
+} == true
 
 /** Android 13+ keeps a fixed buffer; every animated coordinate belongs to the child View. */
 internal class PhoneUseOverlay(private val service: AccessibilityService, private val manager: PhoneUseManager) {
@@ -93,11 +101,12 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         val scene = state.assistant?.takeIf { scene ->
             state.mode != AssistantPresentation.CLOSED &&
                 (state.mode != AssistantPresentation.HIDDEN || task != null || assistant === scene) &&
-                (task == null ||
+                (state.mode == AssistantPresentation.NORMAL || task == null ||
                 (task.systemAssistant && (scene.viewModel.conversationId.value == task.conversationId ||
                     scene.viewModel.conversationId.value == null)))
         }
         if (scene == null && task == null) {
+            returnJob?.cancel(); returnJob = null
             popupScene?.setPresented(false)
             show(false, capture = false)
             if (assistant != null) removeHost()
@@ -105,6 +114,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             return
         }
         if (task?.conversationId != heldConversation) {
+            returnJob?.cancel(); returnJob = null
             releaseReference()
             heldConversation = task?.conversationId
             heldConversation?.let(chat::addConversationReference)
@@ -127,7 +137,9 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             show(show, state.visibility.capture)
         }
         content?.let(::publishControlsReady)
-        if (task != null && shouldReturnToAssistant(task) && manager.claimAssistantReturn(task.conversationId)) {
+        if (task != null && shouldReturnToAssistant(task) &&
+            (scene == null || scene.viewModel.conversationId.value == task.conversationId) &&
+            manager.claimAssistantReturn(task.conversationId)) {
             openConversation(task, pause = false)
         }
     }
@@ -178,16 +190,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         )
         if (assistantMode) lp.setMargins((16*density).toInt(), 0, (16*density).toInt(), (24*density).toInt())
         root.addView(view, lp)
-        val dialog = ComponentDialog(service, R.style.Theme_Rikkahub_PhoneOverlay).apply {
-            setCancelable(false)
-            setCanceledOnTouchOutside(false)
-            window!!.apply {
-                setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
-                setFormat(PixelFormat.TRANSLUCENT)
-                addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-            }
-            setContentView(container)
-        }
+        val dialog = createFixedPhoneOverlayDialog(service, container)
         host = dialog
         val bounds = FloatingOverlayViewport(dialog.window!!, root, view, passThrough = true,
             radiusDp = if (assistantMode) 28f else 36f)
@@ -279,7 +282,10 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         val view = content ?: return
         val frame = viewport?.availableFrame ?: return
         if (frame.isEmpty || view.width == 0 || view.height == 0) return
-        val expandedWidth = (service.resources.configuration.screenWidthDp - 32).coerceIn(104, 336)
+        val expandedWidth = minOf(
+            (service.resources.configuration.screenWidthDp - 32).coerceIn(104, 336),
+            (frame.width() / density - 16).toInt().coerceAtLeast(104),
+        )
         val widthProgress = ((view.width / density - 120f) / (expandedWidth - 104).coerceAtLeast(1))
             .coerceIn(0f, 1f)
         viewport?.setCornerRadiusDp(36f + 8f * widthProgress)
@@ -326,6 +332,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         returnJob = scope.launch {
             val target = if (task.systemAssistant) AssistantOverlayActivity::class.java else RouteActivity::class.java
             repeat(2) { attempt ->
+                if (!canReturnPhoneConversation(task, manager.session.value, automatic = !pause)) return@launch
                 if (task.systemAssistant) manager.assistantReturning.value = true
                 val launched = runCatching {
                     service.startActivity(Intent(service, target).apply {
@@ -338,10 +345,12 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
                 }.isSuccess
                 if (!task.systemAssistant) return@launch
                 delay(if (attempt == 0) 800 else 1200)
+                if (!canReturnPhoneConversation(task, manager.session.value, automatic = !pause)) return@launch
                 if (manager.assistantOverlay.value?.presentation?.value == AssistantPresentation.NORMAL) return@launch
                 if (!launched && attempt == 1) manager.markReturnFailed(task.conversationId)
                 if (manager.session.value?.conversationId != task.conversationId) return@launch
             }
+            if (!canReturnPhoneConversation(task, manager.session.value, automatic = !pause)) return@launch
             manager.markReturnFailed(task.conversationId)
             // Keep the same scene as the reply fallback when the OS denies background launch.
             assistant?.setPhoneMode(false)
@@ -418,9 +427,21 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
                 me.rerere.rikkahub.ui.theme.RikkahubTheme {
                     me.rerere.rikkahub.ui.theme.AssistantChatTheme(assistant) {
                         val config = preferences.assistantOverlayConfig
-                        SilkGlowLayer(active = task?.let { it.running && !it.paused } == true,
-                            waveSignal = wave, originX = config.waveOriginX, originY = config.waveOriginY,
-                            modifier = androidx.compose.ui.Modifier.fillMaxSize())
+                        val working = task?.let { it.running && !it.resultPresented } == true
+                        val reduced = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = working,
+                            enter = androidx.compose.animation.fadeIn(
+                                if (reduced) androidx.compose.animation.core.snap() else
+                                    androidx.compose.animation.core.tween(220)),
+                            exit = androidx.compose.animation.fadeOut(
+                                if (reduced) androidx.compose.animation.core.snap() else
+                                    androidx.compose.animation.core.tween(220)),
+                        ) {
+                            SilkGlowLayer(active = task?.paused != true,
+                                waveSignal = wave, originX = config.waveOriginX, originY = config.waveOriginY,
+                                modifier = androidx.compose.ui.Modifier.fillMaxSize())
+                        }
                     }
                 }
             }

@@ -40,7 +40,7 @@ import org.koin.core.context.GlobalContext
 import kotlin.uuid.Uuid
 
 internal fun shouldShowPhoneOverlay(task: PhoneUseTask?, appVisible: Boolean, capturing: Boolean): Boolean =
-    task != null && !appVisible && !capturing && !(task.systemAssistant && task.resultPresented)
+    task != null && !appVisible && !capturing && !task.resultPresented
 
 internal fun shouldReturnToAssistant(task: PhoneUseTask): Boolean =
     task.systemAssistant && (task.awaitingReply || !task.running) && !task.resultPresented

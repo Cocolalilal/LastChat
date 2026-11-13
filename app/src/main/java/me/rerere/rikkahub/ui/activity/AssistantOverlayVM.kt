@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.activity
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -34,8 +37,8 @@ class AssistantOverlayVM(
     private val phoneUseManager: me.rerere.rikkahub.phoneuse.PhoneUseManager,
 ) : ViewModel() {
 
-    var overlayAssistantId: Uuid =
-        settingsStore.settingsFlow.value.resolveAssistantOverlayAssistant().id
+    var overlayAssistantId: Uuid by mutableStateOf(
+        settingsStore.settingsFlow.value.resolveAssistantOverlayAssistant().id)
 
     private val _conversationId = MutableStateFlow<Uuid?>(null)
     val conversationId: StateFlow<Uuid?> = _conversationId
@@ -49,6 +52,10 @@ class AssistantOverlayVM(
         if (previousId != null && (existingId == null || existingId == previousId)) return
         initializationJob?.cancel()
         initializationJob = viewModelScope.launch {
+            // Reading the quick cache here chooses the app character before the saved
+            // system-assistant preference has loaded. Resolve only from ready settings.
+            val configured = settingsStore.settingsFlow.awaitAssistantOverlayAssistant()
+            if (existingId == null) overlayAssistantId = configured.id
             val conversation = existingId?.let { chatService.ensureConversationLoaded(it) }
                 ?: chatService.createConversation(overlayAssistantId)
             previousId?.let {

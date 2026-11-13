@@ -14,6 +14,10 @@ import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import androidx.compose.ui.platform.AndroidUiDispatcher
@@ -111,7 +115,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
             child.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
         }
         scope.launch { recomposer.runRecomposeAndApplyChanges() }
-        activity.intent.getStringExtra(RouteActivity.EXTRA_ASSISTANT_ID)?.let { value ->
+        activity.intent.getStringExtra(RouteActivity.EXTRA_ASSISTANT_ID)?.takeIf { existingId != null }?.let { value ->
             runCatching { Uuid.parse(value) }.getOrNull()?.let { id ->
                 if (settings.settingsFlow.value.assistants.any { it.id == id }) viewModel.overlayAssistantId = id
             }
@@ -120,6 +124,16 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         decorationView.setContent {
             val currentSettings by settings.settingsFlow.collectAsStateWithLifecycle()
             val mode by presentation.collectAsStateWithLifecycle()
+            val phoneTask by manager.session.collectAsStateWithLifecycle()
+            val conversationId by viewModel.conversationId.collectAsStateWithLifecycle()
+            val completedPhone = phoneTask?.let {
+                it.systemAssistant && it.conversationId == conversationId && !it.running
+            } == true
+            val reduced = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
+            val completionGlow by animateFloatAsState(
+                if (completedPhone && !glowActive) 0f else 1f,
+                if (reduced) snap() else tween(240), label = "assistantFinishedGlow",
+            )
             val wave by AssistScreenHolder.screenReadSignal.collectAsStateWithLifecycle()
             val assistant = currentSettings.assistants.firstOrNull { it.id == viewModel.overlayAssistantId }
                 ?: currentSettings.resolveAssistantOverlayAssistant()
@@ -129,7 +143,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
                     SilkGlowLayer(
                         active = glowActive || mode == AssistantPresentation.PHONE,
                         waveSignal = wave, originX = config.waveOriginX, originY = config.waveOriginY,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().graphicsLayer { alpha = completionGlow },
                     )
                 }
             }
@@ -183,7 +197,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
                                 onSurfaceMotion = { motion ->
                                     surfaceAlpha = motion.alpha
                                     applySurfaceAlpha()
-                                    decorationView.alpha = motion.alpha
+                                    applyDecorationAlpha()
                                     view.pivotX = motion.pivotX * view.width
                                     view.pivotY = motion.pivotY * view.height
                                     view.scaleX = motion.scale
@@ -272,7 +286,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     private fun updateChildVisibility() {
         dialogHost.setVisible(activityResumed && presentation.value == AssistantPresentation.NORMAL)
     }
-    fun close(stopPhoneUse: Boolean = true) {
+    fun close(stopPhoneUse: Boolean = true, finishActivity: Boolean = true) {
         if (presentation.value == AssistantPresentation.CLOSED) return
         val id = viewModel.conversationId.value
         if (stopPhoneUse && manager.session.value?.let { it.systemAssistant && it.conversationId == id } == true) {
@@ -289,11 +303,16 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         scope.cancel()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
-        activityOwner.finish()
+        if (finishActivity) activityOwner.finish()
         context.baseContext = activityOwner.applicationContext
     }
 
-    private fun applySurfaceAlpha() { view.alpha = surfaceAlpha * modalOpacity }
+    private fun applySurfaceAlpha() {
+        view.alpha = surfaceAlpha * modalOpacity
+        applyDecorationAlpha()
+    }
+
+    private fun applyDecorationAlpha() { decorationView.alpha = surfaceAlpha * modalOpacity }
 
     private fun setModalActive(active: Boolean) {
         if (presentation.value == AssistantPresentation.CLOSED || modalActive == active) return

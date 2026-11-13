@@ -5,7 +5,12 @@ window. `FloatingOverlayViewport` keeps its native dimensions and origin fixed. 
 changes the card size, and View springs move the regular popup inside that viewport.
 The public `AttachedSurfaceControl.setTouchableRegion` API limits input to the visible
 surface; touches elsewhere reach the app underneath. Tool gestures temporarily clear
-that region instead of hiding and recreating the window.
+that region instead of hiding and recreating the window. The service dialog must set
+FLAG_HARDWARE_ACCELERATED before show/addView: ViewRootImpl chooses the renderer once
+at attachment, so setting the flag later cannot enable hardware rendering or native blur.
+The fixed host also uses a non-floating theme and full-display bounds from its first add.
+Only the overlay's own focused composer reserves IME space; another app's keyboard must
+not reduce the working pill's drag area.
 
 The system assistant uses one `AssistantOverlaySession`, panel ComposeView, ViewModel and input
 owner throughout normal and phone-use modes. Its Activity supplies permission and
@@ -20,7 +25,13 @@ visible in normal and phone-use modes without expanding the card's touch region.
 
 The phone dock stays hidden over LastChat's own screens. The normal system assistant
 remains usable there, using a neutral assistant icon in its existing avatar slot so a
-second assistant portrait is never layered over the in-app avatar.
+second assistant portrait is never layered over the in-app avatar. Fresh assist gestures
+wait for the saved system character rather than using the quick startup cache, and never
+adopt an unrelated ordinary phone conversation. They can resume their own active system
+work or an unpresented final-answer handoff. Entering the main app pauses unfinished
+work and permanently retires completed overlay results; leaving it cannot resurrect them.
+Popup expansion is scoped to conversation and work/input/result phase. New work resets
+the popup to compact while manual expansion survives individual tool-step updates.
 
 Native background blur follows the child's transformed bounds. Keep the original window
 background installed once: replacing `decorView.background` with Android's generated
@@ -30,7 +41,9 @@ layer, so capture the generated parent during its public padding query and follo
 public callback chain. This also survives View clearing the original child's callback
 while installing the wrapper. Accessibility grants the trusted overlay host; it
 does not grant a separate live-blur API. Blur still depends on Android's cross-window
-blur support and the user's blur setting. Screenshots are used by phone tools, not as
+blur support, an actually hardware-rendered window and the user's blur setting. The
+OverlayBlur diagnostic reports all three conditions; the global support flag alone is
+not evidence that the current overlay has a hardware renderer. Screenshots are used by phone tools, not as
 the assistant's visual backdrop. Track alpha writes locally: Android's native blur drawable
 overrides `setAlpha` but can inherit a constant `getAlpha`. Comparing that getter before
 restoring opacity leaves compositor blur disabled after a fade.
@@ -39,7 +52,8 @@ Picker and editor dialogs must receive the real framework WindowManager from the
 context. A delegated WindowManager proxy crashes Android's internal WindowManagerImpl cast.
 `AssistantDialogHost` leaves Compose dialogs owned by the Activity. While one is visible,
 the service card fades away and releases focus/touch to the normal Material dialog; its
-retained composition and the full-screen edge effect stay alive. This avoids changing an
+retained composition stays alive. The card and full-screen glow fade together so the
+picker remains unobstructed; completed phone work also fades its glow. This avoids changing an
 already-attached native window's type or token. Dialogs hide when the Activity yields or
 capture begins. The Activity owns activity results; no special picker permission is needed.
 
@@ -53,6 +67,12 @@ touch regions are unavailable. The Activity fallback remains modal on those vers
 
 ## Regression checks
 
+- `PhoneOverlayHardwareTest`: captures the actual service dialog flags at its first
+  WindowManager.addView, and proves a later hardware flag cannot repair initial attachment.
+- `OverlayKeyboardBoundsTest`: target-app IME does not constrain a working pill; own input
+  reserves keyboard space and releases it immediately when focus is disabled.
+- `AssistantInvocationPolicyTest`: loaded character settings and fresh/return invocation ownership.
+- `PhonePopupPhaseTest`: automatic compact work cycles and manual expansion scope.
 - `PhoneUseMotionTest`: edge attachment, throws, expansion, drag coordinates and temporary
   zero travel during keyboard or display changes.
 - `AssistantTransitionTest`: interrupted drags, release from the presented size, restored

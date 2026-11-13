@@ -20,4 +20,8 @@
         <item name="android:windowMinWidthMinor">0dp</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+    <!-- A stable full-display host; the child card supplies floating geometry. -->
+    <style name="Theme.Rikkahub.PhoneOverlay.Fixed" parent="Theme.Rikkahub.PhoneOverlay">
+        <item name="android:windowIsFloating">false</item>
+    </style>
 </resources>

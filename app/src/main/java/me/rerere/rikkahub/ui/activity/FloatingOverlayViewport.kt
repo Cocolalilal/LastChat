@@ -21,6 +21,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import java.util.function.Consumer
+import me.rerere.common.platform.PlatformLog
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -78,6 +79,8 @@ internal class FloatingOverlayViewport(
         setColor(Color.TRANSPARENT)
         cornerRadius = radiusDp * density
     }
+    private var latestInsets: WindowInsetsCompat? = null
+    private var blurDiagnostic: String? = null
     private var requestedBlur = false
     private var blurAvailable = false
     private var appliedBlur = -1
@@ -157,9 +160,14 @@ internal class FloatingOverlayViewport(
     }
 
     private fun applyInsets(insets: WindowInsetsCompat) {
+        latestInsets = insets
         val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-        val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-        val bottom = maxOf(bars.bottom, ime.bottom)
+        // A non-focusable working pill must not inherit another app's keyboard limits.
+        // Only our own focused reply input reserves IME space.
+        val imeBottom = if (inputEnabled && insets.isVisible(WindowInsetsCompat.Type.ime())) {
+            insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        } else 0
+        val bottom = maxOf(bars.bottom, imeBottom)
         if (root.paddingLeft != bars.left || root.paddingTop != bars.top ||
             root.paddingRight != bars.right || root.paddingBottom != bottom) {
             root.setPadding(bars.left, bars.top, bars.right, bottom)
@@ -210,6 +218,7 @@ internal class FloatingOverlayViewport(
         if (changed) visualBounds.set(next)
         updateInputRegion()
         updateBlurBounds()
+        reportBlur()
         if (changed) onFrame?.invoke(Rect(next))
     }
 
@@ -315,7 +324,13 @@ internal class FloatingOverlayViewport(
     }
 
     private fun reportBlur() {
-        val active = requestedBlur && blurAvailable && Build.VERSION.SDK_INT >= 31
+        val hardware = root.isHardwareAccelerated
+        val active = requestedBlur && blurAvailable && hardware && Build.VERSION.SDK_INT >= 31
+        val diagnostic = "requested=$requestedBlur platform=$blurAvailable hardware=$hardware active=$active"
+        if (diagnostic != blurDiagnostic) {
+            blurDiagnostic = diagnostic
+            PlatformLog.i("OverlayBlur", diagnostic)
+        }
         if (reportedBlur != active) {
             reportedBlur = active
             onBlurChanged?.invoke(active)
@@ -327,6 +342,8 @@ internal class FloatingOverlayViewport(
         if (inputEnabled == enabled && (window.attributes.flags and flag == 0) == enabled) return
         inputEnabled = enabled
         if (enabled) window.clearFlags(flag) else window.addFlags(flag)
+        latestInsets?.let(::applyInsets)
+        ViewCompat.requestApplyInsets(root)
     }
 
     fun setTouchEnabled(enabled: Boolean) {

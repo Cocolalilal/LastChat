@@ -127,7 +127,7 @@ class AssistantFloatingWindowTest {
         var reportedBlur: Boolean? = null
         viewport.onBlurChanged = { notifications++; reportedBlur = it }
         assertEquals(1, notifications)
-        val available = Build.VERSION.SDK_INT >= 31 &&
+        val available = Build.VERSION.SDK_INT >= 31 && root.isHardwareAccelerated &&
             activity.getSystemService(WindowManager::class.java).isCrossWindowBlurEnabled
         assertEquals(available, reportedBlur)
         val background = activity.window.decorView.background

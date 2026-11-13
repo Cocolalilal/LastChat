@@ -47,6 +47,7 @@ class PhoneUseManager {
     private var lastSpokenReply: Uuid? = null
     private var draftOwner: Uuid? = null
     private var replyDraft = ""
+    private var mainAppResumed = false
 
     fun replyDraft(id: Uuid): String = synchronized(stateLock) {
         if (draftOwner == id) replyDraft else ""
@@ -59,6 +60,42 @@ class PhoneUseManager {
     fun takeReplyDraft(id: Uuid): String = synchronized(stateLock) {
         if (draftOwner != id) return@synchronized ""
         replyDraft.also { replyDraft = ""; draftOwner = null }
+    }
+
+    /** The app owns completed replies once the user returns to its foreground UI. */
+    fun setMainAppResumed(resumed: Boolean) = synchronized(stateLock) {
+        mainAppResumed = resumed
+        if (!resumed) return@synchronized
+        val current = _session.value ?: return@synchronized
+        if (current.running) {
+            // A deliberate return to LastChat takes control away from screen automation.
+            _session.value = current.copy(paused = true)
+        } else retireCompletedResult(current)
+    }
+
+    /** A fresh assist gesture interrupts its own work even during the compact handoff. */
+    fun pauseForAssistantInvocation(id: Uuid) = synchronized(stateLock) {
+        val current = _session.value ?: return@synchronized
+        if (current.systemAssistant && current.conversationId == id && current.running) {
+            _session.value = current.copy(paused = true)
+        }
+    }
+
+    private fun retireCompletedResult(current: PhoneUseTask) {
+        _session.value = null
+        cancelTask = null
+        controlsReady.value = null
+        assistantDocked.value = null
+        assistantReturning.value = false
+        if (current.systemAssistant) {
+            assistantConversations.remove(current.conversationId)
+            assistantOverlay.value?.takeIf { it.viewModel.conversationId.value == current.conversationId }?.let {
+                // This is state only; the service collector hides the native views on Main.
+                if (it.presentation.value != me.rerere.rikkahub.ui.activity.AssistantPresentation.CLOSED) {
+                    it.presentation.value = me.rerere.rikkahub.ui.activity.AssistantPresentation.HIDDEN
+                }
+            }
+        }
     }
 
     fun attach(controller: PhoneController) { _controller.value = controller }
@@ -118,7 +155,8 @@ class PhoneUseManager {
         if (current.conversationId != id) return@synchronized
         cancelTask = cancel
         _session.value = current.copy(running = true, paused = false, awaitingReply = false,
-            action = "reply", error = null, returnRequested = false, returnFailed = false, resultPresented = false)
+            action = "reply", reply = "", error = null,
+            returnRequested = false, returnFailed = false, resultPresented = false)
     }
 
     fun setError(id: Uuid, message: String?) = synchronized(stateLock) {
@@ -133,7 +171,10 @@ class PhoneUseManager {
                 running = awaitingReply, awaitingReply = awaitingReply, paused = false,
                 reply = reply, returnRequested = false,
             )
-            if (!awaitingReply) cancelTask = null
+            if (!awaitingReply) {
+                cancelTask = null
+                if (mainAppResumed) retireCompletedResult(_session.value ?: return)
+            }
         }
     }
     fun registerAssistantConversation(id: Uuid) { synchronized(stateLock) { assistantConversations.add(id) } }
@@ -144,8 +185,10 @@ class PhoneUseManager {
         assistantConversations.remove(id)
         val current = _session.value
         if (current?.conversationId == id && current.systemAssistant) {
-            _session.value = current.copy(systemAssistant = false, returnRequested = false,
-                returnFailed = false, resultPresented = false)
+            if (current.running) {
+                _session.value = current.copy(systemAssistant = false, returnRequested = false,
+                    returnFailed = false, resultPresented = false)
+            } else retireCompletedResult(current)
             assistantDocked.value = null
             assistantReturning.value = false
         }
@@ -201,6 +244,7 @@ class PhoneUseManager {
             if (current.conversationId != id) return
             _session.value = current.copy(running = false, paused = false)
             cancelTask = null
+            if (mainAppResumed) retireCompletedResult(_session.value ?: return)
         }
     }
     /** Cancel the work while retaining the assistant surface and its reply/input ownership. */

@@ -242,4 +242,54 @@ class PhoneUseManagerTest {
         assertNull(manager.session.value)
     }
 
+    @Test fun `returning to the app retires a completed phone result without cancelling generation`() = runTest {
+        startTask()
+        manager.finish(id)
+        manager.setMainAppResumed(true)
+        assertNull(manager.session.value)
+        manager.setMainAppResumed(false)
+        assertNull(manager.session.value)
+        assertFalse(manager.ownsCompletion(id))
+    }
+
+    @Test fun `entering the app pauses live work and finishing there does not resurrect a bubble`() = runTest {
+        startTask()
+        var cancelled = false
+        manager.resumeReply(id) { cancelled = true }
+        manager.setMainAppResumed(true)
+        assertTrue(manager.session.value!!.running)
+        assertTrue(manager.session.value!!.paused)
+        assertFalse(cancelled)
+        manager.generationSettled(id, false, "Done in the app")
+        assertNull(manager.session.value)
+        manager.setMainAppResumed(false)
+        assertNull(manager.session.value)
+        assertFalse(cancelled)
+    }
+
+    @Test fun `fresh assist pauses owned work even before the scene finishes docking`() = runTest {
+        startTask(system = true)
+        manager.pauseForAssistantInvocation(Uuid.random())
+        assertFalse(manager.session.value!!.paused)
+        manager.pauseForAssistantInvocation(id)
+        assertTrue(manager.session.value!!.paused)
+    }
+
+    @Test fun `opening a completed system result in the app retires presentation instead of converting it to a bubble`() = runTest {
+        startTask(system = true)
+        manager.generationSettled(id, false, "Done")
+        manager.releaseAssistantOverlay(id)
+        assertNull(manager.session.value)
+        assertFalse(manager.isAssistantConversation(id))
+    }
+
+    @Test fun `a followup clears the previous popup answer while the new turn works`() = runTest {
+        startTask()
+        manager.generationSettled(id, false, "Previous answer")
+        manager.resumeReply(id) {}
+        assertEquals("", manager.session.value!!.reply)
+        assertTrue(manager.session.value!!.running)
+        assertFalse(manager.session.value!!.resultPresented)
+    }
+
 }

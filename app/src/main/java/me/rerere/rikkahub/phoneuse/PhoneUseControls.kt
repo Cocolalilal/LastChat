@@ -20,7 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
@@ -98,6 +98,22 @@ internal fun phoneTaskLabel(task: PhoneUseTask): String = when {
     task.paused -> "Paused"
     else -> phoneActionLabel(task.action)
 }
+
+/** The popup's presentation follows work phases, rather than a sticky expanded flag. */
+internal enum class PhonePopupPhase { Working, Paused, NeedsInput, Result }
+
+internal fun phonePopupPhase(task: PhoneUseTask, needsReply: Boolean): PhonePopupPhase = when {
+    needsReply || task.awaitingReply || task.error != null -> PhonePopupPhase.NeedsInput
+    !task.running -> PhonePopupPhase.Result
+    task.paused -> PhonePopupPhase.Paused
+    else -> PhonePopupPhase.Working
+}
+
+internal fun phonePopupDefaultsExpanded(phase: PhonePopupPhase, floating: Boolean): Boolean =
+    !floating || when (phase) {
+        PhonePopupPhase.Paused, PhonePopupPhase.NeedsInput, PhonePopupPhase.Result -> true
+        PhonePopupPhase.Working -> false
+    }
 
 @Composable
 internal fun PhoneUseOverlayContent(
@@ -185,8 +201,13 @@ fun PhoneUseControls(
     onSendReply: ((String) -> Unit)? = null,
     onStopGeneration: (() -> Unit)? = null,
 ) {
-    var expanded by remember(task.conversationId) {
-        mutableStateOf(task.systemAssistant || !floating || !task.running || task.awaitingReply || needsReply)
+    val phase = phonePopupPhase(task, needsReply)
+    // A new work cycle yields a compact capsule again. Manual expansion is retained
+    // through individual tap/read/scroll updates, but never leaks from the previous reply.
+    var manualExpansion by remember(task.conversationId, phase, floating) { mutableStateOf<Boolean?>(null) }
+    val expanded = manualExpansion ?: phonePopupDefaultsExpanded(phase, floating)
+    LaunchedEffect(phase) {
+        if (!phonePopupDefaultsExpanded(phase, floating)) onReplyFocus(false)
     }
     val reduceMotion = rememberSystemMotionPolicy().reduceMotion
     val progress by androidx.compose.animation.core.animateFloatAsState(
@@ -200,107 +221,110 @@ fun PhoneUseControls(
         label = "phonePopupExpansion",
     )
     val expansion = progress.coerceIn(0f, 1f)
-    val expandedWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32)
-        .coerceIn(104, 336).dp
-    // Individual tool results keep their compact pose. Only an actual answer or approval
-    // opens the conversation, and an empty answer reveals just the composer.
-    LaunchedEffect(needsReply, task.running, task.awaitingReply) {
-        if (needsReply || !task.running || task.awaitingReply) expanded = true
-    }
-    Surface(
-        shape = RoundedCornerShape((28f + 8f * expansion).dp),
-        color = me.rerere.rikkahub.ui.modifier.blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
-        tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
-        modifier = Modifier.padding(8.dp),
-    ) {
-        PhonePopupExpansionLayout(
-            expansion = expansion, expandedWidth = expandedWidth,
-            header = {
-                Box(Modifier.fillMaxWidth().height(56.dp)
-                    .phoneOverlayDrag(if (floating) drag else null, haptics)) {
-                    Box(Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
-                        .semantics { contentDescription = "${assistant.name}, phone use controls" }
-                        .clickable(role = Role.Button,
-                            onClickLabel = if (expanded) "Collapse controls" else "Expand controls") {
-                            haptics.perform(HapticPattern.Tick)
-                            expanded = !expanded
-                            if (!expanded) onReplyFocus(false)
-                        }) {
-                        PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
-                    }
-                    // Header contents keep their final measure through the morph. The avatar
-                    // and stop/dismiss control stay anchored to the two moving capsule ends.
-                    Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().padding(horizontal = 56.dp)
-                        .clipToBounds()) {
-                        Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(expandedWidth - 112.dp)
-                            .graphicsLayer { alpha = expansion },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Box(Modifier.weight(1f)) { PhoneUseActivityPill(task, needsReply) }
-                            if (task.running) IconButton(
-                                modifier = Modifier.size(36.dp),
-                                enabled = expanded,
-                                onClick = { haptics.perform(HapticPattern.Tick); manager.togglePause() },
-                            ) {
-                                Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                                    if (task.paused) "Resume phone use" else "Pause phone use")
-                            }
-                            if (onOpen != null) IconButton(modifier = Modifier.size(36.dp),
-                                enabled = expanded, onClick = onOpen) {
-                                Icon(Icons.Rounded.OpenInFull, "Open conversation")
-                            }
-                        }
-                    }
-                    if (!task.systemAssistant || task.running) {
-                        IconButton(
-                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).size(40.dp),
-                            onClick = {
+    BoxWithConstraints {
+        val expandedWidth = minOf(
+            (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32).dp,
+            336.dp,
+            (maxWidth - 16.dp).coerceAtLeast(104.dp),
+        ).coerceAtLeast(104.dp)
+        val headerInset = (8f + 8f * expansion).dp
+        val headerHeight = (56f + 16f * expansion).dp
+        Surface(
+            shape = RoundedCornerShape((28f + 8f * expansion).dp),
+            color = me.rerere.rikkahub.ui.modifier.blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+            border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
+            tonalElevation = 3.dp, shadowElevation = if (floating) 6.dp else 0.dp,
+            modifier = Modifier.padding(8.dp),
+        ) {
+            PhonePopupExpansionLayout(
+                expansion = expansion, expandedWidth = expandedWidth,
+                header = {
+                    Box(Modifier.fillMaxWidth().height(headerHeight)
+                        .phoneOverlayDrag(if (floating) drag else null, haptics)) {
+                        Box(Modifier.align(Alignment.CenterStart).padding(start = headerInset)
+                            .semantics { contentDescription = "${assistant.name}, phone use controls" }
+                            .clickable(role = Role.Button,
+                                onClickLabel = if (expanded) "Collapse controls" else "Expand controls") {
                                 haptics.perform(HapticPattern.Tick)
-                                if (task.running && task.action == "reply" && onStopGeneration != null) {
-                                    onStopGeneration()
-                                } else manager.stop()
-                            },
-                        ) {
-                            Crossfade(task.running,
-                                animationSpec = if (reduceMotion) snap() else tween(180),
-                                label = "phoneStopOrDismiss") { running ->
-                                Icon(if (running) Icons.Rounded.Stop else Icons.Rounded.Close,
-                                    if (running) "Stop phone use" else "Dismiss")
+                                manualExpansion = !expanded
+                                if (expanded) onReplyFocus(false)
+                            }) {
+                            PhoneUseAvatar(assistant, Modifier.size(40.dp), task.running && !task.paused)
+                        }
+                        // Header contents keep their final measure through the morph. The avatar
+                        // and stop/dismiss control stay anchored to the two moving capsule ends.
+                        Box(Modifier.align(Alignment.CenterStart).fillMaxWidth()
+                            .padding(horizontal = 48.dp + headerInset).clipToBounds()) {
+                            Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true)
+                                .width((expandedWidth - 128.dp).coerceAtLeast(0.dp))
+                                .graphicsLayer { alpha = expansion },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Box(Modifier.weight(1f)) { PhoneUseActivityPill(task, needsReply) }
+                                if (task.running) IconButton(
+                                    modifier = Modifier.size(36.dp),
+                                    enabled = expanded,
+                                    onClick = { haptics.perform(HapticPattern.Tick); manager.togglePause() },
+                                ) {
+                                    Icon(if (task.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                        if (task.paused) "Resume phone use" else "Pause phone use")
+                                }
+                                if (onOpen != null) IconButton(modifier = Modifier.size(36.dp),
+                                    enabled = expanded, onClick = onOpen) {
+                                    Icon(Icons.Rounded.OpenInNew, "Open conversation")
+                                }
+                            }
+                        }
+                        if (!task.systemAssistant || task.running) {
+                            IconButton(
+                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = headerInset).size(40.dp),
+                                onClick = {
+                                    haptics.perform(HapticPattern.Tick)
+                                    if (task.running && task.action == "reply" && onStopGeneration != null) {
+                                        onStopGeneration()
+                                    } else manager.stop()
+                                },
+                            ) {
+                                Crossfade(task.running,
+                                    animationSpec = if (reduceMotion) snap() else tween(180),
+                                    label = "phoneStopOrDismiss") { running ->
+                                    Icon(if (running) Icons.Rounded.Stop else Icons.Rounded.Close,
+                                        if (running) "Stop phone use" else "Dismiss")
+                                }
                             }
                         }
                     }
-                }
-            },
-            body = {
-                // Keep the same measured body at both endpoints; dropping Markdown at the
-                // last spring frame causes a visible tail hitch on collapse. Empty working
-                // controls have no reserved transcript area or unusable message field.
-                Column(Modifier.fillMaxWidth()
-                    .animateContentSize(if (reduceMotion) snap() else spring(
-                        dampingRatio = PHONE_MOTION_DAMPING, stiffness = PHONE_MOTION_STIFFNESS,
-                        visibilityThreshold = IntSize(1, 1)))
-                    .graphicsLayer { alpha = expansion }) {
-                    if (task.error != null || reply.isNotBlank()) {
-                        Column(Modifier.fillMaxWidth().heightIn(max = 220.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 8.dp)) {
-                            task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium) }
-                            if (reply.isNotBlank()) SelectionContainer {
-                                MarkdownBlock(reply, style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.fillMaxWidth())
+                },
+                body = {
+                    // Keep the same measured body at both endpoints; dropping Markdown at the
+                    // last spring frame causes a visible tail hitch on collapse. Empty working
+                    // controls have no reserved transcript area or unusable message field.
+                    Column(Modifier.fillMaxWidth()
+                        .animateContentSize(if (reduceMotion) snap() else spring(
+                            dampingRatio = PHONE_MOTION_DAMPING, stiffness = PHONE_MOTION_STIFFNESS,
+                            visibilityThreshold = IntSize(1, 1)))
+                        .graphicsLayer { alpha = expansion }) {
+                        if (task.error != null || reply.isNotBlank()) {
+                            Column(Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+                                task.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyMedium) }
+                                if (reply.isNotBlank()) SelectionContainer {
+                                    MarkdownBlock(reply, style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.fillMaxWidth())
+                                }
                             }
                         }
+                        if (onSendReply != null && !task.running) PhoneUseReplyComposer(
+                            task, manager, onReplyFocus, onSendReply,
+                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 8.dp),
+                            onStopGeneration = onStopGeneration, nested = true, haptics = haptics,
+                        )
                     }
-                    if (onSendReply != null && !task.running) PhoneUseReplyComposer(
-                        task, manager, onReplyFocus, onSendReply,
-                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 8.dp),
-                        onStopGeneration = onStopGeneration, nested = true, haptics = haptics,
-                    )
-                }
-            },
-        )
+                },
+            )
+        }
     }
 }
 

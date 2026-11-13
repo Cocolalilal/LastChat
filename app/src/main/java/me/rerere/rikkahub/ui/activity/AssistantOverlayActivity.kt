@@ -10,8 +10,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import org.koin.android.ext.android.inject
 import kotlin.uuid.Uuid
@@ -19,29 +21,22 @@ import kotlin.uuid.Uuid
 /** Permission and outside-tap owner. The assistant scene survives this Activity yielding. */
 class AssistantOverlayActivity : ComponentActivity() {
     private val manager by inject<PhoneUseManager>()
-    private lateinit var session: AssistantOverlaySession
+    private val settings by inject<SettingsStore>()
+    private var session: AssistantOverlaySession? = null
     private var fallback: AssistantFloatingWindow? = null
+    private var invocationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         window.setWindowAnimations(0)
-        val existing = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
-            runCatching { Uuid.parse(it) }.getOrNull()
-        }
-        session = manager.assistantOverlay.value?.takeIf { it.presentation.value != AssistantPresentation.CLOSED }
-            ?: AssistantOverlaySession(this, existing).also { manager.assistantOverlay.value = it }
-        session.bindActivity(this)
-        existing?.let(session::openConversation)
-        if (manager.assistantOverlayHostReady.value) {
-            installOutsideTapOwner()
-        } else {
-            fallback = AssistantFloatingWindow(this, session)
-        }
+        installOutsideTapOwner()
+        handleInvocation(intent, recreating = savedInstanceState != null)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 manager.assistantOverlayHostReady.collect { hosted ->
+                    val scene = session ?: return@collect
                     if (hosted && fallback != null) {
                         fallback?.close()
                         fallback = null
@@ -50,10 +45,10 @@ class AssistantOverlayActivity : ComponentActivity() {
                         // Let the service finish detaching its Window before adopting the scene.
                         window.decorView.post {
                             if (!manager.assistantOverlayHostReady.value && fallback == null &&
-                                lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-                                session.presentation.value != AssistantPresentation.CLOSED) {
-                                fallback = AssistantFloatingWindow(this@AssistantOverlayActivity, session)
-                                session.setPresented(true)
+                                session === scene && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                                scene.presentation.value != AssistantPresentation.CLOSED) {
+                                fallback = AssistantFloatingWindow(this@AssistantOverlayActivity, scene)
+                                scene.setPresented(true)
                             }
                         }
                     }
@@ -62,36 +57,73 @@ class AssistantOverlayActivity : ComponentActivity() {
         }
     }
 
+    private fun handleInvocation(intent: Intent, recreating: Boolean = false) {
+        invocationJob?.cancel()
+        invocationJob = lifecycleScope.launch {
+            val configured = settings.settingsFlow.awaitAssistantOverlayAssistant()
+            val requested = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
+                runCatching { Uuid.parse(it) }.getOrNull()
+            }
+            val retained = manager.assistantOverlay.value
+            val reuse = shouldReuseAssistantScene(requested, retained?.viewModel?.conversationId?.value,
+                retained?.presentation?.value, configured.id, manager.session.value, recreating)
+            val scene = if (reuse) requireNotNull(retained) else {
+                fallback?.close()
+                fallback = null
+                // A new invocation takes control instead of sharing an unrelated phone task.
+                // Do not finish this singleTask Activity while replacing its retained scene.
+                retained?.close(finishActivity = false)
+                if (requested == null || manager.session.value?.conversationId != requested) manager.stop()
+                AssistantOverlaySession(this@AssistantOverlayActivity, requested).also {
+                    manager.assistantOverlay.value = it
+                }
+            }
+            session = scene
+            scene.bindActivity(this@AssistantOverlayActivity)
+            if (requested != null) scene.openConversation(requested)
+            else if (!recreating) scene.viewModel.conversationId.value?.let(manager::pauseForAssistantInvocation)
+            if (manager.assistantOverlayHostReady.value) installOutsideTapOwner()
+            else if (fallback == null) fallback = AssistantFloatingWindow(this@AssistantOverlayActivity, scene)
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeSession(scene)
+        }
+    }
+
     private fun installOutsideTapOwner() {
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { session.onBackPressedDispatcher.onBackPressed() }
+            setOnClickListener { session?.onBackPressedDispatcher?.onBackPressed() ?: finish() }
         })
+    }
+
+    private fun resumeSession(scene: AssistantOverlaySession) {
+        scene.bindActivity(this)
+        scene.onActivityResumed()
+        manager.assistantReturning.value = false
+        manager.assistantDocked.value = null
     }
 
     override fun onResume() {
         super.onResume()
-        session.bindActivity(this)
-        session.onActivityResumed()
-        manager.assistantReturning.value = false
-        manager.assistantDocked.value = null
+        session?.let(::resumeSession)
     }
+
     override fun onPause() {
-        session.onActivityPaused()
+        session?.onActivityPaused()
         super.onPause()
     }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
-            runCatching { Uuid.parse(it) }.getOrNull()?.let(session::openConversation)
-        }
+        handleInvocation(intent)
     }
+
     override fun onDestroy() {
         fallback?.close()
-        session.unbindActivity(this)
-        // The service retains the session during phone use; lifecycle and VM are session-owned.
-        if (isFinishing && session.presentation.value != AssistantPresentation.PHONE) session.close()
+        session?.let { scene ->
+            scene.unbindActivity(this)
+            if (isFinishing && scene.presentation.value != AssistantPresentation.PHONE) scene.close()
+        }
         super.onDestroy()
     }
 }
