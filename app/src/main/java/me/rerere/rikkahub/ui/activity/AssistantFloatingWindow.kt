@@ -26,6 +26,12 @@ internal class AssistantFloatingWindow(
             setWindowAnimations(0)
         }
         (session.view.parent as? android.view.ViewGroup)?.removeView(session.view)
+        (session.decorationView.parent as? android.view.ViewGroup)?.removeView(session.decorationView)
+        val container = FrameLayout(activity).apply { clipChildren = false; clipToPadding = false }
+        container.addView(session.decorationView, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        container.addView(root, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         root.addView(session.view, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
@@ -33,7 +39,7 @@ internal class AssistantFloatingWindow(
             val density = activity.resources.displayMetrics.density
             setMargins((16 * density).toInt(), 0, (16 * density).toInt(), (24 * density).toInt())
         })
-        activity.setContentView(root)
+        activity.setContentView(container)
         viewport = FloatingOverlayViewport(activity.window, root, session.view, passThrough = false)
         viewport.onBlurChanged = { session.nativeBlurActive = it }
         val request: (Boolean) -> Unit = { viewport.setBlurEnabled(it) }

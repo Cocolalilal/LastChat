@@ -55,7 +55,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Build
@@ -192,6 +191,7 @@ fun AssistantOverlayScreen(
     inputState: me.rerere.rikkahub.ui.hooks.ChatInputState = rememberChatInputState(),
     persistentPhoneMode: Boolean? = null,
     onSurfaceMotion: (AssistantSurfaceMotion) -> Unit = {},
+    onGlowActive: (Boolean) -> Unit = {},
 ) {
     val settings = LocalSettings.current
     val settingsStore = koinInject<SettingsStore>()
@@ -407,7 +407,7 @@ fun AssistantOverlayScreen(
             Box(Modifier.matchParentSize().clickable(
                 interactionSource = remember { MutableInteractionSource() }, indication = null,
             ) { dismissWithAnimation() })
-            SilkGlowLayer(
+            if (!floatingContent) SilkGlowLayer(
                 active = voiceActive, waveSignal = screenReadSignal,
                 originX = config.waveOriginX, originY = config.waveOriginY,
                 modifier = Modifier.matchParentSize(),
@@ -435,6 +435,7 @@ fun AssistantOverlayScreen(
                     val generationJob by viewModel.generationJobFlow(convId)
                         .collectAsStateWithLifecycle(initialValue = null)
                     val isGenerating = generationJob != null
+                    androidx.compose.runtime.SideEffect { onGlowActive(voiceActive || isGenerating || compactPhone) }
 
                     // Read the reply aloud once generation settles.
                     var wasGenerating by remember { mutableStateOf(false) }
@@ -523,7 +524,6 @@ fun AssistantOverlayScreen(
                         phoneTask = currentPhoneTask,
                         onPausePhone = { phoneManager.togglePause() },
                         onStopPhone = { phoneManager.cancelAndReturn(); viewModel.stopGeneration() },
-                        onDismiss = { dismissWithAnimation() },
                         messages = transcript,
                         activityState = activityState,
                         isGenerating = isGenerating,
@@ -686,271 +686,296 @@ internal fun TranscriptPanel(
     onPausePhone: () -> Unit = {},
     onStopPhone: () -> Unit = {},
     windowDrag: PhoneOverlayDragCallbacks? = null,
-    onDismiss: (() -> Unit)? = null,
     openDescription: String = stringResource(R.string.assistant_overlay_open_in_app),
     modifier: Modifier = Modifier,
     onCompactSettled: (Boolean) -> Unit = {},
 ) {
-    val density = LocalDensity.current
-    val reduceMotion = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
-    val configuration = LocalConfiguration.current
-    val maxHeight = (configuration.screenHeightDp * 0.66f).coerceAtLeast(80f)
-    val minHeight = minOf(76f, maxHeight)
-    var preferredHeight by remember { mutableStateOf(minOf(220f, maxHeight)) }
-    val height = remember { Animatable(if (!visible) 0f else if (compact) 56f else preferredHeight, visibilityThreshold = 0.5f) }
-    val measuredHeight = remember { floatArrayOf(height.value) }
-    var dragHeight by remember { mutableStateOf<Float?>(null) }
-    var resizeVersion by remember { mutableIntStateOf(0) }
-    var releaseVelocity by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val scope = rememberCoroutineScope()
-    val resizeDrag = remember(minHeight, maxHeight, density.density) {
-        PhoneOverlayDragCallbacks(
-            onStart = {
-                dragHeight = measuredHeight[0]
-                scope.launch { height.stop() }
-            },
-            onMove = { _, dy ->
-                dragHeight = ((dragHeight ?: measuredHeight[0]) - dy / density.density)
-                    .coerceIn(minHeight, maxHeight)
-            },
-            onRelease = { _, vy ->
-                val current = dragHeight ?: measuredHeight[0]
-                val velocity = -vy / density.density
-                val projected = current + velocity * 0.15f
-                preferredHeight = listOf(minHeight, minOf(220f, maxHeight), maxHeight).minBy { kotlin.math.abs(it - projected) }
-                releaseVelocity = velocity.coerceIn(-3000f, 3000f)
-                resizeVersion++
-            },
-        )
-    }
-    val compactCallback by androidx.compose.runtime.rememberUpdatedState(onCompactSettled)
-    LaunchedEffect(compact, visible, maxHeight, resizeVersion, reduceMotion) {
-        compactCallback(false)
-        val velocity = if (dragHeight != null) releaseVelocity else height.velocity
-        dragHeight?.let { height.snapTo(it); dragHeight = null }
-        releaseVelocity = 0f
-        val target = if (!visible) 0f else if (compact) 56f else preferredHeight.coerceIn(minHeight, maxHeight)
-        height.animateTo(target,
-            if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS),
-            initialVelocity = velocity)
-        compactCallback(compact && visible)
-    }
-    val scroll = rememberScrollState()
-    val userDragging by scroll.interactionSource.collectIsDraggedAsState()
-    var followLatest by remember { mutableStateOf(true) }
-    LaunchedEffect(userDragging, scroll.value) {
-        if (userDragging) followLatest = scroll.maxValue - scroll.value < with(density) { 32.dp.toPx() }
-    }
-
-    val blur = LocalLastChatBlur.current
-    val compactTransition = updateTransition(compact, label = "assistantPhoneMorph")
-    val handleProgress by compactTransition.animateFloat(
-        transitionSpec = { if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS) },
-        label = "resizeHandle",
-    ) { if (it) 0f else 1f }
-    val handleFraction = handleProgress.coerceIn(0f, 1f)
-    val panelAlpha by animateFloatAsState(if (visible) 1f else 0f,
-        if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS), label = "assistantPanelOpacity")
-    val panelShape = RoundedCornerShape(28.dp)
-    val containerColor = if (blur.enabled && (blur.hazeState != null || blur.windowBlur)) {
-        blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
-    val contentColor = MaterialTheme.colorScheme.onSurface
-
-    var displayedMessages by remember { mutableStateOf(messages) }
-    if (!compact && displayedMessages !== messages) displayedMessages = messages
-    val lastAssistantId = remember(displayedMessages) {
-        displayedMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
-    }
-    var expandedIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
-
-    val transcriptColumn: @Composable () -> Unit = {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            displayedMessages.forEach { message ->
-                val isAssistant = message.role == MessageRole.ASSISTANT
-                val actionsVisible = isAssistant && !isGenerating &&
-                    (message.id == lastAssistantId || message.id in expandedIds)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = if (isAssistant) {
-                        Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) {
-                            expandedIds = if (message.id in expandedIds) {
-                                expandedIds - message.id
-                            } else {
-                                expandedIds + message.id
-                            }
-                        }
-                    } else Modifier,
-                ) {
-                    MessageRowContent(message = message, contentColor = contentColor, streaming = isGenerating && message.id == lastAssistantId)
-                    if (isAssistant) {
-                        AnimatedVisibility(visible = actionsVisible) {
-                            AssistantActionsRow(
-                                isSpeaking = isSpeaking,
-                                showRegenerate = message.id == lastAssistantId &&
-                                    !isCharacterIntroMessage(displayedMessages, message),
-                                onCopy = { onCopy(message) },
-                                onRegenerate = { onRegenerate(message) },
-                                onToggleTts = { onToggleTts(message) },
-                            )
-                        }
-                    }
-                }
-            }
-            phoneTask?.error?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-            }
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val reduceMotion = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
+        val configuration = LocalConfiguration.current
+        val screenMaximum = (configuration.screenHeightDp * 0.66f).coerceAtLeast(80f)
+        val availableMaximum = if (constraints.hasBoundedHeight) {
+            constraints.maxHeight / density.density
+        } else screenMaximum
+        val maxHeight = minOf(screenMaximum, availableMaximum).coerceAtLeast(0f)
+        val minHeight = minOf(76f, maxHeight)
+        var preferredHeight by remember { mutableStateOf(minOf(220f, maxHeight)) }
+        val height = remember {
+            Animatable(if (!visible) 0f else if (compact) 56f else preferredHeight, visibilityThreshold = 0.05f)
         }
-    }
+        val measuredHeight = remember { floatArrayOf(height.value) }
+        var dragHeight by remember { mutableStateOf<Float?>(null) }
+        var dragging by remember { mutableStateOf(false) }
+        var resizeVersion by remember { mutableIntStateOf(0) }
+        var releaseVelocity by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        val scope = rememberCoroutineScope()
+        val resizeDrag = remember(minHeight, maxHeight, density.density) {
+            PhoneOverlayDragCallbacks(
+                onStart = {
+                    dragging = true
+                    dragHeight = measuredHeight[0]
+                    scope.launch { height.stop() }
+                },
+                onMove = { _, dy ->
+                    dragHeight = ((dragHeight ?: measuredHeight[0]) - dy / density.density)
+                        .coerceIn(minHeight, maxHeight)
+                },
+                onRelease = { _, vy ->
+                    dragging = false
+                    val current = dragHeight ?: measuredHeight[0]
+                    val velocity = -vy / density.density
+                    val projected = current + velocity * 0.15f
+                    preferredHeight = listOf(minHeight, minOf(220f, maxHeight), maxHeight)
+                        .minBy { kotlin.math.abs(it - projected) }
+                    // Input can deliver several moves between display frames. Release
+                    // from the last presented size, never an unseen final pointer sample.
+                    val presented = measuredHeight[0].coerceIn(minHeight, maxHeight)
+                    dragHeight = presented
+                    val frequency = kotlin.math.sqrt(PHONE_MOTION_STIFFNESS)
+                    releaseVelocity = velocity.coerceIn(
+                        -minOf(3000f, (presented - minHeight) * frequency),
+                        minOf(3000f, (maxHeight - presented) * frequency),
+                    )
+                    resizeVersion++
+                },
+            )
+        }
+        val compactCallback by androidx.compose.runtime.rememberUpdatedState(onCompactSettled)
+        val targetHeight = if (!visible) 0f else if (compact) 56f else preferredHeight.coerceIn(minHeight, maxHeight)
+        // IME/input geometry changes the available height every frame. Restart only
+        // when the actual target changes, otherwise the spring never gets its first frame.
+        LaunchedEffect(compact, visible, targetHeight, resizeVersion, reduceMotion) {
+            compactCallback(false)
+            val velocity = if (dragHeight != null) releaseVelocity else height.velocity
+            dragHeight?.let { height.snapTo(it) }
+            releaseVelocity = 0f
+            height.animateTo(targetHeight,
+                if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS),
+                initialVelocity = velocity) {
+                // Keep the last finger position until the spring publishes its first frame.
+                // Clearing it before animateTo starts briefly renders the previous spring value.
+                if (!dragging) dragHeight = null
+            }
+            compactCallback(compact && visible)
+        }
+        val scroll = rememberScrollState()
+        val userDragging by scroll.interactionSource.collectIsDraggedAsState()
+        var followLatest by remember { mutableStateOf(true) }
+        LaunchedEffect(userDragging, scroll.value) {
+            if (userDragging) followLatest = scroll.maxValue - scroll.value < with(density) { 32.dp.toPx() }
+        }
 
-    Surface(
-        color = containerColor,
-        contentColor = contentColor,
-        shape = panelShape,
-        border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = modifier
-            .fillMaxWidth()
-            .height((dragHeight ?: height.value).coerceIn(0f, maxHeight).dp)
-            .onSizeChanged { measuredHeight[0] = it.height / density.density }
-            .graphicsLayer { alpha = panelAlpha }
-            .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Floating header (drag handle + avatar + compact activity pill + open-in-app).
+        val blur = LocalLastChatBlur.current
+        val compactTransition = updateTransition(compact, label = "assistantPhoneMorph")
+        val handleProgress by compactTransition.animateFloat(
+            transitionSpec = { if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS) },
+            label = "resizeHandle",
+        ) { if (it) 0f else 1f }
+        val handleFraction = handleProgress.coerceIn(0f, 1f)
+        val panelAlpha by animateFloatAsState(if (visible) 1f else 0f,
+            if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS), label = "assistantPanelOpacity")
+        val panelShape = RoundedCornerShape(28.dp)
+        val containerColor = if (blur.enabled && (blur.hazeState != null || blur.windowBlur)) {
+            blurredContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        }
+        val contentColor = MaterialTheme.colorScheme.onSurface
+
+        var displayedMessages by remember { mutableStateOf(messages) }
+        if (!compact && displayedMessages !== messages) displayedMessages = messages
+        val lastAssistantId = remember(displayedMessages) {
+            displayedMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
+        }
+        var expandedIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
+
+        val transcriptColumn: @Composable () -> Unit = {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height((20f * handleFraction).dp)
-                        .semantics {
-                            contentDescription = "Resize assistant"
-                            customActions = listOf(
-                                androidx.compose.ui.semantics.CustomAccessibilityAction("Expand") {
-                                    preferredHeight = maxHeight; resizeVersion++; true
-                                },
-                                androidx.compose.ui.semantics.CustomAccessibilityAction("Minimize") {
-                                    preferredHeight = minHeight; resizeVersion++; true
-                                },
-                            )
-                        }
-                        .graphicsLayer { alpha = handleFraction; clip = true }
-                        .phoneOverlayDrag(if (compact) null else windowDrag ?: resizeDrag)
-                        .padding(top = (10f * handleFraction).dp, bottom = (6f * handleFraction).dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .background(contentColor.copy(alpha = 0.35f), CircleShape),
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth().height(56.dp)
-                        .phoneOverlayDrag(if (compact) windowDrag else null)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    assistantAvatar(Modifier.size(32.dp))
-                    Spacer(Modifier.width(10.dp))
-                    // Weighted box fills the leftover width so the button sits at the far right.
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                        androidx.compose.animation.Crossfade(
-                            targetState = phoneTask?.takeIf { compact }?.let {
-                                me.rerere.rikkahub.phoneuse.phoneTaskLabel(it).ifBlank {
-                                    me.rerere.rikkahub.phoneuse.phoneActionLabel(it.action)
+                displayedMessages.forEach { message ->
+                    val isAssistant = message.role == MessageRole.ASSISTANT
+                    val actionsVisible = isAssistant && !isGenerating &&
+                        (message.id == lastAssistantId || message.id in expandedIds)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = if (isAssistant) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                expandedIds = if (message.id in expandedIds) {
+                                    expandedIds - message.id
+                                } else {
+                                    expandedIds + message.id
                                 }
-                            },
-                            animationSpec = if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS),
-                            label = "phoneActivityLabel",
-                        ) { label ->
-                            if (label != null) Text(label,
-                                style = MaterialTheme.typography.labelLarge, maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            else CompactActivityPill(state = activityState)
-                        }
-                    }
-                    val operating = phoneTask != null && (compact || phoneTask.running)
-                    AnimatedVisibility(
-                        visible = operating && (compact || phoneTask?.action != "reply"),
-                        enter = fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
-                            androidx.compose.animation.expandHorizontally(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
-                        exit = fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
-                            androidx.compose.animation.shrinkHorizontally(if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                            }
+                        } else Modifier,
                     ) {
-                        androidx.compose.material3.IconButton(onClick = onPausePhone,
-                            enabled = phoneTask?.running == true, modifier = Modifier.size(40.dp)) {
-                            Icon(if (phoneTask?.paused == true) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                                if (phoneTask?.paused == true) "Resume phone use" else "Pause phone use")
-                        }
-                    }
-                    if (operating || onDismiss != null) {
-                        androidx.compose.material3.IconButton(
-                            onClick = { if (operating) onStopPhone() else onDismiss?.invoke() },
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            androidx.compose.animation.Crossfade(operating,
-                                animationSpec = if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS),
-                                label = "assistantStopOrDismiss") { stop ->
-                                Icon(if (stop) Icons.Rounded.Stop else Icons.Rounded.Close,
-                                    if (stop) "Stop phone use" else "Dismiss reply")
+                        MessageRowContent(message = message, contentColor = contentColor,
+                            streaming = isGenerating && message.id == lastAssistantId)
+                        if (isAssistant) {
+                            AnimatedVisibility(visible = actionsVisible) {
+                                AssistantActionsRow(
+                                    isSpeaking = isSpeaking,
+                                    showRegenerate = message.id == lastAssistantId &&
+                                        !isCharacterIntroMessage(displayedMessages, message),
+                                    onCopy = { onCopy(message) },
+                                    onRegenerate = { onRegenerate(message) },
+                                    onToggleTts = { onToggleTts(message) },
+                                )
                             }
                         }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    // "Open in app" — same size as the avatar, right-aligned, level with it.
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                            .clickable { onOpenInApp() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.OpenInNew,
-                            contentDescription = openDescription,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                }
+                phoneTask?.error?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            // The scrolling reply is below the header from the first frame; no measured spacer.
-            val bodyAlpha by compactTransition.animateFloat(
-                transitionSpec = { if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS) },
-                label = "transcriptOpacity",
-            ) { if (it) 0f else 1f }
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)
-                .graphicsLayer { alpha = bodyAlpha.coerceIn(0f, 1f) }
-                .fadeEdges(fadeTop = true, fadeBottom = false, fadeHeight = with(density) { 16.dp.toPx() })
-                .verticalScroll(scroll)) {
-                if (!compact || compactTransition.isRunning) transcriptColumn()
-            }
-
         }
-    }
 
-    // Keep the transcript pinned to the latest text while generating.
-    LaunchedEffect(if (compact) emptyList<UIMessage>() else messages, isGenerating, userDragging, compact) {
-        if (!compact && followLatest && !userDragging) {
-            androidx.compose.runtime.withFrameNanos { }
-            scroll.scrollTo(scroll.maxValue)
+        Surface(
+            color = containerColor,
+            contentColor = contentColor,
+            shape = panelShape,
+            border = lastChatSoftEdgeBorder(MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height((dragHeight ?: height.value).coerceIn(0f, maxHeight).dp)
+                .onSizeChanged { measuredHeight[0] = it.height / density.density }
+                .graphicsLayer { alpha = panelAlpha }
+                .lastChatBlurEffect(containerColor = containerColor, shape = panelShape),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Floating header (drag handle + avatar + compact activity pill + open-in-app).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height((20f * handleFraction).dp)
+                            .semantics {
+                                contentDescription = "Resize assistant"
+                                customActions = listOf(
+                                    androidx.compose.ui.semantics.CustomAccessibilityAction("Expand") {
+                                        preferredHeight = maxHeight; resizeVersion++; true
+                                    },
+                                    androidx.compose.ui.semantics.CustomAccessibilityAction("Minimize") {
+                                        preferredHeight = minHeight; resizeVersion++; true
+                                    },
+                                )
+                            }
+                            .graphicsLayer { alpha = handleFraction; clip = true }
+                            .phoneOverlayDrag(if (compact) null else windowDrag ?: resizeDrag)
+                            .padding(top = (10f * handleFraction).dp, bottom = (6f * handleFraction).dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .background(contentColor.copy(alpha = 0.35f), CircleShape),
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth().height(56.dp)
+                            .phoneOverlayDrag(if (compact) windowDrag else null)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        assistantAvatar(Modifier.size(32.dp))
+                        Spacer(Modifier.width(10.dp))
+                        // Weighted box fills the leftover width so the button sits at the far right.
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            androidx.compose.animation.Crossfade(
+                                targetState = phoneTask?.let { compact || it.running || it.awaitingReply } == true,
+                                animationSpec = if (reduceMotion) snap() else tween(180),
+                                label = "phoneActivityLabel",
+                            ) { phoneActivity ->
+                                val current = phoneTask
+                                if (phoneActivity && current != null) {
+                                    me.rerere.rikkahub.phoneuse.PhoneUseActivityPill(current)
+                                } else CompactActivityPill(state = activityState)
+                            }
+                        }
+                        val operating = phoneTask != null && (compact || phoneTask.running)
+                        AnimatedVisibility(
+                            visible = operating && (compact || phoneTask?.action != "reply"),
+                            enter = fadeIn(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                                androidx.compose.animation.expandHorizontally(
+                                    if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                            exit = fadeOut(if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS)) +
+                                androidx.compose.animation.shrinkHorizontally(
+                                    if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                        ) {
+                            androidx.compose.material3.IconButton(onClick = onPausePhone,
+                                enabled = phoneTask?.running == true, modifier = Modifier.size(40.dp)) {
+                                Icon(if (phoneTask?.paused == true) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                    if (phoneTask?.paused == true) "Resume phone use" else "Pause phone use")
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = operating,
+                            enter = fadeIn(if (reduceMotion) snap() else tween(180)) +
+                                androidx.compose.animation.expandHorizontally(
+                                    if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                            exit = fadeOut(if (reduceMotion) snap() else tween(180)) +
+                                androidx.compose.animation.shrinkHorizontally(
+                                    if (reduceMotion) snap() else spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS)),
+                        ) {
+                            androidx.compose.material3.IconButton(onClick = onStopPhone,
+                                modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Rounded.Stop, "Stop phone use")
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        // "Open in app" — same size as the avatar, right-aligned, level with it.
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable { onOpenInApp() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Rounded.OpenInNew,
+                                contentDescription = openDescription,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                // The scrolling reply is below the header from the first frame; no measured spacer.
+                val bodyAlpha by compactTransition.animateFloat(
+                    transitionSpec = { if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS) },
+                    label = "transcriptOpacity",
+                ) { if (it) 0f else 1f }
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)
+                    .graphicsLayer { alpha = bodyAlpha.coerceIn(0f, 1f) }
+                    .fadeEdges(fadeTop = true, fadeBottom = false, fadeHeight = with(density) { 16.dp.toPx() })
+                    .verticalScroll(scroll)) {
+                    if (!compact || compactTransition.isRunning) transcriptColumn()
+                }
+
+            }
+        }
+
+        // Keep the transcript pinned to the latest text while generating.
+        LaunchedEffect(if (compact) emptyList<UIMessage>() else messages, isGenerating, userDragging, compact) {
+            if (!compact && followLatest && !userDragging) {
+                androidx.compose.runtime.withFrameNanos { }
+                scroll.scrollTo(scroll.maxValue)
+            }
         }
     }
 }
@@ -1146,14 +1171,15 @@ internal fun SilkGlowLayer(
     originY: Float,
     modifier: Modifier = Modifier,
 ) {
+    val reduceMotion = me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy().reduceMotion
     val transition = rememberInfiniteTransition(label = "silkGlow")
-    val phase by transition.animateFloat(
+    val phase by if (reduceMotion) androidx.compose.runtime.rememberUpdatedState(0f) else transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing), RepeatMode.Reverse),
         label = "glowPhase",
     )
-    val breath by transition.animateFloat(
+    val breath by if (reduceMotion) androidx.compose.runtime.rememberUpdatedState(1f) else transition.animateFloat(
         initialValue = 0.85f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(3800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
@@ -1161,18 +1187,22 @@ internal fun SilkGlowLayer(
     )
     val boost by animateFloatAsState(
         targetValue = if (active) 1f else 0.78f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 120f),
+        animationSpec = if (reduceMotion) snap() else spring(dampingRatio = 0.6f, stiffness = 120f),
         label = "glowBoost",
     )
 
     // Entrance reveal (runs once) + morphs into the glow.
     val entrance = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { entrance.animateTo(1f, tween(1300, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(reduceMotion) {
+        if (reduceMotion) entrance.snapTo(1f)
+        else entrance.animateTo(1f, tween(1300, easing = FastOutSlowInEasing))
+    }
 
     // A bright travelling "wave" band: replays on every screen-read signal.
     val wave = remember { Animatable(1f) }
-    LaunchedEffect(waveSignal) {
-        if (waveSignal > 0L) {
+    LaunchedEffect(waveSignal, reduceMotion) {
+        if (reduceMotion) wave.snapTo(1f)
+        else if (waveSignal > 0L) {
             wave.snapTo(0f)
             wave.animateTo(1f, tween(1500, easing = FastOutSlowInEasing))
         }

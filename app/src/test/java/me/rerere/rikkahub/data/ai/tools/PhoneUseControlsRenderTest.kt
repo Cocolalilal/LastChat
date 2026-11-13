@@ -180,7 +180,7 @@ class PhoneUseControlsRenderTest {
         controller.pause().stop().destroy()
     }
 
-    @Test fun finishedPopupExposesReplyAndComposerOnFirstLayout() {
+    @Test fun finishedPopupFitsShortReplyAndComposerOnFirstLayout() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val activity = controller.get()
         android.provider.Settings.Global.putFloat(activity.contentResolver,
@@ -200,8 +200,34 @@ class PhoneUseControlsRenderTest {
         view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
         view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-        org.junit.Assert.assertEquals((376 * density).toInt(), view.measuredWidth)
+        org.junit.Assert.assertEquals((352 * density).toInt(), view.measuredWidth)
         org.junit.Assert.assertTrue(view.measuredHeight > (128 * density).toInt())
+        org.junit.Assert.assertTrue("A short answer must not reserve a transcript viewport",
+            view.measuredHeight < (220 * density).toInt())
+        controller.pause().stop().destroy()
+    }
+
+    @Test fun expandedWorkingControlsDoNotReserveEmptyTranscriptOrComposer() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        android.provider.Settings.Global.putFloat(activity.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        val assistant = Assistant(name = "Assistant", avatar = Avatar.Emoji("A"))
+        val task = PhoneUseTask(Uuid.random(), assistant.id, false, "tap")
+        activity.setContent {
+            CompositionLocalProvider(LocalSettings provides Settings()) {
+                MaterialTheme {
+                    PhoneUseControls(task, assistant, PhoneUseManager(), floating = false,
+                        haptics = noHaptics, onOpen = {}, onSendReply = {})
+                }
+            }
+        }
+        val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val density = activity.resources.displayMetrics.density
+        view.measure(View.MeasureSpec.makeMeasureSpec((411 * density).toInt(), View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec((891 * density).toInt(), View.MeasureSpec.AT_MOST))
+        view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+        org.junit.Assert.assertEquals((72 * density).toInt(), view.measuredHeight)
         controller.pause().stop().destroy()
     }
 
@@ -235,10 +261,11 @@ class PhoneUseControlsRenderTest {
                                 messages = listOf(me.rerere.ai.ui.UIMessage.assistant(task.reply)),
                                 activityState = me.rerere.rikkahub.ui.components.chat.ActivityState.Hidden,
                                 isGenerating = false, isSpeaking = false, onOpenInApp = {}, onCopy = {},
-                                onRegenerate = {}, onToggleTts = {}, phoneTask = task, onDismiss = {},
+                                onRegenerate = {}, onToggleTts = {}, phoneTask = task,
                                 openDescription = "Open assistant",
                                 )
-                                PhoneUseReplyComposer(task, PhoneUseManager(), {}, {}, Modifier.padding(top = 8.dp))
+                                PhoneUseReplyComposer(task, PhoneUseManager(), {}, {}, Modifier.padding(top = 8.dp),
+                                    haptics = noHaptics)
                             }
                             else if (system) AssistantPhoneUseDock(task, assistant, PhoneUseManager(), onOpen = {})
                             else PhoneUseControls(task, assistant, PhoneUseManager(), onOpen = {}, floating = true,

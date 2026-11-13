@@ -92,7 +92,7 @@ internal fun AssistantPhoneUseReply(
             compact = compact,
             onCompactSettled = { manager.overlayCompactReady.value = it },
             modifier = Modifier.weight(1f, fill = false),
-            phoneTask = task, windowDrag = drag, onDismiss = { manager.stop() },
+            phoneTask = task, windowDrag = drag,
             openDescription = "Open assistant",
             onPausePhone = { manager.togglePause() }, onStopPhone = {
                 if (task.action != "reply") manager.cancelAndReturn()

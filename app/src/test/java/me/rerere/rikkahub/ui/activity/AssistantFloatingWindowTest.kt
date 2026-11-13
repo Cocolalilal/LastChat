@@ -1,6 +1,10 @@
 package me.rerere.rikkahub.ui.activity
 
 import android.app.Application
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.graphics.Rect
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -36,7 +40,15 @@ class AssistantFloatingWindowTest {
         root.layout(0, 0, 1000, 1800)
         content.layout(200, 250, 400, 350)
         val original = requireNotNull(activity.window.decorView.background)
-        val nativeBlur = ColorDrawable(Color.WHITE)
+        // The platform blur overrides setAlpha but inherits Drawable.getAlpha (255).
+        val nativeBlur = object : Drawable() {
+            var writtenAlpha = 255
+            override fun draw(canvas: Canvas) = Unit
+            override fun setAlpha(alpha: Int) { writtenAlpha = alpha }
+            override fun setColorFilter(colorFilter: ColorFilter?) = Unit
+            @Suppress("DEPRECATION")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
         val generated = InsetDrawable(LayerDrawable(arrayOf(nativeBlur, original)), 0)
         generated.setBounds(0, 0, 1000, 1800)
         // View.setBackgroundDrawable clears the previous original's callback after
@@ -49,10 +61,16 @@ class AssistantFloatingWindowTest {
         generated.setBounds(0, 0, 1100, 1900)
         viewport.syncGeometry()
         assertEquals(viewport.visualBounds, nativeBlur.bounds)
+        content.alpha = 0f
+        viewport.syncGeometry()
+        assertEquals(0, nativeBlur.writtenAlpha)
         content.alpha = 0.5f
         viewport.syncGeometry()
-        // ColorDrawable rounds its channel modulation differently from the platform blur.
-        assertEquals(0.5f, nativeBlur.alpha / 255f, 0.01f)
+        assertEquals(127, nativeBlur.writtenAlpha)
+        content.alpha = 1f
+        viewport.syncGeometry()
+        assertEquals(255, nativeBlur.writtenAlpha)
+        assertEquals(255, nativeBlur.alpha)
         assertSame(generated, (nativeBlur.callback as LayerDrawable).callback)
         viewport.close()
         controller.pause().stop().destroy()

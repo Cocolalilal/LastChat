@@ -36,7 +36,7 @@ internal class FloatingOverlayViewport(
     private val root: FrameLayout,
     val content: View,
     private var passThrough: Boolean,
-    private val radiusDp: Float = 28f,
+    private var radiusDp: Float = 28f,
 ) {
     companion object {
         val supportsFixedViewport: Boolean get() = Build.VERSION.SDK_INT >= 33
@@ -87,6 +87,8 @@ internal class FloatingOverlayViewport(
     private var lastRegion: Region? = null
     private var appliedBackground: Drawable? = null
     private var appliedBlurBounds = Rect()
+    private var appliedBlurAlpha = -1
+    private var alphaBackground: Drawable? = null
     private val blurListener = Consumer<Boolean> {
         blurAvailable = it
         reportBlur()
@@ -215,7 +217,7 @@ internal class FloatingOverlayViewport(
         if (Build.VERSION.SDK_INT < 33) return
         val surface = root.rootSurfaceControl ?: return
         val region = when {
-            !touchEnabled -> Region()
+            !touchEnabled || (passThrough && !content.isEnabled) -> Region()
             passThrough && content.alpha <= 0f -> Region()
             passThrough -> Region(visualBounds).apply {
                 op(0, 0, window.decorView.width, window.decorView.height, Region.Op.INTERSECT)
@@ -240,7 +242,14 @@ internal class FloatingOverlayViewport(
             appliedBlurBounds.set(bounds)
         }
         val alpha = (content.alpha.coerceIn(0f, 1f) * 255).toInt()
-        if (background.alpha != alpha) background.alpha = alpha
+        // BackgroundBlurDrawable.setAlpha updates the compositor, but its inherited
+        // getAlpha still returns 255. Reading that getter strands blur at zero after
+        // an opening/hiding fade. Track our own writes, including wrapper replacement.
+        if (alphaBackground !== background || appliedBlurAlpha != alpha) {
+            background.alpha = alpha
+            alphaBackground = background
+            appliedBlurAlpha = alpha
+        }
     }
 
     /**
@@ -286,6 +295,12 @@ internal class FloatingOverlayViewport(
         is InsetDrawable -> drawable.drawable?.let { hasLayerBounds(it, rect) } ?: true
         is LayerDrawable -> (0 until drawable.numberOfLayers).all { drawable.getDrawable(it).bounds == rect }
         else -> true
+    }
+
+    fun setCornerRadiusDp(radius: Float) {
+        if (radiusDp == radius) return
+        radiusDp = radius.coerceAtLeast(0f)
+        appliedBackground = null
     }
 
     fun setBlurEnabled(enabled: Boolean) {

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.ui.activity.PrepareAssistantDialog
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -128,6 +129,7 @@ internal fun SkillsPickerSheet(
             }
         }
     ) {
+        PrepareAssistantDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -278,6 +280,7 @@ internal fun LorebooksPickerSheet(
             }
         }
     ) {
+        PrepareAssistantDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -471,6 +474,7 @@ internal fun PluginsPickerSheet(
             }
         }
     ) {
+        PrepareAssistantDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

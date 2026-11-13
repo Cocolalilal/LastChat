@@ -22,7 +22,7 @@ internal fun AssistantInputReveal(
     content: @Composable () -> Unit,
 ) {
     val reduced = rememberSystemMotionPolicy().reduceMotion
-    val progress = remember { Animatable(if (visible) 1f else 0f) }
+    val progress = remember { Animatable(if (visible) 1f else 0f, visibilityThreshold = 0.0005f) }
     val callback by rememberUpdatedState(onHidden)
     LaunchedEffect(visible, reduced) {
         callback(false)

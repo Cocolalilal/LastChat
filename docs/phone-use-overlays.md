@@ -7,12 +7,16 @@ The public `AttachedSurfaceControl.setTouchableRegion` API limits input to the v
 surface; touches elsewhere reach the app underneath. Tool gestures temporarily clear
 that region instead of hiding and recreating the window.
 
-The system assistant uses one `AssistantOverlaySession`, ComposeView, ViewModel and input
+The system assistant uses one `AssistantOverlaySession`, panel ComposeView, ViewModel and input
 owner throughout normal and phone-use modes. Its Activity supplies permission and
 activity-result ownership, while the service retains the scene when the Activity yields.
 Completion or cancellation brings the Activity back and reveals the existing input.
-Hidden scenes pause their lifecycle and composition frame clock. Compact scenes stop
-rendering the transcript after its outgoing fade.
+Hidden scenes pause their lifecycle and composition frame clock. Compact assistant scenes stop
+rendering the transcript after its outgoing fade. The regular popup keeps its measured reply
+body through the full expansion spring; it sizes to actual content rather than an empty viewport.
+A separate full-screen decoration ComposeView shares the scene lifecycle and recomposer. It
+sits behind the card, outside its IME-inset layout, so the screen-edge color effect remains
+visible in normal and phone-use modes without expanding the card's touch region.
 
 The phone dock stays hidden over LastChat's own screens. The normal system assistant
 remains usable there, using a neutral assistant icon in its existing avatar slot so a
@@ -27,7 +31,22 @@ public callback chain. This also survives View clearing the original child's cal
 while installing the wrapper. Accessibility grants the trusted overlay host; it
 does not grant a separate live-blur API. Blur still depends on Android's cross-window
 blur support and the user's blur setting. Screenshots are used by phone tools, not as
-the assistant's visual backdrop.
+the assistant's visual backdrop. Track alpha writes locally: Android's native blur drawable
+overrides `setAlpha` but can inherit a constant `getAlpha`. Comparing that getter before
+restoring opacity leaves compositor blur disabled after a fade.
+
+Picker and editor dialogs must receive the real framework WindowManager from the retained
+context. A delegated WindowManager proxy crashes Android's internal WindowManagerImpl cast.
+`AssistantDialogHost` leaves Compose dialogs owned by the Activity. While one is visible,
+the service card fades away and releases focus/touch to the normal Material dialog; its
+retained composition and the full-screen edge effect stay alive. This avoids changing an
+already-attached native window's type or token. Dialogs hide when the Activity yields or
+capture begins. The Activity owns activity results; no special picker permission is needed.
+
+`PhoneUseTouchCursor` is a non-touchable, non-focusable accessibility window. It uses the
+same sanitized screen coordinates as the injected gesture, follows its real-time stroke,
+and fades its press/ripple feedback. Capture hides it immediately. It never becomes an
+accessibility target or adds a second assistant avatar.
 
 Android 12 and earlier retain the smaller legacy phone window because precise public
 touch regions are unavailable. The Activity fallback remains modal on those versions.
@@ -36,8 +55,14 @@ touch regions are unavailable. The Activity fallback remains modal on those vers
 
 - `PhoneUseMotionTest`: edge attachment, throws, expansion, drag coordinates and temporary
   zero travel during keyboard or display changes.
+- `AssistantTransitionTest`: interrupted drags, release from the presented size, restored
+  input and constrained-panel transitions without traversing invisible height.
 - `AssistantFloatingWindowTest`: viewport geometry, transforms, blur notification and
-  repeated updates without native window relayout.
+  alpha restoration with the platform's constant-alpha-getter behavior.
+- `AssistantDialogHostTest`: framework manager ownership, Activity dialog visibility and
+  modal handoffs without changing an attached window's type or token.
+- `PhoneUseControlsRenderTest`: compact working controls and content-sized short replies.
+- `PhoneCursorStrokeTest`: shared gesture/cursor coordinates and invalid input handling.
 - `FloatingOverlayNativeWindowTest`: populated transcript and real composer, repeated
   morph reversals, native touch pass-through, drag resizing and a real keyboard.
 - `PersistentAssistantSessionNativeTest`: actual accessibility service and assistant

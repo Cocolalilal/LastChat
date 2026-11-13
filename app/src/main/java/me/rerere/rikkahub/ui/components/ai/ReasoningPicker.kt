@@ -48,6 +48,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ReasoningConfig
 import me.rerere.ai.provider.ReasoningModeType
+import me.rerere.rikkahub.ui.activity.PrepareAssistantDialog
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -177,6 +178,7 @@ fun ReasoningPicker(
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
+        PrepareAssistantDialog()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

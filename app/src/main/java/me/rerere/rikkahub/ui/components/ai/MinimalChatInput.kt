@@ -31,6 +31,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Spacer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.ui.activity.PrepareAssistantDialog
 import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
@@ -1176,6 +1177,7 @@ fun MinimalChatInput(
                 decorFitsSystemWindows = false
             )
         ) {
+            PrepareAssistantDialog()
             val dialogView = LocalView.current
             val isDarkTheme = LocalDarkMode.current
             // Invariant: The editor background and text colours are chosen together as a
@@ -1239,14 +1241,14 @@ fun MinimalChatInput(
             LaunchedEffect(Unit) {
                 transitionState.targetState = true
             }
-            
+
             // Share the same activeTextState so the text is preserved
             val activeTextState = when {
                 isQuestionnaireActive -> questionnaireTextState
                 isToolApprovalActive -> toolApprovalTextState
                 else -> state.textContent
             }
-            
+
             // Request focus when dialog opens
             val expandedFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
             LaunchedEffect(transitionState.currentState) {
@@ -1284,9 +1286,9 @@ fun MinimalChatInput(
                             horizontalArrangement = Arrangement.End
                         ) {
                             IconButton(
-                                onClick = { 
+                                onClick = {
                                     haptics.perform(HapticPattern.Pop)
-                                    isExpandedFullScreen = false 
+                                    isExpandedFullScreen = false
                                 }
                             ) {
                                 Icon(
@@ -1340,7 +1342,7 @@ fun MinimalChatInput(
                                     unfocusedContainerColor = Color.Transparent,
                                 )
                             )
-                            
+
                             // Floating send button at the bottom right
                             Box(
                                 modifier = Modifier
@@ -1446,6 +1448,7 @@ fun MinimalChatInput(
             shape = pickerSheetShape,
             dragHandle = null
         ) {
+            PrepareAssistantDialog()
             MinimalPickerContent(
                 state = state,
                 conversation = conversation,
@@ -2423,6 +2426,7 @@ private fun MinimalPickerContent(
                 }
             }
         ) {
+            PrepareAssistantDialog()
             Column(
                 modifier = Modifier
                     .fillMaxHeight(0.8f)
@@ -2495,6 +2499,7 @@ private fun MinimalPickerContent(
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
+            PrepareAssistantDialog()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2507,7 +2512,7 @@ private fun MinimalPickerContent(
                     text = stringResource(R.string.search_picker_title),
                     style = MaterialTheme.typography.titleLarge
                 )
-                
+
                 // Direct SearchPicker content
                 SearchPicker(
                     enableSearch = enableSearch,

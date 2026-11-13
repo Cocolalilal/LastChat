@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.activity
 
+import android.animation.ValueAnimator
+import android.view.animation.PathInterpolator
 import android.content.Context
 import android.content.Intent
 import android.content.MutableContextWrapper
@@ -11,6 +13,9 @@ import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import me.rerere.rikkahub.service.assist.AssistScreenHolder
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -65,6 +70,19 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     var serviceHosted = false
         private set
     private var activityResumed = false
+    private var boundWindow: Window? = null
+    private val dialogHost = AssistantDialogHost()
+    private var glowActive by mutableStateOf(false)
+    private var surfaceAlpha = 0f
+    private var modalOpacity = 1f
+    private var modalAnimator: ValueAnimator? = null
+    var modalActive = false
+        private set
+    var onModalInputChanged: (Boolean) -> Unit = {}
+        set(value) {
+            field = value
+            value(modalActive)
+        }
     val viewModel = ViewModelProvider(viewModelStore, object : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
@@ -72,17 +90,26 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         }
     })[AssistantOverlayVM::class.java]
     val view = ComposeView(context).apply { alpha = 0f }
+    // The card wraps content, while the edge effect keeps the full display's coordinates.
+    // It is a separate non-interactive child of the same native window, never a backdrop image.
+    val decorationView = ComposeView(context).apply {
+        alpha = 0f
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    }
 
     init {
+        dialogHost.onModalChanged = ::setModalActive
         savedState.performAttach()
         savedState.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
-        view.setViewTreeLifecycleOwner(this)
-        view.setViewTreeSavedStateRegistryOwner(this)
-        view.setViewTreeViewModelStoreOwner(this)
-        view.setViewTreeOnBackPressedDispatcherOwner(this)
-        view.setParentCompositionContext(recomposer)
-        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
+        listOf(view, decorationView).forEach { child ->
+            child.setViewTreeLifecycleOwner(this)
+            child.setViewTreeSavedStateRegistryOwner(this)
+            child.setViewTreeViewModelStoreOwner(this)
+            child.setViewTreeOnBackPressedDispatcherOwner(this)
+            child.setParentCompositionContext(recomposer)
+            child.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
+        }
         scope.launch { recomposer.runRecomposeAndApplyChanges() }
         activity.intent.getStringExtra(RouteActivity.EXTRA_ASSISTANT_ID)?.let { value ->
             runCatching { Uuid.parse(value) }.getOrNull()?.let { id ->
@@ -90,6 +117,23 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
             }
         }
         viewModel.initialize(existingId)
+        decorationView.setContent {
+            val currentSettings by settings.settingsFlow.collectAsStateWithLifecycle()
+            val mode by presentation.collectAsStateWithLifecycle()
+            val wave by AssistScreenHolder.screenReadSignal.collectAsStateWithLifecycle()
+            val assistant = currentSettings.assistants.firstOrNull { it.id == viewModel.overlayAssistantId }
+                ?: currentSettings.resolveAssistantOverlayAssistant()
+            RikkahubTheme {
+                AssistantChatTheme(assistant) {
+                    val config = currentSettings.assistantOverlayConfig
+                    SilkGlowLayer(
+                        active = glowActive || mode == AssistantPresentation.PHONE,
+                        waveSignal = wave, originX = config.waveOriginX, originY = config.waveOriginY,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
         view.setContent {
             val currentSettings by settings.settingsFlow.collectAsStateWithLifecycle()
             val mode by presentation.collectAsStateWithLifecycle()
@@ -104,6 +148,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
                     LocalSettings provides currentSettings, LocalHighlighter provides highlighter,
                     LocalToaster provides toast, LocalNavController provides nav,
                     LocalActivityResultRegistryOwner provides activityOwner,
+                    LocalAssistantDialogHost provides dialogHost,
                 ) {
                     AssistantChatTheme(assistant) {
                         FloatingOverlayLayout(content = {
@@ -129,13 +174,16 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
                                 },
                                 autoStartListening = existingId == null, floatingContent = true,
                                 nativeBlurActive = nativeBlurActive, inputState = inputState,
+                                onGlowActive = { glowActive = it },
                                 persistentPhoneMode = mode == AssistantPresentation.PHONE,
                                 onPhoneUseYield = {
                                     setPhoneMode(true)
                                     activityOwner.moveTaskToBack(true)
                                 },
                                 onSurfaceMotion = { motion ->
-                                    view.alpha = motion.alpha
+                                    surfaceAlpha = motion.alpha
+                                    applySurfaceAlpha()
+                                    decorationView.alpha = motion.alpha
                                     view.pivotX = motion.pivotX * view.width
                                     view.pivotY = motion.pivotY * view.height
                                     view.scaleX = motion.scale
@@ -198,6 +246,8 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     }
     fun setPresented(visible: Boolean) {
         if (presentation.value == AssistantPresentation.CLOSED) return
+        decorationView.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+        dialogHost.setVisible(visible && activityResumed && presentation.value == AssistantPresentation.NORMAL)
         if (visible) {
             if (presentation.value == AssistantPresentation.HIDDEN) presentation.value = AssistantPresentation.NORMAL
             recomposer.resumeCompositionFrameClock()
@@ -208,18 +258,19 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         }
     }
     fun bindWindow(window: Window?) {
+        boundWindow = window
+        dialogHost.bindWindow(window.takeIf { serviceHosted })
         if (android.os.Build.VERSION.SDK_INT >= 33 && window != null) {
             onBackPressedDispatcher.setOnBackInvokedDispatcher(window.onBackInvokedDispatcher)
         }
     }
     fun setOverlayWindowManager(windowManager: WindowManager?) {
         serviceHosted = windowManager != null
-        context.overlayManager = windowManager
+        dialogHost.bindWindow(boundWindow.takeIf { serviceHosted })
         updateChildVisibility()
     }
     private fun updateChildVisibility() {
-        context.childrenVisible = activityResumed && presentation.value == AssistantPresentation.NORMAL
-        context.children.forEach { it.visibility = if (context.childrenVisible) View.VISIBLE else View.GONE }
+        dialogHost.setVisible(activityResumed && presentation.value == AssistantPresentation.NORMAL)
     }
     fun close(stopPhoneUse: Boolean = true) {
         if (presentation.value == AssistantPresentation.CLOSED) return
@@ -229,7 +280,10 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         }
         presentation.value = AssistantPresentation.CLOSED
         if (manager.assistantOverlay.value === this) manager.assistantOverlay.value = null
-        context.closeChildren()
+        modalAnimator?.cancel()
+        modalAnimator = null
+        dialogHost.close()
+        decorationView.disposeComposition()
         view.disposeComposition()
         recomposer.cancel()
         scope.cancel()
@@ -239,43 +293,35 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         context.baseContext = activityOwner.applicationContext
     }
 
-    /** Compose dialogs must share the trusted overlay layer while the service owns the scene. */
-    private class OverlayContext(base: Context) : MutableContextWrapper(base) {
-        var overlayManager: WindowManager? = null
-        val children = mutableSetOf<View>()
-        var childrenVisible = true
-        private val owners = mutableMapOf<View, WindowManager>()
-        override fun getSystemService(name: String): Any? {
-            val original = super.getSystemService(name)
-            if (name != Context.WINDOW_SERVICE || original !is WindowManager) return original
-            return object : WindowManager by original {
-                override fun addView(view: View, params: android.view.ViewGroup.LayoutParams) {
-                    val wm = overlayManager ?: original
-                    if (overlayManager != null && params is WindowManager.LayoutParams && params.type in 1..99) {
-                        params.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                        params.token = null
-                    }
-                    view.visibility = if (childrenVisible) View.VISIBLE else View.GONE
-                    wm.addView(view, params)
-                    children += view
-                    owners[view] = wm
-                }
-                override fun updateViewLayout(view: View, params: android.view.ViewGroup.LayoutParams) {
-                    (owners[view] ?: original).updateViewLayout(view, params)
-                }
-                override fun removeView(view: View) {
-                    children -= view
-                    (owners.remove(view) ?: original).removeView(view)
-                }
-                override fun removeViewImmediate(view: View) {
-                    children -= view
-                    (owners.remove(view) ?: original).removeViewImmediate(view)
-                }
-            }
+    private fun applySurfaceAlpha() { view.alpha = surfaceAlpha * modalOpacity }
+
+    private fun setModalActive(active: Boolean) {
+        if (presentation.value == AssistantPresentation.CLOSED || modalActive == active) return
+        modalActive = active
+        // Activity-owned Material dialogs must receive focus and all pointer input. Keep
+        // the retained composition alive, fading only the service card and its native blur.
+        view.isEnabled = !active
+        onModalInputChanged(active)
+        modalAnimator?.cancel()
+        val target = if (active) 0f else 1f
+        if (!view.isShown || presentation.value != AssistantPresentation.NORMAL ||
+            !ValueAnimator.areAnimatorsEnabled()) {
+            modalAnimator = null
+            modalOpacity = target
+            applySurfaceAlpha()
+            return
         }
-        fun closeChildren() {
-            owners.toMap().forEach { (view, owner) -> runCatching { owner.removeViewImmediate(view) } }
-            children.clear(); owners.clear()
+        modalAnimator = ValueAnimator.ofFloat(modalOpacity, target).apply {
+            duration = 180
+            interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener {
+                modalOpacity = it.animatedValue as Float
+                applySurfaceAlpha()
+            }
+            start()
         }
     }
+
+    /** Dialogs stay owned by the current Activity, which also owns their result registry. */
+    internal class OverlayContext(base: Context) : MutableContextWrapper(base)
 }

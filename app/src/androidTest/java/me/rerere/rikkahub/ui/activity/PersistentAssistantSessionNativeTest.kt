@@ -73,7 +73,11 @@ class PersistentAssistantSessionNativeTest {
     }
 
     private fun composeChild(view: View): ComposeView? {
-        if (view is ComposeView) return view
+        // The screen-edge decoration shares the window but is not the interactive scene.
+        if (view.importantForAccessibility == View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS) return null
+        if (view is ComposeView) {
+            return view
+        }
         if (view is ViewGroup) for (index in 0 until view.childCount) {
             composeChild(view.getChildAt(index))?.let { return it }
         }

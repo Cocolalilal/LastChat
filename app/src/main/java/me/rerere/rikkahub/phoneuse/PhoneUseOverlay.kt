@@ -11,6 +11,9 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentDialog
 import androidx.compose.runtime.Recomposer
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -53,6 +56,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
     private var viewport: FloatingOverlayViewport? = null
     private var assistant: AssistantOverlaySession? = null
     private var content: View? = null
+    private var decoration: View? = null
     private var contentLayoutListener: View.OnLayoutChangeListener? = null
     private var popupScene: PopupScene? = null
     private var heldConversation: Uuid? = null
@@ -109,8 +113,8 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             if (assistant !== scene || host == null) mountAssistant(scene)
             val normal = state.mode == AssistantPresentation.NORMAL
             val show = shouldShowAssistantOverlay(state.mode, state.visibility.other, state.visibility.capture)
-            viewport?.setInputEnabled(show && normal)
-            viewport?.setTouchEnabled(show && !state.visibility.acting)
+            viewport?.setInputEnabled(show && normal && !scene.modalActive)
+            viewport?.setTouchEnabled(show && !state.visibility.acting && !scene.modalActive)
             viewport?.setBlurEnabled(state.blur)
             show(show, state.visibility.capture)
         } else {
@@ -136,6 +140,10 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         val window = host?.window ?: return
         scene.nativeBlurActive = false
         scene.bindWindow(window)
+        scene.onModalInputChanged = { modal ->
+            viewport?.setInputEnabled(visible && scene.presentation.value == AssistantPresentation.NORMAL && !modal)
+            viewport?.setTouchEnabled(visible && !manager.acting.value && !modal)
+        }
         scene.onBlurRequested = { viewport?.setBlurEnabled(it) }
         viewport?.onBlurChanged = { scene.nativeBlurActive = it; manager.overlayBlur.value = it }
     }
@@ -154,6 +162,15 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         content = view
         visible = false
         val root = FrameLayout(service).apply { clipChildren = false; clipToPadding = false }
+        val container = FrameLayout(service).apply { clipChildren = false; clipToPadding = false }
+        decoration = if (assistantMode) assistant?.decorationView else popupScene?.decorationView
+        decoration?.let { background ->
+            (background.parent as? ViewGroup)?.removeView(background)
+            container.addView(background, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        container.addView(root, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val lp = FrameLayout.LayoutParams(
             if (assistantMode) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -169,7 +186,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
                 setFormat(PixelFormat.TRANSLUCENT)
                 addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
             }
-            setContentView(root)
+            setContentView(container)
         }
         host = dialog
         val bounds = FloatingOverlayViewport(dialog.window!!, root, view, passThrough = true,
@@ -219,6 +236,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         if (capture) {
             view.animate().cancel()
             view.alpha = 0f
+            decoration?.alpha = 0f
             view.visibility = View.INVISIBLE
             viewport?.syncGeometry()
             captureHidden = true
@@ -234,12 +252,16 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             assistant?.setPresented(true)
             popupScene?.setPresented(true)
             view.visibility = View.VISIBLE
-            if (captureHidden) view.alpha = 1f
-            else view.animate().alpha(1f).setDuration(180).start()
+            if (captureHidden) {
+                view.alpha = 1f
+                decoration?.alpha = 1f
+            } else view.animate().alpha(1f).setDuration(180)
+                .setUpdateListener { decoration?.alpha = view.alpha }.start()
             captureHidden = false
         } else {
             viewport?.setTouchEnabled(false)
-            view.animate().alpha(0f).setDuration(160).withEndAction {
+            view.animate().alpha(0f).setDuration(160)
+                .setUpdateListener { decoration?.alpha = view.alpha }.withEndAction {
                 if (!visible) {
                     view.visibility = View.INVISIBLE
                     assistant?.setPresented(false)
@@ -257,6 +279,10 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         val view = content ?: return
         val frame = viewport?.availableFrame ?: return
         if (frame.isEmpty || view.width == 0 || view.height == 0) return
+        val expandedWidth = (service.resources.configuration.screenWidthDp - 32).coerceIn(104, 336)
+        val widthProgress = ((view.width / density - 120f) / (expandedWidth - 104).coerceAtLeast(1))
+            .coerceIn(0f, 1f)
+        viewport?.setCornerRadiusDp(36f + 8f * widthProgress)
         position.updateBounds(phoneOverlayBounds(frame.width(), frame.height(), view.width, view.height, 16f*density))
         applyPosition()
     }
@@ -328,18 +354,23 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
     }
     private fun releaseReference() { heldConversation?.let(chat::removeConversationReference); heldConversation = null }
     private fun removeHost() {
+        // A retiring host must not keep driving the next host's decoration alpha.
+        content?.animate()?.setUpdateListener(null)?.cancel()
         manager.controlsReady.value = null
         manager.assistantReplyVisible.value = null
         contentLayoutListener?.let { content?.removeOnLayoutChangeListener(it) }
         contentLayoutListener = null
         cancelMotion()
         viewport?.close(); viewport = null
+        assistant?.onModalInputChanged = {}
         assistant?.setPresented(false)
         assistant?.bindWindow(null)
         assistant?.onBlurRequested = {}
         assistant?.setOverlayWindowManager(null)
         assistant = null
         (content?.parent as? ViewGroup)?.removeView(content)
+        (decoration?.parent as? ViewGroup)?.removeView(decoration)
+        decoration = null
         popupScene?.close(); popupScene = null
         host?.dismiss(); host = null
         content = null
@@ -363,14 +394,36 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         private val composeScope = CoroutineScope(SupervisorJob()+AndroidUiDispatcher.CurrentThread)
         private val recomposer = Recomposer(composeScope.coroutineContext)
         val view = ComposeView(service)
+        val decorationView = ComposeView(service).apply {
+            alpha = 0f
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
         init {
             saved.performAttach(); saved.performRestore(null)
             registry.currentState = Lifecycle.State.CREATED
-            view.setViewTreeLifecycleOwner(this)
-            view.setViewTreeSavedStateRegistryOwner(this)
-            view.setParentCompositionContext(recomposer)
-            view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
+            listOf(view, decorationView).forEach { child ->
+                child.setViewTreeLifecycleOwner(this)
+                child.setViewTreeSavedStateRegistryOwner(this)
+                child.setParentCompositionContext(recomposer)
+                child.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
+            }
             composeScope.launch { recomposer.runRecomposeAndApplyChanges() }
+            decorationView.setContent {
+                val preferences by settings.settingsFlow.collectAsStateWithLifecycle()
+                val task by manager.session.collectAsStateWithLifecycle()
+                val wave by me.rerere.rikkahub.service.assist.AssistScreenHolder.screenReadSignal
+                    .collectAsStateWithLifecycle()
+                val assistant = preferences.assistants.firstOrNull { it.id == task?.assistantId }
+                    ?: preferences.assistants.firstOrNull() ?: return@setContent
+                me.rerere.rikkahub.ui.theme.RikkahubTheme {
+                    me.rerere.rikkahub.ui.theme.AssistantChatTheme(assistant) {
+                        val config = preferences.assistantOverlayConfig
+                        SilkGlowLayer(active = task?.let { it.running && !it.paused } == true,
+                            waveSignal = wave, originX = config.waveOriginX, originY = config.waveOriginY,
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize())
+                    }
+                }
+            }
             view.setContent {
                 PhoneUseOverlayContent(manager, settings, { openConversation(it) }, drag) { enabled ->
                     inputRequested = enabled
@@ -379,10 +432,12 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             }
         }
         fun setPresented(show: Boolean) {
+            decorationView.visibility = if (show) View.VISIBLE else View.INVISIBLE
             if (show) { recomposer.resumeCompositionFrameClock(); registry.currentState = Lifecycle.State.RESUMED }
             else { registry.currentState = Lifecycle.State.CREATED; recomposer.pauseCompositionFrameClock() }
         }
         fun close() {
+            decorationView.disposeComposition()
             view.disposeComposition(); recomposer.cancel(); composeScope.cancel()
             registry.currentState = Lifecycle.State.DESTROYED
         }

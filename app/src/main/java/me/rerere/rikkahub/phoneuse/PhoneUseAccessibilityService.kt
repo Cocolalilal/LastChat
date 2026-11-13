@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import org.koin.android.ext.android.inject
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
@@ -41,7 +42,9 @@ private const val JPEG_QUALITY = 80
  */
 class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
     private val manager: PhoneUseManager by inject()
+    private val settings: SettingsStore by inject()
     private val controls by lazy { PhoneUseOverlay(this, manager) }
+    private var touchCursor: PhoneUseTouchCursor? = null
 
     // 和最近一次 captureScreen 返回的元素一一对应，setText 靠它找到节点
     @Volatile
@@ -51,16 +54,22 @@ class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
         Log.i(TAG, "onServiceConnected")
         manager.attach(this)
         controls.start()
+        touchCursor?.close()
+        touchCursor = PhoneUseTouchCursor(this, manager, settings).also { it.start() }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         manager.detach(this)
+        touchCursor?.close()
+        touchCursor = null
         controls.close()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         manager.detach(this)
+        touchCursor?.close()
+        touchCursor = null
         controls.close()
         super.onDestroy()
     }
@@ -68,6 +77,7 @@ class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         controls.onConfigurationChanged()
+        touchCursor?.hide(immediate = true)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -290,32 +300,53 @@ class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
 
     // ---- 操作 ----
 
-    override suspend fun gesture(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMs: Long): Boolean {
-        // 坐标不能为负；点击也补一段到原地的线，保证路径不为空
+    override suspend fun gesture(
+        fromX: Float, fromY: Float, toX: Float, toY: Float, durationMs: Long,
+    ): Boolean = withContext(Dispatchers.Main.immediate) {
+        val task = manager.session.value
+        val size = screenSize()
+        val stroke = PhoneCursorStroke.withinScreen(fromX, fromY, toX, toY, size.x, size.y)
+        val duration = durationMs.coerceIn(1L, GestureDescription.getMaxGestureDuration())
+        // One clamped coordinate source keeps the visible pointer and injected path aligned.
         val path = Path().apply {
-            moveTo(fromX.coerceAtLeast(0f), fromY.coerceAtLeast(0f))
-            lineTo(toX.coerceAtLeast(0f), toY.coerceAtLeast(0f))
+            moveTo(stroke.fromX, stroke.fromY)
+            lineTo(stroke.toX, stroke.toY)
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
-        // 效果和手势同时开始；覆盖层不接收触摸，不会挡住手势
+        touchCursor?.approach(stroke)
+        // A user can pause, close the task or open LastChat during the short approach.
+        // Never let that visual lead-in queue an action against the new foreground UI.
+        val current = manager.session.value
+        if (manager.appUiVisible.value || manager.capturing.value || (task != null &&
+                (current?.conversationId != task.conversationId || !current.running || current.paused))) {
+            touchCursor?.hide(immediate = false)
+            return@withContext false
+        }
+        touchCursor?.press(stroke, duration)
+        try {
+            suspendCancellableCoroutine { continuation ->
+                val dispatched = dispatchGesture(
+                    gesture,
+                    object : GestureResultCallback() {
+                        override fun onCompleted(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) {
+                                touchCursor?.completeStroke()
+                                continuation.resume(true)
+                            }
+                        }
 
-        return suspendCancellableCoroutine { continuation ->
-            val dispatched = dispatchGesture(
-                gesture,
-                object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        if (continuation.isActive) continuation.resume(true)
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        if (continuation.isActive) continuation.resume(false)
-                    }
-                },
-                null,
-            )
-            if (!dispatched && continuation.isActive) continuation.resume(false)
+                        override fun onCancelled(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) continuation.resume(false)
+                        }
+                    },
+                    null,
+                )
+                if (!dispatched && continuation.isActive) continuation.resume(false)
+            }
+        } finally {
+            touchCursor?.release()
         }
     }
 

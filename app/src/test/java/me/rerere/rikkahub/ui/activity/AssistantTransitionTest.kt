@@ -147,7 +147,7 @@ class AssistantTransitionTest {
             assertEquals((80 * density).toInt(), input)
         }
         second.zipWithNext().forEach { (a, b) ->
-            assertTrue("A released resize must settle continuously", abs(a.first - b.first) < 60 * density)
+            assertTrue("A released resize must settle continuously: $second", abs(a.first - b.first) < 60 * density)
         }
     }
 
@@ -164,6 +164,23 @@ class AssistantTransitionTest {
         frames(50)
         assertEquals(0, panelPixels)
         assertEquals((80 * density).toInt(), inputPixels)
+    }
+
+    @Test fun constrainedExpandedPanelStartsPhoneMorphFromItsVisibleHeight() {
+        viewportHeight = 280
+        content()
+        val expand = compose.onNodeWithContentDescription("Resize assistant").fetchSemanticsNode()
+            .config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Expand" }
+        compose.runOnIdle { expand.action() }
+        frames(50)
+        assertEquals((200 * density).toInt(), panelPixels)
+        compose.runOnIdle { compact = true }
+        val early = frames(4)
+        assertTrue("A constrained surface must move immediately, without traversing invisible height: $early",
+            early.last().first < (199 * density).toInt())
+        frames(50)
+        assertEquals((56 * density).toInt(), panelPixels)
+        assertEquals(0, inputPixels)
     }
 
     @Test fun grabbingAConstrainedPanelUsesItsVisibleHeightAndKeepsInputAvailable() {
