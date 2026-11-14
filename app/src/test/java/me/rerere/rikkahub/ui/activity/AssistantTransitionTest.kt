@@ -11,6 +11,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.phoneuse.PhoneUseTask
 import me.rerere.rikkahub.ui.components.chat.ActivityState
@@ -31,6 +34,7 @@ import kotlin.uuid.Uuid
 class AssistantTransitionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val task = PhoneUseTask(Uuid.random(), Uuid.random(), true, "observe")
+    private var messages by mutableStateOf(emptyList<UIMessage>())
     private var compact by mutableStateOf(false)
     private var panelVisible by mutableStateOf(true)
     private var viewportHeight = 700
@@ -47,7 +51,7 @@ class AssistantTransitionTest {
                 MaterialTheme {
                     Box(Modifier.size(400.dp, viewportHeight.dp)) {
                         Column(Modifier.align(Alignment.BottomCenter)) {
-                            TranscriptPanel(assistantAvatar = { Box(it) }, messages = emptyList(),
+                            TranscriptPanel(assistantAvatar = { Box(it) }, messages = messages,
                                 activityState = ActivityState.Waiting, isGenerating = true, isSpeaking = false,
                                 onOpenInApp = {}, onCopy = {}, onRegenerate = {}, onToggleTts = {},
                                 compact = compact, visible = panelVisible, phoneTask = task,
@@ -199,6 +203,42 @@ class AssistantTransitionTest {
         compose.onNodeWithContentDescription("Resize assistant").performTouchInput { up() }
         frames(50)
         assertEquals((80 * density).toInt(), inputPixels)
+    }
+
+    @Test fun latestTwoMessagesGrowThePanelWhileOlderHistoryRemainsScrollable() {
+        val question = UIMessage(role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text((1..6).joinToString("\n") { "Question line $it" })))
+        val answer = UIMessage(role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Text((1..4).joinToString("\n\n") { "Answer paragraph $it" })))
+        messages = listOf(question, answer)
+        content()
+        frames(70)
+        val readableHeight = panelPixels
+        assertTrue("The latest exchange should grow beyond the old fixed height", readableHeight > 300 * density)
+        val maximum = compose.activity.resources.configuration.screenHeightDp * 0.66f * density
+        assertTrue(readableHeight <= maximum + 1)
+        System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { directory ->
+            compose.runOnIdle {
+                val view = compose.activity.window.decorView
+                val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height,
+                    android.graphics.Bitmap.Config.ARGB_8888)
+                view.draw(android.graphics.Canvas(bitmap))
+                val file = java.io.File(directory, "assistant-latest-exchange.png")
+                file.parentFile?.mkdirs()
+                file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        }
+        val old = UIMessage(role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text((1..30).joinToString("\n") { "Older line $it" })))
+        compose.runOnIdle { messages = listOf(old, question, answer) }
+        frames(70)
+        assertEquals("Older history must not make the surface fill the screen", readableHeight, panelPixels)
+        val minimize = compose.onNodeWithContentDescription("Resize assistant").fetchSemanticsNode()
+            .config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Minimize" }
+        compose.runOnIdle { minimize.action() }
+        frames(50)
+        assertEquals("Automatic sizing must respect a user's resize", (76 * density).toInt(), panelPixels)
     }
 
 }

@@ -67,6 +67,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
     private var decoration: View? = null
     private var contentLayoutListener: View.OnLayoutChangeListener? = null
     private var popupScene: PopupScene? = null
+    private var popupOpacity: OverlayOpacity? = null
     private var heldConversation: Uuid? = null
     private var visible = false
     private var captureHidden = false
@@ -107,7 +108,6 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         }
         if (scene == null && task == null) {
             returnJob?.cancel(); returnJob = null
-            popupScene?.setPresented(false)
             show(false, capture = false)
             if (assistant != null) removeHost()
             releaseReference()
@@ -123,8 +123,8 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             if (assistant !== scene || host == null) mountAssistant(scene)
             val normal = state.mode == AssistantPresentation.NORMAL
             val show = shouldShowAssistantOverlay(state.mode, state.visibility.other, state.visibility.capture)
-            viewport?.setInputEnabled(show && normal && !scene.modalActive)
-            viewport?.setTouchEnabled(show && !state.visibility.acting && !scene.modalActive)
+            viewport?.setInputEnabled(show && normal && !scene.modalActive && !scene.isClosing)
+            viewport?.setTouchEnabled(show && !state.visibility.acting && !scene.modalActive && !scene.isClosing)
             viewport?.setBlurEnabled(state.blur)
             show(show, state.visibility.capture)
         } else {
@@ -153,8 +153,9 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         scene.nativeBlurActive = false
         scene.bindWindow(window)
         scene.onModalInputChanged = { modal ->
-            viewport?.setInputEnabled(visible && scene.presentation.value == AssistantPresentation.NORMAL && !modal)
-            viewport?.setTouchEnabled(visible && !manager.acting.value && !modal)
+            viewport?.setInputEnabled(visible && scene.presentation.value == AssistantPresentation.NORMAL &&
+                !modal && !scene.isClosing)
+            viewport?.setTouchEnabled(visible && !manager.acting.value && !modal && !scene.isClosing)
         }
         scene.onBlurRequested = { viewport?.setBlurEnabled(it) }
         viewport?.onBlurChanged = { scene.nativeBlurActive = it; manager.overlayBlur.value = it }
@@ -188,13 +189,20 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or if (assistantMode) Gravity.CENTER_HORIZONTAL else Gravity.RIGHT,
         )
-        if (assistantMode) lp.setMargins((16*density).toInt(), 0, (16*density).toInt(), (24*density).toInt())
+        if (assistantMode) lp.setMargins((16*density).toInt(), 0, (16*density).toInt(), (32*density).toInt())
         root.addView(view, lp)
         val dialog = createFixedPhoneOverlayDialog(service, container)
         host = dialog
         val bounds = FloatingOverlayViewport(dialog.window!!, root, view, passThrough = true,
             radiusDp = if (assistantMode) 28f else 36f)
         viewport = bounds
+        if (!assistantMode) popupOpacity = OverlayOpacity(0f) { alpha ->
+            if (content === view) {
+                view.alpha = alpha
+                decoration?.alpha = alpha
+                bounds.syncGeometry()
+            }
+        }
         bounds.onAvailableFrameChanged = { if (!assistantMode) updatePosition() }
         contentLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             if (content === view) {
@@ -231,49 +239,39 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
                 scene?.presentation?.value == AssistantPresentation.NORMAL) {
                 scene.viewModel.conversationId.value
             } else null
-            view.visibility = if (visible) View.VISIBLE else View.INVISIBLE
-            assistant?.setPresented(visible)
+            // Session owns its fade and suspends its composition only after the last frame.
+            // Captures are the exception: never include our own card or decoration in a screenshot.
+            scene?.setPresented(visible, immediate = capture)
             viewport?.syncGeometry()
             return
         }
         if (capture) {
-            view.animate().cancel()
-            view.alpha = 0f
-            decoration?.alpha = 0f
+            popupOpacity?.animateTo(0f, immediate = true)
             view.visibility = View.INVISIBLE
             viewport?.syncGeometry()
             captureHidden = true
             visible = false
-            assistant?.setPresented(false)
             popupScene?.setPresented(false)
             return
         }
         if (show == visible) return
         visible = show
-        view.animate().cancel()
         if (show) {
-            assistant?.setPresented(true)
             popupScene?.setPresented(true)
             view.visibility = View.VISIBLE
-            if (captureHidden) {
-                view.alpha = 1f
-                decoration?.alpha = 1f
-            } else view.animate().alpha(1f).setDuration(180)
-                .setUpdateListener { decoration?.alpha = view.alpha }.start()
+            popupOpacity?.animateTo(1f, immediate = captureHidden)
             captureHidden = false
         } else {
             viewport?.setTouchEnabled(false)
-            view.animate().alpha(0f).setDuration(160)
-                .setUpdateListener { decoration?.alpha = view.alpha }.withEndAction {
-                if (!visible) {
+            popupOpacity?.animateTo(0f) {
+                if (content === view && !visible) {
                     view.visibility = View.INVISIBLE
-                    assistant?.setPresented(false)
                     popupScene?.setPresented(false)
                     viewport?.syncGeometry()
                     if (manager.session.value == null && manager.assistantOverlay.value?.presentation?.value !in
                         setOf(AssistantPresentation.NORMAL, AssistantPresentation.PHONE)) removeHost()
                 }
-            }.start()
+            }
         }
         viewport?.syncGeometry()
     }
@@ -364,7 +362,8 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
     private fun releaseReference() { heldConversation?.let(chat::removeConversationReference); heldConversation = null }
     private fun removeHost() {
         // A retiring host must not keep driving the next host's decoration alpha.
-        content?.animate()?.setUpdateListener(null)?.cancel()
+        popupOpacity?.cancel()
+        popupOpacity = null
         manager.controlsReady.value = null
         manager.assistantReplyVisible.value = null
         contentLayoutListener?.let { content?.removeOnLayoutChangeListener(it) }
@@ -372,7 +371,7 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         cancelMotion()
         viewport?.close(); viewport = null
         assistant?.onModalInputChanged = {}
-        assistant?.setPresented(false)
+        assistant?.setPresented(false, immediate = true)
         assistant?.bindWindow(null)
         assistant?.onBlurRequested = {}
         assistant?.setOverlayWindowManager(null)
@@ -384,6 +383,8 @@ internal class PhoneUseOverlay(private val service: AccessibilityService, privat
         host?.dismiss(); host = null
         content = null
         visible = false
+        captureHidden = false
+        inputRequested = false
     }
     fun close() {
         legacy?.let { it.close(); return }

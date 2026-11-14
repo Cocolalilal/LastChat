@@ -61,6 +61,11 @@ internal class FloatingOverlayViewport(
 
     private val density = root.resources.displayMetrics.density
     private val manager = root.context.getSystemService(WindowManager::class.java)
+    private val translucentTheme = window.context.obtainStyledAttributes(
+        intArrayOf(android.R.attr.windowIsTranslucent),
+    ).let { attributes ->
+        try { attributes.getBoolean(0, false) } finally { attributes.recycle() }
+    }
     private val location = IntArray(2)
     private val screenLocation = IntArray(2)
     private val matrix = Matrix()
@@ -80,7 +85,28 @@ internal class FloatingOverlayViewport(
         cornerRadius = radiusDp * density
     }
     private var latestInsets: WindowInsetsCompat? = null
-    private var blurDiagnostic: String? = null
+    private var pendingInsets: WindowInsetsCompat? = null
+    private val imeAnimations = mutableSetOf<WindowInsetsAnimationCompat>()
+    internal val insetsAnimationCallback = object : WindowInsetsAnimationCompat.Callback(
+        DISPATCH_MODE_CONTINUE_ON_SUBTREE,
+    ) {
+        override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) imeAnimations.add(animation)
+        }
+
+        override fun onProgress(
+            insets: WindowInsetsCompat,
+            runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+        ): WindowInsetsCompat {
+            applyInsets(insets)
+            return insets
+        }
+
+        override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if (imeAnimations.remove(animation) && imeAnimations.isEmpty()) pendingInsets?.let(::applyInsets)
+        }
+    }
+    private var blurDiagnostic: OverlayBlurDiagnostic? = null
     private var requestedBlur = false
     private var blurAvailable = false
     private var appliedBlur = -1
@@ -133,17 +159,14 @@ internal class FloatingOverlayViewport(
             }
             window.attributes = attrs
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-                applyInsets(insets)
+                pendingInsets = insets
+                // Android dispatches the final IME geometry between onPrepare and onStart.
+                // Applying it here jumps to the keyboard's destination, then back to its
+                // first animation frame. Follow only the presented onProgress insets instead.
+                if (imeAnimations.isEmpty()) applyInsets(insets)
                 insets
             }
-            ViewCompat.setWindowInsetsAnimationCallback(root,
-                object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
-                    override fun onProgress(insets: WindowInsetsCompat,
-                        runningAnimations: MutableList<WindowInsetsAnimationCompat>): WindowInsetsCompat {
-                        applyInsets(insets)
-                        return insets
-                    }
-                })
+            ViewCompat.setWindowInsetsAnimationCallback(root, insetsAnimationCallback)
             ViewCompat.requestApplyInsets(root)
         }
         root.addOnLayoutChangeListener(layoutListener)
@@ -162,15 +185,22 @@ internal class FloatingOverlayViewport(
     private fun applyInsets(insets: WindowInsetsCompat) {
         latestInsets = insets
         val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        // Accessibility overlays can receive a transient zero navigation inset while the
+        // target app changes system-bar visibility. Preserve the gesture area's safe gap.
+        val navigation = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
+        val left = maxOf(bars.left, navigation.left)
+        val right = maxOf(bars.right, navigation.right)
         // A non-focusable working pill must not inherit another app's keyboard limits.
         // Only our own focused reply input reserves IME space.
-        val imeBottom = if (inputEnabled && insets.isVisible(WindowInsetsCompat.Type.ime())) {
+        // Visibility describes the target state on some IMEs during a closing animation;
+        // the animated inset itself is the presented keyboard edge in either direction.
+        val imeBottom = if (inputEnabled) {
             insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
         } else 0
-        val bottom = maxOf(bars.bottom, imeBottom)
-        if (root.paddingLeft != bars.left || root.paddingTop != bars.top ||
-            root.paddingRight != bars.right || root.paddingBottom != bottom) {
-            root.setPadding(bars.left, bars.top, bars.right, bottom)
+        val bottom = maxOf(bars.bottom, navigation.bottom, imeBottom)
+        if (root.paddingLeft != left || root.paddingTop != bars.top ||
+            root.paddingRight != right || root.paddingBottom != bottom) {
+            root.setPadding(left, bars.top, right, bottom)
             updateAvailableFrame()
         }
     }
@@ -325,11 +355,32 @@ internal class FloatingOverlayViewport(
 
     private fun reportBlur() {
         val hardware = root.isHardwareAccelerated
-        val active = requestedBlur && blurAvailable && hardware && Build.VERSION.SDK_INT >= 31
-        val diagnostic = "requested=$requestedBlur platform=$blurAvailable hardware=$hardware active=$active"
+        val background = windowBackground()
+        val generated = hasOverlayBlurLayer(background, originalBackground)
+        val active = requestedBlur && blurAvailable && hardware && translucentTheme && generated &&
+            Build.VERSION.SDK_INT >= 31
+        // Capability alone does not prove that SurfaceFlinger is rendering a blur region.
+        // Retain native metadata in Developer settings so an OEM failure can be distinguished
+        // from power-saving/global blur restrictions or a software renderer without adb.
+        val reason = when {
+            !requestedBlur -> "not-requested"
+            Build.VERSION.SDK_INT < 31 -> "unsupported-api"
+            !blurAvailable -> "disabled-by-platform"
+            !hardware -> "software-renderer"
+            !translucentTheme -> "opaque-window-theme"
+            !generated -> "native-layer-missing"
+            else -> "native-layer-ready"
+        }
+        val diagnostic = OverlayBlurDiagnostic(
+            requested = requestedBlur, platform = blurAvailable, hardware = hardware, active = active,
+            translucent = translucentTheme, windowType = window.attributes.type,
+            background = background.javaClass.simpleName, generated = generated,
+            geometry = !visualBounds.isEmpty, reason = reason, sdk = Build.VERSION.SDK_INT,
+        )
         if (diagnostic != blurDiagnostic) {
             blurDiagnostic = diagnostic
-            PlatformLog.i("OverlayBlur", diagnostic)
+            OverlayBlurDiagnostics.record(diagnostic)
+            PlatformLog.i("OverlayBlur", diagnostic.text)
         }
         if (reportedBlur != active) {
             reportedBlur = active
@@ -370,7 +421,17 @@ internal class FloatingOverlayViewport(
         if (root.viewTreeObserver.isAlive) root.viewTreeObserver.removeOnPreDrawListener(preDraw)
         ViewCompat.setOnApplyWindowInsetsListener(root, null)
         ViewCompat.setWindowInsetsAnimationCallback(root, null)
+        imeAnimations.clear()
+        pendingInsets = null
         if (Build.VERSION.SDK_INT >= 31) manager.removeCrossWindowBlurEnabledListener(blurListener)
         generatedBackground = null
     }
+}
+
+/** Our original background has one layer; DecorView adds a sibling only when native blur exists. */
+internal fun hasOverlayBlurLayer(background: Drawable, original: Drawable): Boolean = when (background) {
+    is InsetDrawable -> background.drawable?.let { hasOverlayBlurLayer(it, original) } ?: false
+    is LayerDrawable -> background.numberOfLayers > 1 &&
+        (0 until background.numberOfLayers).any { background.getDrawable(it) === original }
+    else -> false
 }

@@ -2,6 +2,7 @@ package me.rerere.rikkahub.phoneuse
 
 import android.accessibilityservice.AccessibilityService
 import android.app.Application
+import android.graphics.PixelFormat
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -42,6 +43,10 @@ class PhoneOverlayHardwareTest {
             }
             assertTrue(added.flags and WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED != 0)
             assertTrue(added.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
+            assertEquals(PixelFormat.TRANSLUCENT, added.format)
+            val theme = requireNotNull(dialog.window).context.obtainStyledAttributes(
+                intArrayOf(android.R.attr.windowIsTranslucent))
+            try { assertTrue(theme.getBoolean(0, false)) } finally { theme.recycle() }
             assertEquals(WindowManager.LayoutParams.MATCH_PARENT, added.width)
             assertEquals(WindowManager.LayoutParams.MATCH_PARENT, added.height)
             assertEquals(0, added.x)
@@ -89,6 +94,7 @@ class OverlayAddViewShadow : ShadowWindowManagerImpl() {
         val x: Int,
         val y: Int,
         val softInputMode: Int,
+        val format: Int,
     )
 
     companion object {
@@ -104,7 +110,7 @@ class OverlayAddViewShadow : ShadowWindowManagerImpl() {
         if (params is WindowManager.LayoutParams &&
             params.type == WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY) {
             added += InitialWindow(view, params.flags, params.width, params.height,
-                params.x, params.y, params.softInputMode)
+                params.x, params.y, params.softInputMode, params.format)
         }
         super.addView(view, params)
     }

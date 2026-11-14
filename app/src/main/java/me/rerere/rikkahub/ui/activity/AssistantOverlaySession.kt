@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.activity
 
-import android.animation.ValueAnimator
-import android.view.animation.PathInterpolator
 import android.content.Context
 import android.content.Intent
 import android.content.MutableContextWrapper
@@ -78,8 +76,11 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     private val dialogHost = AssistantDialogHost()
     private var glowActive by mutableStateOf(false)
     private var surfaceAlpha = 0f
-    private var modalOpacity = 1f
-    private var modalAnimator: ValueAnimator? = null
+    private val visibilityOpacity = OverlayOpacity(1f) { applySurfaceAlpha() }
+    private val modalOpacity = OverlayOpacity(1f) { applySurfaceAlpha() }
+    var isClosing = false
+        private set
+    private var closeFinishActivity = true
     var modalActive = false
         private set
     var onModalInputChanged: (Boolean) -> Unit = {}
@@ -230,6 +231,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         updateChildVisibility()
     }
     fun onActivityResumed() {
+        if (isClosing || presentation.value == AssistantPresentation.CLOSED) return
         activityResumed = true
         val task = manager.session.value
         if (presentation.value == AssistantPresentation.PHONE && task?.systemAssistant == true &&
@@ -245,6 +247,7 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     }
     fun onActivityPaused() {
         activityResumed = false
+        if (isClosing || presentation.value == AssistantPresentation.CLOSED) return
         if (presentation.value == AssistantPresentation.NORMAL) {
             presentation.value = AssistantPresentation.HIDDEN
             setPresented(false)
@@ -254,21 +257,35 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         updateChildVisibility()
     }
     fun setPhoneMode(phone: Boolean) {
-        if (presentation.value == AssistantPresentation.CLOSED) return
+        if (isClosing || presentation.value == AssistantPresentation.CLOSED) return
         presentation.value = if (phone) AssistantPresentation.PHONE else AssistantPresentation.NORMAL
         updateChildVisibility()
     }
-    fun setPresented(visible: Boolean) {
+    fun setPresented(visible: Boolean, immediate: Boolean = false) {
         if (presentation.value == AssistantPresentation.CLOSED) return
-        decorationView.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+        if (isClosing) {
+            // Capture/host teardown may force completion, but an ordinary render must never
+            // replace the close completion with the callback that merely pauses a hidden scene.
+            if (!visible && immediate) visibilityOpacity.animateTo(0f, immediate = true) {
+                dispose(closeFinishActivity)
+            }
+            return
+        }
         dialogHost.setVisible(visible && activityResumed && presentation.value == AssistantPresentation.NORMAL)
         if (visible) {
             if (presentation.value == AssistantPresentation.HIDDEN) presentation.value = AssistantPresentation.NORMAL
+            view.visibility = View.VISIBLE
+            decorationView.visibility = View.VISIBLE
             recomposer.resumeCompositionFrameClock()
             lifecycleRegistry.currentState = Lifecycle.State.RESUMED
-        } else {
-            lifecycleRegistry.currentState = Lifecycle.State.CREATED
-            recomposer.pauseCompositionFrameClock()
+        }
+        visibilityOpacity.animateTo(if (visible) 1f else 0f, immediate) {
+            if (!visible) {
+                view.visibility = View.INVISIBLE
+                decorationView.visibility = View.INVISIBLE
+                lifecycleRegistry.currentState = Lifecycle.State.CREATED
+                recomposer.pauseCompositionFrameClock()
+            }
         }
     }
     fun bindWindow(window: Window?) {
@@ -288,14 +305,36 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
     }
     fun close(stopPhoneUse: Boolean = true, finishActivity: Boolean = true) {
         if (presentation.value == AssistantPresentation.CLOSED) return
+        if (isClosing) {
+            if (!finishActivity) {
+                // Replacement revokes the old scene's right to finish the shared Activity,
+                // including a host handoff that happens before Activity.session is reassigned.
+                closeFinishActivity = false
+                visibilityOpacity.animateTo(0f, immediate = true) { dispose(false) }
+            }
+            return
+        }
+        isClosing = true
+        closeFinishActivity = finishActivity
         val id = viewModel.conversationId.value
         if (stopPhoneUse && manager.session.value?.let { it.systemAssistant && it.conversationId == id } == true) {
             manager.stop()
         }
+        // Keep both compositions and their native surface alive until the last visible frame.
+        // Replacement scenes and a surface already faded by predictive back dispose immediately.
+        view.isEnabled = false
+        onModalInputChanged(true)
+        dialogHost.setVisible(false)
+        val immediate = !finishActivity || !view.isAttachedToWindow || view.alpha < 0.001f || activityOwner.isDestroyed
+        visibilityOpacity.animateTo(0f, immediate) { dispose(closeFinishActivity) }
+    }
+
+    private fun dispose(finishActivity: Boolean) {
+        if (presentation.value == AssistantPresentation.CLOSED) return
         presentation.value = AssistantPresentation.CLOSED
         if (manager.assistantOverlay.value === this) manager.assistantOverlay.value = null
-        modalAnimator?.cancel()
-        modalAnimator = null
+        visibilityOpacity.cancel()
+        modalOpacity.cancel()
         dialogHost.close()
         decorationView.disposeComposition()
         view.disposeComposition()
@@ -303,42 +342,27 @@ internal class AssistantOverlaySession(activity: AssistantOverlayActivity, exist
         scope.cancel()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
-        if (finishActivity) activityOwner.finish()
+        if (finishActivity) activityOwner.finishOverlaySession(this)
         context.baseContext = activityOwner.applicationContext
     }
 
     private fun applySurfaceAlpha() {
-        view.alpha = surfaceAlpha * modalOpacity
+        view.alpha = surfaceAlpha * visibilityOpacity.value * modalOpacity.value
         applyDecorationAlpha()
     }
 
-    private fun applyDecorationAlpha() { decorationView.alpha = surfaceAlpha * modalOpacity }
+    private fun applyDecorationAlpha() {
+        decorationView.alpha = surfaceAlpha * visibilityOpacity.value * modalOpacity.value
+    }
 
     private fun setModalActive(active: Boolean) {
-        if (presentation.value == AssistantPresentation.CLOSED || modalActive == active) return
+        if (isClosing || presentation.value == AssistantPresentation.CLOSED || modalActive == active) return
         modalActive = active
-        // Activity-owned Material dialogs must receive focus and all pointer input. Keep
-        // the retained composition alive, fading only the service card and its native blur.
+        // A picker can temporarily pause/hide its Activity. Its retained opacity must still
+        // animate back instead of snapping merely because View.isShown changed during dismissal.
         view.isEnabled = !active
         onModalInputChanged(active)
-        modalAnimator?.cancel()
-        val target = if (active) 0f else 1f
-        if (!view.isShown || presentation.value != AssistantPresentation.NORMAL ||
-            !ValueAnimator.areAnimatorsEnabled()) {
-            modalAnimator = null
-            modalOpacity = target
-            applySurfaceAlpha()
-            return
-        }
-        modalAnimator = ValueAnimator.ofFloat(modalOpacity, target).apply {
-            duration = 180
-            interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
-            addUpdateListener {
-                modalOpacity = it.animatedValue as Float
-                applySurfaceAlpha()
-            }
-            start()
-        }
+        modalOpacity.animateTo(if (active) 0f else 1f)
     }
 
     /** Dialogs stay owned by the current Activity, which also owns their result registry. */

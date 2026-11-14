@@ -26,6 +26,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30, 35], application = Application::class)
 class AssistantFloatingWindowTest {
+    @Test fun `native blur requires the generated sibling layer rather than capability alone`() {
+        val original = ColorDrawable(Color.TRANSPARENT)
+        assertFalse(hasOverlayBlurLayer(original, original))
+        assertFalse(hasOverlayBlurLayer(InsetDrawable(original, 12), original))
+        assertFalse(hasOverlayBlurLayer(LayerDrawable(arrayOf(original)), original))
+        val generated = InsetDrawable(LayerDrawable(arrayOf(ColorDrawable(Color.TRANSPARENT), original)), 0)
+        assertTrue(hasOverlayBlurLayer(generated, original))
+    }
+
     @Test fun `native blur wrappers are reached when DecorView returns only the original background`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         val activity = controller.get()
@@ -127,9 +136,9 @@ class AssistantFloatingWindowTest {
         var reportedBlur: Boolean? = null
         viewport.onBlurChanged = { notifications++; reportedBlur = it }
         assertEquals(1, notifications)
-        val available = Build.VERSION.SDK_INT >= 31 && root.isHardwareAccelerated &&
-            activity.getSystemService(WindowManager::class.java).isCrossWindowBlurEnabled
-        assertEquals(available, reportedBlur)
+        // This ordinary Robolectric Activity has no native generated blur drawable.
+        // A globally supported capability must not make its material transparent.
+        assertEquals(false, reportedBlur)
         val background = activity.window.decorView.background
         val count = notifications
         val callback = activity.window.callback

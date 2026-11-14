@@ -64,7 +64,8 @@ class AssistantOverlayActivity : ComponentActivity() {
             val requested = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
                 runCatching { Uuid.parse(it) }.getOrNull()
             }
-            val retained = manager.assistantOverlay.value
+            val previous = manager.assistantOverlay.value
+            val retained = previous?.takeUnless { it.isClosing }
             val reuse = shouldReuseAssistantScene(requested, retained?.viewModel?.conversationId?.value,
                 retained?.presentation?.value, configured.id, manager.session.value, recreating)
             val scene = if (reuse) requireNotNull(retained) else {
@@ -72,7 +73,7 @@ class AssistantOverlayActivity : ComponentActivity() {
                 fallback = null
                 // A new invocation takes control instead of sharing an unrelated phone task.
                 // Do not finish this singleTask Activity while replacing its retained scene.
-                retained?.close(finishActivity = false)
+                previous?.close(finishActivity = false)
                 if (requested == null || manager.session.value?.conversationId != requested) manager.stop()
                 AssistantOverlaySession(this@AssistantOverlayActivity, requested).also {
                     manager.assistantOverlay.value = it
@@ -116,6 +117,17 @@ class AssistantOverlayActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleInvocation(intent)
+    }
+
+    override fun finish() {
+        val scene = session
+        if (scene != null && scene.presentation.value != AssistantPresentation.CLOSED) scene.close()
+        else super.finish()
+    }
+
+    internal fun finishOverlaySession(scene: AssistantOverlaySession) {
+        // A cancelled/replaced scene cannot finish the Activity now showing its successor.
+        if (session === scene) super.finish()
     }
 
     override fun onDestroy() {

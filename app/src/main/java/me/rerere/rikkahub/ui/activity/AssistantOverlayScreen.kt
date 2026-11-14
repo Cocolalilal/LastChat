@@ -701,6 +701,14 @@ internal fun TranscriptPanel(
         val maxHeight = minOf(screenMaximum, availableMaximum).coerceAtLeast(0f)
         val minHeight = minOf(76f, maxHeight)
         var preferredHeight by remember { mutableStateOf(minOf(220f, maxHeight)) }
+        var userSized by remember { mutableStateOf(false) }
+        val messageHeights = remember { androidx.compose.runtime.mutableStateMapOf<kotlin.uuid.Uuid, Int>() }
+        val latestMessages = messages.takeLast(2)
+        val latestHeight = latestMessages.sumOf { messageHeights[it.id] ?: 0 } / density.density
+        // Keep the latest exchange readable when there is room. Older history remains
+        // scrollable, rather than making every conversation grow to the screen maximum.
+        val naturalHeight = maxOf(220f, 76f + 24f + latestHeight +
+            (latestMessages.size - 1).coerceAtLeast(0) * 10f).coerceAtMost(maxHeight)
         val height = remember {
             Animatable(if (!visible) 0f else if (compact) 56f else preferredHeight, visibilityThreshold = 0.05f)
         }
@@ -713,6 +721,7 @@ internal fun TranscriptPanel(
         val resizeDrag = remember(minHeight, maxHeight, density.density) {
             PhoneOverlayDragCallbacks(
                 onStart = {
+                    userSized = true
                     dragging = true
                     dragHeight = measuredHeight[0]
                     scope.launch { height.stop() }
@@ -742,7 +751,12 @@ internal fun TranscriptPanel(
             )
         }
         val compactCallback by androidx.compose.runtime.rememberUpdatedState(onCompactSettled)
-        val targetHeight = if (!visible) 0f else if (compact) 56f else preferredHeight.coerceIn(minHeight, maxHeight)
+        val targetHeight = when {
+            !visible -> 0f
+            compact -> 56f
+            userSized -> preferredHeight.coerceIn(minHeight, maxHeight)
+            else -> naturalHeight.coerceIn(minHeight, maxHeight)
+        }
         // IME/input geometry changes the available height every frame. Restart only
         // when the actual target changes, otherwise the spring never gets its first frame.
         LaunchedEffect(compact, visible, targetHeight, resizeVersion, reduceMotion) {
@@ -804,7 +818,9 @@ internal fun TranscriptPanel(
                         (message.id == lastAssistantId || message.id in expandedIds)
                     Column(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = if (isAssistant) {
+                        modifier = Modifier.onSizeChanged { size ->
+                            if (messageHeights[message.id] != size.height) messageHeights[message.id] = size.height
+                        }.then(if (isAssistant) {
                             Modifier.clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -815,7 +831,7 @@ internal fun TranscriptPanel(
                                     expandedIds + message.id
                                 }
                             }
-                        } else Modifier,
+                        } else Modifier),
                     ) {
                         MessageRowContent(message = message, contentColor = contentColor,
                             streaming = isGenerating && message.id == lastAssistantId)
@@ -865,10 +881,10 @@ internal fun TranscriptPanel(
                                 contentDescription = "Resize assistant"
                                 customActions = listOf(
                                     androidx.compose.ui.semantics.CustomAccessibilityAction("Expand") {
-                                        preferredHeight = maxHeight; resizeVersion++; true
+                                        userSized = true; preferredHeight = maxHeight; resizeVersion++; true
                                     },
                                     androidx.compose.ui.semantics.CustomAccessibilityAction("Minimize") {
-                                        preferredHeight = minHeight; resizeVersion++; true
+                                        userSized = true; preferredHeight = minHeight; resizeVersion++; true
                                     },
                                 )
                             }
@@ -960,9 +976,14 @@ internal fun TranscriptPanel(
                     transitionSpec = { if (reduceMotion) snap() else spring(stiffness = PHONE_MOTION_STIFFNESS) },
                     label = "transcriptOpacity",
                 ) { if (it) 0f else 1f }
+                val topFade by animateFloatAsState(
+                    targetValue = (scroll.value / with(density) { 16.dp.toPx() }).coerceIn(0f, 1f),
+                    animationSpec = if (reduceMotion) snap() else tween(120),
+                    label = "transcriptOverflowFade",
+                )
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)
                     .graphicsLayer { alpha = bodyAlpha.coerceIn(0f, 1f) }
-                    .fadeEdges(fadeTop = true, fadeBottom = false, fadeHeight = with(density) { 16.dp.toPx() })
+                    .fadeEdges(topProgress = topFade, fadeHeight = with(density) { 16.dp.toPx() })
                     .verticalScroll(scroll)) {
                     if (!compact || compactTransition.isRunning) transcriptColumn()
                 }

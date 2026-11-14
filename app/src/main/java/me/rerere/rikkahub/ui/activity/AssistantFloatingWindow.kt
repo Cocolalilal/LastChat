@@ -37,7 +37,7 @@ internal class AssistantFloatingWindow(
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
         ).apply {
             val density = activity.resources.displayMetrics.density
-            setMargins((16 * density).toInt(), 0, (16 * density).toInt(), (24 * density).toInt())
+            setMargins((16 * density).toInt(), 0, (16 * density).toInt(), (32 * density).toInt())
         })
         activity.setContentView(container)
         viewport = FloatingOverlayViewport(activity.window, root, session.view, passThrough = false)
