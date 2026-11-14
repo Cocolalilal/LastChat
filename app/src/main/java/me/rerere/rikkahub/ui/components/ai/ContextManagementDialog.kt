@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import me.rerere.common.platform.PlatformLog
+import me.rerere.rikkahub.ui.activity.PrepareAssistantDialog
 import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import kotlinx.coroutines.withContext
 import me.rerere.ai.context.ContextUsageBreakdown
@@ -115,6 +116,7 @@ internal fun ContextManagementDialog(
         tonalElevation = AppSurface.TonalElevation,
         title = { Text("Summarize", style = MaterialTheme.typography.titleLarge) },
         text = {
+            PrepareAssistantDialog()
             Column(
                 Modifier.fillMaxWidth().heightIn(max = maxBodyHeight).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md),

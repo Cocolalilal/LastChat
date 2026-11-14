@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSize
 import me.rerere.rikkahub.ui.theme.AppSurface
@@ -58,12 +59,13 @@ enum class LastChatComposerAction {
 @Composable
 fun LastChatComposerRow(
     modifier: Modifier = Modifier,
+    spacing: Dp = me.rerere.rikkahub.ui.theme.AppSpacing.xs,
     content: @Composable RowScope.() -> Unit,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(me.rerere.rikkahub.ui.theme.AppSpacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
         content = content,
     )
 }

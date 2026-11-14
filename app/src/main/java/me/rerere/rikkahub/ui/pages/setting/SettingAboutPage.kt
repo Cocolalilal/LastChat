@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -16,15 +17,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.settings.LastChatAboutContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -34,6 +38,7 @@ import org.koin.compose.koinInject
 @Composable
 fun SettingAboutPage() {
     val context = LocalContext.current
+    val navController = LocalNavController.current
     val haptics = rememberPremiumHaptics()
     val toaster = LocalToaster.current
     val updateChecker = koinInject<UpdateChecker>()
@@ -41,7 +46,16 @@ fun SettingAboutPage() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.setting_page_about)) },
+                title = {
+                    Text(stringResource(R.string.setting_page_about), modifier = Modifier.pointerInput(
+                        navController, haptics,
+                    ) {
+                        detectTapGestures(onLongPress = {
+                            haptics.perform(HapticPattern.Pop)
+                            navController.navigate(Screen.Developer)
+                        })
+                    })
+                },
                 navigationIcon = { BackButton() },
             )
         },

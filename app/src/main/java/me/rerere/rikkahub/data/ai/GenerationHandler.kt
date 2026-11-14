@@ -692,6 +692,8 @@ class GenerationHandler(
         val conversationSkillIds = enabledModeIds
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
+        var phoneUseRecoveryRequested = false
+        var phoneUseRecoveryUsed = false
         for (stepIndex in 0 until maxSteps) {
             currentCoroutineContext().ensureActive()
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -740,7 +742,13 @@ class GenerationHandler(
                         currentTurnScopedSkillIds = updatedIds.intersect(allSkillIds)
                     },
                 )?.let(this::add)
-                addAll(tools)
+                addAll(tools.map { tool ->
+                    if (tool.name == "phone_use" && phoneUseRecoveryRequested) tool.copy(
+                        systemPrompt = { model, history ->
+                            tool.systemPrompt(model, history) + "\n" + PHONE_USE_CONTINUATION_PROMPT
+                        },
+                    ) else tool
+                })
             }
 
             generateInternal(
@@ -797,6 +805,17 @@ class GenerationHandler(
 
             val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
+                if (!phoneUseRecoveryUsed && phoneUseNeedsCompletion(messages)) {
+                    phoneUseRecoveryUsed = true
+                    phoneUseRecoveryRequested = true
+                    // Retry an empty or premature final response once, without inventing a user message.
+                    if (messages.lastOrNull()?.role == MessageRole.ASSISTANT &&
+                        messages.last().toContentText().isBlank()) messages = messages.dropLast(1)
+                    continue
+                }
+                if (phoneUseRecoveryUsed && messages.lastOrNull()?.toContentText().isNullOrBlank()) {
+                    error("The model stopped without a reply after phone use. Open the conversation to continue.")
+                }
                 val stripped = messages.stripEphemeralToolImagePayloads()
                 if (stripped !== messages) {
                     messages = stripped
@@ -1188,7 +1207,7 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
 
-        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
+        val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen", "phone_use")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }
         }

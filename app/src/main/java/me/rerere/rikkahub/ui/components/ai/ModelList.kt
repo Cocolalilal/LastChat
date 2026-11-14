@@ -93,6 +93,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.ui.activity.PrepareAssistantDialog
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -242,6 +243,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 }
             }
         ) {
+            PrepareAssistantDialog()
             Column(
                 modifier = Modifier
                     .fillMaxHeight(0.8f)

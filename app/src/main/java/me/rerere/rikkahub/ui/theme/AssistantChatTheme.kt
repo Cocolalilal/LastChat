@@ -28,6 +28,25 @@ import java.io.InputStream
 
 private const val PALETTE_TARGET_SIZE = 128
 
+private data class AssistantPaletteKey(val avatar: Avatar, val background: String?, val index: Int, val custom: String?)
+private val assistantPaletteSeeds = android.util.LruCache<AssistantPaletteKey, Color>(24)
+
+/** Reuse the resolved assistant palette without image I/O on a native phone action. */
+internal fun cachedAssistantColorScheme(
+    assistant: Assistant?,
+    baseScheme: ColorScheme,
+    darkTheme: Boolean,
+): ColorScheme {
+    if (assistant == null || !assistant.useAssistantMaterialYouColors) return baseScheme
+    val seed = if (assistant.materialYouColorIndex == CUSTOM_MATERIAL_YOU_COLOR_INDEX) {
+        parseMaterialYouColor(assistant.customMaterialYouColor)
+    } else {
+        assistantPaletteSeeds.get(AssistantPaletteKey(assistant.avatar, assistant.background,
+            assistant.materialYouColorIndex, assistant.customMaterialYouColor))
+    }
+    return seed?.let { buildAssistantColorScheme(baseScheme, it, darkTheme) } ?: baseScheme
+}
+
 @Composable
 fun AssistantChatTheme(
     assistant: Assistant,
@@ -35,8 +54,13 @@ fun AssistantChatTheme(
 ) {
     val context = LocalContext.current
     val darkTheme = LocalDarkMode.current
+    val paletteKey = AssistantPaletteKey(assistant.avatar, assistant.background,
+        assistant.materialYouColorIndex, assistant.customMaterialYouColor)
+    val initialSeed = if (!assistant.useAssistantMaterialYouColors) null
+        else if (assistant.materialYouColorIndex == CUSTOM_MATERIAL_YOU_COLOR_INDEX) parseMaterialYouColor(assistant.customMaterialYouColor)
+        else assistantPaletteSeeds.get(paletteKey)
     val seedColor by produceState<Color?>(
-        initialValue = null,
+        initialValue = initialSeed,
         assistant.useAssistantMaterialYouColors,
         assistant.materialYouColorIndex,
         assistant.customMaterialYouColor,
@@ -50,7 +74,7 @@ fun AssistantChatTheme(
         value = if (assistant.materialYouColorIndex == CUSTOM_MATERIAL_YOU_COLOR_INDEX) {
             parseMaterialYouColor(assistant.customMaterialYouColor)
         } else {
-            withContext(Dispatchers.IO) {
+            assistantPaletteSeeds.get(paletteKey) ?: withContext(Dispatchers.IO) {
                 extractSeedColor(
                     context = context,
                     assistant = assistant,
@@ -58,6 +82,7 @@ fun AssistantChatTheme(
                 )
             }
         }
+        value?.let { assistantPaletteSeeds.put(paletteKey, it) }
     }
 
     if (seedColor == null) {

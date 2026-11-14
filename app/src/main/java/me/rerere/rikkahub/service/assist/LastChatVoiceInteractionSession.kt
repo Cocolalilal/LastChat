@@ -11,8 +11,8 @@ import me.rerere.rikkahub.ui.activity.AssistantOverlayActivity
  * A single assist invocation.
  *
  * We don't draw the assistant UI inside the session window itself — instead we cache
- * the trigger-time screenshot and immediately launch [AssistantOverlayActivity], which
- * hosts the full Compose overlay (glow + reply panel + input) with access to Koin,
+ * a small trigger-time image for model inspection and immediately launch [AssistantOverlayActivity], which
+ * hosts a floating Compose interface in a fixed transparent window (reply panel + input) with access to Koin,
  * ViewModels and the generation pipeline. The system session window is then hidden.
  *
  * Rationale: hosting a full Compose + Koin + ViewModelStore stack inside a
@@ -33,7 +33,7 @@ class LastChatVoiceInteractionSession(context: Context) : VoiceInteractionSessio
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         val intent = Intent(context, AssistantOverlayActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }
         runCatching { context.startActivity(intent) }
         // Dismiss the (empty) system session window; the activity owns the UX now.

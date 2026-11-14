@@ -4,9 +4,12 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, etc.) working in this
 
 ## Workspace branch and commits
 
-- Always work on the `lastchat_dev` branch in this workspace. Switch to it before making changes.
-- Always commit your completed changes to `lastchat_dev` before finishing a task.
+- Always work on the existing `LastChat_dev` branch (case-sensitive). Switch to it before making changes.
+- Always commit your completed changes to `LastChat_dev` before finishing a task.
 - Always use commit author and committer `Cocolalilal <109036699+Cocolalilal@users.noreply.github.com>`.
+- For APK deliveries, build stable releases only (`:app:assembleStableRelease`)
+  and upload the stable ARM64 APK to the shared Google Drive **LC** folder
+  (`1lWsajwHNVhnLhiCcA-ALeS1IMsQDHwPQ`). Verify folder membership and file size before reporting delivery.
 
 ## Project
 

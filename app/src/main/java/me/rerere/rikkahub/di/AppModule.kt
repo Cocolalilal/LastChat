@@ -21,6 +21,7 @@ import org.koin.android.ext.koin.androidContext
 
 val appModule = module {
     single<Json> { JsonInstant }
+    single { me.rerere.rikkahub.phoneuse.PhoneUseManager() }
 
     single {
         val providers = get<me.rerere.ai.provider.ProviderManager>()
@@ -33,7 +34,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), phoneUseManager = get())
     }
 
     single {

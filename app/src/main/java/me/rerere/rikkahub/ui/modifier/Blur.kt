@@ -26,6 +26,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 data class LastChatBlur(
     val enabled: Boolean = false,
     val hazeState: HazeState? = null,
+    val windowBlur: Boolean = false,
 )
 
 val LocalLastChatBlur = staticCompositionLocalOf { LastChatBlur() }
@@ -75,7 +76,7 @@ fun Modifier.lastChatBlurEffect(
 
 /**
  * Charcoal floating fill. Glass alpha is applied only when blur is enabled *and*
- * a haze source exists; otherwise the color is forced opaque so blur-off chrome
+ * a haze source or native window blur exists; otherwise the color is forced opaque so blur-off chrome
  * is a solid floating layer, not leftover glass.
  */
 @Composable
@@ -85,7 +86,7 @@ fun lastChatFloatingSurfaceColor(
     val blur = LocalLastChatBlur.current
     return AppSurface.resolve(
         charcoal = charcoal,
-        blurEnabled = blur.enabled && blur.hazeState != null,
+        blurEnabled = blur.enabled && (blur.hazeState != null || blur.windowBlur),
         dark = LocalDarkMode.current,
     )
 }
@@ -108,7 +109,7 @@ fun lastChatSoftEdgeBorder(
 ): BorderStroke {
     val scheme = MaterialTheme.colorScheme
     val blur = LocalLastChatBlur.current
-    val blurOn = blur.enabled && blur.hazeState != null
+    val blurOn = blur.enabled && (blur.hazeState != null || blur.windowBlur)
     val color = AppSurface.borderColor(scheme, surface, blurEnabled = blurOn, dark = LocalDarkMode.current)
     return BorderStroke(AppSurface.SoftEdgeWidth, color)
 }

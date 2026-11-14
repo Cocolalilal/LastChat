@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.activity
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -31,19 +34,36 @@ import kotlin.uuid.Uuid
 class AssistantOverlayVM(
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
+    private val phoneUseManager: me.rerere.rikkahub.phoneuse.PhoneUseManager,
 ) : ViewModel() {
 
-    val overlayAssistantId: Uuid =
-        settingsStore.settingsFlow.value.resolveAssistantOverlayAssistant().id
+    var overlayAssistantId: Uuid by mutableStateOf(
+        settingsStore.settingsFlow.value.resolveAssistantOverlayAssistant().id)
 
     private val _conversationId = MutableStateFlow<Uuid?>(null)
     val conversationId: StateFlow<Uuid?> = _conversationId
 
     val errorFlow: SharedFlow<Throwable> get() = chatService.errorFlow
 
-    init {
-        viewModelScope.launch {
-            val conversation = chatService.createConversation(overlayAssistantId)
+    private var initializationJob: Job? = null
+
+    fun initialize(existingId: Uuid? = null) {
+        val previousId = _conversationId.value
+        if (previousId != null && (existingId == null || existingId == previousId)) return
+        initializationJob?.cancel()
+        initializationJob = viewModelScope.launch {
+            // Reading the quick cache here chooses the app character before the saved
+            // system-assistant preference has loaded. Resolve only from ready settings.
+            val configured = settingsStore.settingsFlow.awaitAssistantOverlayAssistant()
+            if (existingId == null) overlayAssistantId = configured.id
+            val conversation = existingId?.let { chatService.ensureConversationLoaded(it) }
+                ?: chatService.createConversation(overlayAssistantId)
+            previousId?.let {
+                phoneUseManager.unregisterAssistantConversation(it)
+                chatService.removeConversationReference(it)
+            }
+            overlayAssistantId = conversation.assistantId
+            phoneUseManager.registerAssistantConversation(conversation.id)
             chatService.addConversationReference(conversation.id)
             _conversationId.value = conversation.id
         }
@@ -113,6 +133,9 @@ class AssistantOverlayVM(
 
     override fun onCleared() {
         super.onCleared()
-        _conversationId.value?.let { chatService.removeConversationReference(it) }
+        _conversationId.value?.let {
+            phoneUseManager.unregisterAssistantConversation(it)
+            chatService.removeConversationReference(it)
+        }
     }
 }

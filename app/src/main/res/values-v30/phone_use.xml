@@ -1,0 +1,3 @@
+<resources>
+  <bool name="phone_use_supported">true</bool>
+</resources>

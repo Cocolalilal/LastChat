@@ -1,0 +1,408 @@
+package me.rerere.rikkahub.phoneuse
+
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Path
+import android.graphics.Point
+import android.graphics.Rect
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import android.view.Display
+import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
+import androidx.annotation.RequiresApi
+import androidx.core.graphics.scale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import org.koin.android.ext.android.inject
+import java.io.ByteArrayOutputStream
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+private const val TAG = "PhoneUseService"
+private const val MAX_ELEMENTS = 150
+private const val MAX_LABEL_CHARS = 80
+
+// 没有自己文字的可点击容器，用里面的前几段文字当名字
+private const val MAX_LABEL_PARTS = 3
+private const val SCREENSHOT_RETRY_DELAY_MS = 1000L
+private const val JPEG_QUALITY = 80
+
+/**
+ * Phone Use 的执行端：用户在系统无障碍设置里开启后，把自己登记到 [PhoneUseManager]。
+ * 不监听无障碍事件，只在工具调用时读取窗口、派发手势。
+ */
+class PhoneUseAccessibilityService : AccessibilityService(), PhoneController {
+    private val manager: PhoneUseManager by inject()
+    private val settings: SettingsStore by inject()
+    private val controls by lazy { PhoneUseOverlay(this, manager) }
+    private var touchCursor: PhoneUseTouchCursor? = null
+
+    // 和最近一次 captureScreen 返回的元素一一对应，setText 靠它找到节点
+    @Volatile
+    private var nodes: List<AccessibilityNodeInfo> = emptyList()
+
+    override fun onServiceConnected() {
+        Log.i(TAG, "onServiceConnected")
+        manager.attach(this)
+        controls.start()
+        touchCursor?.close()
+        touchCursor = PhoneUseTouchCursor(this, manager, settings).also { it.start() }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        manager.detach(this)
+        touchCursor?.close()
+        touchCursor = null
+        controls.close()
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        manager.detach(this)
+        touchCursor?.close()
+        touchCursor = null
+        controls.close()
+        super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        controls.onConfigurationChanged()
+        touchCursor?.hide(immediate = true)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+
+    override fun onInterrupt() { manager.stop() }
+
+    // ---- 读取屏幕 ----
+
+    override fun visiblePackages(): Set<String> = targetRoots().packages()
+
+    private fun List<AccessibilityNodeInfo>.packages(): Set<String> =
+        mapNotNullTo(mutableSetOf()) { it.packageName?.toString() }
+
+    override suspend fun captureScreen(): PhoneScreen = withContext(Dispatchers.Default) {
+        val size = screenSize()
+        val screenBounds = Rect(0, 0, size.x, size.y)
+        val roots = targetRoots()
+        val elements = mutableListOf<PhoneElement>()
+        val collected = mutableListOf<AccessibilityNodeInfo>()
+        var truncated = false
+        var visited = 0
+
+        fun visit(node: AccessibilityNodeInfo, absorbed: Boolean) {
+            if (++visited > 3000 || elements.size >= MAX_ELEMENTS) {
+                truncated = true
+                return
+            }
+            if (!node.isVisibleToUser) return
+            var childrenAbsorbed = absorbed
+            if (node.isVisibleToUser) {
+                val bounds = Rect().also(node::getBoundsInScreen)
+                val interactive = node.isClickable || node.isLongClickable || node.isEditable ||
+                    node.isScrollable || node.isCheckable
+                var label = node.ownLabel()
+                if (label.isEmpty() && node.isClickable) {
+                    label = node.descendantLabels().joinToString(" ")
+                    // 文字已经算进这个容器了，子节点里的纯文字不再单独列一遍
+                    childrenAbsorbed = label.isNotEmpty()
+                }
+                val listed = interactive || (label.isNotEmpty() && !absorbed)
+                if (listed && bounds.intersect(screenBounds)) {
+                    elements += PhoneElement(
+                        index = elements.size,
+                        className = node.className?.toString()?.substringAfterLast('.') ?: "View",
+                        label = label.clean(),
+                        // 形如 com.example:id/btn_send，只留名字
+                        resourceId = node.viewIdResourceName?.substringAfterLast('/')?.takeIf { it.isNotBlank() },
+                        left = bounds.left,
+                        top = bounds.top,
+                        right = bounds.right,
+                        bottom = bounds.bottom,
+                        clickable = node.isClickable,
+                        editable = node.isEditable,
+                        scrollable = node.isScrollable,
+                        checked = if (node.isCheckable) node.isChecked else null,
+                        focused = node.isEditable && node.isFocused,
+                    )
+                    collected += node
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { visit(it, childrenAbsorbed) }
+            }
+        }
+        roots.forEach { visit(it, absorbed = false) }
+        nodes = collected
+
+        val topPackage = roots.firstOrNull()?.packageName?.toString()
+        PhoneScreen(
+            packageName = topPackage,
+            appLabel = topPackage?.let(::appLabel),
+            packages = roots.packages(),
+            width = size.x,
+            height = size.y,
+            keyboardVisible = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD },
+            elements = elements,
+            truncated = truncated,
+        )
+    }
+
+    /**
+     * 要读取的窗口根节点，最上层的在前。只看应用窗口和拿着焦点的系统窗口（比如下拉的通知栏），
+     * 状态栏、导航栏、输入法的按键不列出来；本应用自己的窗口（悬浮窗）也跳过。
+     */
+    private fun targetRoots(): List<AccessibilityNodeInfo> {
+        val roots = windows
+            .filter {
+                it.type == AccessibilityWindowInfo.TYPE_APPLICATION ||
+                    (it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isFocused)
+            }
+            .mapNotNull { it.root }
+        // 个别系统拿不到窗口列表，退回当前活动窗口
+        return roots.ifEmpty { listOfNotNull(rootInActiveWindow) }.filter { it.packageName?.toString() != packageName }
+    }
+
+    private fun AccessibilityNodeInfo.ownLabel(): String =
+        if (isPassword) "Password field" else text?.toString()?.takeIf { it.isNotBlank() }
+            ?: contentDescription?.toString()?.takeIf { it.isNotBlank() }
+            ?: hintText?.toString()?.takeIf { it.isNotBlank() }
+            ?: ""
+
+    private fun AccessibilityNodeInfo.descendantLabels(): List<String> {
+        val labels = mutableListOf<String>()
+        fun collect(node: AccessibilityNodeInfo) {
+            for (i in 0 until node.childCount) {
+                if (labels.size >= MAX_LABEL_PARTS) return
+                val child = node.getChild(i) ?: continue
+                // 可点击的子节点自己会单独列出
+                if (child.isClickable) continue
+                child.ownLabel().takeIf { it.isNotEmpty() }?.let(labels::add)
+                collect(child)
+            }
+        }
+        collect(this)
+        return labels
+    }
+
+    private fun String.clean() = replace('\n', ' ').trim().let {
+        if (it.length > MAX_LABEL_CHARS) it.take(MAX_LABEL_CHARS) + "…" else it
+    }
+
+    private fun screenSize(): Point {
+        val windowManager = getSystemService(WindowManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            return Point(bounds.width(), bounds.height())
+        }
+        @Suppress("DEPRECATION")
+        return Point().also { windowManager.defaultDisplay.getRealSize(it) }
+    }
+
+    private fun appLabel(packageName: String): String? = runCatching {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+    }.getOrNull()
+
+    // ---- 截图 ----
+
+    override val supportsWindowScreenshots: Boolean get() = Build.VERSION.SDK_INT >= 34
+
+    override suspend fun screenshot(maxSide: Int): ByteArray {
+        check(Build.VERSION.SDK_INT >= 30) { "Screenshots need Android 11 or later." }
+        val target = if (Build.VERSION.SDK_INT >= 34) windows.firstOrNull {
+            (it.type == AccessibilityWindowInfo.TYPE_APPLICATION ||
+                (it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isFocused)) &&
+                it.root?.packageName?.toString()?.let { name -> name != packageName } == true
+        } else null
+        suspend fun captureWithRetry(windowId: Int?): Bitmap = try {
+            takeScreenshotBitmap(windowId)
+        } catch (_: ScreenshotIntervalException) {
+            delay(SCREENSHOT_RETRY_DELAY_MS)
+            takeScreenshotBitmap(windowId)
+        }
+        val bitmap = if (target != null) {
+            try {
+                val bounds = Rect().also(target::getBoundsInScreen)
+                val windowBitmap = captureWithRetry(target.id)
+                val size = screenSize()
+                alignWindowScreenshot(windowBitmap, bounds, size.x, size.y).also { windowBitmap.recycle() }
+            } catch (error: ScreenshotFailure) {
+                // A closing/replaced window can invalidate its ID. Secure-window errors are
+                // deliberately propagated; they must never trigger a display-capture fallback.
+                if (error.code != ERROR_TAKE_SCREENSHOT_INVALID_WINDOW) throw error
+                captureDisplayWithoutControls { captureWithRetry(null) }
+            }
+        } else if (supportsWindowScreenshots) {
+            captureDisplayWithoutControls { captureWithRetry(null) }
+        } else captureWithRetry(null)
+        return try {
+            withContext(Dispatchers.Default) {
+                val ratio = maxSide.toFloat() / maxOf(bitmap.width, bitmap.height)
+                val scaled = if (ratio < 1f) bitmap.scale(
+                    (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                    (bitmap.height * ratio).toInt().coerceAtLeast(1)) else bitmap
+                try {
+                    ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+                        .toByteArray()
+                } finally {
+                    if (scaled !== bitmap) scaled.recycle()
+                }
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private suspend fun captureDisplayWithoutControls(capture: suspend () -> Bitmap): Bitmap {
+        manager.setActing(true, capturing = true)
+        return try {
+            delay(80)
+            capture()
+        } finally {
+            manager.setActing(true, capturing = false)
+        }
+    }
+
+    private class ScreenshotIntervalException : IllegalStateException("Screenshot requested too frequently.")
+    private class ScreenshotFailure(val code: Int) : IllegalStateException("Screenshot failed (code $code).")
+
+    @RequiresApi(30)
+    private suspend fun takeScreenshotBitmap(windowId: Int?): Bitmap = suspendCancellableCoroutine { continuation ->
+        val callback = object : TakeScreenshotCallback {
+            override fun onSuccess(screenshot: ScreenshotResult) {
+                val bitmap = screenshot.hardwareBuffer.use { buffer ->
+                    Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                }
+                if (!continuation.isActive) { bitmap?.recycle(); return }
+                if (bitmap != null) continuation.resume(bitmap)
+                else continuation.resumeWithException(IllegalStateException("Screenshot failed."))
+            }
+            override fun onFailure(errorCode: Int) {
+                if (!continuation.isActive) return
+                continuation.resumeWithException(
+                    if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) ScreenshotIntervalException()
+                    else ScreenshotFailure(errorCode))
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 34 && windowId != null) takeScreenshotOfWindow(windowId, mainExecutor, callback)
+        else takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
+    }
+
+    // ---- 操作 ----
+
+    override suspend fun gesture(
+        fromX: Float, fromY: Float, toX: Float, toY: Float, durationMs: Long,
+    ): Boolean = withContext(Dispatchers.Main.immediate) {
+        val task = manager.session.value
+        val size = screenSize()
+        val stroke = PhoneCursorStroke.withinScreen(fromX, fromY, toX, toY, size.x, size.y)
+        val duration = durationMs.coerceIn(1L, GestureDescription.getMaxGestureDuration())
+        // One clamped coordinate source keeps the visible pointer and injected path aligned.
+        val path = Path().apply {
+            moveTo(stroke.fromX, stroke.fromY)
+            lineTo(stroke.toX, stroke.toY)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+            .build()
+        touchCursor?.approach(stroke)
+        // A user can pause, close the task or open LastChat during the short approach.
+        // Never let that visual lead-in queue an action against the new foreground UI.
+        val current = manager.session.value
+        if (manager.appUiVisible.value || manager.capturing.value || (task != null &&
+                (current?.conversationId != task.conversationId || !current.running || current.paused))) {
+            touchCursor?.hide(immediate = false)
+            return@withContext false
+        }
+        touchCursor?.press(stroke, duration)
+        try {
+            suspendCancellableCoroutine { continuation ->
+                val dispatched = dispatchGesture(
+                    gesture,
+                    object : GestureResultCallback() {
+                        override fun onCompleted(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) {
+                                touchCursor?.completeStroke()
+                                continuation.resume(true)
+                            }
+                        }
+
+                        override fun onCancelled(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) continuation.resume(false)
+                        }
+                    },
+                    null,
+                )
+                if (!dispatched && continuation.isActive) continuation.resume(false)
+            }
+        } finally {
+            touchCursor?.release()
+        }
+    }
+
+    override suspend fun setText(elementIndex: Int?, text: String): Boolean = withContext(Dispatchers.Default) {
+        val target = if (elementIndex != null) nodes.getOrNull(elementIndex) else focusedInput()
+        // 模型可能选中了输入框外面的容器
+        val input = target?.let { if (it.isEditable) it else it.firstEditableDescendant() }
+            ?: return@withContext false
+        // 拿到输入焦点，之后按回车才会落在这个输入框上
+        input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        input.performAction(
+            AccessibilityNodeInfo.ACTION_SET_TEXT,
+            Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) },
+        )
+    }
+
+    private fun focusedInput(): AccessibilityNodeInfo? =
+        targetRoots().firstNotNullOfOrNull { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
+
+    private fun AccessibilityNodeInfo.firstEditableDescendant(): AccessibilityNodeInfo? {
+        for (i in 0 until childCount) {
+            val child = getChild(i) ?: continue
+            if (child.isEditable) return child
+            child.firstEditableDescendant()?.let { return it }
+        }
+        return null
+    }
+
+    override suspend fun pressKey(key: PhoneKey): Boolean = when (key) {
+        PhoneKey.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
+        PhoneKey.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
+        PhoneKey.RECENTS -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+        PhoneKey.NOTIFICATIONS -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        PhoneKey.ENTER -> withContext(Dispatchers.Default) {
+            check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                "Enter needs Android 11 or later. Tap the search or send button on screen instead."
+            }
+            focusedInput()?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id) == true
+        }
+    }
+
+    // ---- 应用 ----
+
+    override fun listApps(): List<PhoneApp> {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(launcher, 0)
+            .map { PhoneApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString()) }
+            .filter { it.packageName?.toString() != packageName }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    // 开启了无障碍服务的应用可以从后台启动 Activity
+    override fun openApp(packageName: String): Boolean {
+        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return true
+    }
+}

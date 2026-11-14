@@ -1635,4 +1635,6 @@
   <string name="context_meter_exact">Exact</string>
   <string name="setting_ui_context_token_summary_title">Display context token summary</string>
   <string name="setting_ui_context_token_summary_desc">Show the context usage meter and its token breakdown in chat</string>
+  <string name="developer_overlay_blur">Overlay blur</string>
+  <string name="developer_overlay_blur_empty">No overlay session yet</string>
 </resources>

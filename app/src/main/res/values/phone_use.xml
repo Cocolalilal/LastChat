@@ -1,0 +1,5 @@
+<resources>
+  <bool name="phone_use_supported">false</bool>
+  <string name="phone_use_accessibility_label">LastChat Phone use</string>
+  <string name="phone_use_accessibility_description">Lets assistants with Phone use enabled read your screen, tap, scroll, type, and open apps for your requests. Screen contents are sent to your selected model. Pause or stop at any time using the on-screen controls.</string>
+</resources>

@@ -67,6 +67,10 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("image_generation")
     data object ImageGeneration : LocalToolOption()
+
+    @Serializable
+    @SerialName("phone_use")
+    data object PhoneUse : LocalToolOption()
 }
 
 object LocalToolOptionListSerializer :
@@ -162,6 +166,11 @@ fun LocalToolOption.toDefinitionPreviews(): List<LocalToolDefinitionPreview> = w
             )
         )
     )
+    LocalToolOption.PhoneUse -> listOf(LocalToolDefinitionPreview(
+        name = PHONE_USE_TOOL_NAME,
+        description = "Read the screen and operate apps on this Android phone.",
+        schema = phoneUseInputSchema(),
+    ))
     LocalToolOption.PythonEngine -> emptyList()
     LocalToolOption.Tts -> listOf(
         LocalToolDefinitionPreview(
@@ -298,6 +307,7 @@ class LocalTools(
     private val ttsManager: TTSManager,
     private val providerManager: ProviderManager,
     genMediaRepository: GenMediaRepository,
+    val phoneUseManager: me.rerere.rikkahub.phoneuse.PhoneUseManager = me.rerere.rikkahub.phoneuse.PhoneUseManager(),
     private val notificationPlatform: LocalToolNotificationPlatform = AndroidLocalToolNotificationPlatform(context),
     private val generatedToolImageSaver: GeneratedToolImageSaver = AndroidGeneratedToolImageSaver(
         context = context,
@@ -701,8 +711,31 @@ class LocalTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
         conversationId: Uuid,
+        stopGeneration: () -> Unit = {},
+        supportsVision: Boolean = true,
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
+        if (LocalToolOption.PhoneUse in options && me.rerere.rikkahub.phoneuse.PhoneUseManager.isSupported) {
+            val phoneTool = buildPhoneUseTool(
+                isSelfInForeground = { phoneUseManager.appUiVisible.value },
+                supportsVision = supportsVision,
+                ownPackageName = context.packageName,
+                manager = phoneUseManager,
+                encodeScreenshot = { bytes -> "data:image/jpeg;base64," + kotlin.io.encoding.Base64.encode(bytes) },
+                hasControlHost = { phoneUseManager.controller.value != null },
+            )
+            tools.add(phoneTool.copy(execute = { args ->
+                phoneUseManager.runAction(conversationId, assistantId,
+                    phoneUseActionOf(args.toString()) ?: "observe", stopGeneration) {
+                    val currentAssistant = settingsStore.settingsFlow.value.assistants.firstOrNull { it.id == assistantId }
+                    check(currentAssistant != null && LocalToolOption.PhoneUse in currentAssistant.localTools) {
+                        phoneUseManager.stop()
+                        "Phone use has been disabled for this character."
+                    }
+                    phoneTool.execute(args)
+                }
+            }))
+        }
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
         }

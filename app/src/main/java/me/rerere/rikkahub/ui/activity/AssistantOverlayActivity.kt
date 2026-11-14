@@ -1,99 +1,141 @@
 package me.rerere.rikkahub.ui.activity
 
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavHostController
-import me.rerere.highlight.Highlighter
-import me.rerere.highlight.LocalHighlighter
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.service.assist.AssistScreenHolder
-import me.rerere.rikkahub.ui.components.ui.AppToasterHost
-import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
-import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.context.LocalSettings
-import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.theme.RikkahubTheme
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import org.koin.android.ext.android.inject
-import org.koin.androidx.viewmodel.ext.android.viewModel
+import kotlin.uuid.Uuid
 
-/**
- * Translucent floating activity that hosts the digital-assistant overlay.
- *
- * Launched by [me.rerere.rikkahub.service.assist.LastChatVoiceInteractionSession] when the
- * device assist gesture fires. Draws over the current app using the trigger-time
- * screenshot (see [AssistScreenHolder]) as a blurred backdrop.
- */
+/** Permission and outside-tap owner. The assistant scene survives this Activity yielding. */
 class AssistantOverlayActivity : ComponentActivity() {
-    private val highlighter by inject<Highlighter>()
-    private val settingsStore by inject<SettingsStore>()
-    private val viewModel: AssistantOverlayVM by viewModel()
+    private val manager by inject<PhoneUseManager>()
+    private val settings by inject<SettingsStore>()
+    private var session: AssistantOverlaySession? = null
+    private var fallback: AssistantFloatingWindow? = null
+    private var invocationJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-
-        setContent {
-            val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-            val toastState = rememberAppToasterState()
-
-            RikkahubTheme {
-                // The overlay has no NavHost; provide a no-op controller so composables
-                // that read LocalNavController (e.g. ModelList → ModelItem long-press to
-                // provider settings) don't crash. Long-press navigation is simply a no-op.
-                val noopNavController = remember {
-                    NavHostController(this).also {
-                        // No graph set — navigate() calls will be no-ops
-                    }
-                }
-                CompositionLocalProvider(
-                    LocalSettings provides settings,
-                    LocalHighlighter provides highlighter,
-                    LocalToaster provides toastState,
-                    LocalNavController provides noopNavController,
-                ) {
-                    AssistantOverlayScreen(
-                        viewModel = viewModel,
-                        onDismiss = { finish() },
-                        onOpenInApp = {
-                            // The overlay runs in its own task. Reuse the app task and carry
-                            // both IDs: if the ChatService state is cleaned up during the
-                            // hand-off, RouteActivity can still recreate the chat with the
-                            // overlay's character rather than whichever character was selected
-                            // before the assist gesture.
-                            val conversationId = viewModel.conversationId.value ?: return@AssistantOverlayScreen
-                            val routeIntent = Intent(this, RouteActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                putExtra(RouteActivity.EXTRA_CONVERSATION_ID, conversationId.toString())
-                                putExtra(RouteActivity.EXTRA_ASSISTANT_ID, viewModel.overlayAssistantId.toString())
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        window.setWindowAnimations(0)
+        installOutsideTapOwner()
+        handleInvocation(intent, recreating = savedInstanceState != null)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                manager.assistantOverlayHostReady.collect { hosted ->
+                    val scene = session ?: return@collect
+                    if (hosted && fallback != null) {
+                        fallback?.close()
+                        fallback = null
+                        installOutsideTapOwner()
+                    } else if (!hosted && fallback == null) {
+                        // Let the service finish detaching its Window before adopting the scene.
+                        window.decorView.post {
+                            if (!manager.assistantOverlayHostReady.value && fallback == null &&
+                                session === scene && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                                scene.presentation.value != AssistantPresentation.CLOSED) {
+                                fallback = AssistantFloatingWindow(this@AssistantOverlayActivity, scene)
+                                scene.setPresented(true)
                             }
-                            runCatching { startActivity(routeIntent) }
-                                .onSuccess { finishAndRemoveTask() }
-                                .onFailure { error ->
-                                    android.util.Log.e(TAG, "Unable to open overlay conversation", error)
-                                }
-                        },
-                    )
-                    AppToasterHost(state = toastState)
+                        }
+                    }
                 }
             }
         }
     }
 
-    // NOTE: we intentionally do NOT clear AssistScreenHolder here. After "Open in app" the
-    // in-app chat can still call look_at_screen, and the 5-minute freshness window (plus the
-    // next summon overwriting it) is enough to keep it from going stale.
+    private fun handleInvocation(intent: Intent, recreating: Boolean = false) {
+        invocationJob?.cancel()
+        invocationJob = lifecycleScope.launch {
+            val configured = settings.settingsFlow.awaitAssistantOverlayAssistant()
+            val requested = intent.getStringExtra(RouteActivity.EXTRA_CONVERSATION_ID)?.let {
+                runCatching { Uuid.parse(it) }.getOrNull()
+            }
+            val previous = manager.assistantOverlay.value
+            val retained = previous?.takeUnless { it.isClosing }
+            val reuse = shouldReuseAssistantScene(requested, retained?.viewModel?.conversationId?.value,
+                retained?.presentation?.value, configured.id, manager.session.value, recreating)
+            val scene = if (reuse) requireNotNull(retained) else {
+                fallback?.close()
+                fallback = null
+                // A new invocation takes control instead of sharing an unrelated phone task.
+                // Do not finish this singleTask Activity while replacing its retained scene.
+                previous?.close(finishActivity = false)
+                if (requested == null || manager.session.value?.conversationId != requested) manager.stop()
+                AssistantOverlaySession(this@AssistantOverlayActivity, requested).also {
+                    manager.assistantOverlay.value = it
+                }
+            }
+            session = scene
+            scene.bindActivity(this@AssistantOverlayActivity)
+            if (requested != null) scene.openConversation(requested)
+            else if (!recreating) scene.viewModel.conversationId.value?.let(manager::pauseForAssistantInvocation)
+            if (manager.assistantOverlayHostReady.value) installOutsideTapOwner()
+            else if (fallback == null) fallback = AssistantFloatingWindow(this@AssistantOverlayActivity, scene)
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeSession(scene)
+        }
+    }
 
-    private companion object {
-        const val TAG = "AssistantOverlayActivity"
+    private fun installOutsideTapOwner() {
+        setContentView(FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener { session?.onBackPressedDispatcher?.onBackPressed() ?: finish() }
+        })
+    }
+
+    private fun resumeSession(scene: AssistantOverlaySession) {
+        scene.bindActivity(this)
+        scene.onActivityResumed()
+        manager.assistantReturning.value = false
+        manager.assistantDocked.value = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        session?.let(::resumeSession)
+    }
+
+    override fun onPause() {
+        session?.onActivityPaused()
+        super.onPause()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleInvocation(intent)
+    }
+
+    override fun finish() {
+        val scene = session
+        if (scene != null && scene.presentation.value != AssistantPresentation.CLOSED) scene.close()
+        else super.finish()
+    }
+
+    internal fun finishOverlaySession(scene: AssistantOverlaySession) {
+        // A cancelled/replaced scene cannot finish the Activity now showing its successor.
+        if (session === scene) super.finish()
+    }
+
+    override fun onDestroy() {
+        fallback?.close()
+        session?.let { scene ->
+            scene.unbindActivity(this)
+            if (isFinishing && scene.presentation.value != AssistantPresentation.PHONE) scene.close()
+        }
+        super.onDestroy()
     }
 }

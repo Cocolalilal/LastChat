@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.graphics.shapes.Morph
 import kotlinx.coroutines.isActive
 
+internal const val AVATAR_LOADING_ROTATION_DEGREES_PER_SECOND = 120f
+
 /**
  * Creates a morphing shape that transitions smoothly between a 6-sided cookie and a circle.
  * Uses the official Material You 3 Expressive Cookie6Sided shape with proper Morph animation.
@@ -34,7 +36,7 @@ fun rememberAvatarShape(loading: Boolean): Shape {
     LaunchedEffect(loading) {
         if (loading) {
             // Smooth continuous rotation at a steady pace (one full rotation every 3s)
-            val degreesPerSecond = 120f
+            val degreesPerSecond = AVATAR_LOADING_ROTATION_DEGREES_PER_SECOND
             var lastFrameTimeNanos = 0L
             while (isActive) {
                 val frameTime = withFrameNanos { it }

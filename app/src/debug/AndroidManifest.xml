@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Native-window regression lab; never packaged in stable release APKs. -->
+    <activity
+      android:name="me.rerere.rikkahub.phoneuse.FloatingOverlayLabActivity"
+      android:exported="false"
+      android:theme="@style/Theme.Rikkahub" />
+  </application>
+</manifest>

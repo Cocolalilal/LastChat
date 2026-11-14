@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.service.assist
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,23 +15,16 @@ import java.io.ByteArrayOutputStream
  * By the time the model (or user) asks for "the current screen", our own UI is on
  * top — so we cache the trigger-time frame here and serve it on demand.
  *
- * Two copies are kept: a high-resolution one for the on-screen backdrop (so the screen
- * behind the overlay stays crisp), and a smaller one for the `look_at_screen` tool (so the
- * base64 image sent to the model stays cheap).
+ * Only the small model-inspection image is retained. The assistant UI shows the live
+ * underlying app and never uses this capture as a visual backdrop.
  */
 object AssistScreenHolder {
 
-    // Backdrop: keep close to native resolution so the screen doesn't look downscaled.
-    private const val DISPLAY_MAX_DIMEN = 2560
-    private const val DISPLAY_QUALITY = 92
     // Tool image: a vision model doesn't need full resolution; keep it small/cheap.
     private const val TOOL_MAX_DIMEN = 1280
     private const val TOOL_QUALITY = 80
     // Screens captured more than this long ago are considered stale.
     private const val FRESHNESS_WINDOW_MS = 5 * 60 * 1000L
-
-    @Volatile
-    private var displayJpeg: ByteArray? = null
 
     @Volatile
     private var toolJpeg: ByteArray? = null
@@ -53,7 +45,6 @@ object AssistScreenHolder {
     @Synchronized
     fun store(bitmap: Bitmap) {
         runCatching {
-            displayJpeg = encode(bitmap, DISPLAY_MAX_DIMEN, DISPLAY_QUALITY)
             toolJpeg = encode(bitmap, TOOL_MAX_DIMEN, TOOL_QUALITY)
             capturedAtMillis = System.currentTimeMillis()
         }
@@ -61,7 +52,6 @@ object AssistScreenHolder {
 
     @Synchronized
     fun clear() {
-        displayJpeg = null
         toolJpeg = null
         capturedAtMillis = 0L
     }
@@ -76,12 +66,6 @@ object AssistScreenHolder {
     fun dataUrlOrNull(): String? {
         val bytes = toolJpeg?.takeIf { it.isNotEmpty() } ?: return null
         return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-    }
-
-    /** Decoded (high-resolution) bitmap for use as the in-overlay backdrop. */
-    fun bitmapOrNull(): Bitmap? {
-        val bytes = displayJpeg?.takeIf { it.isNotEmpty() } ?: return null
-        return runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
     }
 
     private fun encode(bitmap: Bitmap, maxDimen: Int, quality: Int): ByteArray {

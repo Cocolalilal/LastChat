@@ -96,6 +96,7 @@ val viewModelModule = module {
     }
     viewModel<me.rerere.rikkahub.ui.activity.AssistantOverlayVM> {
         me.rerere.rikkahub.ui.activity.AssistantOverlayVM(
+            phoneUseManager = get(),
             settingsStore = get(),
             chatService = get(),
         )

@@ -1,0 +1,167 @@
+package me.rerere.rikkahub.ui.activity
+
+import android.app.Application
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
+import android.graphics.Rect
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
+import android.os.Build
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import androidx.activity.ComponentActivity
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/** Geometry and flag contracts; actual SurfaceControl input and blur are checked on-device. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [30, 35], application = Application::class)
+class AssistantFloatingWindowTest {
+    @Test fun `native blur requires the generated sibling layer rather than capability alone`() {
+        val original = ColorDrawable(Color.TRANSPARENT)
+        assertFalse(hasOverlayBlurLayer(original, original))
+        assertFalse(hasOverlayBlurLayer(InsetDrawable(original, 12), original))
+        assertFalse(hasOverlayBlurLayer(LayerDrawable(arrayOf(original)), original))
+        val generated = InsetDrawable(LayerDrawable(arrayOf(ColorDrawable(Color.TRANSPARENT), original)), 0)
+        assertTrue(hasOverlayBlurLayer(generated, original))
+    }
+
+    @Test fun `native blur wrappers are reached when DecorView returns only the original background`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        val root = FrameLayout(activity)
+        val content = View(activity)
+        root.addView(content, FrameLayout.LayoutParams(200, 100))
+        activity.setContentView(root)
+        val viewport = FloatingOverlayViewport(activity.window, root, content, passThrough = false)
+        viewport.attach()
+        root.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(1800, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 1000, 1800)
+        content.layout(200, 250, 400, 350)
+        val original = requireNotNull(activity.window.decorView.background)
+        // The platform blur overrides setAlpha but inherits Drawable.getAlpha (255).
+        val nativeBlur = object : Drawable() {
+            var writtenAlpha = 255
+            override fun draw(canvas: Canvas) = Unit
+            override fun setAlpha(alpha: Int) { writtenAlpha = alpha }
+            override fun setColorFilter(colorFilter: ColorFilter?) = Unit
+            @Suppress("DEPRECATION")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
+        val generated = InsetDrawable(LayerDrawable(arrayOf(nativeBlur, original)), 0)
+        generated.setBounds(0, 0, 1000, 1800)
+        // View.setBackgroundDrawable clears the previous original's callback after
+        // DecorView has constructed its replacement LayerDrawable.
+        original.callback = null
+        assertSame(original, activity.window.decorView.background)
+        viewport.syncGeometry()
+        assertEquals(viewport.visualBounds, nativeBlur.bounds)
+        // DecorView can reset its generated background bounds without moving the content.
+        generated.setBounds(0, 0, 1100, 1900)
+        viewport.syncGeometry()
+        assertEquals(viewport.visualBounds, nativeBlur.bounds)
+        content.alpha = 0f
+        viewport.syncGeometry()
+        assertEquals(0, nativeBlur.writtenAlpha)
+        content.alpha = 0.5f
+        viewport.syncGeometry()
+        assertEquals(127, nativeBlur.writtenAlpha)
+        content.alpha = 1f
+        viewport.syncGeometry()
+        assertEquals(255, nativeBlur.writtenAlpha)
+        assertEquals(255, nativeBlur.alpha)
+        assertSame(generated, (nativeBlur.callback as LayerDrawable).callback)
+        viewport.close()
+        controller.pause().stop().destroy()
+    }
+
+    @Test fun `assistant fallback keeps a fixed buffer and does not clip child springs`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        val root = FrameLayout(activity)
+        val content = View(activity)
+        root.addView(content, FrameLayout.LayoutParams(200, 100))
+        activity.setContentView(root)
+        val viewport = FloatingOverlayViewport(activity.window, root, content, passThrough = false)
+        viewport.attach()
+        val params = activity.window.attributes
+        assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.height)
+        assertEquals(WindowManager.LayoutParams.MATCH_PARENT, params.width)
+        assertEquals(0, params.windowAnimations)
+        assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        assertEquals(0, params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        assertFalse(root.clipChildren)
+        assertFalse(root.clipToPadding)
+        assertFalse(activity.window.decorView.clipToOutline)
+        viewport.close()
+        controller.pause().stop().destroy()
+    }
+
+    @Test fun `blur bounds follow the actual scaled child without relayout or background recursion`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        val root = FrameLayout(activity)
+        val content = View(activity)
+        root.addView(content, FrameLayout.LayoutParams(200, 100))
+        activity.setContentView(root)
+        val viewport = FloatingOverlayViewport(activity.window, root, content, passThrough = false)
+        viewport.attach()
+        root.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(1800, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 1000, 1800)
+        content.layout(200, 250, 400, 350)
+        viewport.syncGeometry()
+        val before = Rect(viewport.visualBounds)
+        content.pivotX = 100f
+        content.pivotY = 50f
+        content.scaleX = 2f
+        content.scaleY = 2f
+        content.translationX = 20f
+        content.translationY = 30f
+        viewport.syncGeometry()
+        assertEquals(Rect(before.left - 80, before.top - 20, before.right + 120, before.bottom + 80),
+            viewport.visualBounds)
+        viewport.setBlurEnabled(true)
+        var notifications = 0
+        var reportedBlur: Boolean? = null
+        viewport.onBlurChanged = { notifications++; reportedBlur = it }
+        assertEquals(1, notifications)
+        // This ordinary Robolectric Activity has no native generated blur drawable.
+        // A globally supported capability must not make its material transparent.
+        assertEquals(false, reportedBlur)
+        val background = activity.window.decorView.background
+        val count = notifications
+        val callback = activity.window.callback
+        var relayouts = 0
+        activity.window.callback = object : android.view.Window.Callback by callback {
+            override fun onWindowAttributesChanged(attrs: WindowManager.LayoutParams) {
+                relayouts++
+                callback.onWindowAttributesChanged(attrs)
+            }
+        }
+        repeat(120) {
+            content.translationY += 0.5f
+            viewport.syncGeometry()
+            viewport.setBlurEnabled(true)
+        }
+        assertSame(background, activity.window.decorView.background)
+        assertEquals(0, relayouts)
+        assertEquals(count, notifications)
+        assertEquals(1000, root.width)
+        assertEquals(1800, root.height)
+        viewport.setBlurEnabled(false)
+        if (Build.VERSION.SDK_INT >= 31) assertEquals(0, activity.window.attributes.blurBehindRadius)
+        viewport.close()
+        controller.pause().stop().destroy()
+    }
+}
