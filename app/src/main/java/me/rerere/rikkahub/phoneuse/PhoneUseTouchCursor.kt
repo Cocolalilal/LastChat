@@ -4,12 +4,15 @@ import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
+import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
@@ -32,8 +35,12 @@ import me.rerere.common.platform.PlatformLog
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.theme.findPresetTheme
+import me.rerere.rikkahub.ui.theme.cachedAssistantColorScheme
+import me.rerere.rikkahub.ui.theme.withLastChatContrast
 import kotlin.coroutines.resume
 import kotlin.math.hypot
+import kotlin.math.cos
+import kotlin.math.sin
 
 /** One coordinate source for the injected stroke and its visual feedback. */
 internal data class PhoneCursorStroke(val fromX: Float, val fromY: Float, val toX: Float, val toY: Float) {
@@ -81,7 +88,7 @@ internal class PhoneUseTouchCursor(
             manager.session.value?.let { it.running && !it.paused } != true) return
         try {
             val cursor = view ?: mount() ?: return
-            cursor.tint = cursorColor()
+            cursor.palette = cursorPalette()
             cursor.approach(stroke.fromX, stroke.fromY, reduceMotion())
         } catch (error: CancellationException) {
             throw error
@@ -136,7 +143,7 @@ internal class PhoneUseTouchCursor(
         Settings.Global.WINDOW_ANIMATION_SCALE,
     ).any { Settings.Global.getFloat(service.contentResolver, it, 1f) <= 0f }
 
-    private fun cursorColor(): Int {
+    private fun cursorPalette(): PhoneCursorHazePalette {
         val preferences = settings.settingsFlow.value
         val dark = when (service.readStringPreference("colorMode", "SYSTEM")) {
             "DARK" -> true
@@ -144,10 +151,17 @@ internal class PhoneUseTouchCursor(
             else -> service.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
                 Configuration.UI_MODE_NIGHT_YES
         }
-        val scheme = if (preferences.dynamicColor && Build.VERSION.SDK_INT >= 31) {
+        val base = if (preferences.dynamicColor && Build.VERSION.SDK_INT >= 31) {
             if (dark) dynamicDarkColorScheme(service) else dynamicLightColorScheme(service)
         } else findPresetTheme(preferences.themeId).getColorScheme(dark)
-        return scheme.primary.toArgb()
+        val contrast = if (Build.VERSION.SDK_INT >= 34) {
+            service.getSystemService(UiModeManager::class.java)?.contrast ?: 0f
+        } else 0f
+        val assistantId = manager.session.value?.assistantId
+        val assistant = preferences.assistants.firstOrNull { it.id == assistantId }
+        val scheme = cachedAssistantColorScheme(assistant, base.withLastChatContrast(dark, contrast), dark)
+            .withLastChatContrast(dark, contrast)
+        return PhoneCursorHazePalette(scheme.primary.toArgb(), scheme.tertiary.toArgb(), scheme.secondary.toArgb())
     }
 
     fun close() {
@@ -163,7 +177,7 @@ internal class PhoneUseTouchCursor(
 
     private class CursorView(context: Context) : View(context) {
         private val density = resources.displayMetrics.density
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val haze = PhoneCursorHazeRenderer(density)
         private val origin = IntArray(2)
         private val curve = PathInterpolator(0.2f, 0f, 0f, 1f)
         private var motion: ValueAnimator? = null
@@ -177,7 +191,11 @@ internal class PhoneUseTouchCursor(
         private var opacity = 0f
         private var press = 0f
         private var ripple = 0f
-        var tint: Int = Color.WHITE
+        private var flowX = 0f
+        private var flowY = 0f
+        private var reducedMotion = false
+        var palette = PhoneCursorHazePalette(Color.WHITE, Color.WHITE, Color.WHITE)
+            set(value) { field = value; haze.palette = value }
 
         init {
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -191,11 +209,14 @@ internal class PhoneUseTouchCursor(
             val startX = pointX
             val startY = pointY
             val startOpacity = opacity
+            val startPress = press
+            val startRipple = ripple
+            reducedMotion = reduced
             val distance = hypot(x - startX, y - startY) / density
             visibility = VISIBLE
-            press = 0f; ripple = 0f
             if (reduced) {
                 pointX = x; pointY = y; opacity = 1f
+                press = 0f; ripple = 0f; flowX = 0f; flowY = 0f
                 invalidate()
                 continuation.resume(Unit)
                 return@suspendCancellableCoroutine
@@ -205,9 +226,10 @@ internal class PhoneUseTouchCursor(
                 interpolator = curve
                 addUpdateListener {
                     val fraction = it.animatedValue as Float
-                    pointX = startX + (x - startX) * fraction
-                    pointY = startY + (y - startY) * fraction
+                    moveTo(startX + (x - startX) * fraction, startY + (y - startY) * fraction)
                     opacity = startOpacity + (1f - startOpacity) * fraction
+                    press = startPress * (1f - fraction)
+                    ripple = startRipple * (1f - fraction)
                     invalidate()
                 }
                 addListener(object : AnimatorListenerAdapter() {
@@ -224,6 +246,7 @@ internal class PhoneUseTouchCursor(
         fun press(stroke: PhoneCursorStroke, durationMs: Long, reduced: Boolean) {
             cancelAnimations()
             opacity = 1f; press = 0f; ripple = 0f
+            reducedMotion = reduced
             pointX = stroke.fromX; pointY = stroke.fromY
             destinationX = stroke.toX; destinationY = stroke.toY
             val started = SystemClock.uptimeMillis()
@@ -232,9 +255,9 @@ internal class PhoneUseTouchCursor(
             val frame = object : Runnable {
                 override fun run() {
                     val elapsed = SystemClock.uptimeMillis() - started
-                    val fraction = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
-                    pointX = stroke.fromX + (stroke.toX - stroke.fromX) * fraction
-                    pointY = stroke.fromY + (stroke.toY - stroke.fromY) * fraction
+                    val fraction = phoneCursorStrokeProgress(elapsed, durationMs)
+                    moveTo(stroke.fromX + (stroke.toX - stroke.fromX) * fraction,
+                        stroke.fromY + (stroke.toY - stroke.fromY) * fraction)
                     press = if (reduced) 1f else curve.getInterpolation((elapsed / 70f).coerceIn(0f, 1f))
                     ripple = if (reduced) 0f else fraction * 0.35f
                     invalidate()
@@ -249,7 +272,7 @@ internal class PhoneUseTouchCursor(
         fun completeStroke() {
             gestureFrame?.let(::removeCallbacks)
             gestureFrame = null
-            pointX = destinationX; pointY = destinationY
+            moveTo(destinationX, destinationY)
             invalidate()
         }
 
@@ -259,6 +282,9 @@ internal class PhoneUseTouchCursor(
             val startPress = press
             val startOpacity = opacity
             val startRipple = ripple
+            val startFlowX = flowX
+            val startFlowY = flowY
+            reducedMotion = reduced
             val hold = if (reduced) 0L else lingerMs
             val fadeDuration = if (reduced) 100L else 260L
             val total = hold + fadeDuration
@@ -273,6 +299,8 @@ internal class PhoneUseTouchCursor(
                     press = startPress * (1f - release)
                     ripple = if (reduced) 0f else startRipple + (1f - startRipple) * fraction
                     opacity = startOpacity * (1f - fade)
+                    flowX = startFlowX * (1f - release)
+                    flowY = startFlowY * (1f - release)
                     invalidate()
                 }
                 addListener(object : AnimatorListenerAdapter() {
@@ -287,6 +315,7 @@ internal class PhoneUseTouchCursor(
         fun hide() {
             cancelAnimations()
             opacity = 0f
+            flowX = 0f; flowY = 0f
             visibility = INVISIBLE
         }
 
@@ -297,29 +326,105 @@ internal class PhoneUseTouchCursor(
             feedback?.cancel(); feedback = null
         }
 
+        private fun moveTo(x: Float, y: Float) {
+            flowX = flowX * 0.62f + (x - pointX) * 0.38f
+            flowY = flowY * 0.62f + (y - pointY) * 0.38f
+            pointX = x; pointY = y
+        }
+
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             if (opacity <= 0f) return
             getLocationOnScreen(origin)
             val x = pointX - origin[0]
             val y = pointY - origin[1]
-            paint.style = Paint.Style.FILL
-            paint.color = tint
-            paint.alpha = (opacity * 35).toInt()
-            canvas.drawCircle(x, y, 13f * density, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f * density
-            paint.alpha = (opacity * (1f - ripple) * 165).toInt()
-            canvas.drawCircle(x, y, (9f + 17f * ripple) * density, paint)
-            paint.style = Paint.Style.FILL
-            paint.alpha = (opacity * 255).toInt()
-            val radius = (5.5f - press) * density
-            canvas.drawCircle(x, y, radius, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f * density
-            paint.color = Color.WHITE
-            paint.alpha = (opacity * 240).toInt()
-            canvas.drawCircle(x, y, radius, paint)
+            haze.draw(canvas, x, y, opacity, press, ripple,
+                if (reducedMotion) 0f else (SystemClock.uptimeMillis() % 43_982L) / 1400f,
+                if (reducedMotion) 0f else flowX, if (reducedMotion) 0f else flowY)
         }
     }
+}
+
+internal fun phoneCursorStrokeProgress(elapsedMs: Long, durationMs: Long): Float =
+    (elapsedMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+
+internal data class PhoneCursorHazePalette(val primary: Int, val tertiary: Int, val secondary: Int)
+
+/** The edge glow's three vivid hues gathered into a small field around the true touch point. */
+internal class PhoneCursorHazeRenderer(private val density: Float) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    var palette = PhoneCursorHazePalette(Color.WHITE, Color.WHITE, Color.WHITE)
+        set(value) {
+            if (field == value) return
+            field = value
+            primary = glowShader(vivid(value.primary))
+            tertiary = glowShader(vivid(value.tertiary))
+            secondary = glowShader(vivid(value.secondary))
+            focus = glowShader(blendWhite(vivid(value.primary), 0.78f))
+        }
+    private var primary = glowShader(Color.WHITE)
+    private var tertiary = glowShader(Color.WHITE)
+    private var secondary = glowShader(Color.WHITE)
+    private var focus = glowShader(Color.WHITE)
+
+    fun draw(
+        canvas: Canvas, x: Float, y: Float, opacity: Float, press: Float, release: Float,
+        phase: Float, flowX: Float = 0f, flowY: Float = 0f,
+    ) {
+        if (opacity <= 0f) return
+        val pressure = press.coerceIn(0f, 1f)
+        val bloom = release.coerceIn(0f, 1f)
+        val radius = (19f - pressure * 3.5f + bloom * 5f) * density
+        val drift = (3f - pressure) * density
+        val strength = opacity.coerceIn(0f, 1f)
+        val flow = (hypot(flowX, flowY) / (14f * density)).coerceIn(0f, 1f)
+        if (flow > 0.001f) {
+            val angle = Math.toDegrees(kotlin.math.atan2(flowY.toDouble(), flowX.toDouble())).toFloat()
+            canvas.save()
+            canvas.translate(x, y)
+            canvas.rotate(angle)
+            canvas.translate(-10f * density * flow, 0f)
+            canvas.scale(1f + flow * 0.85f, 0.78f)
+            glow(canvas, 0f, 0f, radius * 1.05f, primary, strength * flow * 0.27f)
+            canvas.restore()
+        }
+        // Diffuse lobes overlap like SilkGlow; no opaque dot, outline ring or stroke trail.
+        glow(canvas, x + cos(phase) * drift, y + sin(phase) * drift, radius, primary, strength * 0.55f)
+        glow(canvas, x - drift * 1.3f, y + cos(phase * 0.8f) * drift,
+            radius * 0.8f, tertiary, strength * 0.46f)
+        glow(canvas, x + drift, y - drift * 1.15f, radius * 0.7f, secondary, strength * 0.42f)
+        glow(canvas, x, y, (16f + bloom * 18f) * density, primary,
+            strength * (1f - bloom) * bloom * 0.45f)
+        // A feathered highlight keeps the exact target legible through the haze.
+        glow(canvas, x, y, (5f - pressure * 0.7f) * density, focus, strength * (0.78f + pressure * 0.16f))
+    }
+
+    private fun glow(canvas: Canvas, x: Float, y: Float, radius: Float, shader: Shader, opacity: Float) {
+        if (opacity <= 0f) return
+        paint.shader = shader
+        paint.alpha = (opacity.coerceIn(0f, 1f) * 255f).toInt()
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(radius, radius)
+        canvas.drawCircle(0f, 0f, 1f, paint)
+        canvas.restore()
+    }
+
+    private fun glowShader(color: Int) = RadialGradient(0f, 0f, 1f,
+        intArrayOf(color, (color and 0x00ffffff) or 0x60000000, color and 0x00ffffff),
+        floatArrayOf(0f, 0.36f, 1f), Shader.TileMode.CLAMP)
+
+    private fun vivid(color: Int): Int {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+        hsv[1] = maxOf(hsv[1] * 1.5f, 0.6f).coerceIn(0f, 1f)
+        hsv[2] = hsv[2].coerceIn(0.5f, 0.92f)
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun blendWhite(color: Int, amount: Float): Int = Color.rgb(
+        (Color.red(color) + (255 - Color.red(color)) * amount).toInt(),
+        (Color.green(color) + (255 - Color.green(color)) * amount).toInt(),
+        (Color.blue(color) + (255 - Color.blue(color)) * amount).toInt(),
+    )
 }

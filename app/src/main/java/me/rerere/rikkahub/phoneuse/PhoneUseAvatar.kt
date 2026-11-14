@@ -1,21 +1,24 @@
 package me.rerere.rikkahub.phoneuse
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Shape
-import androidx.graphics.shapes.CornerRounding
-import androidx.graphics.shapes.Morph
-import androidx.graphics.shapes.RoundedPolygon
+import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.avatar.animated.AnimatedMarkAvatar
@@ -23,6 +26,7 @@ import me.rerere.rikkahub.ui.components.avatar.animated.AvatarMotionHints
 import me.rerere.rikkahub.ui.components.avatar.animated.Personality
 import me.rerere.rikkahub.ui.components.avatar.animated.ProvideAvatarMotionHints
 import me.rerere.rikkahub.ui.components.ui.ReadOnlyAvatar
+import me.rerere.rikkahub.ui.hooks.AVATAR_LOADING_ROTATION_DEGREES_PER_SECOND
 import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 
 @Composable
@@ -37,48 +41,106 @@ internal fun PhoneUseAvatar(assistant: Assistant, modifier: Modifier = Modifier,
                 isLoading = active, animate = animate, modifier = modifier,
             )
         }
-        else -> ReadOnlyAvatar(assistant.name, avatar, modifier, shape = rememberPhoneUseShape(active && animate))
+        else -> ReadOnlyAvatar(assistant.name, avatar, modifier, shape = rememberPhoneUseShape(active, animate))
     }
 }
 
-/** A continuous loop through soft circles; no rotating frame or restarting on each phone action. */
+/** Retain the current outline so completion can return to a circle alongside the pill spring. */
 @Composable
-private fun rememberPhoneUseShape(active: Boolean): Shape {
-    if (!active) return CircleShape
-    val polygons = remember {
-        listOf(
-            MaterialShapes.Circle,
-            MaterialShapes.Cookie6Sided,
-            RoundedPolygon(5, rounding = CornerRounding(0.55f, 0.7f)),
-            RoundedPolygon(8, rounding = CornerRounding(0.35f, 0.7f)),
-            RoundedPolygon(4, rounding = CornerRounding(0.8f, 0.7f)),
-        )
+internal fun rememberPhoneUseShape(active: Boolean, animate: Boolean = true): Shape {
+    val circle = remember { phoneAvatarContour(0, 0f) }
+    val contours = remember {
+        listOf(6 to 0.065f, 5 to 0.045f, 8 to 0.035f, 4 to 0.055f)
+            .map { (lobes, depth) -> phoneAvatarContour(lobes, depth) }
     }
-    val morphs = remember(polygons) { polygons.indices.map { Morph(polygons[it], polygons[(it + 1) % polygons.size]) } }
-    val clock = rememberInfiniteTransition(label = "phoneAvatarShapes")
-    val phase by clock.animateFloat(0f, morphs.size.toFloat(),
-        infiniteRepeatable(tween(24000, easing = LinearEasing)), label = "phoneAvatarMorph")
-    val morph = morphs[phase.toInt() % morphs.size]
-    val progress = phase % 1f
-    return remember(morph, progress) {
-        GenericShape { size, _ ->
-            val cubics = morph.asCubics(progress)
-            val points = cubics.flatMap { listOf(it.anchor0X to it.anchor0Y, it.control0X to it.control0Y,
-                it.control1X to it.control1Y, it.anchor1X to it.anchor1Y) }
-            if (points.isEmpty()) return@GenericShape
-            val minX = points.minOf { it.first }; val minY = points.minOf { it.second }
-            val width = (points.maxOf { it.first } - minX).coerceAtLeast(0.001f)
-            val height = (points.maxOf { it.second } - minY).coerceAtLeast(0.001f)
-            val scale = minOf(size.width / width, size.height / height) * 0.96f
-            val dx = (size.width - width * scale) / 2 - minX * scale
-            val dy = (size.height - height * scale) / 2 - minY * scale
-            cubics.forEachIndexed { i, c ->
-                if (i == 0) moveTo(c.anchor0X * scale + dx, c.anchor0Y * scale + dy)
-                cubicTo(c.control0X * scale + dx, c.control0Y * scale + dy,
-                    c.control1X * scale + dx, c.control1Y * scale + dy,
-                    c.anchor1X * scale + dx, c.anchor1Y * scale + dy)
+    var variation by remember { mutableIntStateOf(0) }
+    val progress = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
+    LaunchedEffect(active, animate) {
+        when {
+            !animate -> progress.snapTo(0f)
+            !active -> progress.animateTo(0f, spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS,
+                visibilityThreshold = 0.0005f))
+            else -> while (isActive) {
+                progress.animateTo(1f, tween(680, easing = FastOutSlowInEasing))
+                progress.animateTo(0f, tween(680, easing = FastOutSlowInEasing))
+                // Every variation shares this exact circle endpoint. Changing the next
+                // contour here cannot cut the silhouette or move/crop the profile picture.
+                variation = (variation + 1) % contours.size
             }
-            close()
         }
     }
+    val contour = contours[variation]
+    val amount = progress.value.coerceIn(0f, 1f)
+    // Keep chat-speed rotation through the circle return. Any angular settling happens
+    // only once the outline is circular, so finishing cannot suddenly speed up the clip.
+    val rotation = rememberPhoneUseRotation(active || amount > 0.0005f, animate)
+    return remember(circle, contour, amount, rotation) {
+        GenericShape { size, _ ->
+            fun x(index: Int) = (circle[index] + (contour[index] - circle[index]) * amount) * size.width
+            fun y(index: Int) = (circle[index] + (contour[index] - circle[index]) * amount) * size.height
+            moveTo(x(0), y(1))
+            for (index in circle.indices step 8) {
+                cubicTo(x(index + 2), y(index + 3), x(index + 4), y(index + 5), x(index + 6), y(index + 7))
+            }
+            close()
+            transform(Matrix().apply {
+                translate(size.width / 2f, size.height / 2f)
+                rotateZ(rotation)
+                translate(-size.width / 2f, -size.height / 2f)
+            })
+        }
+    }
+}
+
+/** Radial cubic contours share angles and a centered circle, avoiding feature-matching shrinkage. */
+private fun phoneAvatarContour(lobes: Int, depth: Float): FloatArray {
+    val segments = 64
+    val step = (2.0 * PI / segments).toFloat()
+    val result = FloatArray(segments * 8)
+    fun point(angle: Float): FloatArray {
+        val radius = 0.5f - depth * (1f - cos(lobes * angle)) * 0.5f
+        val slope = -depth * lobes * sin(lobes * angle) * 0.5f
+        val cosine = cos(angle)
+        val sine = sin(angle)
+        return floatArrayOf(0.5f + radius * cosine, 0.5f + radius * sine,
+            slope * cosine - radius * sine, slope * sine + radius * cosine)
+    }
+    for (segment in 0 until segments) {
+        val start = point(segment * step)
+        val end = point((segment + 1) * step)
+        val index = segment * 8
+        result[index] = start[0]
+        result[index + 1] = start[1]
+        result[index + 2] = start[0] + start[2] * step / 3f
+        result[index + 3] = start[1] + start[3] * step / 3f
+        result[index + 4] = end[0] - end[2] * step / 3f
+        result[index + 5] = end[1] - end[3] * step / 3f
+        result[index + 6] = end[0]
+        result[index + 7] = end[1]
+    }
+    return result
+}
+
+/** Rotate the clipping contour at chat speed; keep the underlying photo upright. */
+@Composable
+internal fun rememberPhoneUseRotation(active: Boolean, animate: Boolean): Float {
+    val rotation = remember { Animatable(0f) }
+    LaunchedEffect(active, animate) {
+        when {
+            !animate -> rotation.snapTo(0f)
+            !active -> rotation.animateTo(0f, spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS))
+            else -> {
+                var previous = withFrameNanos { it }
+                while (isActive) {
+                    val frame = withFrameNanos { it }
+                    val delta = (frame - previous) / 1_000_000_000f
+                    previous = frame
+                    // Keep the equivalent angle near zero so completion never rewinds a full turn.
+                    val next = rotation.value + AVATAR_LOADING_ROTATION_DEGREES_PER_SECOND * delta
+                    rotation.snapTo(((next + 180f) % 360f + 360f) % 360f - 180f)
+                }
+            }
+        }
+    }
+    return rotation.value
 }

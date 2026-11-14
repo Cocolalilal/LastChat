@@ -31,6 +31,22 @@ private const val PALETTE_TARGET_SIZE = 128
 private data class AssistantPaletteKey(val avatar: Avatar, val background: String?, val index: Int, val custom: String?)
 private val assistantPaletteSeeds = android.util.LruCache<AssistantPaletteKey, Color>(24)
 
+/** Reuse the resolved assistant palette without image I/O on a native phone action. */
+internal fun cachedAssistantColorScheme(
+    assistant: Assistant?,
+    baseScheme: ColorScheme,
+    darkTheme: Boolean,
+): ColorScheme {
+    if (assistant == null || !assistant.useAssistantMaterialYouColors) return baseScheme
+    val seed = if (assistant.materialYouColorIndex == CUSTOM_MATERIAL_YOU_COLOR_INDEX) {
+        parseMaterialYouColor(assistant.customMaterialYouColor)
+    } else {
+        assistantPaletteSeeds.get(AssistantPaletteKey(assistant.avatar, assistant.background,
+            assistant.materialYouColorIndex, assistant.customMaterialYouColor))
+    }
+    return seed?.let { buildAssistantColorScheme(baseScheme, it, darkTheme) } ?: baseScheme
+}
+
 @Composable
 fun AssistantChatTheme(
     assistant: Assistant,
