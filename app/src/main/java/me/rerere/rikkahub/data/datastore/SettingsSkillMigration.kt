@@ -69,6 +69,7 @@ private fun Mode.toSkill(
         // Legacy mode "defaultEnabled" means "enabled by default in new chats",
         // not "globally disabled". Skills should stay enabled after migration.
         enabled = true,
+        alwaysEnabled = this.defaultEnabled,
         injectionPosition = this.injectionPosition,
         depth = this.depth,
         argumentHint = "/$name",
@@ -109,4 +110,27 @@ private fun uniqueSkillName(baseName: String, usedNames: MutableSet<String>): St
     }
     usedNames += candidate
     return candidate
+}
+
+/** Moving the old always-on behavior preserves prompts without eagerly loading skills. */
+internal fun Settings.migrateAlwaysEnabledSkillsToContext(): Settings {
+    val alwaysOn = skills.filter { it.alwaysEnabled }
+    if (alwaysOn.isEmpty()) return this
+    val existingIds = additionalContexts.map { it.id }.toSet()
+    return copy(
+        additionalContexts = additionalContexts + alwaysOn.filterNot { it.id in existingIds }.map { skill ->
+            me.rerere.rikkahub.data.model.AdditionalContext(
+                id = skill.id,
+                name = skill.name,
+                prompt = skill.instructions,
+                enabled = skill.enabled,
+                allAssistants = skill.availableForAllAssistants,
+                assistantIds = skill.availableAssistantIds,
+                injectionPosition = skill.injectionPosition,
+                depth = skill.depth,
+                attachments = skill.attachments,
+            )
+        },
+        skills = skills.filterNot { it.alwaysEnabled },
+    )
 }

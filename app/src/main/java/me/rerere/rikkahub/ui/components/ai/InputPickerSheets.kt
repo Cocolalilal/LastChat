@@ -52,9 +52,6 @@ import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.SKILL_SELECTION_OVERRIDE_ID
-import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
-import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.ui.components.ui.icons.ModeIcons
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
@@ -68,171 +65,49 @@ import org.koin.compose.koinInject
 internal fun SkillsPickerSheet(
     settings: Settings,
     assistant: Assistant,
-    conversation: Conversation,
-    onUpdateConversation: (Conversation) -> Unit,
-    onDismiss: () -> Unit
+    onInvokeSkill: (me.rerere.rikkahub.data.model.Skill) -> Unit,
+    onDismiss: () -> Unit,
+    initialQuery: String = "",
 ) {
-    val amoledMode by rememberAmoledDarkMode()
-    val isDarkMode = LocalDarkMode.current
-    val cornerRadius = 28.dp
-    val smallCorner = 8.dp
-
-    val availableSkills = remember(settings.skills) {
-        settings.skills
+    var query by remember { mutableStateOf(initialQuery) }
+    val skills = settings.skills.filter {
+        it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
+            it.name.isNotBlank() && (it.name.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true))
     }
-    val userInvocableSkills = remember(availableSkills) { availableSkills.filter { it.userInvocable } }
-    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
-    }
-    val alwaysEnabledSkillIds = remember(availableSkills, assistantAvailableSkillIds) {
-        availableSkills.filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }.map { it.id }.toSet()
-    }
-    val effectiveEnabledIds = remember(
-        conversation.enabledModeIds,
-        assistant.enabledSkillIds,
-        availableSkillIds,
-        assistantAvailableSkillIds,
-        alwaysEnabledSkillIds
-    ) {
-        val hasOverride = conversation.enabledModeIds.hasManualSkillSelectionOverride()
-        val base = if (hasOverride || conversation.enabledModeIds.isNotEmpty()) {
-            conversation.enabledModeIds.withoutSkillSelectionOverride()
-        } else {
-            assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
-        }
-        (base + if (hasOverride) emptySet() else alwaysEnabledSkillIds).intersect(availableSkillIds)
-    }
-
-    var localEnabledIds by remember(conversation.id, conversation.enabledModeIds, assistant.enabledSkillIds) {
-        mutableStateOf(effectiveEnabledIds)
-    }
-
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-
     ModalBottomSheet(
         containerColor = lastChatSheetContainerColor(),
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = false,
-        dragHandle = {
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        sheetState.hide()
-                        onDismiss()
-                    }
-                }
-            ) {
-                Icon(Icons.Rounded.KeyboardArrowDown, null)
-            }
-        }
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         PrepareAssistantDialog()
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = stringResource(R.string.skills_picker_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 8.dp)
+            Text("Invoke a skill", style = MaterialTheme.typography.titleLarge)
+            Text("Choose a skill for your next message.", style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Search skills") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
-
-            if (userInvocableSkills.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.skills_picker_none),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                userInvocableSkills.forEachIndexed { index, skill ->
-                    val isEnabled = localEnabledIds.contains(skill.id)
-
-                    val position = when {
-                        userInvocableSkills.size == 1 -> ItemPosition.ONLY
-                        index == 0 -> ItemPosition.FIRST
-                        index == userInvocableSkills.lastIndex -> ItemPosition.LAST
-                        else -> ItemPosition.MIDDLE
-                    }
-
-                    val shape = when (position) {
-                        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-                        ItemPosition.FIRST -> RoundedCornerShape(
-                            topStart = cornerRadius,
-                            topEnd = cornerRadius,
-                            bottomStart = smallCorner,
-                            bottomEnd = smallCorner
-                        )
-
-                        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-                        ItemPosition.LAST -> RoundedCornerShape(
-                            topStart = smallCorner,
-                            topEnd = smallCorner,
-                            bottomStart = cornerRadius,
-                            bottomEnd = cornerRadius
-                        )
-                    }
-
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                            ),
-                            shape = shape
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 80.dp)
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = skill.name.ifEmpty { stringResource(R.string.skills_page_unnamed) },
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                    Text(
-                                        text = when {
-                                            skill.description.isNotBlank() -> skill.description
-                                            skill.instructions.isNotBlank() -> skill.instructions.take(50) + if (skill.instructions.length > 50) "..." else ""
-                                            else -> stringResource(R.string.skills_page_empty_desc)
-                                        },
-                                        maxLines = 1,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                HapticSwitch(
-                                    checked = isEnabled,
-                                    onCheckedChange = { newEnabled ->
-                                        val newEnabledIds = if (newEnabled) {
-                                            localEnabledIds + skill.id
-                                        } else {
-                                            localEnabledIds - skill.id
-                                        }
-                                        localEnabledIds = newEnabledIds
-                                        onUpdateConversation(
-                                            conversation.copy(enabledModeIds = newEnabledIds + SKILL_SELECTION_OVERRIDE_ID)
-                                        )
-                                    }
-                                )
-                            }
+            if (skills.isEmpty()) Text("No accessible skills match. Manage access in character settings.")
+            skills.forEach { skill ->
+                Card(
+                    onClick = { onInvokeSkill(skill); onDismiss() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                ) {
+                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(ModeIcons.getIcon(skill.icon ?: "category"), contentDescription = null)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("/${skill.name}", style = MaterialTheme.typography.titleMedium)
+                            if (skill.description.isNotBlank()) Text(skill.description, style = MaterialTheme.typography.bodyMedium)
+                            skill.argumentHint?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                         }
                     }
                 }

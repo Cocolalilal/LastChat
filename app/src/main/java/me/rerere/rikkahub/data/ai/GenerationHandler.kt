@@ -78,8 +78,6 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.LorebookActivationType
 import me.rerere.rikkahub.data.model.LorebookEntry
 import me.rerere.rikkahub.data.model.ModeAttachmentType
-import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
-import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.data.repository.ChatAttachmentRepository
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -240,10 +238,7 @@ internal fun extractInjectedImageParts(
 internal fun shouldRegisterMemorySearchTool(assistant: Assistant): Boolean {
     return assistant.enableMemory && assistant.enableMemorySearchTool
 }
-private const val SKILL_REASON_ASSISTANT = "Enabled for assistant"
-private const val SKILL_REASON_CONVERSATION = "Enabled for chat"
 private const val SKILL_REASON_TURN = "Activated for this turn"
-private const val SKILL_REASON_ALWAYS = "Always enabled"
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -335,72 +330,30 @@ internal data class SkillActivationOutcome(
     val activeSkillIds: Set<Uuid>,
 )
 
-internal fun resolveManualSkillIds(
-    assistantDefaultSkillIds: Set<Uuid>,
-    conversationSkillIds: Set<Uuid>,
-    allSkillIds: Set<Uuid>,
-): Set<Uuid> {
-    val baseSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride() || conversationSkillIds.isNotEmpty()) {
-        conversationSkillIds.withoutSkillSelectionOverride()
-    } else {
-        assistantDefaultSkillIds
-    }
-    return baseSkillIds.intersect(allSkillIds)
-}
-
-internal fun resolveActiveSkillIds(
-    assistantDefaultSkillIds: Set<Uuid>,
-    conversationSkillIds: Set<Uuid>,
-    turnScopedSkillIds: Set<Uuid>,
-    allSkillIds: Set<Uuid>,
-    alwaysEnabledSkillIds: Set<Uuid> = emptySet(),
-): Set<Uuid> {
-    val defaultEnabledSkillIds = if (conversationSkillIds.hasManualSkillSelectionOverride()) {
-        emptySet()
-    } else {
-        alwaysEnabledSkillIds
-    }
-    return (
-        resolveManualSkillIds(
-            assistantDefaultSkillIds = assistantDefaultSkillIds,
-            conversationSkillIds = conversationSkillIds,
-            allSkillIds = allSkillIds,
-        ) + turnScopedSkillIds + defaultEnabledSkillIds
-        ).intersect(allSkillIds)
-}
+internal fun resolveActiveSkillIds(turnScopedSkillIds: Set<Uuid>, allSkillIds: Set<Uuid>): Set<Uuid> =
+    turnScopedSkillIds.intersect(allSkillIds)
 
 internal fun buildSkillToolState(
     skills: List<me.rerere.rikkahub.data.model.Skill>,
     assistantId: Uuid,
-    assistantDefaultSkillIds: Set<Uuid>,
-    conversationSkillIds: Set<Uuid>,
     turnScopedSkillIds: Set<Uuid>,
 ): SkillToolState {
     val usableSkills = skills.filter { skill ->
-        skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistantId)
+        skill.enabled && skill.instructions.isNotBlank() && skill.isAvailableForAssistant(assistantId)
     }
     val allSkillIds = usableSkills.map { it.id }.toSet()
-    val alwaysEnabledSkillIds = usableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
-        assistantDefaultSkillIds = assistantDefaultSkillIds,
-        conversationSkillIds = conversationSkillIds,
         turnScopedSkillIds = turnScopedSkillIds,
         allSkillIds = allSkillIds,
-        alwaysEnabledSkillIds = alwaysEnabledSkillIds,
     )
-    // Always-enabled skills are invisible to the manage_skills tool:
-    // they cannot be toggled by the AI so they don't appear in any tool list.
     // A skill may be enabled by the user but opt out of model-driven discovery.
-    // Keep it active when selected, while preventing the model from activating it.
-    val toggleableSkills = usableSkills.filterNot { it.disableModelInvocation }
-    val autonomousSkills = toggleableSkills.filter { skill ->
-        skill.canAssistantAutonomouslyToggle(assistantId)
-    }
+    // Slash commands still work for skills that opt out of model-driven discovery.
+    val autonomousSkills = usableSkills.filterNot { it.disableModelInvocation }
 
     return SkillToolState(
         activeSkills = autonomousSkills.filter { skill -> activeSkillIds.contains(skill.id) },
         availableSkills = autonomousSkills.filterNot { skill -> activeSkillIds.contains(skill.id) },
-        blockedSkills = toggleableSkills.filterNot { skill -> skill.canAssistantAutonomouslyToggle(assistantId) },
+        blockedSkills = emptyList(),
         activeSkillIds = activeSkillIds,
     )
 }
@@ -461,36 +414,24 @@ internal fun activateSkillsForTurn(
 
 internal fun buildUsedModes(
     availableSkills: List<me.rerere.rikkahub.data.model.Skill>,
-    assistantDefaultSkillIds: Set<Uuid>,
-    conversationSkillIds: Set<Uuid>,
     turnScopedSkillIds: Set<Uuid>,
-    alwaysEnabledSkillIds: Set<Uuid> = availableSkills.filter { it.alwaysEnabled }.map { it.id }.toSet(),
 ): List<me.rerere.ai.ui.UsedMode> {
     val allSkillIds = availableSkills.map { it.id }.toSet()
     val activeSkillIds = resolveActiveSkillIds(
-        assistantDefaultSkillIds = assistantDefaultSkillIds,
-        conversationSkillIds = conversationSkillIds,
         turnScopedSkillIds = turnScopedSkillIds,
         allSkillIds = allSkillIds,
-        alwaysEnabledSkillIds = alwaysEnabledSkillIds,
     )
     val enabledSkills = availableSkills.filter { skill ->
         activeSkillIds.contains(skill.id)
     }
 
     return enabledSkills.mapIndexed { index, skill ->
-        val reason = when {
-            skill.alwaysEnabled -> SKILL_REASON_ALWAYS
-            turnScopedSkillIds.contains(skill.id) -> SKILL_REASON_TURN
-            conversationSkillIds.contains(skill.id) -> SKILL_REASON_CONVERSATION
-            else -> SKILL_REASON_ASSISTANT
-        }
         me.rerere.ai.ui.UsedMode(
             modeId = skill.id.toString(),
             modeName = skill.name,
             modeIcon = skill.icon,
             priority = enabledSkills.size - index,
-            activationReason = reason,
+            activationReason = SKILL_REASON_TURN,
         )
     }
 }
@@ -684,13 +625,13 @@ class GenerationHandler(
             .filter { it.instructions.isNotBlank() }
             .map { it.id }
             .toSet()
-        val assistantDefaultSkillIds = settings.skills
-            .filter { it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
-            .map { it.id }
-            .toSet()
-            .let { assistant.enabledSkillIds.intersect(it) }
-        val conversationSkillIds = enabledModeIds
-        var currentTurnScopedSkillIds = emptySet<Uuid>()
+        var currentTurnScopedSkillIds = setOfNotNull(
+            me.rerere.rikkahub.data.model.resolveSkillCommand(
+                messages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty(),
+                settings.skills,
+                assistant.id,
+            )?.id
+        )
 
         var phoneUseRecoveryRequested = false
         var phoneUseRecoveryUsed = false
@@ -731,8 +672,6 @@ class GenerationHandler(
                     state = buildSkillToolState(
                         skills = settings.skills,
                         assistantId = assistant.id,
-                        assistantDefaultSkillIds = assistantDefaultSkillIds,
-                        conversationSkillIds = conversationSkillIds,
                         turnScopedSkillIds = currentTurnScopedSkillIds,
                     ),
                     currentTurnScopedSkillIds = currentTurnScopedSkillIds,
@@ -777,7 +716,7 @@ class GenerationHandler(
                 memories = memories ?: emptyList(),
                 truncateIndex = truncateIndex,
                 stream = assistant.streamOutput,
-                conversationEnabledModeIds = conversationSkillIds,
+                conversationEnabledModeIds = enabledModeIds,
                 turnScopedEnabledModeIds = currentTurnScopedSkillIds,
                 conversationEnabledLorebookIds = enabledLorebookIds,
                 activeConversationId = activeConversationId,
@@ -1039,36 +978,17 @@ class GenerationHandler(
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
 
         val availableSkills = settings.skills.filter { skill ->
-            skill.enabled && skill.instructions.isNotBlank()
+            skill.isAvailableForAssistant(assistant.id) && skill.instructions.isNotBlank()
         }
         val allSkillIds = availableSkills.map { it.id }.toSet()
-        val assistantAvailableSkillIds = settings.skills
-            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
-            .map { it.id }
-            .toSet()
-        val alwaysEnabledSkillIds = availableSkills
-            .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
-            .map { it.id }
-            .toSet()
-        val assistantDefaultSkillIds = settings.skills
-            .filter { it.enabled && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistant.id) }
-            .map { it.id }
-            .toSet()
-            .let { assistant.enabledSkillIds.intersect(it) }
         val activeSkillIds = resolveActiveSkillIds(
-            assistantDefaultSkillIds = assistantDefaultSkillIds,
-            conversationSkillIds = conversationEnabledModeIds,
             turnScopedSkillIds = turnScopedEnabledModeIds,
             allSkillIds = allSkillIds,
-            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
         )
         val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
         val usedModes = buildUsedModes(
             availableSkills = availableSkills,
-            assistantDefaultSkillIds = assistantDefaultSkillIds,
-            conversationSkillIds = conversationEnabledModeIds,
             turnScopedSkillIds = turnScopedEnabledModeIds,
-            alwaysEnabledSkillIds = alwaysEnabledSkillIds,
         )
 
         // Check if any lorebook entries use RAG activation
@@ -1131,12 +1051,16 @@ class GenerationHandler(
             )
         }
 
+        val additionalContexts = settings.additionalContexts.filter { it.appliesTo(assistant.id) }
+        val promptInjections = enabledSkills + additionalContexts.map { it.asPromptInjection() }
+        val additionalContextIds = additionalContexts.map { it.id }.toSet()
+
         // Group injections by position
-        val beforeSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
-        val topOfChatSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
-        val beforeLatestSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
-        val depthSkills = enabledSkills.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
+        val beforeSystemSkills = promptInjections.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
+        val afterSystemSkills = promptInjections.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val topOfChatSkills = promptInjections.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
+        val beforeLatestSkills = promptInjections.filter { it.injectionPosition == InjectionPosition.BEFORE_LATEST }
+        val depthSkills = promptInjections.filter { it.injectionPosition == InjectionPosition.AT_DEPTH }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
         val topOfChatEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.TOP_OF_CHAT }
@@ -1148,13 +1072,13 @@ class GenerationHandler(
 
         fun appendSkillPrompt(skill: me.rerere.rikkahub.data.model.Skill) {
             if (skill.name.isNotBlank()) {
-                baseSystemPromptBuilder.append("[Skill: ${skill.name}]")
+                baseSystemPromptBuilder.append("[${if (skill.id in additionalContextIds) "Additional context" else "Skill"}: ${skill.name}]")
                 baseSystemPromptBuilder.appendLine()
             }
             baseSystemPromptBuilder.append(skill.instructions)
             val skillsRoot = File(context.filesDir, "skills")
             val resources = File(skillsRoot, skill.workspaceDirectory().removePrefix("/skills/"))
-                .takeIf { it.isDirectory }
+                .takeIf { skill.id !in additionalContextIds && it.isDirectory }
                 ?.walkTopDown()
                 ?.filter { it.isFile && it.name != "SKILL.md" }
                 ?.map { it.relativeTo(skillsRoot).invariantSeparatorsPath }
@@ -1474,7 +1398,7 @@ class GenerationHandler(
 
         // 4. Construct Final List
         // Collect all attachments from enabled skills
-        val skillAttachmentParts = enabledSkills.flatMap { skill ->
+        val skillAttachmentParts = promptInjections.flatMap { skill ->
             skill.attachments.map { attachment ->
                 when (attachment.type) {
                     ModeAttachmentType.IMAGE -> UIMessagePart.Image(url = attachment.url)
@@ -1527,7 +1451,13 @@ class GenerationHandler(
             }
 
             fun skillMessage(skill: me.rerere.rikkahub.data.model.Skill): UIMessage = UIMessage.user(
-                "<system>\n[Skill: ${skill.name}]\n${skill.instructions}\nSkill directory: ${skill.workspaceDirectory()}\n</system>"
+                buildString {
+                    appendLine("<system>")
+                    appendLine("[${if (skill.id in additionalContextIds) "Additional context" else "Skill"}: ${skill.name}]")
+                    appendLine(skill.instructions)
+                    if (skill.id !in additionalContextIds) appendLine("Skill directory: ${skill.workspaceDirectory()}")
+                    append("</system>")
+                }
             )
             fun lorebookMessage(entry: LorebookEntry): UIMessage = UIMessage.user(
                 "<system>\n${entry.prompt}\n</system>"
@@ -1675,6 +1605,7 @@ class GenerationHandler(
                 val lorebookText = activatedEntries.joinToString("\n") { entry -> entry.prompt }
                 val systemPromptText = buildString {
                     append(assistant.systemPrompt)
+                    additionalContexts.forEach { appendLine(it.prompt) }
                     if (assistant.learningMode) {
                         appendLine()
                         append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })

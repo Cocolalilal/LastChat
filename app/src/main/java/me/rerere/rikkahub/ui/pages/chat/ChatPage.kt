@@ -165,7 +165,6 @@ import me.rerere.rikkahub.data.datastore.getEffectiveTTSProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveTtsAutoplayMode
 import me.rerere.rikkahub.data.ai.contextUsageSourceKey
 import me.rerere.rikkahub.data.ai.buildTimeAwarenessBlock
-import me.rerere.rikkahub.data.ai.resolveActiveSkillIds
 import me.rerere.rikkahub.data.ai.tools.toDefinitionPreviews
 import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -3206,20 +3205,10 @@ private fun rememberContextMeterUsage(
     val availableSkills = settings.skills.filter { skill ->
         skill.enabled && skill.instructions.isNotBlank()
     }
-    val allSkillIds = availableSkills.map { skill -> skill.id }.toSet()
-    val assistantAvailableSkillIds = availableSkills
-        .filter { skill -> skill.isAvailableForAssistant(assistant.id) }
-        .map { skill -> skill.id }
-        .toSet()
-    val activeSkillIds = resolveActiveSkillIds(
-        assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds),
-        conversationSkillIds = conversation.enabledModeIds,
-        turnScopedSkillIds = emptySet(),
-        allSkillIds = allSkillIds,
-        alwaysEnabledSkillIds = availableSkills
-            .filter { skill -> skill.alwaysEnabled && skill.id in assistantAvailableSkillIds }
-            .map { skill -> skill.id }
-            .toSet(),
+    val activeSkillIds = setOfNotNull(
+        me.rerere.rikkahub.data.model.resolveSkillCommand(
+            pendingParts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }, settings.skills, assistant.id,
+        )?.id
     )
     val activeLorebookIds = conversation.enabledLorebookIds ?: assistant.enabledLorebookIds
     val activeLoreEntries = remember(settings.lorebooks, activeLorebookIds) {
@@ -3393,6 +3382,7 @@ private fun rememberContextMeterUsage(
     val toolDefinitionTokens = matchingRequestUsage?.toolDefinitionTokens ?: toolAccounting.second
     val systemPromptText = buildString {
         append(assistant.systemPrompt)
+        settings.additionalContexts.filter { it.appliesTo(assistant.id) }.forEach { appendLine(it.prompt) }
         if (assistant.learningMode) {
             appendLine()
             append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })

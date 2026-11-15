@@ -26,7 +26,7 @@ import { useCurrentModel } from "~/hooks/use-current-model";
 import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
-import { InjectionPickerButton } from "~/components/input/injection-picker";
+import { InjectionPickerButton, SkillCommandDialog } from "~/components/input/injection-picker";
 import type { AskUserOption, AskUserQuestion } from "~/lib/tool-activity";
 import { useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
@@ -1037,11 +1037,18 @@ function ChatInputInner({
                   <ModelList disabled={!canSwitchModel} className="max-w-64" />
                   <SearchPickerButton disabled={!canSwitchModel} />
                   <ReasoningPickerButton disabled={!canSwitchModel} />
+                  <SkillCommandDialog
+                    value={value}
+                    assistantId={assistantId}
+                    disabled={disabled || isGenerating || questionnaireActive}
+                    onValueChange={onValueChange}
+                  />
                   <InjectionPickerButton
                     disabled={!canSwitchModel}
                     assistantId={assistantId}
                     conversationId={conversationId}
                     conversationSkillIds={conversationSkillIds}
+                    onInvokeSkill={(name) => onValueChange(`/${name} ${value.trimStart()}`)}
                   />
                   <QuickMessageButton
                     quickMessages={quickMessages}

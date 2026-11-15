@@ -49,6 +49,46 @@ class RootfsInstallerTest {
         assertEquals("content", File(target, "dir/file.txt").readText())
     }
 
+    @Test
+    fun `extract skips Alpine root directory entries and preserves following files`() {
+        val archive = tmp.newFile("alpine-armv7.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry(".", '5', ByteArray(0))
+            out.writeTarEntry("./", '5', ByteArray(700))
+            out.writeTarEntry("./bin/", '5', ByteArray(0))
+            out.writeTarEntry("./bin/busybox", '0', "armhf executable".toByteArray())
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("alpine")
+        createInstaller().extractTar(archive, target) {}
+        assertEquals("armhf executable", File(target, "bin/busybox").readText())
+    }
+
+    @Test
+    fun `GNU overridden root directory is skipped before path normalization`() {
+        val archive = tmp.newFile("gnu.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("././@LongLink", 'L', "./\u0000".toByteArray())
+            out.writeTarEntry("placeholder", '5', ByteArray(0))
+            out.writeTarEntry("etc/os-release", '0', "Alpine".toByteArray())
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("gnu")
+        createInstaller().extractTar(archive, target) {}
+        assertEquals("Alpine", File(target, "etc/os-release").readText())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `root entry exception does not permit traversal`() {
+        val archive = tmp.newFile("unsafe.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("./", '5', ByteArray(0))
+            out.writeTarEntry("./../escape", '0', "unsafe".toByteArray())
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        createInstaller().extractTar(archive, tmp.newFolder("safe")) {}
+    }
+
     private fun createInstaller() = RootfsInstaller(WorkspaceManager(tmp.newFolder()))
 
     private fun OutputStream.writeTarEntry(name: String, type: Char, data: ByteArray) {

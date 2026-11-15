@@ -54,6 +54,18 @@ class SettingsStoreDurabilityTest {
     private fun persisted(): Settings = runBlocking { withTimeout(20_000) { store.settingsFlowRaw.first() } }
 
     @Test
+    fun additionalContextAssignmentsSurvivePersistence() = runBlocking {
+        val character = store.settingsFlow.value.assistants.first().id
+        val snippet = me.rerere.rikkahub.data.model.AdditionalContext(
+            name = "Writing style", prompt = "Keep replies concise", assistantIds = setOf(character),
+        )
+        store.update { it.copy(additionalContexts = listOf(snippet)) }
+        store.awaitQueuedWrites()
+        assertEquals(listOf(snippet), persisted().additionalContexts)
+        assertEquals(listOf(snippet), store.settingsFlow.value.additionalContexts)
+    }
+
+    @Test
     fun hundredInterleavedConcurrentEditsAllPersist() = runBlocking {
         val before = store.settingsFlow.value
         val toggleStart = before.enableWebSearch

@@ -19,7 +19,7 @@ data class Skill(
     val attachments: List<ModeAttachment> = emptyList(), // Optional multimedia context attachments
     val enabled: Boolean = true,
     @SerialName("always_enabled")
-    val alwaysEnabled: Boolean = false,              // When true, skill is enabled by default for available assistants
+    val alwaysEnabled: Boolean = false,              // Legacy: migrated into AdditionalContext on load
     @SerialName("available_for_all_assistants")
     val availableForAllAssistants: Boolean = true,
     val availableAssistantIds: Set<Uuid> = emptySet(),
@@ -31,9 +31,9 @@ data class Skill(
     val depth: Int = 0,                  // Only used when injectionPosition is AT_DEPTH
     // Optional Claude Skills spec fields
     @SerialName("disable_model_invocation")
-    val disableModelInvocation: Boolean = false,  // Legacy field retained for backward compatibility
+    val disableModelInvocation: Boolean = false,  // Exclude from model-driven discovery
     @SerialName("user_invocable")
-    val userInvocable: Boolean = true,            // Legacy field retained for backward compatibility
+    val userInvocable: Boolean = true,            // Allow manual /skillname invocation
     @SerialName("argument_hint")
     val argumentHint: String? = null,             // Slash command hint e.g. "/skill-name"
     // Agent Skills frontmatter. These are retained when importing a package so a
@@ -50,11 +50,7 @@ data class Skill(
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     fun isAvailableForAssistant(assistantId: Uuid): Boolean {
-        return availableForAllAssistants || availableAssistantIds.contains(assistantId)
-    }
-
-    fun canAssistantAutonomouslyToggle(assistantId: Uuid): Boolean {
-        return isAvailableForAssistant(assistantId)
+        return enabled && (availableForAllAssistants || availableAssistantIds.contains(assistantId))
     }
 
     /** The package path exposed by the workspace bind mount; never uses a raw name. */
@@ -84,3 +80,13 @@ data class SkillExport(
     val format: String = "lastchat_skill",
     val skill: Skill
 )
+
+/** Only a leading, exact slash command invokes a skill. Ordinary mentions never do. */
+fun resolveSkillCommand(text: String, skills: List<Skill>, assistantId: Uuid): Skill? {
+    val command = text.trimStart().takeWhile { !it.isWhitespace() }
+    if (!command.startsWith("/") || command.length < 2) return null
+    return skills.firstOrNull {
+        it.userInvocable && it.instructions.isNotBlank() && it.isAvailableForAssistant(assistantId) &&
+            it.name.isNotBlank() && command.drop(1).equals(it.name, ignoreCase = true)
+    }
+}

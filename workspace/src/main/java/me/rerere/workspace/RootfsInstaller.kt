@@ -141,6 +141,15 @@ class RootfsInstaller(
                     input.skipFully(header.size.paddingSize())
                     continue
                 }
+                // Alpine minirootfs archives begin with a ./ directory. It describes
+                // the extraction root rather than a child and must not change its mode
+                // or timestamps. Consume its payload/padding just like any skipped entry.
+                if (header.type == TarEntryType.DIRECTORY &&
+                    header.name.replace('\\', '/').split('/').all { it.isEmpty() || it == "." }
+                ) {
+                    input.skipFully(header.size.paddedTarSize())
+                    continue
+                }
                 val target = targetDir.safeResolve(header.name)
                 target.parentFile?.mkdirs()
                 when (header.type) {
@@ -253,7 +262,8 @@ class RootfsInstaller(
             .filter { it.isNotBlank() }
             .joinToString("/")
         return TarHeader(
-            name = normalizeTarPath(fullName),
+            // Validate the effective name after GNU/PAX overrides and root-directory handling.
+            name = fullName,
             mode = header.octal(100, 8).toInt(),
             size = header.octal(124, 12),
             modTime = header.octal(136, 12),

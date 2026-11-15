@@ -104,7 +104,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- If a workspace tool call is pending user approval, wait for the approval/result instead of guessing the outcome.")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
     appendLine("- When you create a file the user should download (zip, pdf, csv, etc.), include a markdown link using the `/workspace/...` path, for example `[report.zip](/workspace/report.zip)`. The app will offer Open / Share / Save to Downloads.")
-    appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
+    appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Use only skills available to this character. Invoke them through `manage_skills` or the user's slash command before loading their `SKILL.md` and supporting files.")
     if (!cwd.isNullOrBlank()) {
         appendLine("- Current working directory: `$cwd`. Use this as the default context for file operations and shell commands.")
     }

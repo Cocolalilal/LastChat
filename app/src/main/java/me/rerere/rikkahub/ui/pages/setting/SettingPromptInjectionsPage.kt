@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +62,7 @@ import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingPromptInjectionsPage(
+    initialPage: Int = 0,
     vm: SettingVM = koinViewModel(),
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -71,7 +73,7 @@ fun SettingPromptInjectionsPage(
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val useWideLayout = LocalSettingsWideLayout.current
-    val pagerState = rememberPagerState { 2 }
+    val pagerState = rememberPagerState(initialPage = initialPage) { 3 }
     val skillsListState = rememberLazyListState()
     val lorebooksListState = rememberLazyListState()
 
@@ -127,10 +129,10 @@ fun SettingPromptInjectionsPage(
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = if (pagerState.currentPage == 0) {
-                    stringResource(R.string.prompt_injections_page_skills)
-                } else {
-                    stringResource(R.string.prompt_injections_page_lorebooks)
+                title = when (pagerState.currentPage) {
+                    0 -> stringResource(R.string.prompt_injections_page_skills)
+                    1 -> "Additional context"
+                    else -> stringResource(R.string.prompt_injections_page_lorebooks)
                 },
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() }
@@ -156,60 +158,23 @@ fun SettingPromptInjectionsPage(
                             modifier = Modifier.padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .then(
-                                        if (pagerState.currentPage == 0) {
-                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                        } else {
-                                            Modifier.clickable {
-                                                haptics.perform(HapticPattern.Tick)
-                                                scope.launch { pagerState.animateScrollToPage(0) }
-                                            }
-                                        }
-                                    )
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Category,
-                                    contentDescription = null,
-                                    tint = if (pagerState.currentPage == 0) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .then(
-                                        if (pagerState.currentPage == 1) {
-                                            Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                        } else {
-                                            Modifier.clickable {
-                                                haptics.perform(HapticPattern.Tick)
-                                                scope.launch { pagerState.animateScrollToPage(1) }
-                                            }
-                                        }
-                                    )
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Book,
-                                    contentDescription = null,
-                                    tint = if (pagerState.currentPage == 1) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                )
+                            listOf(
+                                Icons.Rounded.Category to "Skills",
+                                Icons.Rounded.Notes to "Additional context",
+                                Icons.Rounded.Book to "Lorebooks",
+                            ).forEachIndexed { index, (icon, label) ->
+                                val selected = pagerState.currentPage == index
+                                Box(
+                                    modifier = Modifier.clip(CircleShape)
+                                        .background(if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                                        .clickable {
+                                            haptics.perform(HapticPattern.Tick)
+                                            scope.launch { pagerState.animateScrollToPage(index) }
+                                        }.padding(12.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(icon, contentDescription = label, modifier = Modifier.size(24.dp))
+                                }
                             }
                         }
                     }
@@ -221,7 +186,7 @@ fun SettingPromptInjectionsPage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    FloatingActionButton(
+                    if (pagerState.currentPage != 1) FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
                             if (pagerState.currentPage == 0) {
@@ -240,7 +205,7 @@ fun SettingPromptInjectionsPage(
                         )
                     }
 
-                    FloatingActionButton(
+                    if (pagerState.currentPage != 1) FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
                             if (pagerState.currentPage == 0) {
@@ -275,6 +240,23 @@ fun SettingPromptInjectionsPage(
                     )
                 }
 
+                1 -> AdditionalContextContent(
+                    settings = settings,
+                    contentPadding = contentPadding,
+                    onSave = { snippet ->
+                        vm.updateSettings { latest ->
+                            val updated = if (latest.additionalContexts.any { it.id == snippet.id }) {
+                                latest.additionalContexts.map { if (it.id == snippet.id) snippet else it }
+                            } else latest.additionalContexts + snippet
+                            latest.copy(additionalContexts = updated)
+                        }
+                    },
+                    onDelete = { snippet ->
+                        vm.updateSettings { latest ->
+                            latest.copy(additionalContexts = latest.additionalContexts.filterNot { it.id == snippet.id })
+                        }
+                    },
+                )
                 else -> {
                     LorebooksPageContent(
                         settings = settings,

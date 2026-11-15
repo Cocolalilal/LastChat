@@ -193,7 +193,7 @@ class WebdavSync(
                 if (BackupContentOption.WORKSPACES in selectedContent) {
                     add(BackupArchiveFormat.WORKSPACES_DIR)
                 }
-                if (BackupContentOption.SKILLS in selectedContent) {
+                if (BackupContentOption.SKILLS in selectedContent || BackupContentOption.ADDITIONAL_CONTEXT in selectedContent) {
                     add("skills")
                 }
                 if (BackupContentOption.LOREBOOKS in selectedContent) {
@@ -341,6 +341,9 @@ class WebdavSync(
         }
         if (BackupContentOption.SKILLS !in selectedContent) {
             result = result.copy(skills = emptyList())
+        }
+        if (BackupContentOption.ADDITIONAL_CONTEXT !in selectedContent) {
+            result = result.copy(additionalContexts = emptyList())
         }
         // If SETTINGS is not selected, reset general appearance/behavior preferences to defaults
         // so they don't override the importing device's settings. Data lists (providers, assistants,

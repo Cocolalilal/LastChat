@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountTree
@@ -78,6 +79,7 @@ enum class SettingsDestination {
     ChatStorage,
     Lorebooks,
     Skills,
+    AdditionalContext,
     About,
     Fonts,
     UiCustomization,
@@ -297,6 +299,7 @@ private fun SettingsDestination.mainDestination(): SettingsDestination {
         SettingsDestination.ProviderModels,
         SettingsDestination.Search,
         SettingsDestination.Tts -> SettingsDestination.Providers
+        SettingsDestination.AdditionalContext,
         SettingsDestination.Skills,
         SettingsDestination.Lorebooks -> SettingsDestination.PromptInjections
         else -> this
@@ -316,6 +319,7 @@ private fun settingsPaneGroups(): List<SettingsPaneGroup> {
     )
     val promptChildren = listOf(
         SettingsPaneEntry(SettingsDestination.Skills, R.string.prompt_injections_page_skills, null, Icons.Rounded.Code, Screen.SettingSkills()),
+        SettingsPaneEntry(SettingsDestination.AdditionalContext, R.string.additional_context_title, null, Icons.Rounded.Notes, Screen.SettingAdditionalContext),
         SettingsPaneEntry(SettingsDestination.Lorebooks, R.string.prompt_injections_page_lorebooks, null, Icons.Rounded.Folder, Screen.SettingLorebooks),
     )
     val backupChildren = listOf(

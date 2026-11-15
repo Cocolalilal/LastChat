@@ -22,8 +22,11 @@ import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SmartToy
@@ -70,6 +73,7 @@ private fun BackupContentOption.icon(): ImageVector = when (this) {
     BackupContentOption.API_KEYS -> Icons.Rounded.Key
     BackupContentOption.WORKSPACES -> Icons.Rounded.FolderZip
     BackupContentOption.SKILLS -> Icons.Rounded.Handyman
+    BackupContentOption.ADDITIONAL_CONTEXT -> Icons.Rounded.Notes
     BackupContentOption.LOREBOOKS -> Icons.Rounded.AutoStories
     BackupContentOption.SETTINGS -> Icons.Rounded.Settings
 }

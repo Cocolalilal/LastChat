@@ -695,7 +695,7 @@ fun SkillEditorSheet(
     var description by remember { mutableStateOf(skill?.description ?: "") }
     var icon by remember { mutableStateOf(skill?.icon) }
     var instructions by remember { mutableStateOf(skill?.instructions ?: "") }
-    var alwaysEnabled by remember { mutableStateOf(skill?.alwaysEnabled ?: false) }
+    val alwaysEnabled = false
     var disableModelInvocation by remember { mutableStateOf(skill?.disableModelInvocation ?: false) }
     var userInvocable by remember { mutableStateOf(skill?.userInvocable ?: true) }
     var injectionPosition by remember { mutableStateOf(skill?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) }
@@ -1004,19 +1004,8 @@ fun SkillEditorSheet(
                         }
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_always_enabled)) },
-                            supportingContent = { Text(stringResource(R.string.skills_page_always_enabled_desc)) },
-                            trailingContent = {
-                                HapticSwitch(
-                                    checked = alwaysEnabled,
-                                    onCheckedChange = { checked -> alwaysEnabled = checked }
-                                )
-                            }
-                        )
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_disable_model_invocation)) },
-                            supportingContent = { Text(stringResource(R.string.skills_page_disable_model_invocation_desc)) },
+                            headlineContent = { Text("Manual invocation only") },
+                            supportingContent = { Text("Only load this skill when you invoke its slash command.") },
                             trailingContent = {
                                 HapticSwitch(
                                     checked = disableModelInvocation,
@@ -1026,8 +1015,8 @@ fun SkillEditorSheet(
                         )
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.skills_page_user_invocable)) },
-                            supportingContent = { Text(stringResource(R.string.skills_page_user_invocable_desc)) },
+                            headlineContent = { Text("Slash command") },
+                            supportingContent = { Text("Make /${name.ifBlank { "skillname" }} available in chat.") },
                             trailingContent = {
                                 HapticSwitch(
                                     checked = userInvocable,
@@ -1038,33 +1027,7 @@ fun SkillEditorSheet(
                     }
                 }
 
-                FormItem(label = { Text(stringResource(R.string.lorebook_entry_injection_position)) }) {
-                    Select(
-                        options = InjectionPosition.entries,
-                        selectedOption = injectionPosition,
-                        onOptionSelected = { injectionPosition = it },
-                        optionToString = { position ->
-                            when (position) {
-                                InjectionPosition.BEFORE_SYSTEM -> stringResource(R.string.injection_position_before_system)
-                                InjectionPosition.AFTER_SYSTEM -> stringResource(R.string.injection_position_after_system)
-                                InjectionPosition.TOP_OF_CHAT -> stringResource(R.string.injection_position_top_of_chat)
-                                InjectionPosition.BEFORE_LATEST -> stringResource(R.string.injection_position_before_latest)
-                                InjectionPosition.AT_DEPTH -> stringResource(R.string.injection_position_at_depth)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                if (injectionPosition == InjectionPosition.AT_DEPTH) {
-                    FormItem(label = { Text("Depth") }, description = { Text("Messages before the latest message") }) {
-                        OutlinedTextField(
-                            value = depth,
-                            onValueChange = { depth = it.filter(Char::isDigit) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+
             }
 
             Row(

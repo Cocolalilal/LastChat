@@ -1,29 +1,32 @@
 import * as React from "react";
-
 import { useMutation } from "@tanstack/react-query";
-import { BookOpen, LoaderCircle, Code2, Image as ImageIcon, Palette, Wrench, Terminal, Search, Memory } from "~/lib/material-icons";
-import { useTranslation } from "react-i18next";
-
+import { BookOpen, LoaderCircle } from "~/lib/material-icons";
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
 import { usePickerPopover } from "~/hooks/use-picker-popover";
-import { getDisplayName } from "~/lib/display";
-import { extractErrorMessage } from "~/lib/error";
 import { safeStringArray } from "~/lib/type-guards";
+import { extractErrorMessage } from "~/lib/error";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
-import type { LorebookProfile, ModeInjectionProfile } from "~/types";
+import type { ModeInjectionProfile } from "~/types";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import { Input } from "~/components/ui/input";
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
   PopoverHeader,
   PopoverTitle,
+  PopoverDescription,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "~/components/ui/dialog";
 import { ScrollArea } from "~/components/ui/scroll-area";
-
 import { PickerErrorAlert } from "./picker-error-alert";
 
 export interface InjectionPickerButtonProps {
@@ -32,239 +35,131 @@ export interface InjectionPickerButtonProps {
   assistantId?: string | null;
   conversationId?: string | null;
   conversationSkillIds?: string[] | null;
+  onInvokeSkill: (skillName: string) => void;
 }
 
-function getSkillIcon(iconName: string | null | undefined) {
-  if (!iconName) return null;
-  switch (iconName.toLowerCase()) {
-    case "code": return Code2;
-    case "image": return ImageIcon;
-    case "palette": return Palette;
-    case "terminal": return Terminal;
-    case "build":
-    case "wrench": return Wrench;
-    case "search": return Search;
-    case "memory": return Memory;
-    default: return BookOpen;
-  }
-}
-
-function getModeInjections(source: unknown): ModeInjectionProfile[] {
-  if (!Array.isArray(source)) {
-    return [];
-  }
-
-  return source.filter((item): item is ModeInjectionProfile =>
-    Boolean(item && typeof item === "object" && typeof item.id === "string"),
+function canInvoke(skill: ModeInjectionProfile, assistantId: string | undefined) {
+  return Boolean(
+    assistantId &&
+    skill.enabled !== false &&
+    skill.userInvocable !== false &&
+    (skill.availableForAllAssistants || skill.availableAssistantIds?.includes(assistantId)),
   );
 }
 
-function getLorebooks(source: unknown): LorebookProfile[] {
-  if (!Array.isArray(source)) {
-    return [];
-  }
+function SkillChoices({
+  skills,
+  onSelect,
+  initialQuery = "",
+}: {
+  skills: ModeInjectionProfile[];
+  onSelect: (name: string) => void;
+  initialQuery?: string;
+}) {
+  const [query, setQuery] = React.useState(initialQuery);
+  const matches = skills.filter((skill) =>
+    `${skill.name} ${skill.description ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+  );
+  return (
+    <div className="space-y-2">
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search skills"
+        aria-label="Search skills"
+      />
+      <ScrollArea className="max-h-80">
+        {matches.length === 0 && (
+          <p className="p-3 text-sm text-muted-foreground">
+            No accessible skills match. Manage access in character settings.
+          </p>
+        )}
+        {matches.map((skill) => (
+          <button
+            key={skill.id}
+            type="button"
+            onClick={() => onSelect(skill.name)}
+            className="mb-1 w-full rounded-2xl bg-muted p-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <div className="text-sm font-medium">/{skill.name}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{skill.description}</div>
+          </button>
+        ))}
+      </ScrollArea>
+    </div>
+  );
+}
 
-  return source.filter((item): item is LorebookProfile =>
-    Boolean(item && typeof item === "object" && typeof item.id === "string"),
+export function SkillCommandDialog({
+  value,
+  assistantId,
+  disabled,
+  onValueChange,
+}: {
+  value: string;
+  assistantId?: string | null;
+  disabled: boolean;
+  onValueChange: (text: string) => void;
+}) {
+  const { settings, currentAssistant } = useCurrentAssistant();
+  const id = assistantId ?? currentAssistant?.id;
+  const [dismissed, setDismissed] = React.useState<string | null>(null);
+  const command = /^\/\S*$/.test(value) ? value : null;
+  React.useEffect(() => {
+    if (command === null) setDismissed(null);
+  }, [command]);
+  const skills = (settings?.modeInjections ?? []).filter((skill) => canInvoke(skill, id));
+  return (
+    <Dialog
+      open={!disabled && command !== null && command !== dismissed}
+      onOpenChange={(open) => {
+        if (!open) setDismissed(command);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invoke a skill</DialogTitle>
+          <DialogDescription>Choose a skill for your next message.</DialogDescription>
+        </DialogHeader>
+        <SkillChoices
+          key={command}
+          skills={skills}
+          initialQuery={command?.slice(1)}
+          onSelect={(name) => onValueChange(`/${name} `)}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function InjectionPickerButton({
   disabled = false,
   className,
-  assistantId = null,
-  conversationId = null,
-  conversationSkillIds = null,
+  assistantId,
+  onInvokeSkill,
 }: InjectionPickerButtonProps) {
-  const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
-
-  const assistant = React.useMemo(() => {
-    if (!settings || !assistantId) {
-      return currentAssistant;
-    }
-
-    return settings.assistants.find((item) => item.id === assistantId) ?? currentAssistant;
-  }, [assistantId, currentAssistant, settings]);
-
-  const [activeTab, setActiveTab] = React.useState<"mode" | "lorebook">("mode");
-
-  const canUse = Boolean(settings && assistant && !disabled);
-  const { error, setError, popoverProps } = usePickerPopover(canUse);
-
-  const modeInjections = React.useMemo(
-    () => getModeInjections(settings?.modeInjections),
-    [settings?.modeInjections],
+  const assistant =
+    settings?.assistants.find((item) => item.id === assistantId) ?? currentAssistant;
+  const { error, setError, popoverProps } = usePickerPopover(
+    Boolean(settings && assistant && !disabled),
   );
-  const lorebooks = React.useMemo(() => getLorebooks(settings?.lorebooks), [settings?.lorebooks]);
-
-  const modeInjectionIdSet = React.useMemo(
-    () => new Set(modeInjections.map((item) => item.id)),
-    [modeInjections],
+  const [tab, setTab] = React.useState<"skills" | "lorebooks">("skills");
+  const skills = (settings?.modeInjections ?? []).filter((skill) =>
+    canInvoke(skill, assistant?.id),
   );
-  const lorebookIdSet = React.useMemo(() => new Set(lorebooks.map((item) => item.id)), [lorebooks]);
-
-  const assistantModeInjectionIds = React.useMemo(
-    () => safeStringArray(assistant?.modeInjectionIds),
-    [assistant?.modeInjectionIds],
-  );
-  const selectedModeInjectionIds = React.useMemo(() => {
-    const currentConversationSkillIds = safeStringArray(conversationSkillIds);
-    if (conversationId && currentConversationSkillIds.length > 0) {
-      return currentConversationSkillIds;
-    }
-
-    return assistantModeInjectionIds;
-  }, [assistantModeInjectionIds, conversationId, conversationSkillIds]);
-  const selectedLorebookIds = React.useMemo(
-    () => safeStringArray(assistant?.lorebookIds),
-    [assistant?.lorebookIds],
-  );
-
-  const selectedCount = selectedModeInjectionIds.length + selectedLorebookIds.length;
-  const hasData = modeInjections.length > 0 || lorebooks.length > 0;
-
-  React.useEffect(() => {
-    if (!canUse || !hasData) {
-      popoverProps.onOpenChange(false);
-    }
-  }, [canUse, hasData, popoverProps]);
-
-  React.useEffect(() => {
-    if (modeInjections.length === 0 && lorebooks.length > 0) {
-      setActiveTab("lorebook");
-      return;
-    }
-
-    if (lorebooks.length === 0 && modeInjections.length > 0) {
-      setActiveTab("mode");
-    }
-  }, [lorebooks.length, modeInjections.length]);
-
-  const updateModeInjectionsMutation = useMutation({
-    mutationFn: ({
-      assistantId,
-      modeInjectionIds,
-      lorebookIds,
-      conversationId,
-    }: {
-      assistantId: string;
-      modeInjectionIds: string[];
-      lorebookIds: string[];
-      conversationId?: string | null;
-      key: string;
-    }) => {
-      if (conversationId) {
-        return api.post<{ status: string }>(`conversations/${conversationId}/skills`, {
-          skillIds: modeInjectionIds,
-        });
-      }
-
-      return api.post<{ status: string }>("settings/assistant/injections", {
-        assistantId,
-        modeInjectionIds,
-        lorebookIds,
-      });
-    },
-    onError: (updateError) => {
-      setError(extractErrorMessage(updateError, t("injection.update_failed")));
-    },
-    onSuccess: () => setError(null),
-  });
-
-  const updateLorebooksMutation = useMutation({
-    mutationFn: ({
-      assistantId,
-      modeInjectionIds,
-      lorebookIds,
-    }: {
-      assistantId: string;
-      modeInjectionIds: string[];
-      lorebookIds: string[];
-      key: string;
-    }) =>
-      api.post<{ status: string }>("settings/assistant/injections", {
-        assistantId,
-        modeInjectionIds,
-        lorebookIds,
+  const lorebooks = settings?.lorebooks ?? [];
+  const selectedLorebooks = safeStringArray(assistant?.lorebookIds);
+  const mutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post("settings/assistant/injections", {
+        assistantId: assistant?.id,
+        modeInjectionIds: safeStringArray(assistant?.modeInjectionIds),
+        lorebookIds: ids,
       }),
-    onError: (updateError) => {
-      setError(extractErrorMessage(updateError, t("injection.update_failed")));
-    },
+    onError: (error) => setError(extractErrorMessage(error, "Could not update lorebooks")),
     onSuccess: () => setError(null),
   });
-
-  const handleToggleModeInjection = React.useCallback(
-    (id: string, checked: boolean) => {
-      if (!canUse || !assistant) return;
-
-      const nextModeIds = new Set(
-        selectedModeInjectionIds.filter((item) => modeInjectionIdSet.has(item)),
-      );
-      const nextLorebookIds = selectedLorebookIds.filter((item) => lorebookIdSet.has(item));
-
-      if (checked) {
-        nextModeIds.add(id);
-      } else {
-        nextModeIds.delete(id);
-      }
-
-      updateModeInjectionsMutation.mutate({
-        assistantId: assistant.id,
-        modeInjectionIds: Array.from(nextModeIds),
-        lorebookIds: nextLorebookIds,
-        conversationId,
-        key: `mode:${id}`,
-      });
-    },
-    [
-      assistant,
-      canUse,
-      conversationId,
-      lorebookIdSet,
-      modeInjectionIdSet,
-      selectedLorebookIds,
-      selectedModeInjectionIds,
-      updateModeInjectionsMutation,
-    ],
-  );
-
-  const handleToggleLorebook = React.useCallback(
-    (id: string, checked: boolean) => {
-      if (!canUse || !assistant) return;
-
-      const nextLorebookIds = new Set(
-        selectedLorebookIds.filter((item) => lorebookIdSet.has(item)),
-      );
-
-      if (checked) {
-        nextLorebookIds.add(id);
-      } else {
-        nextLorebookIds.delete(id);
-      }
-
-      updateLorebooksMutation.mutate({
-        assistantId: assistant.id,
-        modeInjectionIds: assistantModeInjectionIds.filter((item) => modeInjectionIdSet.has(item)),
-        lorebookIds: Array.from(nextLorebookIds),
-        key: `lorebook:${id}`,
-      });
-    },
-    [
-      assistant,
-      assistantModeInjectionIds,
-      canUse,
-      lorebookIdSet,
-      modeInjectionIdSet,
-      selectedLorebookIds,
-      updateLorebooksMutation,
-    ],
-  );
-
-  if (!hasData) {
-    return null;
-  }
-
   return (
     <Popover {...popoverProps}>
       <PopoverTrigger asChild>
@@ -272,189 +167,64 @@ export function InjectionPickerButton({
           type="button"
           variant="ghost"
           size="sm"
-          disabled={!canUse || updateModeInjectionsMutation.isPending || updateLorebooksMutation.isPending}
-          className={cn(
-            "h-9 rounded-full border border-border/70 bg-muted/70 px-2.5 text-foreground shadow-none hover:bg-accent hover:text-accent-foreground",
-            selectedCount > 0 && "border-primary/20 bg-primary/10 text-primary hover:bg-primary/18",
-            className,
-          )}
+          disabled={disabled}
+          aria-label="Skills and lorebooks"
+          className={cn("h-9 rounded-full border border-border/70 bg-muted/70 px-2.5", className)}
         >
-          {updateModeInjectionsMutation.isPending || updateLorebooksMutation.isPending ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : (
-            <BookOpen className="size-4" />
-          )}
-          {selectedCount > 0 ? (
-            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-              {selectedCount}
-            </span>
-          ) : null}
+          <BookOpen className="size-4" />
         </Button>
       </PopoverTrigger>
-
-      <PopoverContent align="end" className="w-[min(92vw,26rem)] gap-0 p-0">
-        <PopoverHeader className="px-6 pt-4 pb-2">
-          <PopoverTitle>{t("injection.title")}</PopoverTitle>
-          <PopoverDescription>{t("injection.description")}</PopoverDescription>
+      <PopoverContent className="w-80">
+        <PopoverHeader>
+          <PopoverTitle>Add-ons</PopoverTitle>
+          <PopoverDescription>Invoke a skill or choose lorebooks.</PopoverDescription>
         </PopoverHeader>
-
-        <div className="space-y-4 px-4 py-4">
-          <PickerErrorAlert error={error} />
-
-          <div className="inline-flex rounded-full border border-border/70 bg-muted/45 p-1">
-            <button
-              type="button"
-              className={cn(
-                "rounded-full px-3 py-1 text-xs transition",
-                activeTab === "mode"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-accent",
-              )}
-              onClick={() => {
-                setActiveTab("mode");
-              }}
-              disabled={modeInjections.length === 0}
-            >
-              {t("injection.tab_mode")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "rounded-full px-3 py-1 text-xs transition",
-                activeTab === "lorebook"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-accent",
-              )}
-              onClick={() => {
-                setActiveTab("lorebook");
-              }}
-              disabled={lorebooks.length === 0}
-            >
-              {t("injection.tab_lorebook")}
-            </button>
-          </div>
-
-          <div className="overflow-hidden rounded-[var(--radius-card)] border border-border/70 bg-muted/30 p-2">
-            <ScrollArea className="h-[16rem] pr-3">
-              {activeTab === "mode" ? (
-                modeInjections.length > 0 ? (
-                  <div className="space-y-2">
-                    {modeInjections.map((item) => {
-                      const checked = selectedModeInjectionIds.includes(item.id);
-                      const switching =
-                        updateModeInjectionsMutation.isPending &&
-                        updateModeInjectionsMutation.variables?.key === `mode:${item.id}`;
-
-                      return (
-                        <label
-                          key={item.id}
-                          className={cn(
-                            "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
-                            (checked || item.alwaysEnabled) && "border-primary/25 bg-primary/10",
-                            (item.enabled === false || item.alwaysEnabled) && "opacity-80"
-                          )}
-                        >
-                          {switching ? (
-                            <LoaderCircle className="size-4 animate-spin" />
-                          ) : (
-                            <Checkbox
-                              checked={checked || item.alwaysEnabled}
-                              disabled={disabled || updateModeInjectionsMutation.isPending || item.enabled === false || item.alwaysEnabled}
-                              onCheckedChange={(nextChecked) => {
-                                handleToggleModeInjection(item.id, Boolean(nextChecked));
-                              }}
-                            />
-                          )}
-                        
-                        {(() => {
-                           const SkillIcon = getSkillIcon(item.icon);
-                           return SkillIcon ? <SkillIcon className="size-5 shrink-0 text-muted-foreground" /> : null;
-                        })()}
-
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">
-                            {getDisplayName(item.name, t("injection.unnamed_mode"))}
-                          </div>
-                          {typeof item.description === "string" && item.description.trim().length > 0 ? (
-                            <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                              {item.description}
-                            </div>
-                          ) : null}
-                          {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs text-destructive">
-                              {t("injection.disabled")}
-                            </div>
-                          ) : item.alwaysEnabled ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs text-primary">
-                              {t("injection.always_enabled", "Always Enabled")}
-                            </div>
-                          ) : null}
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    {t("injection.empty_mode")}
-                  </div>
-                )
-              ) : lorebooks.length > 0 ? (
-                <div className="space-y-2">
-                  {lorebooks.map((item) => {
-                    const checked = selectedLorebookIds.includes(item.id);
-                    const switching =
-                      updateLorebooksMutation.isPending &&
-                      updateLorebooksMutation.variables?.key === `lorebook:${item.id}`;
-
-                    return (
-                      <label
-                        key={item.id}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-3 rounded-[var(--radius-card-inner)] border border-border/70 bg-background px-3 py-3 transition hover:bg-accent",
-                          checked && "border-primary/25 bg-primary/10",
-                          item.enabled === false && "opacity-80"
-                        )}
-                      >
-                        {switching ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <Checkbox
-                            checked={checked}
-                            disabled={disabled || updateLorebooksMutation.isPending || item.enabled === false}
-                            onCheckedChange={(nextChecked) => {
-                              handleToggleLorebook(item.id, Boolean(nextChecked));
-                            }}
-                          />
-                        )}
-
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">
-                            {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
-                          </div>
-                          {typeof item.description === "string" && item.description.trim().length > 0 ? (
-                            <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                              {item.description}
-                            </div>
-                          ) : null}
-                          {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs text-destructive">
-                              {t("injection.disabled")}
-                            </div>
-                          ) : null}
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                  {t("injection.empty_lorebook")}
-                </div>
-              )}
-            </ScrollArea>
-          </div>
+        <div className="my-3 flex gap-2">
+          <Button
+            size="sm"
+            variant={tab === "skills" ? "default" : "ghost"}
+            onClick={() => setTab("skills")}
+          >
+            Skills
+          </Button>
+          <Button
+            size="sm"
+            variant={tab === "lorebooks" ? "default" : "ghost"}
+            onClick={() => setTab("lorebooks")}
+          >
+            Lorebooks
+          </Button>
         </div>
+        <PickerErrorAlert error={error} />
+        {tab === "skills" ? (
+          <SkillChoices
+            skills={skills}
+            onSelect={(name) => {
+              onInvokeSkill(name);
+              popoverProps.onOpenChange(false);
+            }}
+          />
+        ) : (
+          <div className="space-y-2">
+            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+            {lorebooks.map((item) => (
+              <label key={item.id} className="flex items-center gap-3 rounded-2xl bg-muted p-3">
+                <Checkbox
+                  disabled={mutation.isPending}
+                  checked={selectedLorebooks.includes(item.id)}
+                  onCheckedChange={(checked) =>
+                    mutation.mutate(
+                      checked
+                        ? [...selectedLorebooks, item.id]
+                        : selectedLorebooks.filter((id) => id !== item.id),
+                    )
+                  }
+                />
+                <span>{item.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

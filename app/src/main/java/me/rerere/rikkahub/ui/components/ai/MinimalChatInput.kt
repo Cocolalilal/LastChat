@@ -170,9 +170,7 @@ import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.canManuallySummarizeConversation
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
 import me.rerere.rikkahub.data.model.Skill
-import me.rerere.rikkahub.data.model.withoutSkillSelectionOverride
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.chat.LastChatComposerAddButton
@@ -278,13 +276,6 @@ fun MinimalChatInput(
     val modelCatalog = koinInject<ModelCatalogService>()
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    val availableSkills = remember(settings.skills) {
-        settings.skills
-    }
-    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
-    }
     val pendingQuestionnaire = remember(conversation.messageNodes) {
         conversation.currentMessages.findPendingAskUserToolCall()
     }
@@ -297,6 +288,26 @@ fun MinimalChatInput(
         }
     }
     val isToolApprovalActive = pendingToolApproval != null
+    var dismissedSkillQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
+    val commandText = state.textContent.text.toString()
+    val slashQuery = commandText.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }
+    LaunchedEffect(slashQuery) {
+        if (slashQuery == null) dismissedSkillQuery = null
+    }
+    if (slashQuery != null && slashQuery != dismissedSkillQuery && !state.loading &&
+        !isQuestionnaireActive && !isToolApprovalActive
+    ) {
+        SkillsPickerSheet(
+            settings = settings,
+            assistant = assistant,
+            initialQuery = slashQuery.drop(1),
+            onInvokeSkill = { skill ->
+                haptics.perform(HapticPattern.Selection)
+                state.setMessageTextAndFocus("/${skill.name} ", scope)
+            },
+            onDismiss = { dismissedSkillQuery = slashQuery },
+        )
+    }
     val questionnaire = pendingQuestionnaire?.questionnaire
     val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
     var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
@@ -1813,12 +1824,8 @@ private fun MinimalPickerContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    val availableSkills = remember(settings.skills) {
-        settings.skills
-    }
-    val availableSkillIds = remember(availableSkills) { availableSkills.map { it.id }.toSet() }
-    val assistantAvailableSkillIds = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) }.map { it.id }.toSet()
+    val availableSkills = remember(settings.skills, assistant.id) {
+        settings.skills.filter { it.isAvailableForAssistant(assistant.id) && it.userInvocable }
     }
 
     // OLED dark mode detection for buttons (not sheet backgrounds)
@@ -1841,17 +1848,10 @@ private fun MinimalPickerContent(
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
-    val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
-    val alwaysEnabledSkillIds = availableSkills
-        .filter { it.alwaysEnabled && assistantAvailableSkillIds.contains(it.id) }
-        .map { it.id }
-        .toSet()
-    val effectiveActiveSkillIds = if (conversation.enabledModeIds.hasManualSkillSelectionOverride() || conversation.enabledModeIds.isNotEmpty()) {
-        conversation.enabledModeIds.withoutSkillSelectionOverride()
-    } else {
-        assistantDefaultSkillIds + alwaysEnabledSkillIds
-    }.intersect(availableSkillIds)
-
+    val effectiveActiveSkillIds = setOfNotNull(
+        me.rerere.rikkahub.data.model.resolveSkillCommand(state.textContent.text.toString(), settings.skills, assistant.id)?.id
+    )
+    
     // Track the last valid search provider index so selection persists when search is disabled
     // Initialize from assistant's searchMode if available, otherwise use global setting
     val initialProviderIndex = when (val mode = assistant.searchMode) {
@@ -2307,8 +2307,10 @@ private fun MinimalPickerContent(
         SkillsPickerSheet(
             settings = settings,
             assistant = assistant,
-            conversation = conversation,
-            onUpdateConversation = onUpdateConversation,
+            onInvokeSkill = { skill ->
+                state.setMessageText("/${skill.name} ${state.textContent.text.toString().trimStart()}")
+                onDismiss()
+            },
             onDismiss = { showSkillsPicker = false }
         )
     }

@@ -49,6 +49,8 @@ internal fun contextUsageSourceKey(
     assistant.customBodies,
     settings.learningModePrompt,
     settings.skills,
+    settings.additionalContexts,
+    assistant.enableAutomaticSkillInvocation,
     settings.lorebooks,
     settings.mcpServers,
     settings.enableWebSearch,

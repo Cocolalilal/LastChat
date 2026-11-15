@@ -1,0 +1,146 @@
+name: Stable ARM64 validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [LastChat_dev]
+    paths: [.github/workflows/stable-arm64-validation.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - uses: android-actions/setup-android@v3
+      - name: Install Android build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: stable-validation-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: stable-validation-${{ runner.os }}-
+      - name: Configure stable build
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          config = os.environ['GOOGLE_SERVICES_JSON'].strip()
+          if config:
+              json.loads(config)
+              Path('app/google-services.json').write_text(config)
+          # The delivery APK is re-signed with the supplied keystore after download.
+          Path('ci-stable.init.gradle').write_text('''
+          allprojects { project ->
+              if (project.path == ':app') {
+                  project.afterEvaluate {
+                      android.defaultConfig.ndk.abiFilters.clear()
+                      android.splits.abi.reset()
+                      android.splits.abi.include('arm64-v8a', 'x86_64')
+                      android.splits.abi.universalApk = false
+                  }
+              }
+          }
+          ''')
+          PY
+      - name: Install and check web UI
+        working-directory: web-ui
+        run: |
+          npm ci
+          npm run typecheck
+      - name: Install ARMHF smoke-test emulator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-user-static
+          curl --fail --location --retry 3 https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armv7/alpine-minirootfs-3.19.9-armv7.tar.gz -o "$RUNNER_TEMP/alpine-armv7.tar.gz"
+      - name: Run feature and persistence regression tests
+        env:
+          LASTCHAT_ARMHF_ARCHIVE: ${{ runner.temp }}/alpine-armv7.tar.gz
+          LASTCHAT_QEMU_ARM: /usr/bin/qemu-arm-static
+        run: |
+          chmod +x gradlew
+          ./gradlew :workspace:testDebugUnitTest --tests '*Rootfs*Test' \
+            :app:testStableDebugUnitTest \
+            --tests '*GenerationHandlerSkillToolTest' --tests '*AdditionalContextTest' \
+            --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' \
+            --tests '*SkillExportImportTest' --tests '*PhoneUseContinuationTest' \
+            --tests '*AvatarSerializationTest' --tests '*StartupDependenciesTest' \
+            --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
+      - name: Build stable release APKs
+        run: |
+          ./gradlew -I ci-stable.init.gradle :app:assembleStableRelease \
+            --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-arm64-release
+          path: app/build/outputs/apk/**/*stable-arm64-v8a-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-x86-startup
+          path: app/build/outputs/apk/**/*stable-x86_64-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stable-validation-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+            workspace/build/test-results/
+          if-no-files-found: ignore
+
+  startup:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stable-x86-startup
+          path: startup-apk
+      - run: sudo chmod a+rw /dev/kvm
+      - name: Verify stable release startup
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            apk=$(find startup-apk -name '*.apk' -print -quit)
+            adb install -r "$apk"
+            adb logcat -c
+            adb shell am start -W -n lastchat.rikkafork.cocolal/me.rerere.rikkahub.RouteActivity
+            sleep 15
+            adb shell pidof lastchat.rikkafork.cocolal
+            adb logcat -d -b crash > startup-crashes.txt
+            ! grep -Fq 'Process: lastchat.rikkafork.cocolal,' startup-crashes.txt
+            adb exec-out screencap -p > stable-startup.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stable-startup-evidence
+          path: |
+            startup-crashes.txt
+            stable-startup.png
+          if-no-files-found: ignore

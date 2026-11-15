@@ -1177,6 +1177,12 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingAdditionalContext> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.AdditionalContext) {
+                            SettingPromptInjectionsPage(initialPage = 1)
+                        }
+                    }
+
                     composable<Screen.SettingLorebooks>(
                         enterTransition = {
                             if (useWideSettingsLayout) {
@@ -1432,6 +1438,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingPromptInjections : Screen
+
+    @Serializable
+    data object SettingAdditionalContext : Screen
 
     @Serializable
     data object SettingLorebooks : Screen

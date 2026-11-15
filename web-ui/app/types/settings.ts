@@ -76,6 +76,9 @@ export interface AssistantUISettings {
 }
 
 export interface ModeInjectionProfile {
+  userInvocable?: boolean;
+  availableForAllAssistants?: boolean;
+  availableAssistantIds?: string[];
   id: string;
   name: string;
   description?: string;

@@ -49,9 +49,9 @@ fun AssistantSkillsSubPage(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val availableSkills = settings.skills.filter { it.isAvailableForAssistant(assistant.id) }
+    val availableSkills = settings.skills
 
-    if (availableSkills.isEmpty()) {
+    if (availableSkills.isEmpty() && settings.additionalContexts.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -89,7 +89,7 @@ fun AssistantSkillsSubPage(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = androidx.compose.ui.res.stringResource(R.string.assistant_skills_desc),
+                        text = "Choose which skills this character can use. The assistant loads instructions when needed, or you can invoke a skill with /skillname.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -129,7 +129,7 @@ fun AssistantSkillsSubPage(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Allow the model to discover unselected skills. Turning this off reduces input token usage.",
+                            text = "Let the assistant invoke accessible skills when needed. Slash commands remain available when this is off.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -152,7 +152,7 @@ fun AssistantSkillsSubPage(
                 index == availableSkills.lastIndex -> ItemPosition.LAST
                 else -> ItemPosition.MIDDLE
             }
-            val isEnabled = assistant.enabledSkillIds.contains(skill.id)
+            val isEnabled = skill.isAvailableForAssistant(assistant.id)
 
             SkillSelectionCard(
                 skill = skill,
@@ -160,14 +160,30 @@ fun AssistantSkillsSubPage(
                 position = position,
                 onClick = { navController.navigate(Screen.SettingSkills(scrollToSkillId = skill.id.toString())) },
                 onToggle = { enabled ->
-                    val newIds = if (enabled) {
-                        assistant.enabledSkillIds + skill.id
-                    } else {
-                        assistant.enabledSkillIds - skill.id
-                    }
-                    onUpdate(assistant.copy(enabledSkillIds = newIds))
+                    vm.setSkillAccess(skill.id, enabled)
                 }
             )
+        }
+        if (settings.additionalContexts.isNotEmpty()) {
+            item { Text("Additional context", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 12.dp)) }
+            itemsIndexed(settings.additionalContexts, key = { _, snippet -> "context-${snippet.id}" }) { _, snippet ->
+                Card(shape = AppShapes.CardMedium, onClick = { navController.navigate(Screen.SettingAdditionalContext) }) {
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(snippet.name, style = MaterialTheme.typography.titleMedium)
+                            Text("Always included", style = MaterialTheme.typography.bodySmall)
+                        }
+                        HapticSwitch(
+                            checked = snippet.allAssistants || assistant.id in snippet.assistantIds,
+                            onCheckedChange = { vm.setAdditionalContextAccess(snippet.id, it) },
+                        )
+                    }
+                }
+            }
         }
     }
 }

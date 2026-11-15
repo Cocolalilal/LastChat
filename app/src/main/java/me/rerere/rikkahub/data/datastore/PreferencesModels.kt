@@ -100,6 +100,7 @@ data class Settings(
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
     val skills: List<Skill> = emptyList(),
+    val additionalContexts: List<me.rerere.rikkahub.data.model.AdditionalContext> = emptyList(),
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),

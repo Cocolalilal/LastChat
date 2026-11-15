@@ -161,6 +161,45 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
         )
 
+    fun setSkillAccess(skillId: Uuid, enabled: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { latest ->
+                latest.copy(skills = latest.skills.map { skill ->
+                    if (skill.id != skillId) skill else {
+                        val ids = when {
+                            !skill.enabled -> emptySet()
+                            skill.availableForAllAssistants -> latest.assistants.map { it.id }.toSet()
+                            else -> skill.availableAssistantIds
+                        }
+                        skill.copy(
+                            enabled = skill.enabled || enabled,
+                            availableForAllAssistants = false,
+                            availableAssistantIds = if (enabled) ids + assistantId else ids - assistantId,
+                        )
+                    }
+                })
+            }
+        }
+    }
+
+    fun setAdditionalContextAccess(contextId: Uuid, enabled: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { latest ->
+                latest.copy(additionalContexts = latest.additionalContexts.map { snippet ->
+                    if (snippet.id != contextId) snippet else {
+                        val ids = if (snippet.allAssistants) {
+                            latest.assistants.map { it.id }.toSet()
+                        } else snippet.assistantIds
+                        snippet.copy(
+                            allAssistants = false,
+                            assistantIds = if (enabled) ids + assistantId else ids - assistantId,
+                        )
+                    }
+                })
+            }
+        }
+    }
+
     fun updateTags(tagIds: List<Uuid>, tags: List<Tag>) {
         viewModelScope.launch {
             // First, update the global tags list

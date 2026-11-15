@@ -403,6 +403,9 @@ data class WebQuickMessageDto(
 
 @Serializable
 data class WebModeInjectionDto(
+    val userInvocable: Boolean,
+    val availableForAllAssistants: Boolean,
+    val availableAssistantIds: List<String>,
     val id: String,
     val name: String,
     val description: String = "",
@@ -648,7 +651,8 @@ fun Settings.toWebSettingsDto(context: Context): WebSettingsDto {
         },
         assistants = assistants.map { it.toWebAssistantDto(context) },
         assistantTags = assistantTags.map { WebAssistantTagDto(id = it.id.toString(), name = it.name) },
-        modeInjections = skills.map { it.toWebModeInjectionDto() },
+        modeInjections = skills.filter { it.name.isNotBlank() && it.instructions.isNotBlank() }
+            .map { it.toWebModeInjectionDto() },
         lorebooks = lorebooks.map { it.toWebLorebookDto() },
         mcpServers = mcpServers.map { it.toWebMcpServerDto() },
         searchServices = searchServices.map { it.toWebSearchServiceDto() },
@@ -897,6 +901,9 @@ private fun QuickMessage.toWebQuickMessageDto(): WebQuickMessageDto {
 
 private fun Skill.toWebModeInjectionDto(): WebModeInjectionDto {
     return WebModeInjectionDto(
+        userInvocable = userInvocable,
+        availableForAllAssistants = availableForAllAssistants,
+        availableAssistantIds = availableAssistantIds.map(Uuid::toString),
         id = id.toString(),
         name = name.ifBlank { description.ifBlank { "Skill" } },
         description = description,

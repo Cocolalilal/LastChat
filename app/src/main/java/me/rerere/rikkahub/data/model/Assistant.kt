@@ -95,8 +95,8 @@ data class Assistant(
     val customMaterialYouColor: String? = null, // Hex seed used when materialYouColorIndex == -1
     val learningMode: Boolean = false,
     val enabledLorebookIds: Set<Uuid> = emptySet(), // Lorebooks enabled for this assistant
-    val enabledSkillIds: Set<Uuid> = emptySet(), // Skills enabled for this assistant
-    val enableAutomaticSkillInvocation: Boolean = true, // Let the model discover and activate otherwise unselected skills
+    val enabledSkillIds: Set<Uuid> = emptySet(), // Legacy default selections; access is stored on each Skill
+    val enableAutomaticSkillInvocation: Boolean = true, // Let the model discover and invoke accessible skills
 
     // Context Management Settings
     val smartContextManagement: Boolean = true,

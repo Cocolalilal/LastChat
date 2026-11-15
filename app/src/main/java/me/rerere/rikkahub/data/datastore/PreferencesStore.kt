@@ -156,6 +156,7 @@ class SettingsStore(
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val SKILLS = stringPreferencesKey("skills")
+        val ADDITIONAL_CONTEXTS = stringPreferencesKey("additional_contexts")
         val CHAT_STORAGE = stringPreferencesKey("chat_storage")
 
         // Android Integration
@@ -258,6 +259,7 @@ class SettingsStore(
                     modes = decodePreferenceList(preferences[MODES]) ?: emptyList(),
                     lorebooks = decodePreferenceList(preferences[LOREBOOKS]) ?: emptyList(),
                     skills = decodePreferenceList(preferences[SKILLS]) ?: emptyList(),
+                    additionalContexts = decodePreferenceList(preferences[ADDITIONAL_CONTEXTS]) ?: emptyList(),
                     chatStorage = decodePreferenceValue(
                         preferences[CHAT_STORAGE],
                         ChatStorageSettings(),
@@ -396,7 +398,7 @@ class SettingsStore(
             migrated
         }
         .map { settings ->
-            val migrated = settings.migrateLegacyModesToSkills()
+            val migrated = settings.migrateLegacyModesToSkills().migrateAlwaysEnabledSkillsToContext()
             if (!hasPersistedLegacyModeMigration) {
                 hasPersistedLegacyModeMigration = true
                 if (migrated != settings) {
@@ -598,6 +600,7 @@ class SettingsStore(
             preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
             preferences[MODES] = JsonInstant.encodeToString(settings.modes)
             preferences[SKILLS] = JsonInstant.encodeToString(settings.skills)
+            preferences[ADDITIONAL_CONTEXTS] = JsonInstant.encodeToString(settings.additionalContexts)
         }
     }
 
@@ -631,7 +634,7 @@ class SettingsStore(
     private suspend fun persistSettings(before: Settings, settings: Settings): Settings {
         val normalizedSettings = settings
             .normalizeWebServerSettings()
-            .migrateLegacyModesToSkills()
+            .migrateLegacyModesToSkills().migrateAlwaysEnabledSkillsToContext()
             .normalizeFontSettings()
             .normalizeThemeId()
             .normalizeTtsSettings()
@@ -731,6 +734,7 @@ class SettingsStore(
             preferences[MODES] = JsonInstant.encodeToString(normalizedSettings.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(normalizedSettings.lorebooks)
             preferences[SKILLS] = JsonInstant.encodeToString(normalizedSettings.skills)
+            preferences[ADDITIONAL_CONTEXTS] = JsonInstant.encodeToString(normalizedSettings.additionalContexts)
             preferences[CHAT_STORAGE] = JsonInstant.encodeToString(normalizedSettings.chatStorage)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
