@@ -5,7 +5,9 @@ artifact_root=${1:?Pass the extracted release APK directory}
 log_root=startup-smoke-logs
 mkdir -p "$log_root"
 
-for flavor in stable dev; do
+flavors=("${@:2}")
+if (( ${#flavors[@]} == 0 )); then flavors=(stable dev); fi
+for flavor in "${flavors[@]}"; do
   app_id=lastchat.rikkafork.cocolal
   if [[ "$flavor" == dev ]]; then app_id+=.dev; fi
   apk=$(find "$artifact_root" -type f -name "*_${flavor}-x86_64-release.apk" -print -quit)

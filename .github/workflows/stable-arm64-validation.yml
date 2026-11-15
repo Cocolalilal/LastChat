@@ -2,15 +2,46 @@ name: Stable ARM64 validation
 
 on:
   workflow_dispatch:
+    inputs:
+      existing_run_id:
+        description: 'Run startup checks on an existing successful build without rebuilding'
+        required: false
+        default: ''
+        type: string
   push:
     branches: [LastChat_dev]
     paths: [.github/workflows/stable-arm64-validation.yml]
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  mode:
+    runs-on: ubuntu-24.04
+    outputs:
+      existing_run_id: ${{ steps.mode.outputs.existing_run_id }}
+    steps:
+      - id: mode
+        env:
+          INPUT_RUN_ID: ${{ inputs.existing_run_id }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          python3 - <<'PYMODE'
+          import os, re
+          run_id = os.environ.get('INPUT_RUN_ID', '').strip()
+          match = re.search(r'\[reuse-build:(\d+)\]', os.environ.get('COMMIT_MESSAGE', ''))
+          if not run_id and match:
+              run_id = match.group(1)
+          if run_id and not run_id.isdigit():
+              raise SystemExit('existing_run_id must be a GitHub Actions run ID')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'existing_run_id={run_id}\n')
+          PYMODE
+
   build:
+    needs: mode
+    if: needs.mode.outputs.existing_run_id == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -110,14 +141,18 @@ jobs:
           if-no-files-found: ignore
 
   startup:
-    needs: build
+    needs: [mode, build]
+    if: always() && needs.mode.result == 'success' && (needs.build.result == 'success' || needs.mode.outputs.existing_run_id != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: stable-x86-startup
           path: startup-apk
+          run-id: ${{ needs.mode.outputs.existing_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - run: sudo chmod a+rw /dev/kvm
       - name: Verify stable release startup
         uses: reactivecircus/android-emulator-runner@v2
@@ -127,21 +162,10 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            apk=$(find startup-apk -name '*.apk' -print -quit)
-            adb install -r "$apk"
-            adb logcat -c
-            adb shell am start -W -n lastchat.rikkafork.cocolal/me.rerere.rikkahub.RouteActivity
-            sleep 15
-            adb shell pidof lastchat.rikkafork.cocolal
-            adb logcat -d -b crash > startup-crashes.txt
-            ! grep -Fq 'Process: lastchat.rikkafork.cocolal,' startup-crashes.txt
-            adb exec-out screencap -p > stable-startup.png
+          script: bash tools/ci/check-release-startup.sh startup-apk stable
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: stable-startup-evidence
-          path: |
-            startup-crashes.txt
-            stable-startup.png
+          path: startup-smoke-logs/
           if-no-files-found: ignore
