@@ -135,6 +135,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: addon-ui-renders
+          path: app/build/reports/addon-ui/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: stable-validation-reports
           path: |
             app/build/reports/tests/
