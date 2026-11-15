@@ -38,13 +38,15 @@ fun LastChatSettingsGroup(
         modifier = Modifier.padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp),
-        )
+        if (title.isNotBlank()) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = titleStartPadding, bottom = 4.dp),
+            )
+        }
         CollapseSpacingColumn(
             modifier = Modifier.padding(horizontal = horizontalPadding).clip(me.rerere.rikkahub.ui.theme.AppShapes.CardMedium),
             spacing = 4.dp,

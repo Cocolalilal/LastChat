@@ -113,6 +113,8 @@ jobs:
             --tests '*SettingsStoreDurabilityTest' --tests '*SettingsMergeTest' \
             --tests '*SkillExportImportTest' --tests '*PhoneUseContinuationTest' \
             --tests '*AvatarSerializationTest' --tests '*StartupDependenciesTest' \
+            --tests '*AddonComposerUiTest' --tests '*QuestionnaireMotionTest' \
+            -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
             '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
       - name: Build stable release APKs

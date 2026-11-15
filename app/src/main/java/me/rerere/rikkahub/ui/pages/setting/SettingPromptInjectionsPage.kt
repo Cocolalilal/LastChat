@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Skill
+import me.rerere.rikkahub.data.model.AdditionalContext
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -205,11 +206,15 @@ fun SettingPromptInjectionsPage(
                         )
                     }
 
-                    if (pagerState.currentPage != 1) FloatingActionButton(
+                    FloatingActionButton(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
                             if (pagerState.currentPage == 0) {
                                 showAddSkillDialog = true
+                            } else if (pagerState.currentPage == 1) {
+                                val snippet = AdditionalContext()
+                                vm.updateSettings { it.copy(additionalContexts = it.additionalContexts + snippet) }
+                                navController.navigate(Screen.SettingAdditionalContextDetail(snippet.id.toString()))
                             } else {
                                 showAddLorebookDialog = true
                             }
@@ -243,19 +248,7 @@ fun SettingPromptInjectionsPage(
                 1 -> AdditionalContextContent(
                     settings = settings,
                     contentPadding = contentPadding,
-                    onSave = { snippet ->
-                        vm.updateSettings { latest ->
-                            val updated = if (latest.additionalContexts.any { it.id == snippet.id }) {
-                                latest.additionalContexts.map { if (it.id == snippet.id) snippet else it }
-                            } else latest.additionalContexts + snippet
-                            latest.copy(additionalContexts = updated)
-                        }
-                    },
-                    onDelete = { snippet ->
-                        vm.updateSettings { latest ->
-                            latest.copy(additionalContexts = latest.additionalContexts.filterNot { it.id == snippet.id })
-                        }
-                    },
+                    onEdit = { navController.navigate(Screen.SettingAdditionalContextDetail(it.id.toString())) },
                 )
                 else -> {
                     LorebooksPageContent(

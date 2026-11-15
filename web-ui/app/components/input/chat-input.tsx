@@ -26,7 +26,8 @@ import { useCurrentModel } from "~/hooks/use-current-model";
 import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
-import { InjectionPickerButton, SkillCommandDialog } from "~/components/input/injection-picker";
+import { ComposerOption, ComposerPopup } from "./composer-popup";
+import { InjectionPickerButton, SkillCommandPopup } from "~/components/input/injection-picker";
 import type { AskUserOption, AskUserQuestion } from "~/lib/tool-activity";
 import { useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
@@ -255,6 +256,10 @@ function ChatInputInner({
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const [skillsRequested, setSkillsRequested] = React.useState(false);
+  React.useEffect(() => {
+    setSkillsRequested(false);
+  }, [isGenerating, conversationId]);
   const [submitting, setSubmitting] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadMenuOpen, setUploadMenuOpen] = React.useState(false);
@@ -699,29 +704,7 @@ function ChatInputInner({
 
           <AnimatePresence initial={false}>
             {questionnaireActive && pendingQuestionnaire ? (
-              <motion.div
-                key="questionnaire-panel"
-                layout
-                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10, height: 0 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  height: "auto",
-                  transition: reducedMotion
-                    ? { duration: 0.01 }
-                    : {
-                        opacity: { duration: CHAT_MOTION_DURATION.fast, ease: "easeOut" },
-                        y: getChatLayoutTransition(false),
-                        height: getChatLayoutTransition(false),
-                      },
-                }}
-                exit={
-                  reducedMotion
-                    ? { opacity: 0 }
-                    : { opacity: 0, y: -6, height: 0, transition: { duration: 0.12 } }
-                }
-                className="overflow-hidden rounded-[var(--radius-card-inner)] border border-border/70 bg-secondary/50"
-              >
+              <ComposerPopup key="questionnaire-panel">
                 <QuestionnairePanel
                   question={activeQuestion}
                   currentIndex={questionIndex}
@@ -757,9 +740,25 @@ function ChatInputInner({
                     }
                   }}
                 />
-              </motion.div>
+              </ComposerPopup>
             ) : null}
           </AnimatePresence>
+
+          <SkillCommandPopup
+            value={value}
+            assistantId={assistantId}
+            disabled={disabled || isGenerating || questionnaireActive}
+            requested={skillsRequested}
+            onClose={() => setSkillsRequested(false)}
+            onSelect={(name) => {
+              const body = value.startsWith("/")
+                ? value.replace(/^\/\S*\s*/, "")
+                : value.trimStart();
+              setSkillsRequested(false);
+              onValueChange(`/${name} ${body}`);
+              textareaRef.current?.focus();
+            }}
+          />
 
           <AnimatePresence initial={false}>
             {suggestions.length > 0 && !questionnaireActive ? (
@@ -1037,18 +1036,15 @@ function ChatInputInner({
                   <ModelList disabled={!canSwitchModel} className="max-w-64" />
                   <SearchPickerButton disabled={!canSwitchModel} />
                   <ReasoningPickerButton disabled={!canSwitchModel} />
-                  <SkillCommandDialog
-                    value={value}
-                    assistantId={assistantId}
-                    disabled={disabled || isGenerating || questionnaireActive}
-                    onValueChange={onValueChange}
-                  />
                   <InjectionPickerButton
                     disabled={!canSwitchModel}
                     assistantId={assistantId}
                     conversationId={conversationId}
                     conversationSkillIds={conversationSkillIds}
-                    onInvokeSkill={(name) => onValueChange(`/${name} ${value.trimStart()}`)}
+                    onOpenSkills={() => {
+                      setSkillsRequested(true);
+                      textareaRef.current?.focus();
+                    }}
                   />
                   <QuickMessageButton
                     quickMessages={quickMessages}
@@ -1208,24 +1204,13 @@ function QuestionnairePanel({
 
       <div className="space-y-2">
         {question.options.map((option) => (
-          <button
+          <ComposerOption
             key={option.label}
-            type="button"
-            onClick={() => {
-              onSelectOption(option);
-            }}
-            className={cn(
-              "w-full rounded-[var(--radius-card-inner)] border px-3 py-2 text-left transition active:scale-[0.97]",
-              selectedValue === option.label
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/70 bg-background/70 text-foreground hover:bg-accent",
-            )}
-          >
-            <div className="text-sm font-medium">{option.label}</div>
-            {option.description ? (
-              <div className="mt-1 text-muted-foreground text-xs">{option.description}</div>
-            ) : null}
-          </button>
+            label={option.label}
+            description={option.description}
+            selected={selectedValue === option.label}
+            onClick={() => onSelectOption(option)}
+          />
         ))}
       </div>
     </div>

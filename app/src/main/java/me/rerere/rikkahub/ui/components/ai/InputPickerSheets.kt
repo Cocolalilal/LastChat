@@ -62,61 +62,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
 
 @Composable
-internal fun SkillsPickerSheet(
-    settings: Settings,
-    assistant: Assistant,
-    onInvokeSkill: (me.rerere.rikkahub.data.model.Skill) -> Unit,
-    onDismiss: () -> Unit,
-    initialQuery: String = "",
-) {
-    var query by remember { mutableStateOf(initialQuery) }
-    val skills = settings.skills.filter {
-        it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
-            it.name.isNotBlank() && (it.name.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true))
-    }
-    ModalBottomSheet(
-        containerColor = lastChatSheetContainerColor(),
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
-        PrepareAssistantDialog()
-        Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Invoke a skill", style = MaterialTheme.typography.titleLarge)
-            Text("Choose a skill for your next message.", style = MaterialTheme.typography.bodyMedium)
-            androidx.compose.material3.OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Search skills") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (skills.isEmpty()) Text("No accessible skills match. Manage access in character settings.")
-            skills.forEach { skill ->
-                Card(
-                    onClick = { onInvokeSkill(skill); onDismiss() },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                ) {
-                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(ModeIcons.getIcon(skill.icon ?: "category"), contentDescription = null)
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("/${skill.name}", style = MaterialTheme.typography.titleMedium)
-                            if (skill.description.isNotBlank()) Text(skill.description, style = MaterialTheme.typography.bodyMedium)
-                            skill.argumentHint?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 internal fun LorebooksPickerSheet(
     settings: Settings,
     assistant: Assistant,

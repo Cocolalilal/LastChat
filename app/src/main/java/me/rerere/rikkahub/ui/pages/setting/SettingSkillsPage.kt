@@ -1005,7 +1005,6 @@ fun SkillEditorSheet(
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Manual invocation only") },
-                            supportingContent = { Text("Only load this skill when you invoke its slash command.") },
                             trailingContent = {
                                 HapticSwitch(
                                     checked = disableModelInvocation,
@@ -1016,7 +1015,6 @@ fun SkillEditorSheet(
                         ListItem(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             headlineContent = { Text("Slash command") },
-                            supportingContent = { Text("Make /${name.ifBlank { "skillname" }} available in chat.") },
                             trailingContent = {
                                 HapticSwitch(
                                     checked = userInvocable,

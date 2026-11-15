@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
-import { BookOpen, LoaderCircle } from "~/lib/material-icons";
+import { BookOpen, LoaderCircle, ChevronLeft, ChevronRight, X } from "~/lib/material-icons";
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
 import { usePickerPopover } from "~/hooks/use-picker-popover";
 import { safeStringArray } from "~/lib/type-guards";
@@ -10,23 +10,15 @@ import api from "~/services/api";
 import type { ModeInjectionProfile } from "~/types";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
-import { Input } from "~/components/ui/input";
+import { ComposerOption, ComposerPopup } from "./composer-popup";
+import { AnimatePresence } from "motion/react";
 import {
   Popover,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
-  PopoverDescription,
   PopoverTrigger,
 } from "~/components/ui/popover";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "~/components/ui/dialog";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { PickerErrorAlert } from "./picker-error-alert";
 
 export interface InjectionPickerButtonProps {
@@ -35,100 +27,119 @@ export interface InjectionPickerButtonProps {
   assistantId?: string | null;
   conversationId?: string | null;
   conversationSkillIds?: string[] | null;
-  onInvokeSkill: (skillName: string) => void;
+  onOpenSkills: () => void;
 }
 
 function canInvoke(skill: ModeInjectionProfile, assistantId: string | undefined) {
   return Boolean(
     assistantId &&
+    skill.name.trim() &&
     skill.enabled !== false &&
     skill.userInvocable !== false &&
     (skill.availableForAllAssistants || skill.availableAssistantIds?.includes(assistantId)),
   );
 }
 
-function SkillChoices({
-  skills,
-  onSelect,
-  initialQuery = "",
-}: {
-  skills: ModeInjectionProfile[];
-  onSelect: (name: string) => void;
-  initialQuery?: string;
-}) {
-  const [query, setQuery] = React.useState(initialQuery);
-  const matches = skills.filter((skill) =>
-    `${skill.name} ${skill.description ?? ""}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  return (
-    <div className="space-y-2">
-      <Input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search skills"
-        aria-label="Search skills"
-      />
-      <ScrollArea className="max-h-80">
-        {matches.length === 0 && (
-          <p className="p-3 text-sm text-muted-foreground">
-            No accessible skills match. Manage access in character settings.
-          </p>
-        )}
-        {matches.map((skill) => (
-          <button
-            key={skill.id}
-            type="button"
-            onClick={() => onSelect(skill.name)}
-            className="mb-1 w-full rounded-2xl bg-muted p-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <div className="text-sm font-medium">/{skill.name}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{skill.description}</div>
-          </button>
-        ))}
-      </ScrollArea>
-    </div>
-  );
-}
-
-export function SkillCommandDialog({
+export function SkillCommandPopup({
   value,
   assistantId,
   disabled,
-  onValueChange,
+  requested,
+  onClose,
+  onSelect,
 }: {
   value: string;
   assistantId?: string | null;
   disabled: boolean;
-  onValueChange: (text: string) => void;
+  requested: boolean;
+  onClose: () => void;
+  onSelect: (name: string) => void;
 }) {
   const { settings, currentAssistant } = useCurrentAssistant();
   const id = assistantId ?? currentAssistant?.id;
-  const [dismissed, setDismissed] = React.useState<string | null>(null);
   const command = /^\/\S*$/.test(value) ? value : null;
+  const [dismissed, setDismissed] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(0);
   React.useEffect(() => {
+    setPage(0);
     if (command === null) setDismissed(null);
-  }, [command]);
-  const skills = (settings?.modeInjections ?? []).filter((skill) => canInvoke(skill, id));
+  }, [command, requested]);
+  const skills = (settings?.modeInjections ?? []).filter(
+    (skill) =>
+      canInvoke(skill, id) &&
+      skill.name.toLowerCase().includes((command?.slice(1) ?? "").toLowerCase()),
+  );
+  const pages = Math.max(1, Math.ceil(skills.length / 3));
+  const currentPage = Math.min(page, pages - 1);
+  const visible = !disabled && (requested || (command !== null && command !== dismissed));
+  const control =
+    "rounded-full border border-border/70 bg-background/80 p-1 text-foreground transition hover:bg-accent disabled:opacity-40";
   return (
-    <Dialog
-      open={!disabled && command !== null && command !== dismissed}
-      onOpenChange={(open) => {
-        if (!open) setDismissed(command);
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Invoke a skill</DialogTitle>
-          <DialogDescription>Choose a skill for your next message.</DialogDescription>
-        </DialogHeader>
-        <SkillChoices
-          key={command}
-          skills={skills}
-          initialQuery={command?.slice(1)}
-          onSelect={(name) => onValueChange(`/${name} `)}
-        />
-      </DialogContent>
-    </Dialog>
+    <AnimatePresence initial={false}>
+      {visible && (
+        <ComposerPopup key="skill-commands">
+          <div className="space-y-3 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium">Skills</span>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {pages > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Previous skills"
+                      className={control}
+                      disabled={currentPage === 0}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setPage(currentPage - 1)}
+                    >
+                      <ChevronLeft className="size-3.5" />
+                    </button>
+                    <span className="px-1">
+                      {currentPage + 1}/{pages}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Next skills"
+                      className={control}
+                      disabled={currentPage === pages - 1}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setPage(currentPage + 1)}
+                    >
+                      <ChevronRight className="size-3.5" />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-label="Close skills"
+                  className={control}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setDismissed(command);
+                    onClose();
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {skills.slice(currentPage * 3, currentPage * 3 + 3).map((skill) => (
+                <ComposerOption
+                  key={skill.id}
+                  label={`/${skill.name}`}
+                  description={skill.description}
+                  onClick={() => onSelect(skill.name)}
+                />
+              ))}
+              {skills.length === 0 && (
+                <p className="text-sm text-muted-foreground">No matching skills</p>
+              )}
+            </div>
+          </div>
+        </ComposerPopup>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -136,17 +147,13 @@ export function InjectionPickerButton({
   disabled = false,
   className,
   assistantId,
-  onInvokeSkill,
+  onOpenSkills,
 }: InjectionPickerButtonProps) {
   const { settings, currentAssistant } = useCurrentAssistant();
   const assistant =
     settings?.assistants.find((item) => item.id === assistantId) ?? currentAssistant;
   const { error, setError, popoverProps } = usePickerPopover(
     Boolean(settings && assistant && !disabled),
-  );
-  const [tab, setTab] = React.useState<"skills" | "lorebooks">("skills");
-  const skills = (settings?.modeInjections ?? []).filter((skill) =>
-    canInvoke(skill, assistant?.id),
   );
   const lorebooks = settings?.lorebooks ?? [];
   const selectedLorebooks = safeStringArray(assistant?.lorebookIds);
@@ -177,54 +184,38 @@ export function InjectionPickerButton({
       <PopoverContent className="w-80">
         <PopoverHeader>
           <PopoverTitle>Add-ons</PopoverTitle>
-          <PopoverDescription>Invoke a skill or choose lorebooks.</PopoverDescription>
         </PopoverHeader>
-        <div className="my-3 flex gap-2">
-          <Button
-            size="sm"
-            variant={tab === "skills" ? "default" : "ghost"}
-            onClick={() => setTab("skills")}
-          >
-            Skills
-          </Button>
-          <Button
-            size="sm"
-            variant={tab === "lorebooks" ? "default" : "ghost"}
-            onClick={() => setTab("lorebooks")}
-          >
-            Lorebooks
-          </Button>
-        </div>
+        <Button
+          className="my-3 w-full"
+          variant="secondary"
+          onClick={() => {
+            popoverProps.onOpenChange(false);
+            onOpenSkills();
+          }}
+        >
+          Skills
+        </Button>
+        <div className="mb-2 text-sm font-medium">Lorebooks</div>
         <PickerErrorAlert error={error} />
-        {tab === "skills" ? (
-          <SkillChoices
-            skills={skills}
-            onSelect={(name) => {
-              onInvokeSkill(name);
-              popoverProps.onOpenChange(false);
-            }}
-          />
-        ) : (
-          <div className="space-y-2">
-            {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
-            {lorebooks.map((item) => (
-              <label key={item.id} className="flex items-center gap-3 rounded-2xl bg-muted p-3">
-                <Checkbox
-                  disabled={mutation.isPending}
-                  checked={selectedLorebooks.includes(item.id)}
-                  onCheckedChange={(checked) =>
-                    mutation.mutate(
-                      checked
-                        ? [...selectedLorebooks, item.id]
-                        : selectedLorebooks.filter((id) => id !== item.id),
-                    )
-                  }
-                />
-                <span>{item.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
+        <div className="space-y-2">
+          {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}
+          {lorebooks.map((item) => (
+            <label key={item.id} className="flex items-center gap-3 rounded-2xl bg-muted p-3">
+              <Checkbox
+                disabled={mutation.isPending}
+                checked={selectedLorebooks.includes(item.id)}
+                onCheckedChange={(checked) =>
+                  mutation.mutate(
+                    checked
+                      ? [...selectedLorebooks, item.id]
+                      : selectedLorebooks.filter((id) => id !== item.id),
+                  )
+                }
+              />
+              <span>{item.name}</span>
+            </label>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );

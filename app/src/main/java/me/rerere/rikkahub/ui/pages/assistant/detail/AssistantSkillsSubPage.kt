@@ -72,75 +72,17 @@ fun AssistantSkillsSubPage(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        item(key = "description") {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = androidx.compose.ui.res.stringResource(R.string.assistant_skills_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Choose which skills this character can use. The assistant loads instructions when needed, or you can invoke a skill with /skillname.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.size(12.dp))
-        }
-
         item(key = "automatic_skill_invocation") {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                shape = AppShapes.CardMedium,
-                onClick = {
-                    onUpdate(
-                        assistant.copy(
-                            enableAutomaticSkillInvocation = !assistant.enableAutomaticSkillInvocation
-                        )
-                    )
-                }
-            ) {
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = "Automatic skill selection",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Let the assistant invoke accessible skills when needed. Slash commands remain available when this is off.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    HapticSwitch(
-                        checked = assistant.enableAutomaticSkillInvocation,
-                        onCheckedChange = {
+            me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup(title = "", horizontalPadding = 0.dp) {
+                me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem(
+                    title = "Automatic skill selection",
+                    trailing = {
+                        HapticSwitch(assistant.enableAutomaticSkillInvocation, {
                             onUpdate(assistant.copy(enableAutomaticSkillInvocation = it))
-                        }
-                    )
-                }
+                        })
+                    },
+                    onClick = { onUpdate(assistant.copy(enableAutomaticSkillInvocation = !assistant.enableAutomaticSkillInvocation)) },
+                )
             }
             Spacer(Modifier.size(12.dp))
         }
@@ -154,8 +96,10 @@ fun AssistantSkillsSubPage(
             }
             val isEnabled = skill.isAvailableForAssistant(assistant.id)
 
-            SkillSelectionCard(
-                skill = skill,
+            AddonSelectionCard(
+                name = skill.name,
+                description = skill.description,
+                icon = skill.icon ?: "category",
                 isEnabled = isEnabled,
                 position = position,
                 onClick = { navController.navigate(Screen.SettingSkills(scrollToSkillId = skill.id.toString())) },
@@ -166,31 +110,31 @@ fun AssistantSkillsSubPage(
         }
         if (settings.additionalContexts.isNotEmpty()) {
             item { Text("Additional context", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 12.dp)) }
-            itemsIndexed(settings.additionalContexts, key = { _, snippet -> "context-${snippet.id}" }) { _, snippet ->
-                Card(shape = AppShapes.CardMedium, onClick = { navController.navigate(Screen.SettingAdditionalContext) }) {
-                    androidx.compose.foundation.layout.Row(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(snippet.name, style = MaterialTheme.typography.titleMedium)
-                            Text("Always included", style = MaterialTheme.typography.bodySmall)
-                        }
-                        HapticSwitch(
-                            checked = snippet.allAssistants || assistant.id in snippet.assistantIds,
-                            onCheckedChange = { vm.setAdditionalContextAccess(snippet.id, it) },
-                        )
-                    }
-                }
+            itemsIndexed(settings.additionalContexts, key = { _, snippet -> "context-${snippet.id}" }) { index, snippet ->
+                AddonSelectionCard(
+                    name = snippet.name.ifBlank { "Untitled context" },
+                    description = snippet.prompt,
+                    icon = "notes",
+                    isEnabled = snippet.allAssistants || assistant.id in snippet.assistantIds,
+                    position = when {
+                        settings.additionalContexts.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == settings.additionalContexts.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    },
+                    onClick = { navController.navigate(Screen.SettingAdditionalContextDetail(snippet.id.toString())) },
+                    onToggle = { vm.setAdditionalContextAccess(snippet.id, it) },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SkillSelectionCard(
-    skill: Skill,
+private fun AddonSelectionCard(
+    name: String,
+    description: String,
+    icon: String,
     isEnabled: Boolean,
     position: ItemPosition,
     onClick: () -> Unit,
@@ -236,7 +180,7 @@ private fun SkillSelectionCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
+                        imageVector = ModeIcons.getIcon(icon),
                         contentDescription = null,
                         tint = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -248,15 +192,15 @@ private fun SkillSelectionCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = skill.name.ifEmpty { androidx.compose.ui.res.stringResource(R.string.skills_page_unnamed) },
+                    text = name.ifEmpty { androidx.compose.ui.res.stringResource(R.string.skills_page_unnamed) },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (skill.description.isNotEmpty()) {
+                if (description.isNotEmpty()) {
                     Text(
-                        text = skill.description,
+                        text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

@@ -289,25 +289,27 @@ fun MinimalChatInput(
     }
     val isToolApprovalActive = pendingToolApproval != null
     var dismissedSkillQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var skillCommandsRequested by remember(conversation.id) { mutableStateOf(false) }
+    var skillCommandPage by remember(conversation.id) { mutableIntStateOf(0) }
     val commandText = state.textContent.text.toString()
     val slashQuery = commandText.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }
     LaunchedEffect(slashQuery) {
+        skillCommandPage = 0
         if (slashQuery == null) dismissedSkillQuery = null
     }
-    if (slashQuery != null && slashQuery != dismissedSkillQuery && !state.loading &&
-        !isQuestionnaireActive && !isToolApprovalActive
-    ) {
-        SkillsPickerSheet(
-            settings = settings,
-            assistant = assistant,
-            initialQuery = slashQuery.drop(1),
-            onInvokeSkill = { skill ->
-                haptics.perform(HapticPattern.Selection)
-                state.setMessageTextAndFocus("/${skill.name} ", scope)
-            },
-            onDismiss = { dismissedSkillQuery = slashQuery },
-        )
+    LaunchedEffect(state.loading) {
+        if (state.loading) skillCommandsRequested = false
     }
+    val skillCommandState = if ((skillCommandsRequested ||
+        (slashQuery != null && slashQuery != dismissedSkillQuery)) &&
+        !state.loading && !isQuestionnaireActive && !isToolApprovalActive
+    ) {
+        val query = slashQuery?.drop(1).orEmpty()
+        SkillCommandCardState(query, settings.skills.filter {
+            it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
+                it.name.isNotBlank() && it.name.contains(query, ignoreCase = true)
+        }, skillCommandPage)
+    } else null
     val questionnaire = pendingQuestionnaire?.questionnaire
     val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
     var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
@@ -761,6 +763,21 @@ fun MinimalChatInput(
                             questionnaireIndex = (questionnaireIndex + 1)
                                 .coerceAtMost(questionnaire?.questions?.lastIndex ?: 0)
                         }
+                    },
+                )
+
+                SkillCommandCard(
+                    state = skillCommandState,
+                    onPage = { skillCommandPage = it },
+                    onSelect = { skill ->
+                        val draft = state.textContent.text.toString().trimStart()
+                        val body = if (draft.startsWith("/")) draft.substringAfter(' ', "").trimStart() else draft
+                        skillCommandsRequested = false
+                        state.setMessageTextAndFocus("/${skill.name} $body", scope)
+                    },
+                    onDismiss = {
+                        skillCommandsRequested = false
+                        dismissedSkillQuery = slashQuery
                     },
                 )
 
@@ -1473,6 +1490,19 @@ fun MinimalChatInput(
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
+                onOpenSkills = {
+                    scope.launch {
+                        attachmentSheetState.hideBeforeDialog(
+                            onHidden = { showPicker = false },
+                            onOpen = {
+                                skillCommandsRequested = true
+                                skillCommandPage = 0
+                                state.focusRequester.requestFocus()
+                                keyboardController?.show()
+                            },
+                        )
+                    }
+                },
                 onManageContext = {
                     scope.launch {
                         attachmentSheetState.hideBeforeDialog(
@@ -1815,6 +1845,7 @@ private fun MinimalPickerContent(
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onManageContext: () -> Unit,
+    onOpenSkills: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
     onAttachmentImportFinished: () -> Unit,
@@ -1842,7 +1873,6 @@ private fun MinimalPickerContent(
     // Sub-picker states
     var showModelPicker by remember { mutableStateOf(false) }
     var showReasoningPicker by remember { mutableStateOf(false) }
-    var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
@@ -2156,7 +2186,7 @@ private fun MinimalPickerContent(
                     stringResource(R.string.minimal_input_skills_desc)
                 },
                 onClick = {
-                    showSkillsPicker = true
+                    onOpenSkills()
                 }
             )
         }
@@ -2300,19 +2330,6 @@ private fun MinimalPickerContent(
                 )
             }
         }
-    }
-
-    // Skills picker sheet
-    if (showSkillsPicker) {
-        SkillsPickerSheet(
-            settings = settings,
-            assistant = assistant,
-            onInvokeSkill = { skill ->
-                state.setMessageText("/${skill.name} ${state.textContent.text.toString().trimStart()}")
-                onDismiss()
-            },
-            onDismiss = { showSkillsPicker = false }
-        )
     }
 
     // Lorebooks picker sheet

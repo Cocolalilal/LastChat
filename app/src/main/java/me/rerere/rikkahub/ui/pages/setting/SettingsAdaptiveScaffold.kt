@@ -274,6 +274,7 @@ private fun settingsDetailParent(route: String): Screen? {
     return when {
         route.contains("SettingProviderDetail") -> Screen.SettingProvider
         route.contains("SettingTTSProviderDetail") -> Screen.SettingTTS
+        route.contains("SettingAdditionalContextDetail") -> Screen.SettingAdditionalContext
         route.contains("SettingLorebookDetail") -> Screen.SettingLorebooks
         route.contains("AssistantDetail") -> Screen.Assistant
         else -> null

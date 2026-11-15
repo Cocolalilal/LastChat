@@ -97,6 +97,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
+import me.rerere.rikkahub.ui.pages.setting.SettingAdditionalContextDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
@@ -1238,6 +1239,13 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingAdditionalContextDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.SettingAdditionalContextDetail>()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.AdditionalContext) {
+                            SettingAdditionalContextDetailPage(id = route.id)
+                        }
+                    }
+
                     composable<Screen.SettingLorebookDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingLorebookDetail>()
                         AdaptiveSettingsScaffold(selected = SettingsDestination.Lorebooks) {
@@ -1441,6 +1449,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingAdditionalContext : Screen
+
+    @Serializable
+    data class SettingAdditionalContextDetail(val id: String) : Screen
 
     @Serializable
     data object SettingLorebooks : Screen

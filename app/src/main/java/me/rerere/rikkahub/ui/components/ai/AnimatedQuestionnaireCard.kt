@@ -79,6 +79,27 @@ internal fun AnimatedQuestionnaireCard(
     onSelectOption: (AskUserOption) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    AnimatedComposerPopup(state, keyFor = { it.toolCallId to it.currentIndex }, modifier = modifier) { displayed, isCurrent ->
+        CharacterQuestionsContent(
+            state = displayed,
+            enabled = isCurrent(),
+            onPrevious = { if (isCurrent()) onPrevious() },
+            onNext = { if (isCurrent()) onNext() },
+            onDismiss = { if (isCurrent()) onDismiss() },
+            onSelectOption = { if (isCurrent()) onSelectOption(it) },
+            modifier = if (isCurrent()) Modifier else Modifier.clearAndSetSemantics {},
+        )
+    }
+}
+
+/** Shared in-composer popup geometry, motion, and outgoing-content interaction policy. */
+@Composable
+internal fun <T> AnimatedComposerPopup(
+    state: T?,
+    keyFor: (T) -> Any,
+    modifier: Modifier = Modifier,
+    content: @Composable (T, () -> Boolean) -> Unit,
+) {
     val reduced = rememberSystemMotionPolicy().reduceMotion
     val target by rememberUpdatedState(state)
     val transition = updateTransition(state, label = "questionnaireCard")
@@ -111,24 +132,12 @@ internal fun AnimatedQuestionnaireCard(
                     )
                 },
                 contentAlignment = Alignment.TopStart,
-                contentKey = { it?.let { value -> value.toolCallId to value.currentIndex } },
+                contentKey = { it?.let(keyFor) },
             ) { displayed ->
                 if (displayed == null) {
                     Spacer(Modifier.fillMaxWidth().height(0.dp))
                 } else {
-                    fun isCurrentQuestion() = target?.let {
-                        it.toolCallId == displayed.toolCallId && it.currentIndex == displayed.currentIndex
-                    } == true
-                    val interactive = isCurrentQuestion()
-                    CharacterQuestionsContent(
-                        state = displayed,
-                        enabled = interactive,
-                        onPrevious = { if (isCurrentQuestion()) onPrevious() },
-                        onNext = { if (isCurrentQuestion()) onNext() },
-                        onDismiss = { if (isCurrentQuestion()) onDismiss() },
-                        onSelectOption = { if (isCurrentQuestion()) onSelectOption(it) },
-                        modifier = if (interactive) Modifier else Modifier.clearAndSetSemantics {},
-                    )
+                    content(displayed) { target?.let(keyFor) == keyFor(displayed) }
                 }
             }
         }
@@ -176,7 +185,7 @@ private fun CharacterQuestionsContent(
         }
         Text(question.question, style = MaterialTheme.typography.titleMedium)
         question.options.forEach { option ->
-            CharacterQuestionOptionRow(option, state.selectedOptionLabel == option.label, enabled) {
+            ComposerOptionRow(option.label, option.description, state.selectedOptionLabel == option.label, enabled) {
                 onSelectOption(option)
             }
         }
@@ -184,8 +193,9 @@ private fun CharacterQuestionsContent(
 }
 
 @Composable
-private fun CharacterQuestionOptionRow(
-    option: AskUserOption,
+internal fun ComposerOptionRow(
+    label: String,
+    description: String?,
     selected: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -212,9 +222,9 @@ private fun CharacterQuestionOptionRow(
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(option.label, style = MaterialTheme.typography.bodyLarge,
+            Text(label, style = MaterialTheme.typography.bodyLarge,
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-            option.description?.takeIf { it.isNotBlank() }?.let { description ->
+            description?.takeIf { it.isNotBlank() }?.let { description ->
                 Text(description, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
