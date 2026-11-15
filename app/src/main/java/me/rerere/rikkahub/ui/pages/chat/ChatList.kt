@@ -763,7 +763,7 @@ private fun SharedTransitionScope.ChatListNormal(
         }
         val onModeClick = remember(navController) {
             { mode: me.rerere.ai.ui.UsedMode ->
-                navController.navigate(Screen.SettingSkills(scrollToSkillId = mode.modeId))
+                navController.navigate(Screen.SettingSkillDetail(mode.modeId))
             }
         }
         val onMemoryClick = remember(navController, conversation.assistantId) {

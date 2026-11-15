@@ -99,6 +99,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAdditionalContextDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingSkillDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
@@ -1239,6 +1240,13 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingSkillDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.SettingSkillDetail>()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Skills) {
+                            SettingSkillDetailPage(id = route.id)
+                        }
+                    }
+
                     composable<Screen.SettingAdditionalContextDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingAdditionalContextDetail>()
                         AdaptiveSettingsScaffold(selected = SettingsDestination.AdditionalContext) {
@@ -1464,6 +1472,9 @@ sealed interface Screen {
 
     @Serializable
     data class SettingSkills(val scrollToSkillId: String? = null) : Screen
+
+    @Serializable
+    data class SettingSkillDetail(val id: String? = null) : Screen
 
     @Serializable
     data object SettingAndroidIntegration : Screen

@@ -102,7 +102,7 @@ fun AssistantSkillsSubPage(
                 icon = skill.icon ?: "category",
                 isEnabled = isEnabled,
                 position = position,
-                onClick = { navController.navigate(Screen.SettingSkills(scrollToSkillId = skill.id.toString())) },
+                onClick = { navController.navigate(Screen.SettingSkillDetail(skill.id.toString())) },
                 onToggle = { enabled ->
                     vm.setSkillAccess(skill.id, enabled)
                 }

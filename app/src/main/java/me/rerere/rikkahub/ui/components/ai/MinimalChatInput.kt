@@ -290,11 +290,9 @@ fun MinimalChatInput(
     val isToolApprovalActive = pendingToolApproval != null
     var dismissedSkillQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
     var skillCommandsRequested by remember(conversation.id) { mutableStateOf(false) }
-    var skillCommandPage by remember(conversation.id) { mutableIntStateOf(0) }
     val commandText = state.textContent.text.toString()
     val slashQuery = commandText.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }
     LaunchedEffect(slashQuery) {
-        skillCommandPage = 0
         if (slashQuery == null) dismissedSkillQuery = null
     }
     LaunchedEffect(state.loading) {
@@ -308,8 +306,12 @@ fun MinimalChatInput(
         SkillCommandCardState(query, settings.skills.filter {
             it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
                 it.name.isNotBlank() && it.name.contains(query, ignoreCase = true)
-        }, skillCommandPage)
+        })
     } else null
+    androidx.activity.compose.BackHandler(enabled = skillCommandState != null) {
+        skillCommandsRequested = false
+        dismissedSkillQuery = slashQuery
+    }
     val questionnaire = pendingQuestionnaire?.questionnaire
     val questionnaireToolCallId = pendingQuestionnaire?.toolCallId
     var questionnaireIndex by rememberSaveable(questionnaireToolCallId) { mutableStateOf(0) }
@@ -768,16 +770,11 @@ fun MinimalChatInput(
 
                 SkillCommandCard(
                     state = skillCommandState,
-                    onPage = { skillCommandPage = it },
                     onSelect = { skill ->
                         val draft = state.textContent.text.toString().trimStart()
                         val body = if (draft.startsWith("/")) draft.substringAfter(' ', "").trimStart() else draft
                         skillCommandsRequested = false
                         state.setMessageTextAndFocus("/${skill.name} $body", scope)
-                    },
-                    onDismiss = {
-                        skillCommandsRequested = false
-                        dismissedSkillQuery = slashQuery
                     },
                 )
 
@@ -1496,7 +1493,6 @@ fun MinimalChatInput(
                             onHidden = { showPicker = false },
                             onOpen = {
                                 skillCommandsRequested = true
-                                skillCommandPage = 0
                                 state.focusRequester.requestFocus()
                                 keyboardController?.show()
                             },

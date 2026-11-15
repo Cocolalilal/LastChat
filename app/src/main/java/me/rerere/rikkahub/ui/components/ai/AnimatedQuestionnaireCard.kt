@@ -198,6 +198,7 @@ internal fun ComposerOptionRow(
     description: String?,
     selected: Boolean,
     enabled: Boolean,
+    outlined: Boolean = true,
     onClick: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics(enabled = LocalSettings.current.displaySetting.enableUIHaptics)
@@ -213,9 +214,11 @@ internal fun ComposerOptionRow(
         onClick = { haptics.perform(HapticPattern.Pop); onClick() },
         enabled = enabled,
         shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        color = if (!outlined) androidx.compose.ui.graphics.Color.Transparent
+            else if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
             else MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+        border = if (!outlined) null else BorderStroke(1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
             else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         interactionSource = interactionSource,
         modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale },

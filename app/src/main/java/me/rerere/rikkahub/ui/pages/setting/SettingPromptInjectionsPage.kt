@@ -78,9 +78,7 @@ fun SettingPromptInjectionsPage(
     val skillsListState = rememberLazyListState()
     val lorebooksListState = rememberLazyListState()
 
-    var showAddSkillDialog by remember { mutableStateOf(false) }
     var showAddLorebookDialog by remember { mutableStateOf(false) }
-    var editingSkill by remember { mutableStateOf<Skill?>(null) }
 
     val skillImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -210,7 +208,7 @@ fun SettingPromptInjectionsPage(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
                             if (pagerState.currentPage == 0) {
-                                showAddSkillDialog = true
+                                navController.navigate(Screen.SettingSkillDetail())
                             } else if (pagerState.currentPage == 1) {
                                 val snippet = AdditionalContext()
                                 vm.updateSettings { it.copy(additionalContexts = it.additionalContexts + snippet) }
@@ -241,7 +239,7 @@ fun SettingPromptInjectionsPage(
                         haptics = haptics,
                         listState = skillsListState,
                         contentPadding = contentPadding,
-                        onEditSkill = { editingSkill = it }
+                        onEditSkill = { navController.navigate(Screen.SettingSkillDetail(it.id.toString())) }
                     )
                 }
 
@@ -261,55 +259,6 @@ fun SettingPromptInjectionsPage(
                 }
             }
         }
-    }
-
-    if (showAddSkillDialog || editingSkill != null) {
-        SkillEditorSheet(
-            skill = editingSkill,
-            assistants = settings.assistants,
-            onDismiss = {
-                showAddSkillDialog = false
-                editingSkill = null
-            },
-            onSave = { savedSkill ->
-                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
-                if (editingSkill == null) {
-                    vm.updateSettings { settings -> settings.copy(skills = settings.skills + persistedSkill) }
-                } else {
-                    vm.updateSettings { settings -> settings.copy(
-                            skills = settings.skills.map {
-                                if (it.id == persistedSkill.id) persistedSkill else it
-                            }
-                        ) }
-                }
-                showAddSkillDialog = false
-                editingSkill = null
-            },
-            onSavePreservingPackage = { savedSkill ->
-                vm.updateSettings { settings -> settings.copy(
-                        skills = settings.skills.map {
-                            if (it.id == savedSkill.id) savedSkill else it
-                        }
-                    ) }
-                showAddSkillDialog = false
-                editingSkill = null
-            },
-            onPackageMetadataChanged = { savedSkill ->
-                vm.updateSettings { settings -> settings.copy(
-                        skills = settings.skills.map {
-                            if (it.id == savedSkill.id) savedSkill else it
-                        }
-                    ) }
-            },
-            onAutoSave = { savedSkill ->
-                val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
-                vm.updateSettings { settings -> settings.copy(
-                        skills = settings.skills.map {
-                            if (it.id == persistedSkill.id) persistedSkill else it
-                        }
-                    ) }
-            }
-        )
     }
 
     if (showAddLorebookDialog) {

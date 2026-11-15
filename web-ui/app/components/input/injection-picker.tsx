@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
-import { BookOpen, LoaderCircle, ChevronLeft, ChevronRight, X } from "~/lib/material-icons";
+import { BookOpen, LoaderCircle } from "~/lib/material-icons";
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
 import { usePickerPopover } from "~/hooks/use-picker-popover";
 import { safeStringArray } from "~/lib/type-guards";
@@ -59,83 +59,43 @@ export function SkillCommandPopup({
   const id = assistantId ?? currentAssistant?.id;
   const command = /^\/\S*$/.test(value) ? value : null;
   const [dismissed, setDismissed] = React.useState<string | null>(null);
-  const [page, setPage] = React.useState(0);
   React.useEffect(() => {
-    setPage(0);
     if (command === null) setDismissed(null);
-  }, [command, requested]);
+  }, [command]);
   const skills = (settings?.modeInjections ?? []).filter(
     (skill) =>
       canInvoke(skill, id) &&
       skill.name.toLowerCase().includes((command?.slice(1) ?? "").toLowerCase()),
   );
-  const pages = Math.max(1, Math.ceil(skills.length / 3));
-  const currentPage = Math.min(page, pages - 1);
   const visible = !disabled && (requested || (command !== null && command !== dismissed));
-  const control =
-    "rounded-full border border-border/70 bg-background/80 p-1 text-foreground transition hover:bg-accent disabled:opacity-40";
+  React.useEffect(() => {
+    if (!visible) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDismissed(command);
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [visible, command, onClose]);
   return (
     <AnimatePresence initial={false}>
       {visible && (
         <ComposerPopup key="skill-commands">
-          <div className="space-y-3 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">Skills</span>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {pages > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      aria-label="Previous skills"
-                      className={control}
-                      disabled={currentPage === 0}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setPage(currentPage - 1)}
-                    >
-                      <ChevronLeft className="size-3.5" />
-                    </button>
-                    <span className="px-1">
-                      {currentPage + 1}/{pages}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Next skills"
-                      className={control}
-                      disabled={currentPage === pages - 1}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setPage(currentPage + 1)}
-                    >
-                      <ChevronRight className="size-3.5" />
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  aria-label="Close skills"
-                  className={control}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    setDismissed(command);
-                    onClose();
-                  }}
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {skills.slice(currentPage * 3, currentPage * 3 + 3).map((skill) => (
-                <ComposerOption
-                  key={skill.id}
-                  label={`/${skill.name}`}
-                  description={skill.description}
-                  onClick={() => onSelect(skill.name)}
-                />
-              ))}
-              {skills.length === 0 && (
-                <p className="text-sm text-muted-foreground">No matching skills</p>
-              )}
-            </div>
+          <div className="max-h-60 overflow-y-auto py-1">
+            {skills.map((skill) => (
+              <ComposerOption
+                key={skill.id}
+                label={`/${skill.name}`}
+                description={skill.description}
+                outlined={false}
+                onClick={() => onSelect(skill.name)}
+              />
+            ))}
+            {skills.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">No matching skills</p>
+            )}
           </div>
         </ComposerPopup>
       )}

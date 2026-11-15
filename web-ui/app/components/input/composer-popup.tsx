@@ -14,11 +14,13 @@ export function ComposerOption({
   label,
   description,
   selected = false,
+  outlined = true,
   onClick,
 }: {
   label: string;
   description?: string | null;
   selected?: boolean;
+  outlined?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -27,14 +29,20 @@ export function ComposerOption({
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       className={cn(
-        "w-full rounded-[var(--radius-card-inner)] border px-3 py-2 text-left transition active:scale-[0.97]",
-        selected
-          ? "border-primary/30 bg-primary/10 text-primary"
-          : "border-border/70 bg-background/70 text-foreground hover:bg-accent",
+        "w-full px-3 py-2 text-left transition active:scale-[0.97]",
+        outlined ? "rounded-[var(--radius-card-inner)] border" : "text-foreground hover:bg-accent",
+        outlined &&
+          (selected
+            ? "border-primary/30 bg-primary/10 text-primary"
+            : "border-border/70 bg-background/70 text-foreground hover:bg-accent"),
       )}
     >
       <div className="text-sm font-medium">{label}</div>
-      {description ? <div className="mt-1 text-muted-foreground text-xs">{description}</div> : null}
+      {description ? (
+        <div className={cn("mt-1 text-muted-foreground text-xs", !outlined && "truncate")}>
+          {description}
+        </div>
+      ) : null}
     </button>
   );
 }
