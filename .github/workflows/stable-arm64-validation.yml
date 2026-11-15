@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
       - name: Install Android build tools
         run: |
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1' 
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
       - uses: actions/cache@v4
         with:
           path: |
@@ -68,12 +68,12 @@ jobs:
       - name: Install ARMHF smoke-test emulator
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y qemu-user-static
+          sudo apt-get install -y qemu-user
           curl --fail --location --retry 3 https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/armv7/alpine-minirootfs-3.19.9-armv7.tar.gz -o "$RUNNER_TEMP/alpine-armv7.tar.gz"
       - name: Run feature and persistence regression tests
         env:
           LASTCHAT_ARMHF_ARCHIVE: ${{ runner.temp }}/alpine-armv7.tar.gz
-          LASTCHAT_QEMU_ARM: /usr/bin/qemu-arm-static
+          LASTCHAT_QEMU_ARM: /usr/bin/qemu-arm
         run: |
           chmod +x gradlew
           ./gradlew :workspace:testDebugUnitTest --tests '*Rootfs*Test' \
@@ -111,7 +111,7 @@ jobs:
 
   startup:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
