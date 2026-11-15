@@ -7,9 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -19,6 +16,7 @@ import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.roundToInt
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.avatar.animated.AnimatedMarkAvatar
@@ -52,31 +50,41 @@ internal fun rememberPhoneUseShape(active: Boolean, animate: Boolean = true): Sh
         listOf(6 to 0.065f, 5 to 0.045f, 8 to 0.035f, 4 to 0.055f)
             .map { (lobes, depth) -> phoneAvatarContour(lobes, depth) }
     }
-    var variation by remember { mutableIntStateOf(0) }
-    val progress = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
+    val phase = remember { Animatable(0f) }
+    val workingAmount = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
     LaunchedEffect(active, animate) {
-        when {
-            !animate -> progress.snapTo(0f)
-            !active -> progress.animateTo(0f, spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS,
-                visibilityThreshold = 0.0005f))
-            else -> while (isActive) {
-                progress.animateTo(1f, tween(680, easing = FastOutSlowInEasing))
-                progress.animateTo(0f, tween(680, easing = FastOutSlowInEasing))
-                // Every variation shares this exact circle endpoint. Changing the next
-                // contour here cannot cut the silhouette or move/crop the profile picture.
-                variation = (variation + 1) % contours.size
+        if (animate && active) {
+            while (isActive) {
+                val next = phase.value.toInt() + 1f
+                val duration = ((next - phase.value) * 680f).roundToInt().coerceAtLeast(1)
+                phase.animateTo(next, tween(duration, easing = FastOutSlowInEasing))
+                // The last contour blends directly into the first, so wrapping the clock
+                // preserves the same working outline without going through a circle.
+                if (phase.value >= contours.size) phase.snapTo(phase.value % contours.size)
             }
         }
     }
-    val contour = contours[variation]
-    val amount = progress.value.coerceIn(0f, 1f)
+    LaunchedEffect(active, animate) {
+        if (!animate) workingAmount.snapTo(0f)
+        else workingAmount.animateTo(if (active) 1f else 0f,
+            spring(PHONE_MOTION_DAMPING, PHONE_MOTION_STIFFNESS, visibilityThreshold = 0.0005f))
+    }
+    val index = phase.value.toInt() % contours.size
+    val from = contours[index]
+    val to = contours[(index + 1) % contours.size]
+    val blend = phase.value % 1f
+    val amount = workingAmount.value.coerceIn(0f, 1f)
     // Keep chat-speed rotation through the circle return. Any angular settling happens
     // only once the outline is circular, so finishing cannot suddenly speed up the clip.
     val rotation = rememberPhoneUseRotation(active || amount > 0.0005f, animate)
-    return remember(circle, contour, amount, rotation) {
+    return remember(circle, from, to, blend, amount, rotation) {
         GenericShape { size, _ ->
-            fun x(index: Int) = (circle[index] + (contour[index] - circle[index]) * amount) * size.width
-            fun y(index: Int) = (circle[index] + (contour[index] - circle[index]) * amount) * size.height
+            fun coordinate(index: Int): Float {
+                val contour = from[index] + (to[index] - from[index]) * blend
+                return circle[index] + (contour - circle[index]) * amount
+            }
+            fun x(index: Int) = coordinate(index) * size.width
+            fun y(index: Int) = coordinate(index) * size.height
             moveTo(x(0), y(1))
             for (index in circle.indices step 8) {
                 cubicTo(x(index + 2), y(index + 3), x(index + 4), y(index + 5), x(index + 6), y(index + 7))

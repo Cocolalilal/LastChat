@@ -36,7 +36,7 @@ The blocked package list is a fixed upstream list, not comprehensive detection.
 - Animated avatars preserve shape, eyes, and colors, using the normal
   generating pose. System reduced-motion settings stop avatar motion. Image,
   resource, emoji, and letter avatars use a display-only renderer suitable for a
-  service window. Their generating shape morphs through rounded variants and rotates
+  service window. Their generating shape morphs directly between rounded variants and rotates
   at normal chat speed, then settles into a circle when work finishes.
 - Pause blocks the next tool action; an already-dispatched Android gesture may
   finish. Stop cancels the owning conversation's generation. Disconnecting the

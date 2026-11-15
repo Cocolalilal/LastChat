@@ -96,11 +96,13 @@ class PhoneUseAvatarShapeTest {
     @Test fun loopChangesVariationsContinuouslyAndCanReverseAnUnfinishedCompletion() {
         active = true
         content()
+        frames(40)
         val loop = frames(360)
         loop.zipWithNext().forEach { (a, b) ->
             assertTrue("Contour changed abruptly: $a -> $b", abs(a - b) < maxFrameContourChange)
         }
-        assertTrue(loop.max() > 1f)
+        assertTrue("Working variations must blend directly, including the loop boundary, without a circle: $loop",
+            loop.all { it > 1f })
         compose.runOnIdle { active = false }
         frames(4)
         val before = deviation()
