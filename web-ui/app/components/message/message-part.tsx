@@ -8,7 +8,6 @@ import type {
   ToolPart,
   UIMessagePart,
 } from "~/types";
-import { replacePersonaPlaceholders } from "~/lib/persona-placeholders";
 
 import { ChainOfThought } from "./chain-of-thought";
 import { AudioPart } from "./parts/audio-part";
@@ -86,7 +85,6 @@ interface MessagePartsProps {
 
 function renderContentPart(
   part: UIMessagePart,
-  assistant: AssistantProfile | null | undefined,
   displaySetting: DisplaySetting | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
   loading?: boolean,
@@ -96,7 +94,7 @@ function renderContentPart(
     case "text":
       return (
         <TextPart
-          text={replacePersonaPlaceholders(part.text, assistant, displaySetting)}
+          text={part.text}
           displaySetting={displaySetting}
           isAnimating={loading}
           onClickCitation={onClickCitation}
@@ -128,7 +126,6 @@ function renderContentPart(
 export const MessageParts = React.memo(
   ({
     parts,
-    assistant,
     displaySetting,
     loading = false,
     onToolApproval,
@@ -200,7 +197,6 @@ export const MessageParts = React.memo(
             <React.Fragment key={`content-${block.index}`}>
               {renderContentPart(
                 block.part,
-                assistant,
                 displaySetting,
                 t,
                 loading && block.part.type === "text" && block.index === lastStreamingTextIndex,

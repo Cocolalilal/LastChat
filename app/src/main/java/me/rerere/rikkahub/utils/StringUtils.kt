@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.utils
 
+import me.rerere.rikkahub.data.model.resolveTemplatePlaceholders
 import me.rerere.common.http.urlDecode as portableUrlDecode
 import me.rerere.common.http.urlEncode as portableUrlEncode
 import me.rerere.common.text.escapeHtml as portableEscapeHtml
@@ -38,11 +39,8 @@ fun Number.toFixed(digits: Int = 0) = "%.${digits}f".format(this)
 fun String.applyPlaceholders(
     vararg placeholders: Pair<String, String>,
 ): String {
-    var result = this
-    for ((placeholder, replacement) in placeholders) {
-        result = result.replace("{$placeholder}", replacement)
-    }
-    return result
+    val values = placeholders.associate { (key, value) -> key.lowercase() to value }
+    return resolveTemplatePlaceholders { values[it] }
 }
 
 fun Long.fileSizeToString(): String {

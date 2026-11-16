@@ -130,6 +130,7 @@ import kotlinx.coroutines.sync.withPermit
 
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.ai.transformers.promptPlaceholderResolver
 import me.rerere.rikkahub.data.model.getInitialMessageNodes
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.ai.ui.MessageNode
@@ -964,7 +965,7 @@ class ChatService(
             val currentSettings = settingsStore.settingsFlowRaw.first()
             val assistant = currentSettings.getCurrentAssistant()
             
-            var initialNodes = assistant.getInitialMessageNodes()
+            var initialNodes = assistant.getInitialMessageNodes(promptPlaceholderResolver(context, currentSettings, assistant))
             if (assistant.cycleIntrosOnNewChat) {
                 val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
                 if (introCount > 1) {
@@ -995,7 +996,7 @@ class ChatService(
     suspend fun createConversation(assistantId: Uuid): Conversation {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getAssistantById(assistantId) ?: settings.getCurrentAssistant()
-        var initialNodes = assistant.getInitialMessageNodes()
+        var initialNodes = assistant.getInitialMessageNodes(promptPlaceholderResolver(context, settings, assistant))
         if (assistant.cycleIntrosOnNewChat) {
             val introCount = initialNodes.firstOrNull()?.messages?.size ?: 0
             if (introCount > 1) {

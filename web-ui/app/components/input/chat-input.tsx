@@ -27,7 +27,7 @@ import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
 import { ComposerOption, ComposerPopup } from "./composer-popup";
-import { InjectionPickerButton, SkillCommandPopup } from "~/components/input/injection-picker";
+import { LorebookPickerButton, SkillCommandPopup } from "~/components/input/injection-picker";
 import type { AskUserOption, AskUserQuestion } from "~/lib/tool-activity";
 import { useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
@@ -60,7 +60,6 @@ export interface ChatInputProps {
   isEditing?: boolean;
   assistantId?: string | null;
   conversationId?: string | null;
-  conversationSkillIds?: string[] | null;
   pendingQuestionnaire?: PendingQuestionnaire | null;
   onValueChange: (value: string) => void;
   onAddParts: (parts: UIMessagePart[]) => void;
@@ -203,7 +202,6 @@ function ChatInputInner({
   isEditing = false,
   assistantId = null,
   conversationId = null,
-  conversationSkillIds = null,
   pendingQuestionnaire = null,
   onValueChange,
   onAddParts,
@@ -256,10 +254,6 @@ function ChatInputInner({
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const [skillsRequested, setSkillsRequested] = React.useState(false);
-  React.useEffect(() => {
-    setSkillsRequested(false);
-  }, [isGenerating, conversationId]);
   const [submitting, setSubmitting] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadMenuOpen, setUploadMenuOpen] = React.useState(false);
@@ -745,16 +739,14 @@ function ChatInputInner({
           </AnimatePresence>
 
           <SkillCommandPopup
+            key={conversationId ?? "draft"}
             value={value}
             assistantId={assistantId}
             disabled={disabled || isGenerating || questionnaireActive}
-            requested={skillsRequested}
-            onClose={() => setSkillsRequested(false)}
             onSelect={(name) => {
               const body = value.startsWith("/")
                 ? value.replace(/^\/\S*\s*/, "")
                 : value.trimStart();
-              setSkillsRequested(false);
               onValueChange(`/${name} ${body}`);
               textareaRef.current?.focus();
             }}
@@ -1036,16 +1028,7 @@ function ChatInputInner({
                   <ModelList disabled={!canSwitchModel} className="max-w-64" />
                   <SearchPickerButton disabled={!canSwitchModel} />
                   <ReasoningPickerButton disabled={!canSwitchModel} />
-                  <InjectionPickerButton
-                    disabled={!canSwitchModel}
-                    assistantId={assistantId}
-                    conversationId={conversationId}
-                    conversationSkillIds={conversationSkillIds}
-                    onOpenSkills={() => {
-                      setSkillsRequested(true);
-                      textareaRef.current?.focus();
-                    }}
-                  />
+                  <LorebookPickerButton disabled={!canSwitchModel} assistantId={assistantId} />
                   <QuickMessageButton
                     quickMessages={quickMessages}
                     disabled={!canUseQuickMessage}

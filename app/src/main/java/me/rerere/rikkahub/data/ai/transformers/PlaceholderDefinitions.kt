@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.Assistant
 
 data class PlaceholderRuntimeValues(
@@ -20,10 +19,10 @@ data class PlaceholderRuntimeValues(
 )
 
 data class PlaceholderCtx(
-    val settingsStore: SettingsStore,
+    val userNickname: String,
     val model: Model,
     val assistant: Assistant,
-    val runtimeValues: PlaceholderRuntimeValues,
+    val runtimeValues: () -> PlaceholderRuntimeValues,
 )
 
 interface PlaceholderProvider {
@@ -56,15 +55,15 @@ fun buildPlaceholders(block: PlaceholderBuilder.() -> Unit): Map<String, Placeho
 object DefaultPlaceholderProvider : PlaceholderProvider {
     override val placeholders: Map<String, PlaceholderInfo> = buildPlaceholders {
         placeholder("cur_date", { Text(stringResource(R.string.placeholder_current_date)) }) {
-            it.runtimeValues.currentDate
+            it.runtimeValues().currentDate
         }
 
         placeholder("cur_time", { Text(stringResource(R.string.placeholder_current_time)) }) {
-            it.runtimeValues.currentTime
+            it.runtimeValues().currentTime
         }
 
         placeholder("cur_datetime", { Text(stringResource(R.string.placeholder_current_datetime)) }) {
-            it.runtimeValues.currentDateTime
+            it.runtimeValues().currentDateTime
         }
 
         placeholder("model_name", { Text(stringResource(R.string.placeholder_model_name)) }) {
@@ -72,19 +71,19 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("timezone", { Text(stringResource(R.string.placeholder_timezone)) }) {
-            it.runtimeValues.timezone
+            it.runtimeValues().timezone
         }
 
         placeholder("system_version", { Text(stringResource(R.string.placeholder_system_version)) }) {
-            it.runtimeValues.systemVersion
+            it.runtimeValues().systemVersion
         }
 
         placeholder("device_info", { Text(stringResource(R.string.placeholder_device_info)) }) {
-            it.runtimeValues.deviceInfo
+            it.runtimeValues().deviceInfo
         }
 
         placeholder("battery_level", { Text(stringResource(R.string.placeholder_battery_level)) }) {
-            it.runtimeValues.batteryLevel
+            it.runtimeValues().batteryLevel
         }
 
         placeholder("char", { Text(stringResource(R.string.placeholder_char)) }) {
@@ -92,11 +91,11 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("user", { Text(stringResource(R.string.placeholder_user)) }) {
-            it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
+            it.userNickname.ifBlank { "user" }
         }
 
         placeholder("location", { Text(stringResource(R.string.placeholder_location)) }) {
-            it.runtimeValues.location
+            it.runtimeValues().location
         }
     }
 }

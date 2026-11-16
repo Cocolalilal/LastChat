@@ -21,13 +21,10 @@ import {
 } from "~/components/ui/popover";
 import { PickerErrorAlert } from "./picker-error-alert";
 
-export interface InjectionPickerButtonProps {
+export interface LorebookPickerButtonProps {
   disabled?: boolean;
   className?: string;
   assistantId?: string | null;
-  conversationId?: string | null;
-  conversationSkillIds?: string[] | null;
-  onOpenSkills: () => void;
 }
 
 function canInvoke(skill: ModeInjectionProfile, assistantId: string | undefined) {
@@ -44,15 +41,11 @@ export function SkillCommandPopup({
   value,
   assistantId,
   disabled,
-  requested,
-  onClose,
   onSelect,
 }: {
   value: string;
   assistantId?: string | null;
   disabled: boolean;
-  requested: boolean;
-  onClose: () => void;
   onSelect: (name: string) => void;
 }) {
   const { settings, currentAssistant } = useCurrentAssistant();
@@ -67,18 +60,17 @@ export function SkillCommandPopup({
       canInvoke(skill, id) &&
       skill.name.toLowerCase().includes((command?.slice(1) ?? "").toLowerCase()),
   );
-  const visible = !disabled && (requested || (command !== null && command !== dismissed));
+  const visible = !disabled && command !== null && command !== dismissed;
   React.useEffect(() => {
     if (!visible) return;
     const dismiss = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setDismissed(command);
-        onClose();
       }
     };
     document.addEventListener("keydown", dismiss);
     return () => document.removeEventListener("keydown", dismiss);
-  }, [visible, command, onClose]);
+  }, [visible, command]);
   return (
     <AnimatePresence initial={false}>
       {visible && (
@@ -103,12 +95,11 @@ export function SkillCommandPopup({
   );
 }
 
-export function InjectionPickerButton({
+export function LorebookPickerButton({
   disabled = false,
   className,
   assistantId,
-  onOpenSkills,
-}: InjectionPickerButtonProps) {
+}: LorebookPickerButtonProps) {
   const { settings, currentAssistant } = useCurrentAssistant();
   const assistant =
     settings?.assistants.find((item) => item.id === assistantId) ?? currentAssistant;
@@ -135,7 +126,7 @@ export function InjectionPickerButton({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          aria-label="Skills and lorebooks"
+          aria-label="Lorebooks"
           className={cn("h-9 rounded-full border border-border/70 bg-muted/70 px-2.5", className)}
         >
           <BookOpen className="size-4" />
@@ -143,19 +134,8 @@ export function InjectionPickerButton({
       </PopoverTrigger>
       <PopoverContent className="w-80">
         <PopoverHeader>
-          <PopoverTitle>Add-ons</PopoverTitle>
+          <PopoverTitle>Lorebooks</PopoverTitle>
         </PopoverHeader>
-        <Button
-          className="my-3 w-full"
-          variant="secondary"
-          onClick={() => {
-            popoverProps.onOpenChange(false);
-            onOpenSkills();
-          }}
-        >
-          Skills
-        </Button>
-        <div className="mb-2 text-sm font-medium">Lorebooks</div>
         <PickerErrorAlert error={error} />
         <div className="space-y-2">
           {mutation.isPending && <LoaderCircle className="size-4 animate-spin" />}

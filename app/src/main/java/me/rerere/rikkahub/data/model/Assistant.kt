@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.LocalToolOptionListSerializer
 import kotlin.uuid.Uuid
@@ -123,7 +124,17 @@ data class Assistant(
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 )
 
-fun Assistant.getInitialMessageNodes(): List<me.rerere.ai.ui.MessageNode> {
+private val initialGreetingMetadata = kotlinx.serialization.json.buildJsonObject {
+    put("__lastchat_intro", kotlinx.serialization.json.JsonPrimitive(true))
+}
+
+internal fun me.rerere.ai.ui.UIMessage.isInitialGreeting(): Boolean =
+    role == me.rerere.ai.core.MessageRole.ASSISTANT && parts.any {
+        it is me.rerere.ai.ui.UIMessagePart.Text &&
+            it.metadata?.get("__lastchat_intro") == kotlinx.serialization.json.JsonPrimitive(true)
+    }
+
+fun Assistant.getInitialMessageNodes(resolveTemplate: (String) -> String = { it }): List<me.rerere.ai.ui.MessageNode> {
     val allIntros = mutableListOf<String>()
     
     // Port old preset messages (gather all ASSISTANT ones). Skip blank intros so a new chat
@@ -138,13 +149,15 @@ fun Assistant.getInitialMessageNodes(): List<me.rerere.ai.ui.MessageNode> {
     
     val originalMsg = me.rerere.ai.ui.UIMessage(
         role = me.rerere.ai.core.MessageRole.ASSISTANT,
-        parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = allIntros.first())),
+        parts = listOf(UIMessagePart.Text(
+            text = resolveTemplate(allIntros.first()), metadata = initialGreetingMetadata,
+        )),
         versionTag = kotlin.uuid.Uuid.random().toString()
     )
     val alternates = allIntros.drop(1).map { text ->
         originalMsg.copy(
             id = kotlin.uuid.Uuid.random(),
-            parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = text)),
+            parts = listOf(UIMessagePart.Text(text = resolveTemplate(text), metadata = initialGreetingMetadata)),
             versionTag = kotlin.uuid.Uuid.random().toString()
         )
     }
@@ -313,19 +326,6 @@ fun String.replaceRegexes(
             acc
         }
     }
-}
-
-fun String.replacePersonaPlaceholders(
-    assistant: Assistant?,
-    userNickname: String,
-): String {
-    val charName = assistant?.name?.ifBlank { null } ?: "assistant"
-    val userName = userNickname.ifBlank { "user" }
-    return this
-        .replace(oldValue = "{{char}}", newValue = charName, ignoreCase = true)
-        .replace(oldValue = "{char}", newValue = charName, ignoreCase = true)
-        .replace(oldValue = "{{user}}", newValue = userName, ignoreCase = true)
-        .replace(oldValue = "{user}", newValue = userName, ignoreCase = true)
 }
 
 @Serializable

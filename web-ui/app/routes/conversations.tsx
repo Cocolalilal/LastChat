@@ -1071,7 +1071,6 @@ function ConversationsPageInner() {
           disabled={detailLoading || Boolean(detailError)}
           assistantId={detail?.assistantId ?? effectiveCurrentAssistantId}
           conversationId={activeId}
-          conversationSkillIds={detail?.enabledSkillIds ?? null}
           pendingQuestionnaire={pendingQuestionnaire}
           onValueChange={handleInputTextChange}
           onAddParts={handleAddInputParts}

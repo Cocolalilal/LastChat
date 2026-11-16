@@ -117,6 +117,7 @@ import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_EVENT_ID
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_MESSAGE
 import me.rerere.rikkahub.service.EXTRA_SPONTANEOUS_RELATION
 import me.rerere.rikkahub.service.ChatPersistenceMode
+import me.rerere.rikkahub.data.ai.transformers.promptPlaceholderResolver
 import me.rerere.rikkahub.data.model.getInitialMessageNodes
 import me.rerere.rikkahub.ui.activity.QuickAskContinuationData
 import me.rerere.rikkahub.ui.activity.readQuickAskContinuationData
@@ -602,7 +603,9 @@ class RouteActivity : ComponentActivity() {
                     val seed = seedQuickAskChat(
                         data = data,
                         existingConversation = existingConvos.firstOrNull(),
-                        introNodes = assistant?.getInitialMessageNodes().orEmpty(),
+                        introNodes = assistant?.let {
+                            it.getInitialMessageNodes(promptPlaceholderResolver(this@RouteActivity, settings, it))
+                        }.orEmpty(),
                     )
                     val conversationId = seed.reuseConversationId ?: Uuid.random()
                     if (seed.messageNodes.isNotEmpty()) {

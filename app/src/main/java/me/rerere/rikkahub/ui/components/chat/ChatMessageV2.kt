@@ -92,7 +92,6 @@ import me.rerere.ai.ui.MessageNode
 import me.rerere.rikkahub.data.model.chatAttachmentDisplayName
 import me.rerere.rikkahub.data.model.chatAttachmentMimeHint
 import me.rerere.rikkahub.data.model.chatAttachmentState
-import me.rerere.rikkahub.data.model.replacePersonaPlaceholders
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.ai.ui.versionSelectionIndices
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
@@ -1318,13 +1317,8 @@ private fun UserMessageTurn(
                         onToggleToolbar()
                     }
                 ) {
-                    val userNickname = settings.displaySetting.userNickname
-                    val displayContent = remember(part.text, assistant, userNickname) {
+                    val displayContent = remember(part.text, assistant) {
                         part.text
-                            .replacePersonaPlaceholders(
-                                assistant = assistant,
-                                userNickname = userNickname,
-                            )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.USER,
@@ -1601,13 +1595,8 @@ private fun AssistantMessageTurn(
             )
 
             allTextBubbles.forEachIndexed { index, (_, part) ->
-                val userNickname = settings.displaySetting.userNickname
-                val displayContent = remember(part.text, assistant, userNickname) {
+                val displayContent = remember(part.text, assistant) {
                     part.text.trimStart()
-                        .replacePersonaPlaceholders(
-                            assistant = assistant,
-                            userNickname = userNickname,
-                        )
                         .replaceRegexes(
                             assistant = assistant,
                             scope = AssistantAffectScope.ASSISTANT,
@@ -1685,13 +1674,11 @@ private fun AssistantBubbleStack(
     val context = LocalContext.current
     val defaultVideoLabel = stringResource(R.string.chat_message_attachment_video)
     val defaultAudioLabel = stringResource(R.string.chat_message_attachment_audio)
-    val userNickname = settings.displaySetting.userNickname
     val haptics = rememberPremiumHaptics()
     var pendingStackFile by remember { mutableStateOf<ResolvedLocalFile?>(null) }
     val slots = remember(
         group.attachmentsSignature(),
         group.filteredNodes.map { it.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().joinToString { part -> part.text } },
-        userNickname,
         assistant,
         loading,
         defaultVideoLabel,
@@ -1701,7 +1688,6 @@ private fun AssistantBubbleStack(
             context = context,
             group = group,
             assistant = assistant,
-            userNickname = userNickname,
             loading = loading,
             fallbackVideoLabel = defaultVideoLabel,
             fallbackAudioLabel = defaultAudioLabel,
@@ -1845,7 +1831,6 @@ private fun buildAssistantStackSlots(
     context: Context,
     group: MessageTurnGroup,
     assistant: me.rerere.rikkahub.data.model.Assistant?,
-    userNickname: String,
     loading: Boolean,
     fallbackVideoLabel: String,
     fallbackAudioLabel: String,
@@ -1861,10 +1846,6 @@ private fun buildAssistantStackSlots(
                     is UIMessagePart.Text -> {
                         if (part.text.isBlank()) return@forEach
                         val markdown = part.text.trimStart()
-                            .replacePersonaPlaceholders(
-                                assistant = assistant,
-                                userNickname = userNickname,
-                            )
                             .replaceRegexes(
                                 assistant = assistant,
                                 scope = AssistantAffectScope.ASSISTANT,

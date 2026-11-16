@@ -54,7 +54,7 @@ Build output: `build/client/` (HTML + JS + CSS). Gradle consumes this — no man
 9. **Path alias `~`** → `app/` directory.
 10. **Build for Android uses `npm run build`**, not `bun run build`. Don't introduce bun-only APIs.
 11. **Unused deps in `package.json`**: `immer` and `zod` are declared but have ZERO imports — don't add to them. `react-infinite-scroll-component` IS used legitimately in `app/components/extended/infinite-scroll-area.tsx` for list pagination (NOT chat autoscroll — that uses `use-stick-to-bottom`).
-12. **Persona placeholders** (`{{char}}`, `{char}`, `{{user}}`, `{user}`) are substituted ONLY in `TextPart` rendering via `replacePersonaPlaceholders` — not in previews, exports, or quick-jump.
+12. **Placeholder tags** are expanded on the server only in configured prompts and greetings. Render chat text literally in messages, previews, exports, and quick-jump; never substitute tags in user or model-authored text.
 
 ## Directory structure
 

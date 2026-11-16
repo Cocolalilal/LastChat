@@ -289,27 +289,21 @@ fun MinimalChatInput(
     }
     val isToolApprovalActive = pendingToolApproval != null
     var dismissedSkillQuery by remember(conversation.id) { mutableStateOf<String?>(null) }
-    var skillCommandsRequested by remember(conversation.id) { mutableStateOf(false) }
     val commandText = state.textContent.text.toString()
     val slashQuery = commandText.takeIf { it.startsWith("/") && it.none(Char::isWhitespace) }
     LaunchedEffect(slashQuery) {
         if (slashQuery == null) dismissedSkillQuery = null
     }
-    LaunchedEffect(state.loading) {
-        if (state.loading) skillCommandsRequested = false
-    }
-    val skillCommandState = if ((skillCommandsRequested ||
-        (slashQuery != null && slashQuery != dismissedSkillQuery)) &&
+    val skillCommandState = if (slashQuery != null && slashQuery != dismissedSkillQuery &&
         !state.loading && !isQuestionnaireActive && !isToolApprovalActive
     ) {
-        val query = slashQuery?.drop(1).orEmpty()
+        val query = slashQuery.drop(1)
         SkillCommandCardState(query, settings.skills.filter {
             it.isAvailableForAssistant(assistant.id) && it.userInvocable && it.instructions.isNotBlank() &&
                 it.name.isNotBlank() && it.name.contains(query, ignoreCase = true)
         })
     } else null
     androidx.activity.compose.BackHandler(enabled = skillCommandState != null) {
-        skillCommandsRequested = false
         dismissedSkillQuery = slashQuery
     }
     val questionnaire = pendingQuestionnaire?.questionnaire
@@ -772,8 +766,7 @@ fun MinimalChatInput(
                     state = skillCommandState,
                     onSelect = { skill ->
                         val draft = state.textContent.text.toString().trimStart()
-                        val body = if (draft.startsWith("/")) draft.substringAfter(' ', "").trimStart() else draft
-                        skillCommandsRequested = false
+                        val body = if (draft.startsWith("/")) draft.dropWhile { !it.isWhitespace() }.trimStart() else draft
                         state.setMessageTextAndFocus("/${skill.name} $body", scope)
                     },
                 )
@@ -1487,18 +1480,6 @@ fun MinimalChatInput(
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
-                onOpenSkills = {
-                    scope.launch {
-                        attachmentSheetState.hideBeforeDialog(
-                            onHidden = { showPicker = false },
-                            onOpen = {
-                                skillCommandsRequested = true
-                                state.focusRequester.requestFocus()
-                                keyboardController?.show()
-                            },
-                        )
-                    }
-                },
                 onManageContext = {
                     scope.launch {
                         attachmentSheetState.hideBeforeDialog(
@@ -1841,7 +1822,6 @@ private fun MinimalPickerContent(
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onManageContext: () -> Unit,
-    onOpenSkills: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
     onAttachmentImportFinished: () -> Unit,
@@ -1851,10 +1831,6 @@ private fun MinimalPickerContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    val availableSkills = remember(settings.skills, assistant.id) {
-        settings.skills.filter { it.isAvailableForAssistant(assistant.id) && it.userInvocable }
-    }
-
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
@@ -1874,10 +1850,6 @@ private fun MinimalPickerContent(
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
-    val effectiveActiveSkillIds = setOfNotNull(
-        me.rerere.rikkahub.data.model.resolveSkillCommand(state.textContent.text.toString(), settings.skills, assistant.id)?.id
-    )
-    
     // Track the last valid search provider index so selection persists when search is disabled
     // Initialize from assistant's searchMode if available, otherwise use global setting
     val initialProviderIndex = when (val mode = assistant.searchMode) {
@@ -2153,39 +2125,6 @@ private fun MinimalPickerContent(
                 showSearchPicker = true
             }
         )
-
-        if (settings.skills.isNotEmpty()) {
-            // Skills - use enabledModeIds (legacy field) for per-chat overrides.
-            val activeSkills = availableSkills.filter { skill ->
-                effectiveActiveSkillIds.contains(skill.id)
-            }
-            val activeSkillsCount = activeSkills.size
-            val skillsActive = activeSkillsCount > 0
-            val singleActiveSkillIcon = activeSkills.singleOrNull()?.icon
-            MinimalPickerItem(
-                icon = {
-                    Icon(
-                        imageVector = if (singleActiveSkillIcon != null) {
-                            ModeIcons.getIcon(singleActiveSkillIcon)
-                        } else {
-                            Icons.Rounded.Category
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = if (skillsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                title = stringResource(R.string.minimal_input_skills),
-                subtitle = if (activeSkillsCount > 0) {
-                    stringResource(R.string.skills_picker_active_count, activeSkillsCount)
-                } else {
-                    stringResource(R.string.minimal_input_skills_desc)
-                },
-                onClick = {
-                    onOpenSkills()
-                }
-            )
-        }
 
         if (settings.lorebooks.isNotEmpty()) {
             // Lorebooks - show active count and blue icon when enabled

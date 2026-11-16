@@ -59,6 +59,7 @@ import me.rerere.ai.ui.stripEphemeralToolImagePayloads
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
+import me.rerere.rikkahub.data.ai.transformers.promptPlaceholderResolver
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -872,6 +873,11 @@ class GenerationHandler(
         contextUsageSourceKey: Int? = null,
         contextBudgetScale: Double = 1.0,
     ): BuildMessagesResult {
+        val resolvePrompt = promptPlaceholderResolver(context, settings, assistant, model)
+        val resolvedSystemPrompt = resolvePrompt(assistant.systemPrompt)
+        val resolvedLearningPrompt = if (assistant.learningMode) {
+            resolvePrompt(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+        } else ""
         fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
@@ -890,7 +896,7 @@ class GenerationHandler(
                 messages = messages,
                 model = model,
                 customBudgetTokens = maxTokens,
-                systemPromptTokens = estimateTokens(assistant.systemPrompt),
+                systemPromptTokens = estimateTokens(resolvedSystemPrompt),
                 toolDefinitionTokens = tools.sumOf { ContextTokenEstimator.toolDefinitionTokens(it, model) },
             )
         } else null
@@ -986,6 +992,7 @@ class GenerationHandler(
             allSkillIds = allSkillIds,
         )
         val enabledSkills = availableSkills.filter { activeSkillIds.contains(it.id) }
+            .map { it.copy(instructions = resolvePrompt(it.instructions)) }
         val usedModes = buildUsedModes(
             availableSkills = availableSkills,
             turnScopedSkillIds = turnScopedEnabledModeIds,
@@ -1022,7 +1029,7 @@ class GenerationHandler(
                 lorebook.entries.mapIndexedNotNull { index, entry ->
                     val reason = getLorebookEntryActivationReason(entry, recentMessagesForScan, queryEmbedding)
                     if (reason != null) {
-                        ActivatedEntryWithLorebook(lorebook, entry, index, reason)
+                        ActivatedEntryWithLorebook(lorebook, entry.copy(prompt = resolvePrompt(entry.prompt)), index, reason)
                     } else null
                 }
             }
@@ -1052,6 +1059,7 @@ class GenerationHandler(
         }
 
         val additionalContexts = settings.additionalContexts.filter { it.appliesTo(assistant.id) }
+            .map { it.copy(prompt = resolvePrompt(it.prompt)) }
         val promptInjections = enabledSkills + additionalContexts.map { it.asPromptInjection() }
         val additionalContextIds = additionalContexts.map { it.id }.toSet()
 
@@ -1104,14 +1112,14 @@ class GenerationHandler(
         }
         
         // Original system prompt  
-        if (assistant.systemPrompt.isNotBlank()) {
-            baseSystemPromptBuilder.append(assistant.systemPrompt)
+        if (resolvedSystemPrompt.isNotBlank()) {
+            baseSystemPromptBuilder.append(resolvedSystemPrompt)
         }
         
         // Learning mode (legacy - still supported)
         if (assistant.learningMode) {
             baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+            baseSystemPromptBuilder.append(resolvedLearningPrompt)
             baseSystemPromptBuilder.appendLine()
         }
         
@@ -1604,11 +1612,11 @@ class GenerationHandler(
                 }
                 val lorebookText = activatedEntries.joinToString("\n") { entry -> entry.prompt }
                 val systemPromptText = buildString {
-                    append(assistant.systemPrompt)
+                    append(resolvedSystemPrompt)
                     additionalContexts.forEach { appendLine(it.prompt) }
                     if (assistant.learningMode) {
                         appendLine()
-                        append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+                        append(resolvedLearningPrompt)
                     }
                 }
                 ContextTokenEstimator.breakdown(

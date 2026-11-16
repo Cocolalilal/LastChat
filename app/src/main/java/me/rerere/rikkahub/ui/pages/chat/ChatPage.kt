@@ -169,6 +169,7 @@ import me.rerere.rikkahub.data.ai.tools.toDefinitionPreviews
 import me.rerere.rikkahub.data.ai.selectSmartMemoryContext
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.isInitialGreeting
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.LorebookActivationType
@@ -223,6 +224,7 @@ internal fun hasConversationMessages(conversation: Conversation): Boolean {
 }
 
 internal fun hasConversationPresetMessages(conversation: Conversation, assistant: Assistant): Boolean {
+    if (conversation.currentMessages.any { it.isInitialGreeting() }) return true
     if (assistant.presetMessages.isEmpty() && assistant.alternateGreetings.isEmpty()) return false
     val presetIds = assistant.presetMessages.map { it.id }.toSet()
     if (conversation.currentMessages.any { it.id in presetIds }) return true
