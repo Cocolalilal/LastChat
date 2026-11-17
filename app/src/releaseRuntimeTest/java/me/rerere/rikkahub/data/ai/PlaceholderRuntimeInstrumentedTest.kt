@@ -16,6 +16,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessage
+import me.rerere.common.platform.PlatformMediaEncoder
+import me.rerere.common.platform.PlatformJwtSigner
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.common.platform.PlatformHttpResponse
@@ -151,7 +153,7 @@ class PlaceholderRuntimeInstrumentedTest {
                 listOf(false, true).forEach { streaming ->
                     val http = RecordingHttpClient(response, streamResponse)
                     val koin = getKoin()
-                    val handler = GenerationHandler(context, ProviderManager(http, koin.get(), koin.get()), JsonInstant,
+                    val handler = GenerationHandler(context, ProviderManager(http, TextOnlyMediaEncoder, TextOnlyJwtSigner), JsonInstant,
                         koin.get(), koin.get(), koin.get(), koin.get(), koin.get(), koin.get(), koin.get())
                     val model = Model(modelId = "runtime-smoke", abilities = emptyList())
                     val configuredProvider = when (provider) {
@@ -178,6 +180,17 @@ class PlaceholderRuntimeInstrumentedTest {
                 }
             }
         }
+    }
+
+    // Text-only protocol fixtures must never access media files or service-account keys.
+    private object TextOnlyMediaEncoder : PlatformMediaEncoder {
+        override fun encodeImage(url: String, withPrefix: Boolean): Result<String> = error("Unexpected image encoding")
+        override fun encodeVideo(url: String, withPrefix: Boolean): Result<String> = error("Unexpected video encoding")
+        override fun encodeAudio(url: String, withPrefix: Boolean): Result<String> = error("Unexpected audio encoding")
+    }
+
+    private object TextOnlyJwtSigner : PlatformJwtSigner {
+        override fun signRs256(data: ByteArray, pkcs8PrivateKeyPem: String): ByteArray = error("Unexpected JWT signing")
     }
 
     private class RecordingHttpClient(

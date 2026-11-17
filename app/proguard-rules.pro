@@ -79,9 +79,11 @@
 }
 -keep,allowoptimization class me.rerere.ai.provider.ProviderManager { public *; }
 -keep,allowoptimization class me.rerere.ai.ui.UIMessage$Companion { public *; }
-# The provider smoke tests supply an HTTP implementation from the test APK.
+# The provider smoke tests supply platform implementations from the test APK.
 # Preserve this open interface and its request/response contract across R8.
 -keep interface me.rerere.common.platform.PlatformHttpClient { public *; }
+-keep interface me.rerere.common.platform.PlatformMediaEncoder { public *; }
+-keep interface me.rerere.common.platform.PlatformJwtSigner { public *; }
 -keep,allowoptimization class me.rerere.common.platform.PlatformHttpRequest { public *; }
 -keep,allowoptimization class me.rerere.common.platform.PlatformHttpResponse { public *; }
 -keep,allowoptimization class me.rerere.common.platform.PlatformServerEvent$Open { public *; }
