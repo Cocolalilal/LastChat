@@ -211,6 +211,7 @@
     void start(kotlinx.coroutines.CoroutineStart,java.lang.Object,kotlin.jvm.functions.Function2);
 }
 -keep,allowoptimization class kotlinx.coroutines.BuildersKt {
+    *** runBlocking*(...);
     java.lang.Object runBlocking(kotlin.coroutines.CoroutineContext,kotlin.jvm.functions.Function2);
     java.lang.Object withContext(kotlin.coroutines.CoroutineContext,kotlin.jvm.functions.Function2,kotlin.coroutines.Continuation);
     kotlinx.coroutines.Job launch$default(kotlinx.coroutines.CoroutineScope,kotlin.coroutines.CoroutineContext,kotlinx.coroutines.CoroutineStart,kotlin.jvm.functions.Function2,int,java.lang.Object);
@@ -376,4 +377,9 @@
 # This ID is read directly by the guarded location fallback test.
 -keep,allowoptimization class me.rerere.rikkahub.R$string {
     int placeholder_location_unavailable;
+}
+
+# Suspend state machines in the test APK extend this shared Kotlin base class.
+-keep,allowoptimization class kotlin.coroutines.jvm.internal.SuspendLambda {
+    <init>(...);
 }
