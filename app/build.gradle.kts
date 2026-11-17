@@ -442,6 +442,8 @@ dependencies {
     // Avatar render harness: Robolectric native-graphics screenshots of the mark.
     testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation(libs.androidx.junit)
+    // AndroidX Test 1.7 view capture uses SuspendToFutureAdapter during release shrinking.
+    androidTestImplementation(libs.androidx.concurrent.futures.ktx)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
