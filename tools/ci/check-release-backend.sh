@@ -19,6 +19,7 @@ adb shell am instrument -w -r \
   | tee "$log_root/stable-backend-instrumentation.txt"
 adb logcat -d -b crash > "$log_root/stable-backend-crashes.txt"
 if ! grep -Eq 'OK \([1-9][0-9]* tests?\)' "$log_root/stable-backend-instrumentation.txt"; then
+  tail -n 80 "$log_root/stable-backend-crashes.txt" >&2
   echo "Stable release backend instrumentation failed" >&2
   exit 1
 fi

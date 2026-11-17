@@ -447,6 +447,7 @@ dependencies {
     // Avatar render harness: Robolectric native-graphics screenshots of the mark.
     testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
     // Keep app/test resolution aligned: AndroidX Test 1.7 requires SuspendToFutureAdapter.
     implementation(libs.androidx.concurrent.futures.ktx)
     if (!releaseRuntimeTests.get()) {
