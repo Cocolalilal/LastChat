@@ -275,7 +275,9 @@ private fun settingsDetailParent(route: String): Screen? {
         route.contains("SettingProviderDetail") -> Screen.SettingProvider
         route.contains("SettingTTSProviderDetail") -> Screen.SettingTTS
         route.contains("SettingSkillDetail") -> Screen.SettingSkills()
+        route.contains("SettingAdditionalContextCreate") -> Screen.SettingAdditionalContext
         route.contains("SettingAdditionalContextDetail") -> Screen.SettingAdditionalContext
+        route.contains("SettingLorebookSettings") -> Screen.SettingLorebooks
         route.contains("SettingLorebookDetail") -> Screen.SettingLorebooks
         route.contains("AssistantDetail") -> Screen.Assistant
         else -> null

@@ -82,6 +82,7 @@ jobs:
           allprojects { project ->
               if (project.path == ':app') {
                   project.afterEvaluate {
+                      android.testBuildType = 'release'
                       android.defaultConfig.ndk.abiFilters.clear()
                       android.splits.abi.reset()
                       android.splits.abi.include('arm64-v8a', 'x86_64')
@@ -116,12 +117,16 @@ jobs:
             --tests '*AddonComposerUiTest' --tests '*QuestionnaireMotionTest' \
             --tests '*PromptPlaceholdersTest' --tests '*PromptHistoryBoundaryTest' \
             --tests '*AssistantInitialMessagesTest' --tests '*ChatGenerationTransformersTest' \
+            --tests '*AddonPagerLayoutTest' --tests '*OneUITopAppBarTest' \
+            --tests '*DebouncedTextFieldPresentationTest' --tests '*SkillEditPersistenceTest' \
+            --tests '*WidgetReliabilityTest' --tests '*WidgetAvatarRendererTest' \
+            --tests '*SkillActivationResumeTest' --tests '*LorebookEntryEditorTest' \
             -Dlastchat.renderDir="$GITHUB_WORKSPACE/app/build/reports/addon-ui" \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
             '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
       - name: Build stable release APKs
         run: |
-          ./gradlew -I ci-stable.init.gradle :app:assembleStableRelease \
+          ./gradlew -I ci-stable.init.gradle :app:assembleStableRelease :app:assembleStableReleaseAndroidTest \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
             '-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8'
       - uses: actions/upload-artifact@v4
@@ -133,6 +138,11 @@ jobs:
         with:
           name: stable-x86-startup
           path: app/build/outputs/apk/**/*stable-x86_64-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-backend-tests
+          path: app/build/outputs/apk/androidTest/stable/release/*.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
@@ -163,8 +173,14 @@ jobs:
           path: startup-apk
           run-id: ${{ needs.mode.outputs.existing_run_id || github.run_id }}
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: stable-backend-tests
+          path: backend-test-apk
+          run-id: ${{ needs.mode.outputs.existing_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - run: sudo chmod a+rw /dev/kvm
-      - name: Verify stable release startup
+      - name: Verify stable release startup and Android backend
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -172,7 +188,9 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash tools/ci/check-release-startup.sh startup-apk stable
+          script: |
+            bash tools/ci/check-release-startup.sh startup-apk stable
+            bash tools/ci/check-release-backend.sh backend-test-apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:

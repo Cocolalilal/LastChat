@@ -626,13 +626,7 @@ class GenerationHandler(
             .filter { it.instructions.isNotBlank() }
             .map { it.id }
             .toSet()
-        var currentTurnScopedSkillIds = setOfNotNull(
-            me.rerere.rikkahub.data.model.resolveSkillCommand(
-                messages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty(),
-                settings.skills,
-                assistant.id,
-            )?.id
-        )
+        var currentTurnScopedSkillIds = resolveTurnScopedSkillIds(messages, settings.skills, assistant)
 
         var phoneUseRecoveryRequested = false
         var phoneUseRecoveryUsed = false

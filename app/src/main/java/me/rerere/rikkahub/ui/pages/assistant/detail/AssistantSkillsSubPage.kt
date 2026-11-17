@@ -15,6 +15,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import me.rerere.rikkahub.ui.pages.setting.components.AddonListItem
+import me.rerere.rikkahub.ui.pages.setting.components.AddonEmptyState
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,12 +63,7 @@ fun AssistantSkillsSubPage(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            EmptyStateCard(
-                icon = Icons.Rounded.Category,
-                title = stringResource(R.string.assistant_skills_empty),
-                description = stringResource(R.string.assistant_skills_empty_hint),
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+            AddonEmptyState(Icons.Rounded.Category, stringResource(R.string.assistant_skills_empty))
         }
         return
     }
@@ -140,79 +142,22 @@ private fun AddonSelectionCard(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
-    val cornerRadius = 28.dp
-    val smallCorner = 8.dp
-    val shape = when (position) {
-        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-        ItemPosition.FIRST -> RoundedCornerShape(
-            topStart = cornerRadius,
-            topEnd = cornerRadius,
-            bottomStart = smallCorner,
-            bottomEnd = smallCorner
-        )
-        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-        ItemPosition.LAST -> RoundedCornerShape(
-            topStart = smallCorner,
-            topEnd = smallCorner,
-            bottomStart = cornerRadius,
-            bottomEnd = cornerRadius
-        )
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        shape = shape,
-        onClick = onClick
-    ) {
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.size(40.dp)
-            ) {
+    val haptics = rememberPremiumHaptics()
+    AddonListItem(
+        title = name.ifBlank { stringResource(R.string.skills_page_unnamed) }, subtitle = description,
+        position = position,
+        leading = {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(40.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = ModeIcons.getIcon(icon),
-                        contentDescription = null,
-                        tint = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(ModeIcons.getIcon(icon), null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp))
                 }
             }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = name.ifEmpty { androidx.compose.ui.res.stringResource(R.string.skills_page_unnamed) },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (description.isNotEmpty()) {
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            HapticSwitch(
-                checked = isEnabled,
-                onCheckedChange = onToggle
-            )
-        }
-    }
+        },
+        trailing = {
+            Checkbox(isEnabled, onCheckedChange = { haptics.perform(HapticPattern.Pop); onToggle(it) },
+                modifier = Modifier.semantics { contentDescription = "$name access" })
+        },
+        onClick = onClick,
+    )
 }

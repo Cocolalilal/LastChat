@@ -45,6 +45,16 @@ class SettingVM(
     val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
+    private val skillEditWriter = SkillEditWriter(context, settingsStore, appScope)
+
+    fun saveSkillEdit(
+        skill: me.rerere.rikkahub.data.model.Skill,
+        create: Boolean = false,
+        synchronizePackage: Boolean = true,
+        onSaved: () -> Unit = {},
+        onError: (Throwable) -> Unit = {},
+    ) = skillEditWriter.save(skill, create, synchronizePackage, onSaved, onError)
+
     fun deleteProvider(provider: me.rerere.ai.provider.ProviderSetting) {
         viewModelScope.launch {
             if (provider is me.rerere.ai.provider.ProviderSetting.LiteRtLocal) {
@@ -144,11 +154,18 @@ class SettingVM(
      */
     fun updateSettings(
         afterPersist: (() -> Unit)? = null,
+        onError: ((Throwable) -> Unit)? = null,
         transform: (Settings) -> Settings,
     ) {
         val result = settingsStore.enqueueUpdate(transform)
         appScope.launch(Dispatchers.Main.immediate) {
-            val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
+            val (oldSettings, newSettings) = try {
+                result.await()
+            } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                onError?.invoke(error)
+                return@launch
+            }
             afterPersist?.invoke()
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()
             val newProviderIds = newSettings.providers.map { it.id }.toSet()

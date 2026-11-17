@@ -98,6 +98,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAdditionalContextDetailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingLorebookSettingsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsPage
@@ -1250,10 +1251,23 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingAdditionalContextCreate> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.AdditionalContext) {
+                            SettingAdditionalContextDetailPage()
+                        }
+                    }
+
                     composable<Screen.SettingAdditionalContextDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.SettingAdditionalContextDetail>()
                         AdaptiveSettingsScaffold(selected = SettingsDestination.AdditionalContext) {
                             SettingAdditionalContextDetailPage(id = route.id)
+                        }
+                    }
+
+                    composable<Screen.SettingLorebookSettings> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.SettingLorebookSettings>()
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.Lorebooks) {
+                            SettingLorebookSettingsPage(id = route.id)
                         }
                     }
 
@@ -1465,10 +1479,16 @@ sealed interface Screen {
     data class SettingAdditionalContextDetail(val id: String) : Screen
 
     @Serializable
+    data object SettingAdditionalContextCreate : Screen
+
+    @Serializable
     data object SettingLorebooks : Screen
 
     @Serializable
     data class SettingLorebookDetail(val id: String, val scrollToEntryId: String? = null) : Screen
+
+    @Serializable
+    data class SettingLorebookSettings(val id: String? = null) : Screen
 
     @Serializable
     data object Developer : Screen

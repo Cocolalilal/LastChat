@@ -60,5 +60,33 @@
 
 -dontobfuscate
 
+# ART regression tests run against the same minified stable APK we deliver. Keep
+# their integration entry points callable from the separately installed test APK;
+# implementation bodies and the rest of the app remain eligible for optimization.
+-keep,allowoptimization class me.rerere.rikkahub.data.model.TemplatePlaceholdersKt { public *; }
+-keep,allowoptimization class me.rerere.rikkahub.data.model.AssistantKt {
+    public static *** getInitialMessageNodes(...);
+}
+-keep,allowoptimization class me.rerere.rikkahub.data.ai.transformers.PromptPlaceholdersKt { public *; }
+-keep,allowoptimization class me.rerere.rikkahub.data.ai.GenerationHandler { public *; }
+-keep,allowoptimization class me.rerere.rikkahub.data.ai.BuildMessagesResult {
+    public java.util.List getMessages();
+}
+-keep,allowoptimization class me.rerere.rikkahub.data.ai.GenerationChunk$Messages { public *; }
+-keep,allowoptimization class me.rerere.rikkahub.service.ChatGenerationTransformersKt { public *; }
+-keep,allowoptimization class me.rerere.rikkahub.utils.JsonKt {
+    public static *** getJsonInstant();
+}
+-keep,allowoptimization class me.rerere.ai.provider.ProviderManager { public *; }
+-keep,allowoptimization class me.rerere.ai.ui.UIMessage$Companion { public *; }
+# The provider smoke tests supply an HTTP implementation from the test APK.
+# Preserve this open interface and its request/response contract across R8.
+-keep interface me.rerere.common.platform.PlatformHttpClient { public *; }
+-keep,allowoptimization class me.rerere.common.platform.PlatformHttpRequest { public *; }
+-keep,allowoptimization class me.rerere.common.platform.PlatformHttpResponse { public *; }
+-keep,allowoptimization class me.rerere.common.platform.PlatformServerEvent$Open { public *; }
+-keep,allowoptimization class me.rerere.common.platform.PlatformServerEvent$Event { public *; }
+-keep,allowoptimization class me.rerere.common.platform.PlatformServerEvent$Closed { public *; }
+
 # Tasks GenAI (AutoValue/JavaPoet) references javax.lang.model which is not on Android
 -dontwarn javax.lang.model.**

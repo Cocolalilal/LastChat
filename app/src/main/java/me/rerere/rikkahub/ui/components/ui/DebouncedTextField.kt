@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.input.OutputTransformation
@@ -60,7 +65,8 @@ fun DebouncedTextField(
     keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
     isError: Boolean = false,
     onPendingChange: (Boolean) -> Unit = {},
-    trailingIcon: @Composable (() -> Unit)? = null
+    trailingIcon: @Composable (() -> Unit)? = null,
+    outlined: Boolean = true,
 ) {
     val textFieldState = androidx.compose.runtime.key(stateKey) {
         rememberTextFieldState(initialText = value)
@@ -126,6 +132,34 @@ fun DebouncedTextField(
         latestOnPendingChange(hasPendingChanges)
     }
 
+    val limits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.MultiLine(
+        minHeightInLines = minLines, maxHeightInLines = maxLines,
+    )
+    // The compact editor has no label, validation decoration, or secure-text controls.
+    // Keep those callers on Material's complete presentation rather than silently dropping them.
+    val supportsBorderless = !isSecure && !isError && label == null && trailingIcon == null
+    if (!outlined && supportsBorderless) {
+        BasicTextField(
+            state = textFieldState,
+            modifier = modifier.onFocusChanged { isFocused = it.isFocused },
+            enabled = enabled,
+            readOnly = readOnly,
+            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+            keyboardOptions = keyboardOptions,
+            lineLimits = limits,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            decorator = { inner ->
+                Box(Modifier.padding(vertical = 4.dp)) {
+                    if (textFieldState.text.isEmpty() && placeholder != null) {
+                        Text(placeholder, style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    inner()
+                }
+            },
+        )
+        return
+    }
+
     OutlinedTextField(
         state = textFieldState,
         modifier = modifier.onFocusChanged {
@@ -161,14 +195,7 @@ fun DebouncedTextField(
         } else {
             trailingIcon
         },
-        lineLimits = if (singleLine) {
-            TextFieldLineLimits.SingleLine
-        } else {
-            TextFieldLineLimits.MultiLine(
-                minHeightInLines = minLines,
-                maxHeightInLines = maxLines
-            )
-        },
+        lineLimits = limits,
         shape = AppShapes.InputField
     )
 }

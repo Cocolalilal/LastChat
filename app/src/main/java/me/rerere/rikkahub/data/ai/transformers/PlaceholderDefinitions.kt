@@ -7,22 +7,33 @@ import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 
+interface PlaceholderRuntime {
+    val currentDate: String
+    val currentTime: String
+    val currentDateTime: String
+    val timezone: String
+    val systemVersion: String
+    val deviceInfo: String
+    val batteryLevel: String
+    val location: String
+}
+
 data class PlaceholderRuntimeValues(
-    val currentDate: String,
-    val currentTime: String,
-    val currentDateTime: String,
-    val timezone: String,
-    val systemVersion: String,
-    val deviceInfo: String,
-    val batteryLevel: String,
-    val location: String,
-)
+    override val currentDate: String,
+    override val currentTime: String,
+    override val currentDateTime: String,
+    override val timezone: String,
+    override val systemVersion: String,
+    override val deviceInfo: String,
+    override val batteryLevel: String,
+    override val location: String,
+) : PlaceholderRuntime
 
 data class PlaceholderCtx(
     val userNickname: String,
     val model: Model,
     val assistant: Assistant,
-    val runtimeValues: () -> PlaceholderRuntimeValues,
+    val runtimeValues: () -> PlaceholderRuntime,
 )
 
 interface PlaceholderProvider {

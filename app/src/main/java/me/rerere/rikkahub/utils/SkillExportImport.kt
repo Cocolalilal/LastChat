@@ -54,6 +54,11 @@ object SkillExportImport {
             appendLine("---")
             appendLine("name: ${skill.name}")
             appendLine("description: ${yamlEscapeString(skill.description)}")
+            if (skill.disableModelInvocation) appendLine("disable-model-invocation: true")
+            if (!skill.userInvocable) appendLine("user-invocable: false")
+            skill.argumentHint?.takeIf { it.isNotBlank() }?.let {
+                appendLine("argument-hint: ${yamlEscapeString(it)}")
+            }
             skill.license?.takeIf { it.isNotBlank() }?.let { appendLine("license: ${yamlEscapeString(it)}") }
             skill.compatibility?.takeIf { it.isNotBlank() }?.let { appendLine("compatibility: ${yamlEscapeString(it)}") }
             skill.allowedTools?.takeIf { it.isNotBlank() }?.let { appendLine("allowed-tools: ${yamlEscapeString(it)}") }

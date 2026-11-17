@@ -19,12 +19,18 @@ import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
+import me.rerere.rikkahub.ui.pages.setting.LorebookSettingsContent
+import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.ui.pages.setting.SkillEditorPage
 import org.robolectric.shadows.ShadowDialog
 import org.junit.Assert.assertNull
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.isToggleable
@@ -34,6 +40,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.cancel
@@ -92,6 +104,7 @@ class AddonComposerUiTest {
     }
 
     private var dark by mutableStateOf(false)
+    private var fontScale by mutableStateOf(1f)
     private val assistant = Assistant(name = "Mira")
     private val snippets = listOf(
         AdditionalContext(name = "Writing style", prompt = "Use short paragraphs and natural dialogue.", assistantIds = setOf(assistant.id)),
@@ -100,7 +113,9 @@ class AddonComposerUiTest {
 
     private fun content(body: @Composable () -> Unit) {
         compose.setContent {
+            val density = LocalDensity.current.density
             CompositionLocalProvider(
+                LocalDensity provides Density(density, fontScale),
                 LocalSettings provides Settings(), LocalDarkMode provides dark,
                 LocalNavController provides rememberNavController(),
                 LocalToaster provides rememberAppToasterState(),
@@ -117,7 +132,8 @@ class AddonComposerUiTest {
         compose.waitForIdle()
         System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { directory ->
             compose.runOnIdle {
-                val view = compose.activity.window.decorView
+                val view = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }?.window?.decorView
+                    ?: compose.activity.window.decorView
                 val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                 view.draw(Canvas(bitmap))
                 val file = File(directory, "$name-${if (dark) "dark" else "light"}.png")
@@ -188,6 +204,56 @@ class AddonComposerUiTest {
         capture("skill-editor")
         compose.runOnIdle { dark = true }
         capture("skill-editor")
+    }
+
+    @Test fun existingSkillActivationAndAccessChangesAutosaveWithoutReenablingTheSkill() {
+        val original = Skill(name = "write", instructions = "Write clearly.", enabled = false)
+        var saved = original
+        val saveHistory = mutableListOf<Skill>()
+        content { SkillEditorPage(original, listOf(assistant), onSave = {}, onAutoSave = { saved = it; saveHistory += it }) }
+        compose.onNodeWithText("Save").assertDoesNotExist()
+        compose.onNodeWithText("Assistant can use").performScrollTo().performClick()
+        assertTrue(saved.disableModelInvocation)
+        assertFalse(saved.enabled)
+        compose.onNodeWithText("Slash command").performScrollTo().performClick()
+        assertFalse(saved.userInvocable)
+        compose.onNodeWithText("All characters").performScrollTo().assertIsOn().performClick()
+        assertFalse(saved.availableForAllAssistants)
+        // The character list has its own scroll container. Scroll the outer form into view
+        // before touching its first row; performScrollTo only moves the nearest container.
+        compose.onRoot().performTouchInput { swipeUp() }
+        compose.onNodeWithText("Mira").performScrollTo().assertIsDisplayed().assertIsOff().performClick()
+        compose.waitForIdle()
+        assertTrue("Save history: ${saveHistory.map { it.availableAssistantIds }}", assistant.id in saved.availableAssistantIds)
+        assertFalse(saved.enabled)
+    }
+
+    @Test fun longSkillPromptUsesAnExpandableFieldAtLargerFontScale() {
+        fontScale = 1.3f
+        val skill = Skill(name = "character-design", description = "Create and refine character prompts.",
+            instructions = "Name: {{char}}\nPersonality: observant and kind.\n\n".repeat(100))
+        content { SkillEditorPage(skill, listOf(assistant), onSave = {}, onAutoSave = {}) }
+        compose.onNodeWithText("Instructions").performScrollTo()
+        capture("skill-editor-long")
+        compose.runOnIdle { dark = true }
+        capture("skill-editor-long")
+        compose.onNodeWithContentDescription("Expand Instructions").performClick()
+        compose.onAllNodes(hasText("Instructions")).assertCountEquals(2)
+        compose.onNodeWithText("Save").assertExists()
+        capture("skill-prompt-expanded")
+    }
+
+    @Test fun lorebookSettingsUseTheSameFieldsAndCharacterSelectionInBothThemes() {
+        fontScale = 1.3f
+        var book by mutableStateOf(Lorebook(name = "Coastal town", description = "Locations, characters, and local history."))
+        content {
+            LorebookSettingsContent(book, listOf(assistant), setOf(assistant.id),
+                onUpdate = { book = it(book) }, onPickCover = {}, onAssistantSelectionChange = { _, _ -> })
+        }
+        capture("lorebook-settings")
+        compose.runOnIdle { dark = true }
+        capture("lorebook-settings")
+        compose.onNodeWithText("Mira").assertIsOn()
     }
 
 }

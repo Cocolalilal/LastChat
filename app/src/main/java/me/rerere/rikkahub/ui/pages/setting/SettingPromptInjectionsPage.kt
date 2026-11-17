@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -64,6 +66,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingPromptInjectionsPage(
     initialPage: Int = 0,
+    scrollToSkillId: String? = null,
     vm: SettingVM = koinViewModel(),
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -77,8 +80,12 @@ fun SettingPromptInjectionsPage(
     val pagerState = rememberPagerState(initialPage = initialPage) { 3 }
     val skillsListState = rememberLazyListState()
     val lorebooksListState = rememberLazyListState()
+    LaunchedEffect(scrollToSkillId, settings.skills) {
+        val index = settings.skills.indexOfFirst { it.id.toString() == scrollToSkillId }
+        if (index >= 0) skillsListState.scrollToItem(index)
+    }
 
-    var showAddLorebookDialog by remember { mutableStateOf(false) }
+
 
     val skillImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -210,11 +217,9 @@ fun SettingPromptInjectionsPage(
                             if (pagerState.currentPage == 0) {
                                 navController.navigate(Screen.SettingSkillDetail())
                             } else if (pagerState.currentPage == 1) {
-                                val snippet = AdditionalContext()
-                                vm.updateSettings { it.copy(additionalContexts = it.additionalContexts + snippet) }
-                                navController.navigate(Screen.SettingAdditionalContextDetail(snippet.id.toString()))
+                                navController.navigate(Screen.SettingAdditionalContextCreate)
                             } else {
-                                showAddLorebookDialog = true
+                                navController.navigate(Screen.SettingLorebookSettings())
                             }
                         },
                         shape = AppShapes.CardLarge
@@ -226,11 +231,7 @@ fun SettingPromptInjectionsPage(
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { contentPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = !useWideLayout,
-        ) { page ->
+        AddonPager(state = pagerState, useWideLayout = useWideLayout) { page ->
             when (page) {
                 0 -> {
                     SkillsPageContent(
@@ -261,14 +262,16 @@ fun SettingPromptInjectionsPage(
         }
     }
 
-    if (showAddLorebookDialog) {
-        LorebookCreatorSheet(
-            onDismiss = { showAddLorebookDialog = false },
-            onSave = { lorebook ->
-                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks + lorebook) }
-                showAddLorebookDialog = false
-                navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
-            }
-        )
-    }
+}
+
+@Composable
+internal fun AddonPager(
+    state: PagerState,
+    useWideLayout: Boolean,
+    content: @Composable (Int) -> Unit,
+) {
+    HorizontalPager(
+        state = state, modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.Top,
+        userScrollEnabled = !useWideLayout,
+    ) { page -> content(page) }
 }

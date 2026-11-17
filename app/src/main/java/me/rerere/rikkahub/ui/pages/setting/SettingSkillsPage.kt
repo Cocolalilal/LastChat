@@ -11,6 +11,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import me.rerere.rikkahub.ui.pages.setting.components.AddonEmptyState
+import me.rerere.rikkahub.ui.pages.setting.components.AddonTextEditor
+import me.rerere.rikkahub.utils.fileSizeToString
+import me.rerere.rikkahub.ui.pages.setting.components.AddonEditorField
+import me.rerere.rikkahub.ui.pages.setting.components.CharacterAccessSection
+import me.rerere.rikkahub.ui.pages.setting.components.AddonListItem
+import me.rerere.rikkahub.ui.pages.setting.components.addonItemShape
+import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,168 +132,8 @@ import me.rerere.rikkahub.ui.hooks.AppReorderableItem
 import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 
 @Composable
-fun SettingSkillsPage(
-    scrollToSkillId: String? = null,
-    vm: SettingVM = koinViewModel(),
-) {
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val haptics = rememberPremiumHaptics()
-    val navController = LocalNavController.current
-    val context = LocalContext.current
-    val toaster = LocalToaster.current
-    val listState = rememberLazyListState()
-    val useWideLayout = LocalSettingsWideLayout.current
-
-
-    LaunchedEffect(scrollToSkillId, settings.skills) {
-        if (scrollToSkillId.isNullOrBlank()) return@LaunchedEffect
-        val index = settings.skills.indexOfFirst { it.id.toString() == scrollToSkillId }
-        if (index >= 0) {
-            listState.animateScrollToItem(index + 1)
-        }
-    }
-
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        when (val result = SkillExportImport.importFromUri(context, uri)) {
-            is SkillExportImport.ImportResult.Success -> {
-                runCatching { SkillExportImport.installPackage(context, result) }
-                    .onSuccess { installedSkill ->
-                        vm.updateSettings { settings -> settings.copy(skills = settings.skills + installedSkill) }
-                        haptics.perform(HapticPattern.Success)
-                        toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
-                    }
-                    .onFailure {
-                        haptics.perform(HapticPattern.Error)
-                        toaster.show(it.message ?: "Could not install skill package")
-                    }
-            }
-
-            is SkillExportImport.ImportResult.Error -> {
-                haptics.perform(HapticPattern.Error)
-                toaster.show(result.message)
-            }
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            OneUITopAppBar(
-                title = stringResource(R.string.prompt_injections_page_skills),
-                scrollBehavior = scrollBehavior,
-                navigationIcon = { BackButton() }
-            )
-        },
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 16.dp)
-            ) {
-                if (!useWideLayout) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .offset(y = -ScreenOffset),
-                        shape = RoundedCornerShape(28.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Category,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        haptics.perform(HapticPattern.Tick)
-                                        navController.navigate(Screen.SettingLorebooks) {
-                                            popUpTo(Screen.SettingSkills()) { inclusive = true }
-                                            launchSingleTop = true
-                                        }
-                                    }
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Book,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .then(if (useWideLayout) Modifier else Modifier.offset(y = -ScreenOffset)),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Tick)
-                            importLauncher.launch(arrayOf("application/json", "text/markdown", "application/zip", "*/*"))
-                        },
-                        shape = AppShapes.CardLarge,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.Input,
-                            contentDescription = stringResource(R.string.import_label)
-                        )
-                    }
-
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            navController.navigate(Screen.SettingSkillDetail())
-                        },
-                        shape = AppShapes.CardLarge
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
-                    }
-                }
-            }
-        },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-    ) { contentPadding ->
-        SkillsPageContent(
-            settings = settings,
-            vm = vm,
-            haptics = haptics,
-            listState = listState,
-            contentPadding = contentPadding,
-            onEditSkill = { navController.navigate(Screen.SettingSkillDetail(it.id.toString())) }
-        )
-    }
-
-
+fun SettingSkillsPage(scrollToSkillId: String? = null, vm: SettingVM = koinViewModel()) {
+    SettingPromptInjectionsPage(initialPage = 0, scrollToSkillId = scrollToSkillId, vm = vm)
 }
 
 @Composable
@@ -293,6 +145,12 @@ fun SkillsPageContent(
     contentPadding: PaddingValues,
     onEditSkill: (Skill) -> Unit = {},
 ) {
+    if (settings.skills.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.Center) {
+            AddonEmptyState(Icons.Rounded.Category, stringResource(R.string.skills_page_empty_title))
+        }
+        return
+    }
     val context = LocalContext.current
     val toaster = LocalToaster.current
 
@@ -318,118 +176,75 @@ fun SkillsPageContent(
             contentPadding = contentPadding + PaddingValues(16.dp) + PaddingValues(bottom = 45.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            if (orderedSkills.isEmpty()) {
-                item(key = "empty") {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            }
-                        ),
-                        shape = AppShapes.CardLarge
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Category,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    text = stringResource(R.string.skills_page_empty_title),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = stringResource(R.string.skills_page_empty_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+            itemsIndexed(
+                items = orderedSkills,
+                key = { _, skill -> skill.id }
+            ) { index, skill ->
+                val position = when {
+                    orderedSkills.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == orderedSkills.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
                 }
-            } else {
-                itemsIndexed(
-                    items = orderedSkills,
-                    key = { _, skill -> skill.id }
-                ) { index, skill ->
-                    val position = when {
-                        orderedSkills.size == 1 -> ItemPosition.ONLY
-                        index == 0 -> ItemPosition.FIRST
-                        index == orderedSkills.lastIndex -> ItemPosition.LAST
-                        else -> ItemPosition.MIDDLE
-                    }
 
-                    val neighborOffset = swipeNeighbors.offsetFor(index, orderedSkills) { it.id }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedSkills) { it.id }
 
-                    AppReorderableItem(
-                        state = reorderableState,
-                        key = skill.id
-                    ) { isDragging ->
-                        PhysicsSwipeToDelete(
+                AppReorderableItem(
+                    state = reorderableState,
+                    key = skill.id
+                ) { isDragging ->
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = canDelete,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(skill.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(skill.id) },
+                        onDelete = {
+                            val deletedSkill = skill
+                            vm.updateSettings { settings -> settings.copy(skills = settings.skills.filter { it.id != skill.id }) }
+                            toaster.show(
+                                message = context.getString(
+                                    R.string.skills_page_deleted,
+                                    skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
+                                ),
+                                action = ToastAction(
+                                    label = context.getString(R.string.undo),
+                                    onClick = {
+                                        vm.updateSettings { settings -> settings.copy(
+                                                skills = settings.skills.toMutableList().apply {
+                                                    add(index.coerceAtMost(size), deletedSkill)
+                                                }
+                                            ) }
+                                    }
+                                )
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                    ) {
+                        SkillCard(
+                            skill = skill,
                             position = position,
-                            deleteEnabled = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(skill.id, offset, unlocked) },
-                            onDragEnd = { swipeNeighbors.end(skill.id) },
-                            onDelete = {
-                                val deletedSkill = skill
-                                vm.updateSettings { settings -> settings.copy(skills = settings.skills.filter { it.id != skill.id }) }
-                                toaster.show(
-                                    message = context.getString(
-                                        R.string.skills_page_deleted,
-                                        skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
-                                    ),
-                                    action = ToastAction(
-                                        label = context.getString(R.string.undo),
-                                        onClick = {
-                                            vm.updateSettings { settings -> settings.copy(
-                                                    skills = settings.skills.toMutableList().apply {
-                                                        add(index.coerceAtMost(size), deletedSkill)
-                                                    }
-                                                ) }
+                            onEdit = { onEditSkill(skill) },
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            haptics.perform(HapticPattern.Pop)
+                                        },
+                                        onDragStopped = {
+                                            haptics.perform(HapticPattern.Thud)
                                         }
                                     )
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                        ) {
-                            SkillCard(
-                                skill = skill,
-                                position = position,
-                                onEdit = { onEditSkill(skill) },
-                                dragHandle = {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                haptics.perform(HapticPattern.Pop)
-                                            },
-                                            onDragStopped = {
-                                                haptics.perform(HapticPattern.Thud)
-                                            }
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.DragIndicator,
-                                            contentDescription = stringResource(R.string.drag_to_reorder)
-                                        )
-                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragIndicator,
+                                        contentDescription = stringResource(R.string.drag_to_reorder)
+                                    )
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -504,124 +319,19 @@ fun DismissibleBannerCard(
 }
 
 @Composable
-private fun SkillCard(
-    skill: Skill,
-    position: ItemPosition,
-    onEdit: () -> Unit,
-    dragHandle: @Composable () -> Unit,
-) {
-    val cornerRadius = 28.dp
-    val smallCorner = 8.dp
-    val shape = when (position) {
-        ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
-        ItemPosition.FIRST -> RoundedCornerShape(
-            topStart = cornerRadius,
-            topEnd = cornerRadius,
-            bottomStart = smallCorner,
-            bottomEnd = smallCorner
-        )
-
-        ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
-        ItemPosition.LAST -> RoundedCornerShape(
-            topStart = smallCorner,
-            topEnd = smallCorner,
-            bottomStart = cornerRadius,
-            bottomEnd = cornerRadius
-        )
-    }
-
-    Card(
-        onClick = onEdit,
-        colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
+private fun SkillCard(skill: Skill, position: ItemPosition, onEdit: () -> Unit, dragHandle: @Composable () -> Unit) {
+    AddonListItem(
+        title = skill.name.ifBlank { stringResource(R.string.skills_page_unnamed) }, subtitle = skill.description,
+        position = position,
+        leading = {
+            Box(Modifier.size(40.dp).clip(AppShapes.Avatar).background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center) {
+                Icon(ModeIcons.getIcon(skill.icon ?: "category"), null,
+                    modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
             }
-        ),
-        shape = shape
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = ModeIcons.getIcon(skill.icon ?: "category"),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = skill.name.ifEmpty { stringResource(R.string.skills_page_unnamed) },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = if (skill.name.isNotEmpty()) FontFamily.Monospace else FontFamily.Default
-                )
-                if (skill.description.isNotBlank()) {
-                    Text(
-                        text = skill.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            dragHandle()
-        }
-    }
-}
-
-@Composable
-private fun SkillAssistantToggleRow(
-    assistant: me.rerere.rikkahub.data.model.Assistant,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        UIAvatar(
-            value = assistant.avatar,
-            name = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-            modifier = Modifier.size(32.dp),
-        )
-        Text(
-            text = assistant.name.ifBlank { stringResource(R.string.text_selection_assistant) },
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        HapticSwitch(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-    }
+        },
+        trailing = dragHandle, onClick = onEdit,
+    )
 }
 
 @Composable
@@ -629,9 +339,9 @@ fun SkillEditorPage(
     skill: Skill?,
     assistants: List<me.rerere.rikkahub.data.model.Assistant>,
     onSave: (Skill) -> Unit,
-    onSavePreservingPackage: ((Skill) -> Unit)? = null,
     onPackageMetadataChanged: ((Skill) -> Unit)? = null,
     onAutoSave: ((Skill) -> Unit)? = null,
+    isSaving: Boolean = false,
 ) {
     val isEditing = skill != null
     val scope = rememberCoroutineScope()
@@ -650,6 +360,7 @@ fun SkillEditorPage(
     var depth by remember { mutableStateOf(skill?.depth?.toString() ?: "0") }
     var availableForAllAssistants by remember { mutableStateOf(skill?.availableForAllAssistants ?: true) }
     var availableAssistantIds by remember { mutableStateOf(skill?.availableAssistantIds ?: emptySet()) }
+    var showInstructionEditor by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var namePending by remember { mutableStateOf(false) }
@@ -659,9 +370,9 @@ fun SkillEditorPage(
     var packageEntries by remember(skill?.id) { mutableStateOf(emptyList<SkillExportImport.PackageEntry>()) }
     var editingPackagePath by remember { mutableStateOf<String?>(null) }
     var editingPackageContent by remember { mutableStateOf("") }
+    var packageFileSaving by remember { mutableStateOf(false) }
     var showAddPackageFile by remember { mutableStateOf(false) }
     var deletePackagePath by remember { mutableStateOf<String?>(null) }
-    var skillMdEditedDirectly by remember { mutableStateOf(false) }
     val isAutoSaving = isEditing && (namePending || descriptionPending || instructionsPending)
 
     fun refreshPackageFiles(currentSkill: Skill? = packageSkillMetadata ?: skill) {
@@ -677,308 +388,144 @@ fun SkillEditorPage(
 
     LaunchedEffect(skill?.id) {
         val currentSkill = skill ?: return@LaunchedEffect
-        val entries = withContext(Dispatchers.IO) {
-            var currentEntries = SkillExportImport.listPackageEntries(context, currentSkill)
-            if (currentEntries.none { it.relativePath == "SKILL.md" }) {
-                SkillExportImport.syncManagedSkill(context, currentSkill)
-                currentEntries = SkillExportImport.listPackageEntries(context, currentSkill)
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                withSkillPackageEdit {
+                    SkillExportImport.ensureManagedSkillPackage(context, currentSkill)
+                    SkillExportImport.listPackageEntries(context, currentSkill)
+                }
             }
-            currentEntries
         }
-        packageEntries = entries
+        result.onSuccess { packageEntries = it }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            toaster.show(it.message ?: "Could not read skill package")
+        }
     }
 
+    val initialSkill = remember(skill?.id) { skill ?: Skill() }
+    val formEnabled = !isSaving || isEditing
+    fun currentDraft(): Skill = (packageSkillMetadata ?: skill ?: initialSkill).copy(
+        name = name.trim(), description = description.trim(), icon = icon, instructions = instructions,
+        alwaysEnabled = false, disableModelInvocation = disableModelInvocation, userInvocable = userInvocable,
+        injectionPosition = injectionPosition, depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+        availableForAllAssistants = availableForAllAssistants, availableAssistantIds = availableAssistantIds,
+        updatedAt = System.currentTimeMillis(),
+    )
+
+    fun persistDraft() {
+        if (isEditing) onAutoSave?.invoke(currentDraft())
+    }
+
+    androidx.activity.compose.BackHandler(enabled = isSaving && !isEditing) { }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection).imePadding(),
         topBar = {
             OneUITopAppBar(
                 title = stringResource(if (isEditing) R.string.skills_page_edit_skill else R.string.skills_page_add_skill),
-                scrollBehavior = scrollBehavior,
-                navigationIcon = { BackButton() },
+                scrollBehavior = scrollBehavior, navigationIcon = {
+                    if (isSaving && !isEditing) Box(Modifier.size(48.dp)) else BackButton()
+                },
                 actions = {
-                    AutoSaveIndicator(visible = isAutoSaving)
+                    AutoSaveIndicator(visible = isAutoSaving || isSaving)
                     if (isEditing) {
-                        TextButton(onClick = { showExportDialog = true }) {
-                            Text(stringResource(R.string.export_label))
+                        IconButton(onClick = { haptics.perform(HapticPattern.Pop); showExportDialog = true },
+                            enabled = !isAutoSaving && !isSaving) {
+                            Icon(Icons.Rounded.IosShare, contentDescription = stringResource(R.string.export_label))
                         }
-                    }
-                    TextButton(
-                        onClick = {
-                            val base = packageSkillMetadata ?: skill ?: Skill()
-                            val availableIds = if (availableForAllAssistants) emptySet() else availableAssistantIds
-                            val savedSkill = base.copy(
-                                name = name.trim(),
-                                description = description.trim(),
-                                icon = icon,
-                                instructions = instructions,
-                                enabled = true,
-                                alwaysEnabled = alwaysEnabled,
-                                disableModelInvocation = disableModelInvocation,
-                                userInvocable = userInvocable,
-                                injectionPosition = injectionPosition,
-                                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                                availableForAllAssistants = availableForAllAssistants,
-                                availableAssistantIds = availableIds,
-                                updatedAt = System.currentTimeMillis()
-                            )
-                            if (skillMdEditedDirectly && onSavePreservingPackage != null) {
-                                onSavePreservingPackage(savedSkill)
-                            } else {
-                                onSave(savedSkill)
-                            }
-                        }
-                    ) {
-                        Text(
-                            text = stringResource(if (isEditing) R.string.save else R.string.create),
-                            fontWeight = FontWeight.Bold
-                        )
+                    } else {
+                        TextButton(
+                            enabled = name.isNotBlank() && instructions.isNotBlank() &&
+                                !namePending && !descriptionPending && !instructionsPending && !isSaving,
+                            onClick = { haptics.perform(HapticPattern.Success); onSave(currentDraft()) },
+                        ) { Text(stringResource(R.string.create)) }
                     }
                 },
             )
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding)
-                .verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                .verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            FormItem(label = { Text(stringResource(R.string.skills_page_name)) }) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        onClick = { showIconPicker = true },
-                        modifier = Modifier.size(56.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = ModeIcons.getIcon(icon ?: "category"),
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-
-                    DebouncedTextField(
-                        value = name,
-                        onValueChange = { rawNewName ->
-                            val processed = rawNewName.lowercase()
-                                .filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }
-                                .take(64)
-                            name = processed
-                            if (skill != null) {
-                                onAutoSave?.invoke(skill.copy(
-                                    name = processed,
-                                    description = description.trim(),
-                                    icon = icon,
-                                    instructions = instructions,
-                                    alwaysEnabled = alwaysEnabled,
-                                    disableModelInvocation = disableModelInvocation,
-                                    userInvocable = userInvocable,
-                                    injectionPosition = injectionPosition,
-                                    depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                                    availableForAllAssistants = availableForAllAssistants,
-                                    availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                                    updatedAt = System.currentTimeMillis()
-                                ))
-                            }
-                        },
-                        stateKey = "skill_name_${skill?.id ?: "new"}",
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        onPendingChange = { namePending = it },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace)
-                    )
-                }
-            }
-
-            if (showIconPicker) {
-                MaterialIconPickerDialog(
-                    onDismiss = { showIconPicker = false },
-                    onIconSelected = { selectedIcon ->
-                        icon = selectedIcon
-                        showIconPicker = false
-                    }
+            SettingsGroup(title = "") {
+                AddonEditorField(
+                    title = stringResource(R.string.skills_page_name), value = name,
+                    onValueChange = { value ->
+                        name = value.lowercase().filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(64)
+                        persistDraft()
+                    }, stateKey = "skill_name_${skill?.id ?: "new"}", singleLine = true,
+                    onPendingChange = { namePending = it }, enabled = formEnabled,
+                )
+                SettingGroupItem(
+                    title = "Icon",
+                    icon = { Icon(ModeIcons.getIcon(icon ?: "category"), null) },
+                    onClick = if (formEnabled) ({ showIconPicker = true }) else null,
+                )
+                AddonEditorField(
+                    title = stringResource(R.string.skills_page_description), value = description,
+                    onValueChange = { description = it.take(1024); persistDraft() },
+                    stateKey = "skill_desc_${skill?.id ?: "new"}", minLines = 2, maxLines = 4,
+                    onPendingChange = { descriptionPending = it }, enabled = formEnabled,
+                )
+                AddonEditorField(
+                    title = stringResource(R.string.skills_page_instructions), value = instructions,
+                    onValueChange = { instructions = it; persistDraft() },
+                    stateKey = "skill_instructions_${skill?.id ?: "new"}", minLines = 5, maxLines = 12,
+                    onPendingChange = { instructionsPending = it }, enabled = formEnabled,
+                    onExpand = { showInstructionEditor = true },
                 )
             }
-
-            FormItem(label = { Text(stringResource(R.string.skills_page_description)) }) {
-                DebouncedTextField(
-                    value = description,
-                    onValueChange = { rawVal ->
-                        val processed = rawVal.take(1024)
-                        description = processed
-                        if (skill != null) {
-                            onAutoSave?.invoke(skill.copy(
-                                name = name.trim(),
-                                description = processed.trim(),
-                                icon = icon,
-                                instructions = instructions,
-                                alwaysEnabled = alwaysEnabled,
-                                disableModelInvocation = disableModelInvocation,
-                                userInvocable = userInvocable,
-                                injectionPosition = injectionPosition,
-                                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                                availableForAllAssistants = availableForAllAssistants,
-                                availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                                updatedAt = System.currentTimeMillis()
-                            ))
-                        }
-                    },
-                    stateKey = "skill_desc_${skill?.id ?: "new"}",
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 4,
-                    onPendingChange = { descriptionPending = it },
+            SettingsGroup(title = "Activation") {
+                SettingGroupItem(
+                    title = "Assistant can use",
+                    trailing = { HapticSwitch(!disableModelInvocation, {
+                        disableModelInvocation = !it; persistDraft()
+                    }, enabled = formEnabled) },
+                    onClick = if (formEnabled) ({ disableModelInvocation = !disableModelInvocation; persistDraft() }) else null,
+                )
+                SettingGroupItem(
+                    title = "Slash command",
+                    trailing = { HapticSwitch(userInvocable, { userInvocable = it; persistDraft() }, enabled = formEnabled) },
+                    onClick = if (formEnabled) ({ userInvocable = !userInvocable; persistDraft() }) else null,
                 )
             }
-
-            FormItem(label = { Text(stringResource(R.string.skills_page_instructions)) }) {
-                DebouncedTextField(
-                    value = instructions,
-                    onValueChange = { newVal ->
-                        instructions = newVal
-                        if (skill != null) {
-                            onAutoSave?.invoke(skill.copy(
-                                name = name.trim(),
-                                description = description.trim(),
-                                icon = icon,
-                                instructions = newVal,
-                                alwaysEnabled = alwaysEnabled,
-                                disableModelInvocation = disableModelInvocation,
-                                userInvocable = userInvocable,
-                                injectionPosition = injectionPosition,
-                                depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                                availableForAllAssistants = availableForAllAssistants,
-                                availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
-                                updatedAt = System.currentTimeMillis()
-                            ))
+            CharacterAccessSection(
+                assistants = assistants, selectedIds = availableAssistantIds, enabled = formEnabled,
+                allSelected = availableForAllAssistants,
+                onAllSelectedChange = { availableForAllAssistants = it; persistDraft() },
+                onSelectionChange = { id, selected ->
+                    availableAssistantIds = if (selected) availableAssistantIds + id else availableAssistantIds - id
+                    persistDraft()
+                },
+            )
+            if (skill != null) SkillPackageFilesCard(
+                skill = packageSkillMetadata ?: skill, entries = packageEntries, enabled = !isAutoSaving && !isSaving,
+                onAddFile = { haptics.perform(HapticPattern.Pop); showAddPackageFile = true },
+                onEditFile = { entry ->
+                    haptics.perform(HapticPattern.Pop)
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            withSkillPackageEdit { runCatching { SkillExportImport.readPackageTextFile(context, packageSkillMetadata ?: skill, entry.relativePath) } }
                         }
-                    },
-                    stateKey = "skill_instructions_${skill?.id ?: "new"}",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    onPendingChange = { instructionsPending = it },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 20.sp
-                    )
-                )
-            }
-            if (skill != null) {
-                SkillPackageFilesCard(
-                    skill = packageSkillMetadata ?: skill,
-                    entries = packageEntries,
-                    onAddFile = {
-                        haptics.perform(HapticPattern.Pop)
-                        showAddPackageFile = true
-                    },
-                    onEditFile = { entry ->
-                        haptics.perform(HapticPattern.Tick)
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    SkillExportImport.readPackageTextFile(
-                                        context = context,
-                                        skill = packageSkillMetadata ?: skill,
-                                        relativePath = entry.relativePath,
-                                    )
-                                }
-                            }
-                            result.onSuccess { content ->
-                                editingPackageContent = content
-                                editingPackagePath = entry.relativePath
-                            }.onFailure {
-                                toaster.show(it.message ?: "This file cannot be edited")
-                            }
-                        }
-                    },
-                    onDeleteFile = { entry ->
-                        haptics.perform(HapticPattern.Tick)
-                        deletePackagePath = entry.relativePath
-                    },
-                )
-            }
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
+                        result.onSuccess { editingPackageContent = it; editingPackagePath = entry.relativePath }
+                            .onFailure { toaster.show(it.message ?: "This file cannot be edited") }
                     }
-                ),
-                shape = AppShapes.CardLarge
-            ) {
-                Column {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.skills_page_available_for_all_characters)) },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = availableForAllAssistants,
-                                onCheckedChange = { checked ->
-                                    availableForAllAssistants = checked
-                                    if (checked) {
-                                        availableAssistantIds = emptySet()
-                                    }
-                                }
-                            )
-                        }
-                    )
-                    ExpandableContent(visible = !availableForAllAssistants) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            assistants.forEach { assistant ->
-                                SkillAssistantToggleRow(
-                                    assistant = assistant,
-                                    checked = availableAssistantIds.contains(assistant.id),
-                                    onCheckedChange = { checked ->
-                                        availableAssistantIds = if (checked) {
-                                            availableAssistantIds + assistant.id
-                                        } else {
-                                            availableAssistantIds - assistant.id
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text("Manual invocation only") },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = disableModelInvocation,
-                                onCheckedChange = { disableModelInvocation = it }
-                            )
-                        }
-                    )
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text("Slash command") },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = userInvocable,
-                                onCheckedChange = { userInvocable = it }
-                            )
-                        }
-                    )
-                }
-            }
+                },
+                onDeleteFile = { entry -> haptics.perform(HapticPattern.Pop); deletePackagePath = entry.relativePath },
+            )
         }
     }
+    if (showInstructionEditor) AddonTextEditor(
+        title = "Instructions", initialContent = instructions,
+        onDismiss = { showInstructionEditor = false },
+        onSave = { instructions = it; persistDraft(); showInstructionEditor = false },
+    )
+    if (showIconPicker) MaterialIconPickerDialog(
+        onDismiss = { showIconPicker = false },
+        onIconSelected = { icon = it; showIconPicker = false; persistDraft() },
+    )
 
     if (showExportDialog && skill != null) {
         SkillExportDialog(
@@ -987,14 +534,14 @@ fun SkillEditorPage(
                 description = description.trim(),
                 icon = icon,
                 instructions = instructions,
-                enabled = true,
+                enabled = (packageSkillMetadata ?: skill).enabled,
                 alwaysEnabled = alwaysEnabled,
                 disableModelInvocation = disableModelInvocation,
                 userInvocable = userInvocable,
                 injectionPosition = injectionPosition,
                 depth = depth.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 availableForAllAssistants = availableForAllAssistants,
-                availableAssistantIds = if (availableForAllAssistants) emptySet() else availableAssistantIds,
+                availableAssistantIds = availableAssistantIds,
             ),
             onDismiss = { showExportDialog = false }
         )
@@ -1003,8 +550,8 @@ fun SkillEditorPage(
     editingPackagePath?.let { relativePath ->
         SkillPackageTextEditorDialog(
             relativePath = relativePath,
-            initialContent = editingPackageContent,
-            onDismiss = { editingPackagePath = null },
+            initialContent = editingPackageContent, saving = packageFileSaving,
+            onDismiss = { if (!packageFileSaving) editingPackagePath = null },
             onSave = { content ->
                 val currentSkill = packageSkillMetadata ?: skill ?: return@SkillPackageTextEditorDialog
                 val parsedSkill = if (relativePath == "SKILL.md") {
@@ -1023,18 +570,17 @@ fun SkillEditorPage(
                     }
                 } else null
 
+                packageFileSaving = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
-                            SkillExportImport.savePackageTextFile(
-                                context = context,
-                                skill = currentSkill,
-                                relativePath = relativePath,
-                                content = content,
-                            )
+                            withSkillPackageEdit {
+                                SkillExportImport.savePackageTextFile(context, currentSkill, relativePath, content)
+                            }
                         }
                     }
                     result.onSuccess {
+                        packageFileSaving = false
                         if (parsedSkill != null) {
                             val updatedSkill = currentSkill.copy(
                                 name = parsedSkill.name,
@@ -1055,13 +601,13 @@ fun SkillEditorPage(
                             instructions = updatedSkill.instructions
                             disableModelInvocation = updatedSkill.disableModelInvocation
                             userInvocable = updatedSkill.userInvocable
-                            skillMdEditedDirectly = true
                             onPackageMetadataChanged?.invoke(updatedSkill)
                         }
                         editingPackagePath = null
                         haptics.perform(HapticPattern.Success)
                         refreshPackageFiles(packageSkillMetadata ?: currentSkill)
                     }.onFailure {
+                        packageFileSaving = false
                         haptics.perform(HapticPattern.Error)
                         toaster.show(it.message ?: "Could not save skill file")
                     }
@@ -1080,7 +626,9 @@ fun SkillEditorPage(
                         runCatching {
                             require(relativePath != "SKILL.md") { "SKILL.md already exists" }
                             require(packageEntries.none { it.relativePath == relativePath }) { "A package file already exists at this path" }
-                            SkillExportImport.savePackageTextFile(context, currentSkill, relativePath, content)
+                            withSkillPackageEdit {
+                                SkillExportImport.savePackageTextFile(context, currentSkill, relativePath, content)
+                            }
                         }
                     }
                     result.onSuccess {
@@ -1107,7 +655,7 @@ fun SkillEditorPage(
                         val currentSkill = packageSkillMetadata ?: skill ?: return@TextButton
                         scope.launch {
                             val deleted = withContext(Dispatchers.IO) {
-                                SkillExportImport.deletePackageFile(context, currentSkill, relativePath)
+                                withSkillPackageEdit { SkillExportImport.deletePackageFile(context, currentSkill, relativePath) }
                             }
                             if (deleted) {
                                 haptics.perform(HapticPattern.Success)
@@ -1137,111 +685,24 @@ private fun SkillPackageFilesCard(
     onAddFile: () -> Unit,
     onEditFile: (SkillExportImport.PackageEntry) -> Unit,
     onDeleteFile: (SkillExportImport.PackageEntry) -> Unit,
+    enabled: Boolean = true,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            }
-        ),
-        shape = AppShapes.CardLarge,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Package files", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "${skill.name.ifBlank { "skill" }}/ · ${entries.count { !it.isDirectory }} files",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TextButton(onClick = onAddFile) {
-                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text("New file")
-                }
-            }
-
-            if (entries.isEmpty()) {
-                Text(
-                    "This skill has no package files yet.",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                entries.forEach { entry ->
-                    val depth = entry.relativePath.count { it == '/' }
-                    ListItem(
-                        modifier = Modifier.padding(start = (depth * 14).dp),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        leadingContent = {
-                            Icon(
-                                imageVector = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
-                                contentDescription = null,
-                                tint = if (entry.isDirectory) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        headlineContent = {
-                            Text(
-                                entry.name,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        supportingContent = if (!entry.isDirectory) {
-                            {
-                                Text(
-                                    formatSkillFileSize(entry.sizeBytes),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        } else null,
-                        trailingContent = if (!entry.isDirectory) {
-                            {
-                                Row {
-                                    if (entry.isTextEditable) {
-                                        IconButton(onClick = { onEditFile(entry) }) {
-                                            Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.edit))
-                                        }
-                                    }
-                                    if (entry.relativePath != "SKILL.md") {
-                                        IconButton(onClick = { onDeleteFile(entry) }) {
-                                            Icon(
-                                                Icons.Rounded.Delete,
-                                                contentDescription = stringResource(R.string.delete),
-                                                tint = MaterialTheme.colorScheme.error,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else null,
-                    )
-                }
-            }
+    SettingsGroup(title = "Package files") {
+        SettingGroupItem(title = "New file", icon = { Icon(Icons.Rounded.Add, null) }, onClick = onAddFile.takeIf { enabled })
+        entries.forEach { entry ->
+            SettingGroupItem(
+                title = entry.relativePath,
+                subtitle = if (entry.isDirectory) null else entry.sizeBytes.fileSizeToString(),
+                icon = { Icon(if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description, null) },
+                onClick = if (enabled && entry.isTextEditable && !entry.isDirectory) ({ onEditFile(entry) }) else null,
+                trailing = if (!entry.isDirectory && entry.relativePath != "SKILL.md") ({
+                    IconButton(enabled = enabled, onClick = { onDeleteFile(entry) }) {
+                        Icon(Icons.Rounded.Delete, stringResource(R.string.delete))
+                    }
+                }) else null,
+            )
         }
     }
-}
-
-private fun formatSkillFileSize(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> "${bytes / (1024 * 1024)} MB"
 }
 
 @Composable
@@ -1250,48 +711,11 @@ private fun SkillPackageTextEditorDialog(
     initialContent: String,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
+    saving: Boolean = false,
 ) {
-    var content by remember(relativePath, initialContent) { mutableStateOf(initialContent) }
+    AddonTextEditor(title = relativePath, initialContent = initialContent,
+        onDismiss = onDismiss, onSave = onSave, monospace = true, saving = saving)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text(relativePath.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    relativePath,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
-        text = {
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(420.dp),
-                textStyle = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 19.sp,
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(content) }) {
-                Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
 }
 
 @Composable

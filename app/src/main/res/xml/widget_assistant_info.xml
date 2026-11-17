@@ -11,5 +11,6 @@
     android:configure="me.rerere.rikkahub.widget.WidgetConfigActivity"
     android:widgetFeatures="reconfigurable"
     android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_assistant_loading"
     android:previewLayout="@layout/widget_assistant_preview"
     android:description="@string/widget_assistant_description" />

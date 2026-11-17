@@ -130,6 +130,7 @@ import kotlinx.coroutines.sync.withPermit
 
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.ai.transformers.AndroidPlaceholderRuntimeValues
 import me.rerere.rikkahub.data.ai.transformers.promptPlaceholderResolver
 import me.rerere.rikkahub.data.model.getInitialMessageNodes
 import me.rerere.rikkahub.data.model.Conversation
@@ -2234,7 +2235,7 @@ class ChatService(
                     - You can use the search_web tool to search the internet for the latest news, weather, sports, or to confirm some facts.
                     - You can perform multiple search if needed
                     - Generate keywords based on the user's question. For live data, prefer a `topic` of `weather`, `news`, `sports`, or `images` when it is obvious.
-                    - Today is {{cur_date}}
+                    - Today is ${AndroidPlaceholderRuntimeValues.from(context).currentDate}
                     - Trust structured weather `answer` fields over encyclopedia snippets.
                     - For news, prefer items with recent `publishedAt` dates. Do not treat Wikipedia as live news.
                     - Search results are private behind-the-scenes data for your eyes only. The user CANNOT see them and did NOT provide or upload them.
