@@ -85,7 +85,7 @@ jobs:
                       android.testBuildType = 'release'
                       // Legacy window tests require debug-only lab Activities. The release
                       // instrumentation APK contains the backend ART regression suite.
-                      android.sourceSets.androidTest.java.setSrcDirs(['src/androidTest/java/me/rerere/rikkahub/data/ai'])
+                      android.sourceSets.androidTest.java.setSrcDirs(['src/releaseRuntimeTest/java'])
                       android.defaultConfig.ndk.abiFilters.clear()
                       android.splits.abi.reset()
                       android.splits.abi.include('arm64-v8a', 'x86_64')
@@ -129,7 +129,7 @@ jobs:
             '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8'
       - name: Build stable release APKs
         run: |
-          ./gradlew -I ci-stable.init.gradle :app:assembleStableRelease :app:assembleStableReleaseAndroidTest \
+          ./gradlew -I ci-stable.init.gradle :app:assembleStableRelease :app:assembleStableReleaseAndroidTest -Plastchat.releaseRuntimeTests=true \
             --no-parallel --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process \
             '-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8'
       - uses: actions/upload-artifact@v4

@@ -24,6 +24,9 @@ val enableReleaseShrinker = providers.gradleProperty("lastchat.release.minify")
     .map(String::toBoolean)
     .orElse(true)
 
+val releaseRuntimeTests = providers.gradleProperty("lastchat.releaseRuntimeTests")
+    .map(String::toBoolean).orElse(false)
+
 val webUiDir = rootProject.file("web-ui")
 val webUiBuildDir = File(webUiDir, "build/client")
 val catalogDir = rootProject.file("catalog")
@@ -74,6 +77,7 @@ android {
     compileSdk = 36
 
     sourceSets {
+        getByName("androidTest").java.srcDir("src/releaseRuntimeTest/java")
         getByName("main") {
             assets.srcDir("../web-ui/build/client")
             assets.srcDir(prepareBundledCatalogAssets.map { it.destinationDir })
@@ -170,7 +174,8 @@ android {
             isShrinkResources = enableReleaseShrinker.get()
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "proguard-release-test-api.pro"
             )
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
@@ -444,9 +449,11 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     // Keep app/test resolution aligned: AndroidX Test 1.7 requires SuspendToFutureAdapter.
     implementation(libs.androidx.concurrent.futures.ktx)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.ui.test.junit4)
+    if (!releaseRuntimeTests.get()) {
+        androidTestImplementation(libs.androidx.espresso.core)
+        androidTestImplementation(platform(libs.androidx.compose.bom))
+        androidTestImplementation(libs.androidx.ui.test.junit4)
+    }
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
