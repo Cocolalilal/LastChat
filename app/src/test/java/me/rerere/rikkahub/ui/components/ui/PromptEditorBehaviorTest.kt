@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import me.rerere.rikkahub.ui.pages.setting.components.AddonPromptField
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -66,6 +67,30 @@ class PromptEditorBehaviorTest {
         compose.waitForIdle()
         assertEquals("Latest name", first)
         compose.onNodeWithTag("name").assertTextEquals("Latest name")
+    }
+
+    @Test fun restoringWhileExpandedKeepsTheExpandedDraft() {
+        var value by mutableStateOf("Original prompt")
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) {
+            AddonPromptField("Prompt", value, onValueChange = { value = it }, stateKey = "prompt")
+        } } }
+        compose.onNodeWithContentDescription("Expand Prompt").performClick()
+        compose.onNodeWithContentDescription("Prompt editor").performTextReplacement("Expanded draft survives rotation")
+        compose.runOnIdle {
+            (compose.activity.lifecycle as androidx.lifecycle.LifecycleRegistry)
+                .handleLifecycleEvent(androidx.lifecycle.Lifecycle.Event.ON_PAUSE)
+        }
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle {
+            (compose.activity.lifecycle as androidx.lifecycle.LifecycleRegistry)
+                .handleLifecycleEvent(androidx.lifecycle.Lifecycle.Event.ON_RESUME)
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        assertEquals("Expanded draft survives rotation", value)
+        compose.onNodeWithContentDescription("Prompt").assertTextEquals("Expanded draft survives rotation")
     }
 
 }

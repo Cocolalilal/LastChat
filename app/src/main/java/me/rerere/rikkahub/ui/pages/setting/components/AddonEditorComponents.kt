@@ -75,7 +75,13 @@ fun AddonPromptField(
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(stateKey, lifecycle) {
-        fun flush() = publish(if (expanded) expandedDraft else state.text.toString())
+        fun flush() {
+            val text = if (expanded) expandedDraft else state.text.toString()
+            // The inline field is saveable; keep it current before lifecycle state is saved.
+            // Otherwise recreation can restore its older text over the expanded draft.
+            if (expanded && state.text.toString() != text) state.edit { replace(0, length, text) }
+            publish(text)
+        }
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE) flush() }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer); flush() }
